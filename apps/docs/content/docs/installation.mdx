@@ -1,0 +1,70 @@
+---
+title: Installation
+description: Install the Owostack SDK
+icon: Package
+---
+
+# Installation
+
+Install the Owostack SDK in your Node.js project.
+
+## Package Manager
+
+```npm
+npm i @owostack/core
+```
+
+## Configuration
+
+Initialize the SDK with your API key:
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({
+  apiKey: process.env.OWOSTACK_API_KEY,
+  // Optional: override the API URL (for self-hosted)
+  // baseUrl: "https://api.owostack.dev"
+});
+```
+
+<Callout type="warning">
+  Never commit your API key to version control. Use environment variables.
+</Callout>
+
+## Environment Variables
+
+We recommend storing your API key in an environment variable:
+
+```sh
+OWOSTACK_API_KEY=owo_sk_your_api_key_here
+```
+
+## TypeScript
+
+The SDK is written in TypeScript and includes full type definitions. No additional `@types/*` packages are needed.
+
+```ts
+import {
+  Owostack,
+  AttachResult,
+  CheckResult,
+  TrackResult,
+} from "@owostack/core";
+
+const owo = new Owostack({ apiKey: "..." });
+
+// All methods are fully typed
+const result: AttachResult = await owo.attach({
+  customer: "user@example.com",
+  plan: "pro",
+});
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="attach()" href="/docs/sdk/attach" />
+  <Card title="check()" href="/docs/sdk/check" />
+  <Card title="track()" href="/docs/sdk/track" />
+</Cards>

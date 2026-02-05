@@ -1,0 +1,17 @@
+{
+  "pages": [
+    "index",
+    "---Getting Started---",
+    "quickstart",
+    "installation",
+    "webhook-setup",
+    "---Features---",
+    "features/entitlements",
+    "features/metering",
+    "features/credits",
+    "---SDK Reference---",
+    "sdk/attach",
+    "sdk/check",
+    "sdk/track"
+  ]
+}

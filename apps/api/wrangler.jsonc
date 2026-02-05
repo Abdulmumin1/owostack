@@ -1,0 +1,53 @@
+{
+  "name": "owostack-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-31",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // D1 Database
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "owostack",
+      "database_id": "be366e9b-8c41-4321-abbe-2bd98a270146",
+      "migrations_dir":"../../packages/db/migrations"
+    }
+  ],
+
+  // KV Namespace for API Keys
+  "kv_namespaces": [
+    {
+      "binding": "API_KEYS",
+      "id": "ccc79669a6524e398a56e08d8ff82345"
+    }
+  ],
+
+  // Durable Objects for usage metering
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "USAGE_METER",
+        "class_name": "UsageMeterDO"
+      }
+    ]
+  },
+
+  // Migrations for Durable Objects
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["UsageMeterDO"]
+    }
+  ],
+
+  // Environment variables
+  "vars": {
+    "ENVIRONMENT": "development",
+    "BETTER_AUTH_URL": "http://localhost:8787"
+  }
+
+  // Secrets (set via: wrangler secret put <NAME>)
+  // PAYSTACK_SECRET_KEY
+  // PAYSTACK_WEBHOOK_SECRET
+  // BETTER_AUTH_SECRET
+}

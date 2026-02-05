@@ -1,0 +1,29 @@
+{
+  "name": "owostack-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "vitest",
+    "db:migrate:local": "wrangler d1 migrations apply owostack --local",
+    "db:migrate:prod": "wrangler d1 migrations apply owostack --remote"
+  },
+  "dependencies": {
+    "@owostack/core": "workspace:*",
+    "@owostack/db": "workspace:*",
+    "@owostack/types": "workspace:*",
+    "better-auth": "^1.2.7",
+    "better-result": "^2.7.0",
+    "drizzle-orm": "^0.41.0",
+    "hono": "^4.7.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.62.0"
+  }
+}

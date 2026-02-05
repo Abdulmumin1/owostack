@@ -1,0 +1,37 @@
+{
+  "name": "owostack",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Paystack made delightful - 3 API calls, zero webhooks",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,svelte}\"",
+    "deploy": "turbo deploy",
+    "db:generate": "pnpm --filter @owostack/db db:generate",
+    "db:migrate:local": "pnpm --filter owostack-api db:migrate:local",
+    "db:migrate:prod": "pnpm --filter owostack-api db:migrate:prod",
+    "db:deploy": "pnpm --filter @owostack/db db:migrate:prod",
+    "db:studio": "pnpm --filter @owostack/db db:studio",
+    "api:dev": "pnpm --filter owostack-api dev",
+    "api:deploy": "pnpm --filter owostack-api deploy",
+    "api:logs": "pnpm --filter owostack-api tail",
+    "api:test": "pnpm --filter owostack-api test",
+    "keygen": "tsx scripts/generate-key.ts"
+  },
+  "devDependencies": {
+    "@turbo/gen": "^2.4.4",
+    "prettier": "^3.5.1",
+    "prettier-plugin-svelte": "^3.3.3",
+    "tsx": "^4.21.0",
+    "turbo": "^2.4.4",
+    "typescript": "^5.7.3"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=9"
+  }
+}

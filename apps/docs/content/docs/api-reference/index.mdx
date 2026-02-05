@@ -1,0 +1,160 @@
+---
+title: API Reference
+description: Complete API reference for Owostack
+icon: FileCode
+---
+
+# API Reference
+
+Base URL: `https://api.owostack.dev`
+
+All endpoints require authentication via API key in the `Authorization` header.
+
+---
+
+## Authentication
+
+```bash
+Authorization: Bearer owo_sk_your_api_key
+```
+
+---
+
+## POST /v1/attach
+
+Subscribe a customer to a plan.
+
+### Request
+
+```json
+{
+  "customer": "user@example.com",
+  "product": "pro-monthly",
+  "metadata": {}
+}
+```
+
+| Field      | Type   | Required | Description     |
+| ---------- | ------ | -------- | --------------- |
+| `customer` | string | ✅       | Customer email  |
+| `product`  | string | ✅       | Plan slug       |
+| `metadata` | object | -        | Custom metadata |
+
+### Response
+
+```json
+{
+  "success": true,
+  "authorization_url": "https://checkout.paystack.com/xxx",
+  "access_code": "xxx",
+  "reference": "ref_xxx"
+}
+```
+
+---
+
+## POST /v1/check
+
+Check customer entitlements for a feature.
+
+### Request
+
+```json
+{
+  "customer": "user@example.com",
+  "feature": "api_calls",
+  "amount": 1
+}
+```
+
+| Field      | Type   | Required | Description                  |
+| ---------- | ------ | -------- | ---------------------------- |
+| `customer` | string | ✅       | Customer email               |
+| `feature`  | string | ✅       | Feature key                  |
+| `amount`   | number | -        | Amount to check (default: 1) |
+
+### Response
+
+```json
+{
+  "success": true,
+  "allowed": true,
+  "usage": {
+    "current": 500,
+    "limit": 10000,
+    "remaining": 9500
+  }
+}
+```
+
+---
+
+## POST /v1/track
+
+Record usage for metered billing.
+
+### Request
+
+```json
+{
+  "customer": "user@example.com",
+  "feature": "api_calls",
+  "amount": 1,
+  "metadata": {}
+}
+```
+
+| Field      | Type   | Required | Description               |
+| ---------- | ------ | -------- | ------------------------- |
+| `customer` | string | ✅       | Customer email            |
+| `feature`  | string | ✅       | Feature key               |
+| `amount`   | number | -        | Usage amount (default: 1) |
+| `metadata` | object | -        | Event metadata            |
+
+### Response
+
+```json
+{
+  "success": true,
+  "allowed": true,
+  "balance": 9499
+}
+```
+
+---
+
+## Error Responses
+
+All errors follow this format:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ErrorCode",
+    "message": "Human-readable message",
+    "details": {}
+  }
+}
+```
+
+### Error Codes
+
+| Code              | HTTP Status | Description                |
+| ----------------- | ----------- | -------------------------- |
+| `AuthError`       | 401         | Invalid or missing API key |
+| `ValidationError` | 400         | Invalid request body       |
+| `NotFoundError`   | 404         | Resource not found         |
+| `DatabaseError`   | 500         | Internal database error    |
+
+---
+
+## Webhooks
+
+Owostack receives webhooks from Paystack at:
+
+```
+POST /webhooks/{organizationId}
+```
+
+This is configured in your Paystack dashboard. See [Webhook Setup](/docs/webhook-setup) for details.

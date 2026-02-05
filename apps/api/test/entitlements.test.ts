@@ -1,0 +1,218 @@
+import { describe, expect, it, beforeEach, vi } from "vitest";
+import { Hono } from "hono";
+import entitlements from "../src/routes/api/entitlements";
+
+vi.mock("../src/lib/api-keys", async () => {
+  const actual = await vi.importActual<any>("../src/lib/api-keys");
+  return {
+    ...actual,
+    verifyApiKey: vi.fn().mockResolvedValue({
+      id: "key_test",
+      organizationId: "org_test",
+    }),
+  };
+});
+
+describe("Entitlements Engine (Check & Track)", () => {
+  const apiKey = "owo_sk_test";
+  const customerId = "cus_test";
+  const featureIdMetered = "feat_metered";
+  const featureIdBoolean = "feat_boolean";
+
+  let usageTotal = 0;
+  let mockDb: any;
+  let app: Hono<{ Variables: { db: any; organizationId?: string } }>;
+
+  beforeEach(() => {
+    usageTotal = 0;
+
+    const subscription = {
+      id: "sub_test",
+      customerId,
+      planId: "plan_test",
+      status: "active",
+      currentPeriodStart: new Date("2025-01-01T00:00:00.000Z"),
+      currentPeriodEnd: new Date("2025-02-01T00:00:00.000Z"),
+    };
+
+    mockDb = {
+      query: {
+        customers: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: customerId,
+            externalId: null,
+            organizationId: "org_test",
+          }),
+        },
+        features: {
+          findFirst: vi.fn().mockImplementation(async ({ where }: any) => {
+            void where;
+            return null;
+          }),
+        },
+        subscriptions: {
+          findFirst: vi.fn().mockResolvedValue(subscription),
+        },
+        planFeatures: {
+          findFirst: vi.fn().mockImplementation(async ({ where }: any) => {
+            void where;
+            return null;
+          }),
+        },
+        credits: {
+          findFirst: vi.fn().mockResolvedValue({ balance: 0 }),
+        },
+      },
+      insert: vi.fn().mockReturnThis(),
+      values: vi.fn().mockImplementation(async (record: any) => {
+        usageTotal += Number(record.amount || 0);
+        return [];
+      }),
+      update: vi.fn().mockReturnThis(),
+      set: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([]),
+      select: vi.fn().mockImplementation((_shape: any) => {
+        return {
+          from: (_table: any) => {
+            return {
+              where: async (_where: any) => {
+                void _where;
+                return [{ total: usageTotal }];
+              },
+            };
+          },
+        };
+      }),
+    };
+
+    app = new Hono<{ Variables: { db: any; organizationId?: string } }>();
+    app.use("*", async (c, next) => {
+      c.set("db", mockDb);
+      await next();
+    });
+    app.route("/", entitlements);
+  });
+
+  it("should allow access to valid boolean feature", async () => {
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: featureIdBoolean,
+      organizationId: "org_test",
+      slug: "sso",
+      type: "boolean",
+    });
+    mockDb.query.planFeatures.findFirst.mockResolvedValueOnce({
+      planId: "plan_test",
+      featureId: featureIdBoolean,
+      limitValue: null,
+      creditCost: null,
+    });
+
+    const res = await app.request(
+      "/check",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customerId,
+          featureId: featureIdBoolean,
+        }),
+      },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.allowed).toBe(true);
+  });
+
+  it("should allow metered access within limit", async () => {
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: featureIdMetered,
+      organizationId: "org_test",
+      slug: "api-calls",
+      type: "metered",
+    });
+    mockDb.query.planFeatures.findFirst.mockResolvedValueOnce({
+      planId: "plan_test",
+      featureId: featureIdMetered,
+      limitValue: 100,
+      creditCost: null,
+    });
+
+    const res = await app.request(
+      "/check",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customerId,
+          featureId: featureIdMetered,
+        }),
+      },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.allowed).toBe(true);
+    expect(body.remaining).toBe(100);
+  });
+
+  it("should track usage", async () => {
+    mockDb.query.features.findFirst
+      .mockResolvedValueOnce({
+        id: featureIdMetered,
+        organizationId: "org_test",
+        slug: "api-calls",
+        type: "metered",
+      })
+      .mockResolvedValueOnce({
+        id: featureIdMetered,
+        organizationId: "org_test",
+        slug: "api-calls",
+        type: "metered",
+      });
+
+    mockDb.query.planFeatures.findFirst
+      .mockResolvedValueOnce({
+        planId: "plan_test",
+        featureId: featureIdMetered,
+        limitValue: 100,
+        creditCost: null,
+      })
+      .mockResolvedValueOnce({
+        planId: "plan_test",
+        featureId: featureIdMetered,
+        limitValue: 100,
+        creditCost: null,
+      });
+
+    const res = await app.request(
+      "/track",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customerId,
+          featureId: featureIdMetered,
+          value: 50,
+        }),
+      },
+    );
+    expect(res.status).toBe(200);
+
+    // Check remaining
+    const check = await app.request(
+      "/check",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customerId,
+          featureId: featureIdMetered,
+        }),
+      },
+    );
+    const body = await check.json();
+    expect(body.allowed).toBe(true);
+    expect(body.remaining).toBe(50);
+  });
+});

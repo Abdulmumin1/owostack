@@ -1,0 +1,82 @@
+---
+title: API Keys
+description: Manage API keys for SDK authentication
+icon: Key
+---
+
+# API Keys
+
+API keys authenticate your application with the Owostack API. Each key is scoped to a specific organization.
+
+## Creating an API Key
+
+1. Go to **API Keys** in the sidebar
+2. Click **Create API Key**
+3. Enter a name for the key (e.g., "Production Server")
+4. Copy the key immediately - it's only shown once!
+
+<Callout type="warning">
+  **Security**: API keys are shown only once at creation. Store them securely.
+  If lost, create a new key and revoke the old one.
+</Callout>
+
+## Key Format
+
+Owostack API keys follow this format:
+
+```
+owo_sk_xxxxxxxxxxxxxxxxxxxx
+```
+
+- `owo_` - Owostack prefix
+- `sk_` - Secret key indicator
+- `xxxx...` - Unique identifier
+
+## Using API Keys
+
+### In the SDK
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({
+  apiKey: process.env.OWOSTACK_API_KEY,
+});
+```
+
+### Direct API Calls
+
+```bash
+curl https://api.owostack.dev/v1/check \
+  -H "Authorization: Bearer owo_sk_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{"customer": "user@example.com", "feature": "premium"}'
+```
+
+## Key Management
+
+### Viewing Keys
+
+The dashboard shows:
+
+- Key name and creation date
+- Last used timestamp
+- First 7 characters (masked)
+
+### Revoking Keys
+
+1. Click the **⋮** menu next to the key
+2. Select **Revoke**
+3. Confirm the action
+
+<Callout type="caution">
+  Revoking a key immediately invalidates it. Any applications using that key
+  will receive 401 errors.
+</Callout>
+
+## Best Practices
+
+1. **Use environment variables** - Never hardcode keys in source code
+2. **Rotate regularly** - Create new keys periodically
+3. **Separate by environment** - Use different keys for dev/staging/prod
+4. **Descriptive names** - Name keys by their use (e.g., "Vercel Production")

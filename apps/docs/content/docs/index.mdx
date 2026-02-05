@@ -1,0 +1,82 @@
+---
+title: Introduction
+description: Billing infrastructure for Nigerian apps using Paystack
+icon: Rocket
+---
+
+# Owostack
+
+**Make Paystack billing as easy as Stripe Billing** - metered usage, entitlements, and subscriptions without the complexity.
+
+## The Problem
+
+Building billing with Paystack requires you to:
+
+- Manage webhook endpoints and signature verification
+- Track subscription states and handle edge cases
+- Build usage metering and entitlement logic from scratch
+- Handle failed payments, trials, and plan changes
+
+## The Solution
+
+Owostack handles all of this. You:
+
+1. Link your Paystack account
+2. Use our 3-method SDK
+3. We manage everything else
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({ apiKey: "owo_sk_..." });
+
+// Subscribe a customer to a plan
+await owo.attach({ customer: "user@example.com", plan: "pro" });
+
+// Check what features they have access to
+const { allowed, remaining } = await owo.check({
+  customer: "user@example.com",
+  feature: "api_calls",
+});
+
+// Track usage
+await owo.track({
+  customer: "user@example.com",
+  feature: "api_calls",
+  amount: 1,
+});
+```
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart" icon="Zap" />
+  <Card title="Installation" href="/docs/installation" icon="Code" />
+  <Card title="Dashboard" href="/docs/dashboard/organizations" icon="Layout" />
+</Cards>
+
+## How It Works
+
+```
+┌─────────────┐                    ┌─────────────────────┐
+│  Paystack   │ ──── webhooks ───► │   Owostack API      │
+│  (your acc) │                    │  (handles events)   │
+└─────────────┘                    └──────────┬──────────┘
+                                              │
+                                              ▼
+                                   ┌─────────────────────┐
+                                   │   Your App + SDK    │
+                                   │  attach / check /   │
+                                   │       track         │
+                                   └─────────────────────┘
+```
+
+You point Paystack webhooks to us → we keep your data in sync → you query our API.
+
+## Supported Billing Models
+
+| Model                   | Status       |
+| ----------------------- | ------------ |
+| Flat-rate subscriptions | ✅ Supported |
+| Usage-based (metered)   | ✅ Supported |
+| Credits / prepaid       | ✅ Supported |
+| Per-seat pricing        | 🔜 Coming    |
+| Trials & freemium       | 🔜 Coming    |

@@ -1,0 +1,103 @@
+---
+title: Quickstart
+description: Get started with Owostack in 5 minutes
+icon: Zap
+---
+
+# Quickstart
+
+Get up and running with Owostack in 5 minutes.
+
+## 1. Create an Account
+
+Sign up at [dashboard.owostack.dev](https://dashboard.owostack.dev) and create an organization.
+
+## 2. Link Your Paystack Account
+
+During organization creation (or in Settings), enter your Paystack credentials:
+
+- **Secret Key** (required) - Found at Paystack Dashboard → Settings → API Keys
+- **Public Key** (optional) - For client-side integrations
+- **Environment** - Test or Live
+
+<Callout type="info">
+  We validate your keys with Paystack before saving. Invalid keys will be
+  rejected.
+</Callout>
+
+## 3. Configure Paystack Webhooks
+
+In your Paystack Dashboard, set the webhook URL to:
+
+```
+https://api.owostack.dev/webhooks/{your-organization-id}
+```
+
+Find your organization ID in the Owostack dashboard URL.
+
+<Callout type="warning">
+  This step is critical! Without webhooks, we can't sync subscription events.
+</Callout>
+
+## 4. Create a Plan
+
+In the Owostack dashboard:
+
+1. Go to **Plans**
+2. Click **Create Plan**
+3. Set name, price, and billing interval
+
+## 5. Get Your API Key
+
+1. Go to **API Keys**
+2. Click **Create New Key**
+3. Copy the key (shown only once!)
+
+## 6. Install the SDK
+
+```bash
+npm install @owostack/core
+# or
+pnpm add @owostack/core
+```
+
+## 7. Use the SDK
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({
+  apiKey: process.env.OWOSTACK_API_KEY,
+});
+
+// Subscribe a customer
+await owo.attach({
+  customer: "user@example.com",
+  plan: "pro-monthly",
+});
+
+// Check access (e.g., in middleware)
+const { allowed } = await owo.check({
+  customer: "user@example.com",
+  feature: "premium_features",
+});
+
+if (!allowed) {
+  return res.status(403).json({ error: "Upgrade to Pro" });
+}
+
+// Track usage (for metered billing)
+await owo.track({
+  customer: "user@example.com",
+  feature: "api_calls",
+  amount: 1,
+});
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="SDK Reference" href="/docs/sdk/attach" />
+  <Card title="Entitlements & Features" href="/docs/features/entitlements" />
+  <Card title="Webhook Setup" href="/docs/webhook-setup" />
+</Cards>

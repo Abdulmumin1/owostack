@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+/* =============================================================================
+   Owostack Design System
+   Style: Primitives, Flat, Sharp, Two-Toned, Shadowed
+============================================================================= */
+
+@theme {
+  /* 
+     Color Palette: Two-Toned High Contrast
+     Background: Jet Black (#050505) & Dark Grey (#121212)
+     Accent: Electric Violet (#8b5cf6) - Flat, distinct
+  */
+
+  --color-bg-primary: #161715;
+  --color-bg-secondary: #10120f;
+  --color-bg-card: #10120f;
+  --color-bg-card-hover: #1a1a1a;
+
+  --color-border: #262626;
+  --color-border-light: #404040;
+
+  /* Accent - Lime Green */
+  --color-accent: #65a30d; /* Lime-600 */
+  --color-accent-hover: #84cc16; /* Lime-500 */
+  --color-accent-contrast: #161715;
+
+  /* Text */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #a3a3a3; /* Neutral-400 */
+  --color-text-dim: #525252; /* Neutral-600 */
+
+  /* Overrides for "No Border Radius" */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-full: 0px;
+
+  /* Custom Shadows - Visible, deep, not offset */
+  --shadow-sm: 0;
+  --shadow-md: 0;
+  --shadow-lg: 0;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* =============================================================================
+   Base & Reset
+============================================================================= */
+
+html,
+body {
+  @apply bg-bg-primary text-text-primary font-sans antialiased;
+  height: 100%;
+}
+
+/* Enforce sharp edges globally if utility classes slip through */
+* {
+  border-radius: 0 !important;
+}
+
+/* =============================================================================
+   Component Primitives
+============================================================================= */
+
+/* Buttons - Boxy, Flat, Shadowed */
+.btn {
+  @apply flex items-center justify-center gap-2 px-4 py-2.5
+         font-bold text-xs uppercase tracking-wider whitespace-nowrap
+         transition-all duration-100 active:translate-y-[1px]
+         cursor-pointer border border-transparent shadow-sm
+         h-10;
+}
+
+.btn-primary {
+  @apply bg-accent text-accent-contrast hover:bg-accent-hover border-accent px-2 py-1;
+}
+
+.btn-secondary {
+  @apply bg-bg-card border-border text-text-secondary 
+         hover:bg-bg-card-hover hover:text-white hover:border-border-light;
+}
+
+.btn-ghost {
+  @apply bg-transparent text-text-secondary hover:text-white hover:bg-white/5 shadow-none;
+}
+
+/* Inputs - Boxy, Dark, High Contrast Border */
+.input {
+  @apply w-full bg-bg-secondary border border-border px-4 py-3
+         text-white text-sm placeholder:text-text-dim
+         focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent
+         transition-all duration-150 shadow-sm;
+}
+
+/* Cards - Flat blocks with borders and shadows */
+.card {
+  @apply bg-bg-card border border-border p-6 shadow-md;
+}
+
+/* Tables */
+table {
+  @apply w-full border-collapse;
+}
+
+th {
+  @apply text-left text-xs font-bold text-text-dim uppercase tracking-widest p-4 border-b border-border;
+}
+
+td {
+  @apply p-4 border-b border-border/50 text-sm;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-bg-primary;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-border hover:bg-border-light;
+}

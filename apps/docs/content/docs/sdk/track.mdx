@@ -1,0 +1,196 @@
+---
+title: track()
+description: Record usage for metered billing
+icon: Activity
+---
+
+# track()
+
+Record usage events for metered billing. Use this to track API calls, storage, messages, or any countable resource.
+
+## Signature
+
+```ts
+await owo.track({
+  customer: string,    // Customer identifier
+  feature: string,     // Feature key being used
+  amount?: number,     // Amount to track (default: 1)
+  metadata?: object,   // Optional event metadata
+}): Promise<TrackResult>
+```
+
+## Parameters
+
+| Parameter  | Type     | Required | Description                         |
+| ---------- | -------- | -------- | ----------------------------------- |
+| `customer` | `string` | ✅       | Customer email or unique identifier |
+| `feature`  | `string` | ✅       | Feature key to record usage against |
+| `amount`   | `number` | -        | Amount to add (default: 1)          |
+| `metadata` | `object` | -        | Additional event data for auditing  |
+
+## Response
+
+```ts
+interface TrackResult {
+  success: boolean;
+  usage?: {
+    used: number; // Total used in current period
+    limit: number; // Total limit
+    remaining: number; // Remaining quota
+  };
+  error?: string;
+}
+```
+
+## Examples
+
+### Basic Usage Tracking
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({ apiKey: process.env.OWOSTACK_API_KEY });
+
+// Track a single API call
+await owo.track({
+  customer: "user@example.com",
+  feature: "api_calls",
+});
+```
+
+### Track Custom Amounts
+
+```ts
+// Track storage usage (e.g., 1.5 MB uploaded)
+await owo.track({
+  customer: "user@example.com",
+  feature: "storage_mb",
+  amount: 1.5,
+});
+
+// Track multiple items at once
+await owo.track({
+  customer: "user@example.com",
+  feature: "messages_sent",
+  amount: 10,
+});
+```
+
+### With Metadata
+
+```ts
+await owo.track({
+  customer: "user@example.com",
+  feature: "api_calls",
+  amount: 1,
+  metadata: {
+    endpoint: "/api/generate",
+    responseTime: 234,
+    model: "gpt-4",
+  },
+});
+```
+
+### Express.js Middleware
+
+```ts
+// Automatically track all API calls
+const trackUsage = async (req, res, next) => {
+  const email = req.user?.email;
+  if (!email) return next();
+
+  // Track after response (non-blocking)
+  res.on("finish", () => {
+    owo
+      .track({
+        customer: email,
+        feature: "api_calls",
+        metadata: {
+          path: req.path,
+          method: req.method,
+          status: res.statusCode,
+        },
+      })
+      .catch(console.error);
+  });
+
+  next();
+};
+
+app.use(trackUsage);
+```
+
+### Check Then Track Pattern
+
+```ts
+// Common pattern: check quota, then track usage
+async function processRequest(email: string) {
+  // 1. Check if customer has remaining quota
+  const check = await owo.check({
+    customer: email,
+    feature: "api_calls",
+  });
+
+  if (!check.allowed) {
+    throw new Error(`Quota exceeded. Resets at ${check.resetAt}`);
+  }
+
+  // 2. Process the request
+  const result = await expensiveOperation();
+
+  // 3. Track usage after successful completion
+  await owo.track({
+    customer: email,
+    feature: "api_calls",
+  });
+
+  return result;
+}
+```
+
+## Billing Models
+
+### Pay-per-use
+
+Track every unit and invoice at the end of the billing period:
+
+```ts
+// Track each AI token generated
+await owo.track({
+  customer: email,
+  feature: "ai_tokens",
+  amount: response.usage.total_tokens,
+});
+```
+
+### Monthly Quotas
+
+Track against a fixed monthly limit:
+
+```ts
+const result = await owo.track({
+  customer: email,
+  feature: "exports",
+});
+
+console.log(`${result.usage.remaining} exports remaining this month`);
+```
+
+### Credit-based
+
+Consume from a prepaid credit balance:
+
+```ts
+await owo.track({
+  customer: email,
+  feature: "credits",
+  amount: operationCost, // e.g., 5 credits for this operation
+});
+```
+
+## Best Practices
+
+1. **Track after success** - Only track after the operation completes successfully
+2. **Non-blocking** - Use fire-and-forget for non-critical tracking
+3. **Batch if needed** - For high-volume, batch multiple events together
+4. **Include context** - Add metadata for debugging and analytics

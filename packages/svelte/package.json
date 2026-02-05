@@ -1,0 +1,37 @@
+{
+  "name": "@owostack/svelte",
+  "version": "0.1.0",
+  "description": "Svelte stores and components for Owostack",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "svelte": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "svelte-package -o dist",
+    "dev": "svelte-package -o dist --watch",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "keywords": ["svelte", "owostack", "paystack", "billing"],
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "dependencies": {
+    "@owostack/core": "workspace:*",
+    "@owostack/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@sveltejs/package": "^2.3.10",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "svelte": "^5.19.5",
+    "svelte-check": "^4.1.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.11"
+  }
+}

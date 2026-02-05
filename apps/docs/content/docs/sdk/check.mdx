@@ -1,0 +1,139 @@
+---
+title: check()
+description: Check customer entitlements and feature access
+icon: Shield
+---
+
+# check()
+
+Check if a customer has access to a specific feature or entitlement. Use this for access control and gating.
+
+## Signature
+
+```ts
+await owo.check({
+  customer: string,    // Customer identifier
+  feature: string,     // Feature key to check
+}): Promise<CheckResult>
+```
+
+## Parameters
+
+| Parameter  | Type     | Required | Description                         |
+| ---------- | -------- | -------- | ----------------------------------- |
+| `customer` | `string` | ✅       | Customer email or unique identifier |
+| `feature`  | `string` | ✅       | Feature key to check access for     |
+
+## Response
+
+```ts
+interface CheckResult {
+  allowed: boolean; // Whether the customer has access
+  remaining?: number; // For metered features, remaining quota
+  limit?: number; // Total quota for the period
+  resetAt?: string; // When the quota resets (ISO date)
+  plan?: string; // Current plan slug
+}
+```
+
+## Examples
+
+### Basic Access Check
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({ apiKey: process.env.OWOSTACK_API_KEY });
+
+// Check if user can access premium features
+const result = await owo.check({
+  customer: "user@example.com",
+  feature: "premium_features",
+});
+
+if (result.allowed) {
+  // Grant access
+  showPremiumContent();
+} else {
+  // Prompt upgrade
+  showUpgradeModal();
+}
+```
+
+### Metered Features
+
+```ts
+// Check API call quota
+const result = await owo.check({
+  customer: "user@example.com",
+  feature: "api_calls",
+});
+
+if (!result.allowed) {
+  return res.status(429).json({
+    error: "API quota exceeded",
+    remaining: result.remaining,
+    resetAt: result.resetAt,
+  });
+}
+
+// Process the request...
+```
+
+### Express.js Middleware
+
+```ts
+const requiresFeature = (feature: string) => {
+  return async (req, res, next) => {
+    const email = req.user.email;
+
+    const result = await owo.check({
+      customer: email,
+      feature: feature,
+    });
+
+    if (!result.allowed) {
+      return res.status(403).json({
+        error: "Feature not available on your plan",
+        requiredPlan: result.plan || "pro",
+      });
+    }
+
+    // Attach entitlement info to request for downstream use
+    req.entitlement = result;
+    next();
+  };
+};
+
+// Usage
+app.get("/api/export", requiresFeature("data_export"), async (req, res) => {
+  // User has access, proceed with export
+});
+```
+
+### Multiple Feature Checks
+
+```ts
+// Check multiple features in parallel
+const [canExport, canAnalyze, canShare] = await Promise.all([
+  owo.check({ customer: email, feature: "export" }),
+  owo.check({ customer: email, feature: "analytics" }),
+  owo.check({ customer: email, feature: "team_sharing" }),
+]);
+
+// Build UI based on entitlements
+res.json({
+  features: {
+    export: canExport.allowed,
+    analytics: canAnalyze.allowed,
+    sharing: canShare.allowed,
+  },
+});
+```
+
+## Best Practices
+
+1. **Cache results** - For high-traffic endpoints, cache check results for a few seconds
+2. **Fail open or closed** - Decide your failure mode if the API is unreachable
+3. **Check early** - Validate access at the start of expensive operations
+4. **Use middleware** - Create reusable middleware for common access patterns

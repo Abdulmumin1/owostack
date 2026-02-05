@@ -1,0 +1,113 @@
+---
+title: attach()
+description: Subscribe a customer to a plan
+icon: Link
+---
+
+# attach()
+
+Subscribe a customer to a subscription plan. This initiates the checkout flow with Paystack.
+
+## Signature
+
+```ts
+await owo.attach({
+  customer: string,    // Customer identifier (email or ID)
+  plan: string,        // Plan slug from your dashboard
+  metadata?: object,   // Optional metadata to attach
+}): Promise<AttachResult>
+```
+
+## Parameters
+
+| Parameter  | Type     | Required | Description                               |
+| ---------- | -------- | -------- | ----------------------------------------- |
+| `customer` | `string` | ✅       | Customer email or unique identifier       |
+| `plan`     | `string` | ✅       | Plan slug as defined in your dashboard    |
+| `metadata` | `object` | -        | Custom data to attach to the subscription |
+
+## Response
+
+```ts
+interface AttachResult {
+  success: boolean;
+  subscription?: {
+    id: string;
+    status: "pending" | "active" | "canceled";
+    plan: string;
+    currentPeriodEnd: string;
+  };
+  checkoutUrl?: string; // Paystack checkout URL (for new subscriptions)
+  error?: string;
+}
+```
+
+## Examples
+
+### Basic Usage
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({ apiKey: process.env.OWOSTACK_API_KEY });
+
+// Subscribe a customer to the "pro" plan
+const result = await owo.attach({
+  customer: "user@example.com",
+  plan: "pro-monthly",
+});
+
+if (result.checkoutUrl) {
+  // Redirect customer to complete payment
+  res.redirect(result.checkoutUrl);
+} else if (result.subscription?.status === "active") {
+  // Already subscribed
+  console.log("Subscription active!");
+}
+```
+
+### With Metadata
+
+```ts
+const result = await owo.attach({
+  customer: "user@example.com",
+  plan: "enterprise",
+  metadata: {
+    companyName: "Acme Corp",
+    seats: 10,
+    referralCode: "FRIEND20",
+  },
+});
+```
+
+### Express.js Example
+
+```ts
+app.post("/api/subscribe", async (req, res) => {
+  const { email, plan } = req.body;
+
+  try {
+    const result = await owo.attach({
+      customer: email,
+      plan: plan,
+    });
+
+    if (result.checkoutUrl) {
+      res.json({ redirect: result.checkoutUrl });
+    } else {
+      res.json({
+        success: true,
+        subscription: result.subscription,
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ error: "Subscription failed" });
+  }
+});
+```
+
+## Notes
+
+- If the customer already has an active subscription to this plan, no new checkout is created
+- Plan changes (upgrades/downgrades) are handled automatically
+- Paystack handles the payment UI - you just redirect the customer

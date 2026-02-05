@@ -1,0 +1,166 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* =============================================================================
+   Owostack Design System - Docs Theme
+   Matches @apps/dashboard/src/app.css
+============================================================================= */
+
+@theme {
+  --color-bg-primary: #161715;
+  --color-bg-secondary: #10120f;
+  --color-accent: #65a30d;
+  --color-border: #262626;
+
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-full: 0px;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* =============================================================================
+   Fumadocs Variables
+============================================================================= */
+
+:root,
+.dark {
+  --fd-background: #161715;
+  --fd-foreground: #ffffff;
+  --fd-primary: #65a30d;
+  --fd-secondary: #10120f;
+  --fd-border: #262626;
+
+  /* Sidebar color must match code blocks */
+  --fd-sidebar-background: #10120f;
+}
+
+/* =============================================================================
+   Global Reset
+============================================================================= */
+
+* {
+  border-radius: 0 !important;
+}
+
+html,
+body {
+  background-color: #161715 !important;
+  color: #ffffff !important;
+  font-family: var(--font-sans);
+  height: auto !important;
+}
+
+/* =============================================================================
+   Layout & Sticky Sidebar
+============================================================================= */
+
+[data-fd-layout="docs"] {
+  background-color: #161715 !important;
+  overflow: visible !important;
+}
+
+/* Sidebar Styling - Locked to the left */
+.fd-sidebar {
+  background-color: #10120f !important;
+  border-right: 1px solid #262626 !important;
+  position: sticky !important;
+  top: 0 !important;
+  height: 100vh !important;
+  z-index: 30;
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
+}
+
+/* Main content areas */
+main,
+article,
+.fd-docs-body,
+[data-fd-page] {
+  background-color: #161715 !important;
+}
+
+/* =============================================================================
+   Component Overrides
+============================================================================= */
+
+/* Sidebar Items */
+.fd-sidebar-item[data-active="true"] {
+  background-color: #65a30d !important;
+  color: #161715 !important;
+}
+
+.fd-sidebar-item:hover:not([data-active="true"]) {
+  background-color: #1a1a1a !important;
+}
+
+/* TOC */
+.fd-toc {
+  border-left: 1px solid #262626 !important;
+}
+
+.fd-toc-link[data-active="true"] {
+  color: #65a30d !important;
+}
+
+/* Code Blocks - Color must match Sidebar exactly */
+pre,
+.fd-codeblock,
+.shiki {
+  background-color: #10120f !important;
+  border: 1px solid #262626 !important;
+  padding: 1rem !important;
+}
+
+/* Tables */
+.fd-table {
+  border: 1px solid #262626 !important;
+}
+
+.fd-table th {
+  background-color: #10120f !important;
+  border-bottom: 1px solid #262626 !important;
+  color: #737373 !important;
+}
+
+.fd-table td {
+  border-bottom: 1px solid rgba(38, 38, 38, 0.5) !important;
+}
+
+/* Cards */
+.fd-card {
+  background-color: #10120f !important;
+  border: 1px solid #262626 !important;
+}
+
+/* Nav */
+.fd-nav {
+  background-color: #161715 !important;
+  border-bottom: 1px solid #262626 !important;
+}
+
+/* Search */
+.fd-search {
+  background-color: #10120f !important;
+  border: 1px solid #333333 !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: #161715;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #262626;
+}

@@ -1,0 +1,371 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { createDb, schema } from "@owostack/db";
+import { eq } from "drizzle-orm";
+
+import { auth } from "./lib/auth";
+import { PaystackClient } from "./lib/paystack";
+import { EntitlementService } from "./lib/entitlements";
+import { WebhookHandler } from "./lib/webhooks";
+import { apiKeyAuth } from "./lib/api-keys";
+import {
+  attachParamsSchema,
+  checkParamsSchema,
+  trackParamsSchema,
+} from "./lib/validation";
+import {
+  NotFoundError,
+  ValidationError,
+  WebhookError,
+  errorToHttpStatus,
+  errorToResponse,
+} from "./lib/errors";
+
+// =============================================================================
+// Environment Types
+// =============================================================================
+
+export interface Env {
+  DB: D1Database;
+  API_KEYS: KVNamespace;
+  PAYSTACK_SECRET_KEY: string;
+  PAYSTACK_WEBHOOK_SECRET: string;
+  BETTER_AUTH_SECRET: string;
+  BETTER_AUTH_URL: string;
+}
+
+type Variables = {
+  db: ReturnType<typeof createDb>;
+  paystack: PaystackClient;
+  projectId: string;
+  organizationId: string;
+  permissions: string[];
+};
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+function zodErrorToResponse(zodError: {
+  flatten: () => {
+    formErrors: string[];
+    fieldErrors: Record<string, string[] | undefined>;
+  };
+}) {
+  const flattened = zodError.flatten();
+  const fieldErrors = Object.entries(flattened.fieldErrors);
+
+  if (fieldErrors.length > 0) {
+    const [field, messages] = fieldErrors[0];
+    return errorToResponse(
+      new ValidationError({ field, details: messages?.[0] || "Invalid value" }),
+    );
+  }
+
+  const formError = flattened.formErrors[0];
+  return errorToResponse(
+    new ValidationError({
+      field: "input",
+      details: formError || "Invalid request body",
+    }),
+  );
+}
+
+// =============================================================================
+// App Setup
+// =============================================================================
+
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Global middleware
+app.use("/*", cors());
+app.use("/*", logger());
+
+// Initialize services for all routes
+app.use("/*", async (c, next) => {
+  c.set("db", createDb(c.env.DB));
+  c.set(
+    "paystack",
+    new PaystackClient({ secretKey: c.env.PAYSTACK_SECRET_KEY }),
+  );
+  await next();
+});
+
+// =============================================================================
+// Health Check
+// =============================================================================
+
+app.get("/", (c) => {
+  return c.json({
+    name: "Owostack API",
+    version: "0.2.0",
+    status: "healthy",
+    docs: "https://docs.owostack.dev",
+  });
+});
+
+// =============================================================================
+// Better Auth Routes (No API key required)
+// =============================================================================
+
+app.on(["POST", "GET"], "/api/auth/**", (c) => {
+  return auth(c.env).handler(c.req.raw);
+});
+
+// =============================================================================
+// Protected Core API Routes
+// =============================================================================
+
+const protectedRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Apply API key auth to all protected routes
+protectedRoutes.use("/*", async (c, next) => {
+  const authMiddleware = apiKeyAuth(c.env.API_KEYS);
+  return authMiddleware(c, next);
+});
+
+/**
+ * POST /attach - Checkout & Subscription
+ */
+protectedRoutes.post("/attach", async (c) => {
+  // 1. Validate input
+  const body = await c.req.json();
+  const parsed = attachParamsSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(zodErrorToResponse(parsed.error), 400);
+  }
+
+  const params = parsed.data;
+  const db = c.get("db");
+  const paystack = c.get("paystack");
+  const projectId = c.get("projectId");
+
+  // 2. Resolve Plan
+  const plan = await db.query.plans.findFirst({
+    where: eq(schema.plans.slug, params.product),
+  });
+
+  if (!plan) {
+    return c.json(
+      errorToResponse(
+        new NotFoundError({ resource: "Plan", id: params.product }),
+      ),
+      404,
+    );
+  }
+
+  // 3. Resolve/Create Customer
+  let customer = await db.query.customers.findFirst({
+    where: eq(schema.customers.email, params.customer),
+  });
+
+  if (!customer) {
+    const [newCustomer] = await db
+      .insert(schema.customers)
+      .values({
+        id: crypto.randomUUID(),
+        projectId,
+        email: params.customer,
+        name: (params.metadata?.name as string) || undefined,
+        metadata: params.metadata,
+      })
+      .returning();
+    customer = newCustomer;
+  }
+
+  // 4. Ensure Customer on Paystack
+  let paystackCustomerCode = customer.paystackCustomerId;
+  if (!paystackCustomerCode) {
+    const result = await paystack.createCustomer({
+      email: customer.email,
+      first_name: customer.name?.split(" ")[0],
+      last_name: customer.name?.split(" ")[1],
+      metadata: customer.metadata as Record<string, unknown>,
+    });
+
+    if (result.isOk()) {
+      paystackCustomerCode = result.value.customer_code;
+      await db
+        .update(schema.customers)
+        .set({ paystackCustomerId: paystackCustomerCode })
+        .where(eq(schema.customers.id, customer.id));
+    }
+  }
+
+  // 5. Initialize Transaction
+  const amount = plan.price.toString();
+  const callbackUrl = params.callbackUrl || "http://localhost:3000/success";
+
+  const txResult = await paystack.initializeTransaction({
+    email: customer.email,
+    amount,
+    plan: plan.paystackPlanId || undefined,
+    callback_url: callbackUrl,
+    metadata: JSON.stringify({
+      project_id: projectId,
+      customer_id: customer.id,
+      plan_id: plan.id,
+      ...params.metadata,
+    }),
+    channels: params.channels,
+    currency: params.currency,
+  });
+
+  if (txResult.isErr()) {
+    return c.json(
+      errorToResponse(txResult.error),
+      errorToHttpStatus(txResult.error),
+    );
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      url: txResult.value.authorization_url,
+      reference: txResult.value.reference,
+      accessCode: txResult.value.access_code,
+    },
+  });
+});
+
+/**
+ * POST /check - Feature Access Check
+ */
+protectedRoutes.post("/check", async (c) => {
+  const body = await c.req.json();
+  const parsed = checkParamsSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(zodErrorToResponse(parsed.error), 400);
+  }
+
+  const params = parsed.data;
+  const db = c.get("db");
+
+  const customer = await db.query.customers.findFirst({
+    where: eq(schema.customers.email, params.customer),
+  });
+
+  if (!customer) {
+    return c.json(
+      errorToResponse(
+        new NotFoundError({ resource: "Customer", id: params.customer }),
+      ),
+      404,
+    );
+  }
+
+  const service = new EntitlementService(db);
+  const result = await service.checkAccess(
+    customer.id,
+    params.feature,
+    params.amount,
+  );
+
+  if (result.isErr()) {
+    return c.json(
+      errorToResponse(result.error),
+      errorToHttpStatus(result.error),
+    );
+  }
+
+  return c.json({ success: true, data: result.value });
+});
+
+/**
+ * POST /track - Usage Tracking
+ */
+protectedRoutes.post("/track", async (c) => {
+  const body = await c.req.json();
+  const parsed = trackParamsSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(zodErrorToResponse(parsed.error), 400);
+  }
+
+  const params = parsed.data;
+  const db = c.get("db");
+
+  const customer = await db.query.customers.findFirst({
+    where: eq(schema.customers.email, params.customer),
+  });
+
+  if (!customer) {
+    return c.json(
+      errorToResponse(
+        new NotFoundError({ resource: "Customer", id: params.customer }),
+      ),
+      404,
+    );
+  }
+
+  const service = new EntitlementService(db);
+  const result = await service.trackUsage(
+    customer.id,
+    params.feature,
+    params.amount,
+  );
+
+  if (result.isErr()) {
+    return c.json(
+      errorToResponse(result.error),
+      errorToHttpStatus(result.error),
+    );
+  }
+
+  return c.json({ success: true, data: result.value });
+});
+
+// Mount protected routes
+app.route("/v1", protectedRoutes);
+
+// =============================================================================
+// Webhook Handler (No API key, uses signature verification)
+// =============================================================================
+
+app.post("/webhooks/paystack", async (c) => {
+  const signature = c.req.header("x-paystack-signature");
+
+  if (!signature) {
+    return c.json(
+      errorToResponse(new WebhookError({ reason: "missing_signature" })),
+      401,
+    );
+  }
+
+  const rawBody = await c.req.text();
+  const db = c.get("db");
+  const handler = new WebhookHandler(c.env.PAYSTACK_WEBHOOK_SECRET, db);
+
+  // Verify signature
+  const verifyResult = await handler.verify(signature, rawBody);
+  if (verifyResult.isErr()) {
+    return c.json(errorToResponse(verifyResult.error), 401);
+  }
+
+  // Parse and handle
+  let payload;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    return c.json(
+      errorToResponse(new WebhookError({ reason: "parse_failed" })),
+      400,
+    );
+  }
+
+  const handleResult = await handler.handle(payload);
+  if (handleResult.isErr()) {
+    console.error("Webhook handling error:", handleResult.error);
+  }
+
+  return c.json({ success: true, received: true });
+});
+
+// =============================================================================
+// Export
+// =============================================================================
+
+export default app;
