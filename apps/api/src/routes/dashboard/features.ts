@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { schema } from "@owostack/db";
+import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 
@@ -98,7 +99,22 @@ app.delete("/:id", async (c) => {
   const db = c.get("db");
 
   try {
+    // Get feature before delete for cache invalidation
+    const feature = await db.query.features.findFirst({
+      where: eq(schema.features.id, id),
+    });
+
     await db.delete(schema.features).where(eq(schema.features.id, id));
+
+    // Invalidate cache
+    if (feature && c.env.CACHE) {
+      const cache = new EntitlementCache(c.env.CACHE);
+      await Promise.all([
+        cache.invalidateFeature(feature.organizationId, feature.id),
+        cache.invalidateFeature(feature.organizationId, feature.slug),
+      ]);
+    }
+
     return c.json({ success: true });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);

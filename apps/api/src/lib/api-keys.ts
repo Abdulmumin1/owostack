@@ -91,7 +91,7 @@ export function apiKeyAuth(): MiddlewareHandler {
     // Update last used
     await db
       .update(schema.apiKeys)
-      .set({ lastUsedAt: new Date() })
+      .set({ lastUsedAt: Date.now() })
       .where(eq(schema.apiKeys.id, keyRecord.id));
 
     // Set context for downstream handlers
@@ -151,7 +151,7 @@ export async function verifyApiKey(
   // Update last used
   await db
     .update(schema.apiKeys)
-    .set({ lastUsedAt: new Date() })
+    .set({ lastUsedAt: Date.now() })
     .where(eq(schema.apiKeys.id, keyRecord.id));
 
   return keyRecord;

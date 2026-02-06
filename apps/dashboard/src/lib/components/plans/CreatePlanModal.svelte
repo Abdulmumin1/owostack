@@ -32,16 +32,16 @@
     try {
       const [featRes, credRes] = await Promise.all([
         apiFetch(`/api/dashboard/features?organizationId=${organizationId}`),
-        apiFetch(`/api/dashboard/credits?organizationId=${organizationId}`)
+        apiFetch(`/api/dashboard/credits?organizationId=${organizationId}`),
       ]);
-      
+
       if (credRes.data?.success) {
         creditSystems = credRes.data.data;
       }
-      
+
       if (featRes.data?.success) {
         // Filter out features that are actually credit systems
-        const csIds = new Set(creditSystems.map(cs => cs.id));
+        const csIds = new Set(creditSystems.map((cs) => cs.id));
         features = featRes.data.data.filter((f: any) => !csIds.has(f.id));
       }
     } catch (e) {
@@ -57,17 +57,20 @@
 
   function toggleFeature(feature: any, isCreditSystem = false) {
     const featureId = isCreditSystem ? feature.id : feature.id; // both have id
-    const index = selectedFeatures.findIndex(f => f.id === featureId);
-    
+    const index = selectedFeatures.findIndex((f) => f.id === featureId);
+
     if (index === -1) {
-      selectedFeatures = [...selectedFeatures, { 
-        id: featureId, 
-        name: feature.name,
-        limitValue: feature.type === 'boolean' ? null : 100,
-        isCreditSystem
-      }];
+      selectedFeatures = [
+        ...selectedFeatures,
+        {
+          id: featureId,
+          name: feature.name,
+          limitValue: feature.type === "boolean" ? null : 100,
+          isCreditSystem,
+        },
+      ];
     } else {
-      selectedFeatures = selectedFeatures.filter(f => f.id !== featureId);
+      selectedFeatures = selectedFeatures.filter((f) => f.id !== featureId);
     }
   }
 
@@ -79,7 +82,7 @@
 
   // Paid Config
   let price = $state("");
-  let currency = $state("USD");
+  let currency = $state("NGN");
   let interval = $state("monthly");
 
   // Trial Config
@@ -156,15 +159,17 @@
 
       // Link selected features
       if (selectedFeatures.length > 0) {
-        await Promise.all(selectedFeatures.map(f => 
-          apiFetch(`/api/dashboard/plans/${plan.id}/features`, {
-            method: "POST",
-            body: JSON.stringify({
-              featureId: f.id,
-              limitValue: f.limitValue === "" ? null : Number(f.limitValue),
-            })
-          })
-        ));
+        await Promise.all(
+          selectedFeatures.map((f) =>
+            apiFetch(`/api/dashboard/plans/${plan.id}/features`, {
+              method: "POST",
+              body: JSON.stringify({
+                featureId: f.id,
+                limitValue: f.limitValue === "" ? null : Number(f.limitValue),
+              }),
+            }),
+          ),
+        );
       }
 
       return plan;
@@ -596,44 +601,86 @@
 
           <!-- Feature Selection -->
           <div class="pt-4 border-t border-border">
-            <h3 class="text-xs font-bold text-white mb-4 uppercase tracking-wider">Features & Entitlements</h3>
-            
+            <h3
+              class="text-xs font-bold text-white mb-4 uppercase tracking-wider"
+            >
+              Features & Entitlements
+            </h3>
+
             {#if features.length === 0 && creditSystems.length === 0}
-               <p class="text-[10px] text-zinc-600 italic">No features or credit systems defined. Create them first to link to plans.</p>
+              <p class="text-[10px] text-zinc-600 italic">
+                No features or credit systems defined. Create them first to link
+                to plans.
+              </p>
             {:else}
               <div class="space-y-6">
                 <!-- Regular Features -->
                 {#if features.length > 0}
                   <div class="space-y-3">
-                    <div class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Regular Features</div>
+                    <div
+                      class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest"
+                    >
+                      Regular Features
+                    </div>
                     {#each features as feature}
-                      {@const isSelected = selectedFeatures.find(f => f.id === feature.id && !f.isCreditSystem)}
-                      <div class="bg-bg-card border {isSelected ? 'border-accent/50 bg-accent/5' : 'border-border'} p-3 rounded-lg transition-all">
+                      {@const isSelected = selectedFeatures.find(
+                        (f) => f.id === feature.id && !f.isCreditSystem,
+                      )}
+                      <div
+                        class="bg-bg-card border {isSelected
+                          ? 'border-accent/50 bg-accent/5'
+                          : 'border-border'} p-3 rounded-lg transition-all"
+                      >
                         <div class="flex items-center justify-between mb-2">
-                          <label class="flex items-center gap-3 cursor-pointer select-none">
-                            <div class="w-4 h-4 rounded border flex items-center justify-center transition-colors {isSelected ? 'bg-accent border-accent' : 'border-zinc-700'}">
+                          <label
+                            class="flex items-center gap-3 cursor-pointer select-none"
+                          >
+                            <div
+                              class="w-4 h-4 rounded border flex items-center justify-center transition-colors {isSelected
+                                ? 'bg-accent border-accent'
+                                : 'border-zinc-700'}"
+                            >
                               {#if isSelected}
                                 <Check size={10} class="text-black" />
                               {/if}
                             </div>
-                            <input type="checkbox" checked={!!isSelected} onchange={() => toggleFeature(feature)} class="hidden" />
-                            <span class="text-xs font-bold text-white">{feature.name}</span>
+                            <input
+                              type="checkbox"
+                              checked={!!isSelected}
+                              onchange={() => toggleFeature(feature)}
+                              class="hidden"
+                            />
+                            <span class="text-xs font-bold text-white"
+                              >{feature.name}</span
+                            >
                           </label>
-                          <span class="text-[10px] font-mono text-zinc-600 uppercase">{feature.type}</span>
+                          <span
+                            class="text-[10px] font-mono text-zinc-600 uppercase"
+                            >{feature.type}</span
+                          >
                         </div>
 
-                        {#if isSelected && feature.type !== 'boolean'}
-                          <div class="pl-7 flex items-center gap-4" transition:fly={{ y: -5, duration: 150 }}>
+                        {#if isSelected && feature.type !== "boolean"}
+                          <div
+                            class="pl-7 flex items-center gap-4"
+                            transition:fly={{ y: -5, duration: 150 }}
+                          >
                             <div class="flex-1">
-                              <label class="block text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Limit Value</label>
+                              <label
+                                class="block text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1"
+                                >Limit Value</label
+                              >
                               <div class="flex items-center gap-2">
-                                <input 
-                                  type="number" 
+                                <input
+                                  type="number"
                                   bind:value={isSelected.limitValue}
                                   placeholder="Unlimited"
                                   class="w-20 bg-black/40 border border-border rounded px-2 py-1 text-xs text-white focus:border-accent outline-none"
                                 />
-                                <span class="text-[10px] text-zinc-600 font-bold uppercase">{feature.unit || 'units'}</span>
+                                <span
+                                  class="text-[10px] text-zinc-600 font-bold uppercase"
+                                  >{feature.unit || "units"}</span
+                                >
                               </div>
                             </div>
                           </div>
@@ -646,35 +693,70 @@
                 <!-- Credit Systems -->
                 {#if creditSystems.length > 0}
                   <div class="space-y-3">
-                    <div class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Credit Systems</div>
+                    <div
+                      class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest"
+                    >
+                      Credit Systems
+                    </div>
                     {#each creditSystems as cs}
-                      {@const isSelected = selectedFeatures.find(f => f.id === cs.id && f.isCreditSystem)}
-                      <div class="bg-bg-card border {isSelected ? 'border-accent/50 bg-accent/5' : 'border-border'} p-3 rounded-lg transition-all">
+                      {@const isSelected = selectedFeatures.find(
+                        (f) => f.id === cs.id && f.isCreditSystem,
+                      )}
+                      <div
+                        class="bg-bg-card border {isSelected
+                          ? 'border-accent/50 bg-accent/5'
+                          : 'border-border'} p-3 rounded-lg transition-all"
+                      >
                         <div class="flex items-center justify-between mb-2">
-                          <label class="flex items-center gap-3 cursor-pointer select-none">
-                            <div class="w-4 h-4 rounded border flex items-center justify-center transition-colors {isSelected ? 'bg-accent border-accent' : 'border-zinc-700'}">
+                          <label
+                            class="flex items-center gap-3 cursor-pointer select-none"
+                          >
+                            <div
+                              class="w-4 h-4 rounded border flex items-center justify-center transition-colors {isSelected
+                                ? 'bg-accent border-accent'
+                                : 'border-zinc-700'}"
+                            >
                               {#if isSelected}
                                 <Check size={10} class="text-black" />
                               {/if}
                             </div>
-                            <input type="checkbox" checked={!!isSelected} onchange={() => toggleFeature(cs, true)} class="hidden" />
-                            <span class="text-xs font-bold text-white">{cs.name}</span>
+                            <input
+                              type="checkbox"
+                              checked={!!isSelected}
+                              onchange={() => toggleFeature(cs, true)}
+                              class="hidden"
+                            />
+                            <span class="text-xs font-bold text-white"
+                              >{cs.name}</span
+                            >
                           </label>
-                          <span class="text-[10px] font-mono text-accent uppercase font-bold">Credits</span>
+                          <span
+                            class="text-[10px] font-mono text-accent uppercase font-bold"
+                            >Credits</span
+                          >
                         </div>
 
                         {#if isSelected}
-                          <div class="pl-7 flex items-center gap-4" transition:fly={{ y: -5, duration: 150 }}>
+                          <div
+                            class="pl-7 flex items-center gap-4"
+                            transition:fly={{ y: -5, duration: 150 }}
+                          >
                             <div class="flex-1">
-                              <label class="block text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Included Credits</label>
+                              <label
+                                class="block text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1"
+                                >Included Credits</label
+                              >
                               <div class="flex items-center gap-2">
-                                <input 
-                                  type="number" 
+                                <input
+                                  type="number"
                                   bind:value={isSelected.limitValue}
                                   placeholder="Unlimited"
                                   class="w-20 bg-black/40 border border-border rounded px-2 py-1 text-xs text-white focus:border-accent outline-none"
                                 />
-                                <span class="text-[10px] text-zinc-600 font-bold uppercase">credits</span>
+                                <span
+                                  class="text-[10px] text-zinc-600 font-bold uppercase"
+                                  >credits</span
+                                >
                               </div>
                             </div>
                           </div>

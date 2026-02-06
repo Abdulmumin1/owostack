@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { PaystackClient } from "../../lib/paystack";
+import { decrypt } from "../../lib/encryption";
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
@@ -52,6 +54,25 @@ const createPlanSchema = z.object({
   planGroup: z.string().optional(),
 });
 
+const updatePlanSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional().nullable(),
+  price: z.number().min(0).optional(),
+  currency: z.string().optional(),
+  interval: z
+    .enum(["monthly", "yearly", "quarterly", "weekly", "annually"])
+    .optional(),
+  type: z.enum(["free", "paid"]).optional(),
+  billingModel: z.enum(["base", "per_unit", "variable"]).optional(),
+  billingType: z.enum(["recurring", "one_time"]).optional(),
+  trialDays: z.number().min(0).optional(),
+  trialCardRequired: z.boolean().optional(),
+  isAddon: z.boolean().optional(),
+  autoEnable: z.boolean().optional(),
+  planGroup: z.string().optional().nullable(),
+  isActive: z.boolean().optional(),
+});
+
 app.post("/", async (c) => {
   const body = await c.req.json();
   const parsed = createPlanSchema.safeParse(body);
@@ -79,10 +100,69 @@ app.post("/", async (c) => {
   const db = c.get("db");
 
   // Generate a slug from the name
-  const slug = name
+  let slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+
+  // Ensure slug uniqueness within the organization
+  let counter = 0;
+  let originalSlug = slug;
+  while (true) {
+    const existingInOrg = await db.query.plans.findFirst({
+      where: and(
+        eq(schema.plans.organizationId, organizationId),
+        eq(schema.plans.slug, slug),
+      ),
+    });
+
+    if (!existingInOrg) break;
+
+    counter++;
+    slug = `${originalSlug}-${counter}`;
+  }
+
+  // ===========================================================================
+  // Sync with Paystack
+  // ===========================================================================
+  let paystackPlanId: string | null = null;
+
+  // Only sync if it's a paid, recurring plan
+  if (type === "paid" && billingType === "recurring") {
+    try {
+      const authDb = c.get("authDb");
+      const project = await authDb.query.projects.findFirst({
+        where: eq(schema.projects.organizationId, organizationId),
+      });
+
+      if (project) {
+        const activeEnv = project.activeEnvironment || "test";
+        const encryptedKey =
+          activeEnv === "live" ? project.liveSecretKey : project.testSecretKey;
+
+        if (encryptedKey) {
+          const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
+          const paystack = new PaystackClient({ secretKey });
+
+          const result = await paystack.createPlan({
+            name,
+            amount: price, // stored in kobo/cents
+            interval: interval as any,
+            description: description || undefined,
+            currency,
+          });
+
+          if (result.isOk()) {
+            paystackPlanId = result.value.plan_code;
+          } else {
+            console.warn("Failed to create Paystack plan:", result.error);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Paystack sync error:", e);
+    }
+  }
 
   try {
     const [plan] = await db
@@ -104,6 +184,7 @@ app.post("/", async (c) => {
         isAddon,
         autoEnable,
         planGroup,
+        paystackPlanId, // Now populated!
       })
       .returning();
 
@@ -123,7 +204,7 @@ app.get("/", async (c) => {
   const db = c.get("db");
   const plans = await db.query.plans.findMany({
     where: eq(schema.plans.organizationId, organizationId),
-    orderBy: (plans, { desc }) => [desc(plans.createdAt)],
+    orderBy: [desc(schema.plans.createdAt)],
     with: {
       planFeatures: {
         with: {
@@ -136,12 +217,103 @@ app.get("/", async (c) => {
   return c.json({ success: true, data: plans });
 });
 
+app.get("/:id", async (c) => {
+  const id = c.req.param("id");
+  const db = c.get("db");
+
+  const plan = await db.query.plans.findFirst({
+    where: eq(schema.plans.id, id),
+    with: {
+      planFeatures: {
+        with: {
+          feature: true,
+        },
+      },
+    },
+  });
+
+  if (!plan) {
+    return c.json({ error: "Plan not found" }, 404);
+  }
+
+  return c.json({ success: true, data: plan });
+});
+
+app.patch("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const parsed = updatePlanSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(zodErrorToResponse(parsed.error), 400);
+  }
+
+  const db = c.get("db");
+
+  try {
+    const [updated] = await db
+      .update(schema.plans)
+      .set({
+        ...parsed.data,
+        updatedAt: Date.now(),
+      })
+      .where(eq(schema.plans.id, id))
+      .returning();
+
+    if (!updated) {
+      return c.json({ error: "Plan not found" }, 404);
+    }
+
+    return c.json({ success: true, data: updated });
+  } catch (e: any) {
+    return c.json({ success: false, error: e.message }, 500);
+  }
+});
+
 app.delete("/:id", async (c) => {
   const id = c.req.param("id");
   const db = c.get("db");
 
   try {
     await db.delete(schema.plans).where(eq(schema.plans.id, id));
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ success: false, error: e.message }, 500);
+  }
+});
+
+app.patch("/features/:planFeatureId", async (c) => {
+  const planFeatureId = c.req.param("planFeatureId");
+  const body = await c.req.json();
+  const parsed = addFeatureSchema.partial().safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(zodErrorToResponse(parsed.error), 400);
+  }
+
+  const db = c.get("db");
+
+  try {
+    const [updated] = await db
+      .update(schema.planFeatures)
+      .set(parsed.data)
+      .where(eq(schema.planFeatures.id, planFeatureId))
+      .returning();
+
+    return c.json({ success: true, data: updated });
+  } catch (e: any) {
+    return c.json({ success: false, error: e.message }, 500);
+  }
+});
+
+app.delete("/features/:planFeatureId", async (c) => {
+  const planFeatureId = c.req.param("planFeatureId");
+  const db = c.get("db");
+
+  try {
+    await db
+      .delete(schema.planFeatures)
+      .where(eq(schema.planFeatures.id, planFeatureId));
     return c.json({ success: true });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
@@ -177,9 +349,7 @@ const addFeatureSchema = z.object({
   rolloverMaxBalance: z.number().optional().nullable(),
 
   // Priced feature config
-  usageModel: z
-    .enum(["included", "usage_based", "prepaid"])
-    .default("included"),
+  usageModel: z.literal("included").default("included"),
   pricePerUnit: z.number().optional().nullable(),
   billingUnits: z.number().default(1),
   maxPurchaseLimit: z.number().optional().nullable(),
@@ -208,7 +378,6 @@ app.post("/:planId/features", async (c) => {
     resetOnEnable,
     rolloverEnabled,
     rolloverMaxBalance,
-    usageModel,
     pricePerUnit,
     billingUnits,
     maxPurchaseLimit,
@@ -230,7 +399,7 @@ app.post("/:planId/features", async (c) => {
         resetOnEnable,
         rolloverEnabled,
         rolloverMaxBalance,
-        usageModel,
+        usageModel: "included",
         pricePerUnit,
         billingUnits,
         maxPurchaseLimit,

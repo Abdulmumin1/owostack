@@ -114,7 +114,8 @@
     <!-- Plans Grid -->
     <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
       {#each plans as plan}
-        <div
+        <a
+          href="/app/{organizationId}/plans/{plan.id}"
           class="bg-bg-card border border-border p-6 shadow-sm hover:border-zinc-500 transition-colors flex flex-col h-full relative group"
         >
           <!-- Actions Menu -->
@@ -122,6 +123,7 @@
             <button
               class="text-zinc-500 hover:text-white transition-opacity {openMenuId === plan.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
               onclick={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 openMenuId = openMenuId === plan.id ? null : plan.id;
               }}
@@ -228,7 +230,7 @@
               Active
             </span>
           </div>
-        </div>
+        </a>
       {/each}
 
       <!-- Add New Plan Card -->

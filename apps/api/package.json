@@ -6,16 +6,22 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:test": "wrangler deploy --env test",
+    "deploy:live": "wrangler deploy --env live",
     "tail": "wrangler tail",
     "test": "vitest",
     "db:migrate:local": "wrangler d1 migrations apply owostack --local",
-    "db:migrate:prod": "wrangler d1 migrations apply owostack --remote"
+    "db:migrate:auth": "wrangler d1 migrations apply owostack-auth --remote --env test",
+    "db:migrate:test": "wrangler d1 migrations apply owostack-test --remote --env test",
+    "db:migrate:live": "wrangler d1 migrations apply owostack-live --remote --env live",
+    "db:migrate:remote": "pnpm db:migrate:auth && pnpm db:migrate:test && pnpm db:migrate:live"
   },
   "dependencies": {
     "@owostack/core": "workspace:*",
     "@owostack/db": "workspace:*",
     "@owostack/types": "workspace:*",
     "better-auth": "^1.2.7",
+    "better-auth-cloudflare": "^0.2.9",
     "better-result": "^2.7.0",
     "drizzle-orm": "^0.41.0",
     "hono": "^4.7.4",

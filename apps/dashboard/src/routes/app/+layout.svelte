@@ -14,7 +14,7 @@
     FlaskConical,
     Boxes,
     BarChart3,
-    ChartNoAxesColumn 
+    ChartNoAxesColumn,
   } from "lucide-svelte";
   import { page } from "$app/state";
   import {
@@ -23,6 +23,7 @@
     authClient,
     apiFetch,
   } from "$lib/auth-client";
+  import { setActiveEnvironment } from "$lib/env";
   import Logo from "$lib/components/ui/Logo.svelte";
 
   let { children } = $props();
@@ -70,6 +71,7 @@
       );
       if (res.data?.data) {
         activeEnvironment = res.data.data.activeEnvironment || "test";
+        setActiveEnvironment(activeEnvironment);
         testConnected = res.data.data.testConnected || false;
         liveConnected = res.data.data.liveConnected || false;
       }
@@ -97,6 +99,7 @@
         body: JSON.stringify({ organizationId: projectId, environment: env }),
       });
       activeEnvironment = env;
+      setActiveEnvironment(env);
     } catch (e) {
       console.error("Failed to switch environment", e);
     } finally {
@@ -119,7 +122,7 @@
       items: [
         { href: "/customers", icon: Users, label: "Customers" },
         { href: "/events", icon: Webhook, label: "Events" },
-        { href: "/usage", icon: ChartNoAxesColumn , label: "Usage" },
+        { href: "/usage", icon: ChartNoAxesColumn, label: "Usage" },
       ],
     },
     {
@@ -145,7 +148,7 @@
 <div class="min-h-screen flex bg-bg-primary text-sm">
   <!-- Sidebar - Minimalist, text-focused -->
   <aside
-    class="w-64 flex flex-col pt-8 pb-4 pl-6 pr-6 bg-bg-secondary border-r border-border"
+    class="w-64 fixed h-screen flex flex-col pt-8 pb-4 pl-6 pr-6 bg-bg-secondary border-r border-border"
   >
     <!-- Logo -->
     <div class="mb-10 pl-2">
@@ -182,7 +185,10 @@
               {#each projects as project}
                 <a
                   href="/app/{project.id}"
-                  class="block px-3 py-2 hover:bg-bg-card-hover hover:text-white transition-colors border-l-2 border-transparent hover:border-accent {project.id === projectId ? 'border-accent bg-bg-card-hover' : ''}"
+                  class="block px-3 py-2 hover:bg-bg-card-hover hover:text-white transition-colors border-l-2 border-transparent hover:border-accent {project.id ===
+                  projectId
+                    ? 'border-accent bg-bg-card-hover'
+                    : ''}"
                   onclick={() => (showProjectDropdown = false)}
                 >
                   {project.name}
@@ -191,7 +197,7 @@
               <button
                 class="w-full text-left px-3 py-2 text-zinc-500 hover:text-white hover:bg-bg-card-hover border-t border-border mt-1"
               >
-                + New Project
+                + New Organization
               </button>
             </div>
           {/if}
@@ -213,7 +219,9 @@
             {@const active = isActive(href)}
             <a
               {href}
-              class="flex items-center gap-3 px-3 py-2 transition-all duration-200 border-l-2 border-transparent {active ? 'border-accent bg-bg-card text-white' : 'text-zinc-400 hover:text-white'}"
+              class="flex items-center gap-3 px-3 py-2 transition-all duration-200 border-l-2 border-transparent {active
+                ? 'border-accent bg-bg-card text-white'
+                : 'text-zinc-400 hover:text-white'}"
             >
               <item.icon size={16} />
               <span>{item.label}</span>
@@ -244,13 +252,6 @@
           <span>Settings</span>
         </a>
       </nav>
-
-      <button
-        class="w-full flex items-center justify-center gap-2 py-3 bg-bg-card border border-border text-zinc-300 hover:border-zinc-500 hover:text-white transition-colors text-xs font-semibold uppercase tracking-wider shadow-sm"
-      >
-        <Plus size={14} />
-        New Project
-      </button>
     {/if}
 
     <!-- Footer/User -->
@@ -272,11 +273,14 @@
   </aside>
 
   <!-- Main Content -->
-  <main class="flex-1 overflow-auto bg-bg-primary">
+  <main class="ml-64 flex-1 overflow-auto bg-bg-primary">
     <!-- Environment Banner (like Autumn's "You're in sandbox") -->
     {#if projectId}
       <div
-        class="w-full py-2 px-6 flex items-center justify-center gap-4 text-xs font-mono {activeEnvironment === 'test' ? 'bg-cyan-950/50 border-b border-cyan-800/50' : 'bg-red-950/50 border-b border-red-800/50'}"
+        class="w-full py-2 px-6 flex items-center justify-center gap-4 text-xs font-mono {activeEnvironment ===
+        'test'
+          ? 'bg-cyan-950/50 border-b border-cyan-800/50'
+          : 'bg-red-950/50 border-b border-red-800/50'}"
       >
         {#if activeEnvironment === "test"}
           <span class="text-cyan-400">

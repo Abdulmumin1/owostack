@@ -15,18 +15,19 @@ export const customers = sqliteTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     paystackCustomerId: text("paystack_customer_id"),
+    paystackAuthorizationCode: text("paystack_authorization_code"), // For charging saved cards
     externalId: text("external_id"), // Developer's user ID
     email: text("email").notNull(),
     name: text("name"),
     metadata: text("metadata", { mode: "json" }).$type<
       Record<string, unknown>
     >(),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("customers_org_idx").on(table.organizationId),
@@ -71,12 +72,12 @@ export const plans = sqliteTable(
     metadata: text("metadata", { mode: "json" }).$type<
       Record<string, unknown>
     >(),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("plans_org_idx").on(table.organizationId),
@@ -97,9 +98,9 @@ export const features = sqliteTable(
     type: text("type").notNull().default("metered"), // metered, boolean, static
     meterType: text("meter_type").default("consumable"), // consumable (uses up), non_consumable (persistent)
     unit: text("unit"), // "call", "message", "GB"
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [index("features_org_idx").on(table.organizationId)],
 );
@@ -159,23 +160,19 @@ export const subscriptions = sqliteTable(
     paystackSubscriptionId: text("paystack_subscription_id"),
     paystackSubscriptionCode: text("paystack_subscription_code"),
     status: text("status").notNull().default("active"),
-    currentPeriodStart: integer("current_period_start", {
-      mode: "timestamp",
-    }).notNull(),
-    currentPeriodEnd: integer("current_period_end", {
-      mode: "timestamp",
-    }).notNull(),
-    cancelAt: integer("cancel_at", { mode: "timestamp" }),
-    canceledAt: integer("canceled_at", { mode: "timestamp" }),
+    currentPeriodStart: integer("current_period_start").notNull(),
+    currentPeriodEnd: integer("current_period_end").notNull(),
+    cancelAt: integer("cancel_at"),
+    canceledAt: integer("canceled_at"),
     metadata: text("metadata", { mode: "json" }).$type<
       Record<string, unknown>
     >(),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("subscriptions_customer_idx").on(table.customerId),
@@ -195,14 +192,14 @@ export const entitlements = sqliteTable(
       .references(() => features.id),
     limitValue: integer("limit_value"),
     resetInterval: text("reset_interval").notNull().default("monthly"),
-    lastResetAt: integer("last_reset_at", { mode: "timestamp" }),
-    expiresAt: integer("expires_at", { mode: "timestamp" }),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    lastResetAt: integer("last_reset_at"),
+    expiresAt: integer("expires_at"),
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("entitlements_customer_idx").on(table.customerId),
@@ -224,14 +221,14 @@ export const usageRecords = sqliteTable(
       .notNull()
       .references(() => features.id),
     amount: integer("amount").notNull().default(1),
-    periodStart: integer("period_start", { mode: "timestamp" }).notNull(),
-    periodEnd: integer("period_end", { mode: "timestamp" }).notNull(),
+    periodStart: integer("period_start").notNull(),
+    periodEnd: integer("period_end").notNull(),
     metadata: text("metadata", { mode: "json" }).$type<
       Record<string, unknown>
     >(),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("usage_customer_idx").on(table.customerId),
@@ -251,13 +248,13 @@ export const credits = sqliteTable(
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
     balance: integer("balance").notNull().default(0),
-    expiresAt: integer("expires_at", { mode: "timestamp" }),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    expiresAt: integer("expires_at"),
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [index("credits_customer_idx").on(table.customerId)],
 );
@@ -272,12 +269,12 @@ export const creditSystems = sqliteTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     description: text("description"),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [index("credit_systems_org_idx").on(table.organizationId)],
 );
@@ -293,9 +290,9 @@ export const creditSystemFeatures = sqliteTable(
       .notNull()
       .references(() => features.id, { onDelete: "cascade" }),
     cost: integer("cost").notNull().default(1), // Cost in credits per unit of feature
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("cs_features_cs_idx").on(table.creditSystemId),
@@ -318,9 +315,9 @@ export const events = sqliteTable(
     processed: integer("processed", { mode: "boolean" })
       .notNull()
       .default(false),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("events_org_idx").on(table.organizationId),
@@ -353,11 +350,11 @@ export const rewards = sqliteTable(
     >(), // NULL = all plans
     maxRedemptions: integer("max_redemptions"), // NULL = unlimited
     currentRedemptions: integer("current_redemptions").default(0),
-    expiresAt: integer("expires_at", { mode: "timestamp" }),
+    expiresAt: integer("expires_at"),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("rewards_org_idx").on(table.organizationId),
@@ -385,9 +382,9 @@ export const referralPrograms = sqliteTable(
       .notNull()
       .default(true),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [index("referral_programs_org_idx").on(table.organizationId)],
 );
@@ -404,9 +401,9 @@ export const referralCodes = sqliteTable(
       .references(() => customers.id, { onDelete: "cascade" }),
     code: text("code").notNull().unique(),
     redemptionCount: integer("redemption_count").default(0),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("referral_codes_program_idx").on(table.programId),
@@ -425,10 +422,10 @@ export const referralRedemptions = sqliteTable(
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
     applied: integer("applied", { mode: "boolean" }).notNull().default(false),
-    appliedAt: integer("applied_at", { mode: "timestamp" }),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    appliedAt: integer("applied_at"),
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("referral_redemptions_code_idx").on(table.codeId),

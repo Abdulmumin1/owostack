@@ -17,12 +17,12 @@ export const apiKeys = sqliteTable(
     name: text("name").notNull(),
     prefix: text("prefix").notNull(), // sk_live_ or sk_test_
     hash: text("hash").notNull(), // SHA-256 hash of the full key
-    lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
-    expiresAt: integer("expires_at", { mode: "timestamp" }),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    lastUsedAt: integer("last_used_at"),
+    expiresAt: integer("expires_at"),
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
-    revokedAt: integer("revoked_at", { mode: "timestamp" }),
+      .$defaultFn(() => Date.now()),
+    revokedAt: integer("revoked_at"),
   },
   (table) => [
     index("api_keys_org_idx").on(table.organizationId),

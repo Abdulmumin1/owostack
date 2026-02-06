@@ -1,27 +1,64 @@
 <script lang="ts">
-  import { Search, Filter, Download, Users, Loader2, ChevronRight, Mail, MoreHorizontal, Trash2, Copy } from "lucide-svelte";
+  import { Search, Filter, Download, Users, Loader2, MoreHorizontal, Trash2, Copy, ChevronDown } from "lucide-svelte";
   import { page } from "$app/state";
   import { fade } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
   import { onMount } from "svelte";
+  import SidePanel from "$lib/components/ui/SidePanel.svelte";
+  import CustomerDetail from "$lib/components/customers/CustomerDetail.svelte";
+
+  const PAGE_SIZE = 25;
 
   const organizationId = $derived(page.params.projectId);
   let customers = $state<any[]>([]);
+  let totalCount = $state(0);
+  let currentOffset = $state(0);
   let isLoading = $state(true);
+  let isLoadingMore = $state(false);
   let searchQuery = $state("");
   let openMenuId = $state<string | null>(null);
+  let selectedCustomerId = $state<string | null>(null);
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  async function loadCustomers() {
-    isLoading = true;
+  const hasMore = $derived(currentOffset + PAGE_SIZE < totalCount);
+
+  const selectedCustomer = $derived(
+    customers.find(c => c.id === selectedCustomerId)
+  );
+
+  async function loadCustomers(reset = true) {
+    if (reset) {
+      isLoading = true;
+      currentOffset = 0;
+      customers = [];
+    } else {
+      isLoadingMore = true;
+    }
+
     try {
-      const res = await apiFetch(`/api/dashboard/customers?organizationId=${organizationId}`);
-      if (res.data) {
-        customers = res.data.data;
+      const params = new URLSearchParams();
+      params.set("organizationId", organizationId ?? "");
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", String(reset ? 0 : currentOffset));
+      if (searchQuery.trim()) {
+        params.set("search", searchQuery.trim());
+      }
+
+      const res = await apiFetch(`/api/dashboard/customers?${params}`);
+      if (res.data?.success) {
+        if (reset) {
+          customers = res.data.data;
+        } else {
+          customers = [...customers, ...res.data.data];
+        }
+        totalCount = res.data.total;
+        currentOffset = customers.length;
       }
     } catch (e) {
       console.error("Failed to load customers", e);
     } finally {
       isLoading = false;
+      isLoadingMore = false;
     }
   }
 
@@ -34,6 +71,8 @@
       });
       if (res.data?.success) {
         customers = customers.filter(c => c.id !== id);
+        totalCount = Math.max(0, totalCount - 1);
+        if (selectedCustomerId === id) selectedCustomerId = null;
       }
     } catch (e) {
       console.error("Failed to delete customer", e);
@@ -46,19 +85,18 @@
     openMenuId = null;
   }
 
+  function onSearchInput() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      loadCustomers(true);
+    }, 300);
+  }
+
   onMount(() => {
     loadCustomers();
   });
 
-  const filteredCustomers = $derived(
-    customers.filter(c => 
-      c.email.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      (c.name && c.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (c.externalId && c.externalId.toLowerCase().includes(searchQuery.toLowerCase()))
-    )
-  );
-
-  function formatDate(date: string) {
+  function formatDate(date: string | number) {
     return new Date(date).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -76,6 +114,9 @@
     <h1 class="text-xl font-bold text-white mb-2">Customers</h1>
     <p class="text-zinc-500 text-xs uppercase tracking-widest font-semibold">
       View and manage your subscriber base
+      {#if totalCount > 0}
+        <span class="text-zinc-600 ml-2">· {totalCount} total</span>
+      {/if}
     </p>
   </div>
 
@@ -90,6 +131,7 @@
         type="text"
         placeholder="Search by email, name or ID..."
         bind:value={searchQuery}
+        oninput={onSearchInput}
         class="input pl-9"
       />
     </div>
@@ -103,7 +145,7 @@
       </button>
       <button
         class="btn btn-secondary gap-2 text-xs uppercase tracking-wider font-bold"
-        onclick={loadCustomers}
+        onclick={() => loadCustomers(true)}
       >
         {#if isLoading}
           <Loader2 size={14} class="animate-spin" />
@@ -120,7 +162,7 @@
       <Loader2 size={16} class="animate-spin" />
       <span>Loading customers...</span>
     </div>
-  {:else if filteredCustomers.length === 0}
+  {:else if customers.length === 0}
     <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
       <div class="w-12 h-12 bg-white/5 flex items-center justify-center mb-4">
         <Users size={24} class="text-zinc-500" />
@@ -148,8 +190,11 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-border/50">
-          {#each filteredCustomers as customer}
-            <tr class="group hover:bg-white/[0.02] transition-colors cursor-pointer">
+          {#each customers as customer}
+            <tr
+              class="group hover:bg-white/2 transition-colors cursor-pointer {selectedCustomerId === customer.id ? 'bg-white/5' : ''}"
+              onclick={() => { selectedCustomerId = customer.id; openMenuId = null; }}
+            >
               <td class="px-6 py-4">
                 <div class="flex items-center gap-3">
                   <div class="w-8 h-8 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent font-bold text-xs uppercase">
@@ -191,14 +236,14 @@
                     >
                       <button 
                         class="w-full text-left px-4 py-2 text-xs text-zinc-300 hover:bg-white/5 hover:text-white flex items-center gap-2"
-                        onclick={() => copyId(customer.id)}
+                        onclick={(e) => { e.stopPropagation(); copyId(customer.id); }}
                       >
                         <Copy size={14} />
                         Copy ID
                       </button>
                       <button 
                         class="w-full text-left px-4 py-2 text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-2"
-                        onclick={() => deleteCustomer(customer.id)}
+                        onclick={(e) => { e.stopPropagation(); deleteCustomer(customer.id); }}
                       >
                         <Trash2 size={14} />
                         Delete
@@ -212,5 +257,34 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Load More -->
+    {#if hasMore}
+      <div class="flex justify-center mt-4">
+        <button
+          class="btn btn-secondary gap-2 text-xs uppercase tracking-wider font-bold"
+          disabled={isLoadingMore}
+          onclick={() => loadCustomers(false)}
+        >
+          {#if isLoadingMore}
+            <Loader2 size={14} class="animate-spin" />
+          {:else}
+            <ChevronDown size={14} />
+          {/if}
+          Load more ({totalCount - currentOffset} remaining)
+        </button>
+      </div>
+    {/if}
   {/if}
 </div>
+
+<!-- Customer Detail Sidebar -->
+<SidePanel
+  open={!!selectedCustomerId}
+  title={selectedCustomer?.name || selectedCustomer?.email || "Customer"}
+  onclose={() => { selectedCustomerId = null; }}
+>
+  {#if selectedCustomerId}
+    <CustomerDetail customerId={selectedCustomerId} />
+  {/if}
+</SidePanel>

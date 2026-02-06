@@ -13,12 +13,12 @@ export const users = sqliteTable("users", {
     .notNull()
     .default(false),
   image: text("image"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: integer("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .$defaultFn(() => Date.now()),
+  updatedAt: integer("updated_at")
     .notNull()
-    .$defaultFn(() => new Date()),
+    .$defaultFn(() => Date.now()),
 });
 
 export const sessions = sqliteTable("sessions", {
@@ -27,15 +27,15 @@ export const sessions = sqliteTable("sessions", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   token: text("token").notNull().unique(),
-  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  expiresAt: integer("expires_at").notNull(),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: integer("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .$defaultFn(() => Date.now()),
+  updatedAt: integer("updated_at")
     .notNull()
-    .$defaultFn(() => new Date()),
+    .$defaultFn(() => Date.now()),
 });
 
 export const accounts = sqliteTable("accounts", {
@@ -47,31 +47,27 @@ export const accounts = sqliteTable("accounts", {
   providerId: text("provider_id").notNull(),
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
-  accessTokenExpiresAt: integer("access_token_expires_at", {
-    mode: "timestamp",
-  }),
-  refreshTokenExpiresAt: integer("refresh_token_expires_at", {
-    mode: "timestamp",
-  }),
+  accessTokenExpiresAt: integer("access_token_expires_at"),
+  refreshTokenExpiresAt: integer("refresh_token_expires_at"),
   scope: text("scope"),
   password: text("password"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: integer("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .$defaultFn(() => Date.now()),
+  updatedAt: integer("updated_at")
     .notNull()
-    .$defaultFn(() => new Date()),
+    .$defaultFn(() => Date.now()),
 });
 
 export const verifications = sqliteTable("verifications", {
   id: text("id").primaryKey(),
   identifier: text("identifier").notNull(),
   value: text("value").notNull(),
-  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  expiresAt: integer("expires_at").notNull(),
+  createdAt: integer("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .$defaultFn(() => Date.now()),
+  updatedAt: integer("updated_at")
     .notNull()
-    .$defaultFn(() => new Date()),
+    .$defaultFn(() => Date.now()),
 });

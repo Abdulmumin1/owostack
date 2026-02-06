@@ -295,8 +295,24 @@ export class PaystackClient {
   }
 
   // ===========================================================================
-  // Subscriptions
+  // Subscriptions & Plans
   // ===========================================================================
+
+  async createPlan(params: {
+    name: string;
+    amount: number;
+    interval: string;
+    description?: string;
+    currency?: string;
+  }): Promise<
+    Result<{ plan_code: string; id: number; name: string }, PaystackError>
+  > {
+    return this.request<{ plan_code: string; id: number; name: string }>(
+      "POST",
+      "/plan",
+      params,
+    );
+  }
 
   async fetchSubscription(
     idOrCode: string,
@@ -345,5 +361,49 @@ export class PaystackClient {
       code,
       token,
     });
+  }
+
+  // ===========================================================================
+  // Charge Authorization (for saved cards)
+  // ===========================================================================
+
+  async chargeAuthorization(params: {
+    authorization_code: string;
+    email: string;
+    amount: number;
+    currency?: string;
+    reference?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<Result<PaystackVerifyResponse, PaystackError>> {
+    return this.request<PaystackVerifyResponse>(
+      "POST",
+      "/transaction/charge_authorization",
+      {
+        ...params,
+        amount: String(params.amount),
+      },
+    );
+  }
+
+  // ===========================================================================
+  // Subscription Management (API-driven)
+  // ===========================================================================
+
+  async createSubscription(params: {
+    customer: string; // email or customer_code
+    plan: string; // plan_code
+    authorization?: string; // authorization_code for existing card
+    start_date?: string; // ISO date
+  }): Promise<
+    Result<
+      { subscription_code: string; email_token: string; status: string },
+      PaystackError
+    >
+  > {
+    return this.request<{
+      subscription_code: string;
+      email_token: string;
+      status: string;
+    }>("POST", "/subscription", params);
   }
 }

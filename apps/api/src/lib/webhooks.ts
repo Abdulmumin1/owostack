@@ -170,17 +170,19 @@ export class WebhookHandler {
     if (existing) return; // Already processed
 
     // Create subscription
-    await this.db.insert(schema.subscriptions).values({
-      id: crypto.randomUUID(),
-      customerId: dbCustomer.id,
-      planId: dbPlan.id,
-      paystackSubscriptionId: String(data.id),
-      paystackSubscriptionCode: data.subscription_code as string,
-      status: "active",
-      currentPeriodStart: parsePaystackDate(data.start as string),
-      currentPeriodEnd: parsePaystackDate(data.next_payment_date as string),
-      metadata: data,
-    });
+    await this.db.insert(schema.subscriptions).values([
+      {
+        id: crypto.randomUUID(),
+        customerId: dbCustomer.id,
+        planId: dbPlan.id,
+        paystackSubscriptionId: String(data.id),
+        paystackSubscriptionCode: data.subscription_code as string,
+        status: "active",
+        currentPeriodStart: parsePaystackDate(data.start as string),
+        currentPeriodEnd: parsePaystackDate(data.next_payment_date as string),
+        metadata: data,
+      },
+    ]);
   }
 
   private async handleSubscriptionStatusChange(
@@ -194,8 +196,8 @@ export class WebhookHandler {
       .update(schema.subscriptions)
       .set({
         status,
-        updatedAt: new Date(),
-        ...(status === "canceled" ? { canceledAt: new Date() } : {}),
+        updatedAt: Date.now(),
+        ...(status === "canceled" ? { canceledAt: Date.now() } : {}),
       })
       .where(
         eq(schema.subscriptions.paystackSubscriptionCode, subscriptionCode),
@@ -204,41 +206,193 @@ export class WebhookHandler {
 
   private async handleChargeSuccess(data: Record<string, unknown>) {
     const metadata = (data.metadata as Record<string, unknown>) || {};
+    const customerData = data.customer as {
+      email: string;
+      customer_code: string;
+    };
+    const authorization = data.authorization as {
+      authorization_code: string;
+      card_type: string;
+      last4: string;
+      exp_month: string;
+      exp_year: string;
+      reusable: boolean;
+    } | undefined;
 
-    // Handle credits if specified
-    if (typeof metadata.credits === "number") {
-      const customerEmail = (data.customer as { email?: string })?.email;
+    // 1. Find or Create Customer
+    let dbCustomer = await this.db.query.customers.findFirst({
+      where: and(
+        eq(schema.customers.email, customerData.email.toLowerCase()),
+        eq(schema.customers.organizationId, this.organizationId),
+      ),
+    });
 
-      if (customerEmail) {
-        const customer = await this.db.query.customers.findFirst({
-          where: and(
-            eq(schema.customers.email, customerEmail),
-            eq(schema.customers.organizationId, this.organizationId),
-          ),
-        });
+    if (!dbCustomer) {
+      const [newCustomer] = await this.db
+        .insert(schema.customers)
+        .values({
+          id: crypto.randomUUID(),
+          organizationId: this.organizationId,
+          email: customerData.email.toLowerCase(),
+          paystackCustomerId: customerData.customer_code,
+          paystackAuthorizationCode: authorization?.reusable ? authorization.authorization_code : null,
+        })
+        .returning();
+      dbCustomer = newCustomer;
+    } else if (authorization?.reusable && authorization.authorization_code) {
+      // Update authorization code if we got a new reusable one
+      await this.db
+        .update(schema.customers)
+        .set({
+          paystackAuthorizationCode: authorization.authorization_code,
+          paystackCustomerId: customerData.customer_code,
+          updatedAt: Date.now(),
+        })
+        .where(eq(schema.customers.id, dbCustomer.id));
+    }
 
-        if (customer) {
-          // Check if exists
-          const existingCredits = await this.db.query.credits.findFirst({
-            where: eq(schema.credits.customerId, customer.id),
-          });
+    // 2. Handle TRIAL subscriptions (is_trial in metadata)
+    const isTrial = metadata.is_trial === true;
+    const trialDays = (metadata.trial_days as number) || 0;
 
-          if (existingCredits) {
-            await this.db
-              .update(schema.credits)
-              .set({
-                balance: existingCredits.balance + metadata.credits,
-                updatedAt: new Date(),
-              })
-              .where(eq(schema.credits.id, existingCredits.id));
-          } else {
-            await this.db.insert(schema.credits).values({
+    if (isTrial && metadata.plan_id && trialDays > 0) {
+      const planId = metadata.plan_id as string;
+      const now = Date.now();
+      const trialEndMs = now + trialDays * 24 * 60 * 60 * 1000;
+
+      // Check if subscription already exists
+      const existingSub = await this.db.query.subscriptions.findFirst({
+        where: and(
+          eq(schema.subscriptions.customerId, dbCustomer.id),
+          eq(schema.subscriptions.planId, planId),
+        ),
+      });
+
+      if (!existingSub) {
+        // Create subscription in trialing status
+        await this.db.insert(schema.subscriptions).values([
+          {
+            id: crypto.randomUUID(),
+            customerId: dbCustomer.id,
+            planId: planId,
+            paystackSubscriptionCode: `trial-${crypto.randomUUID().slice(0, 8)}`,
+            status: "trialing",
+            currentPeriodStart: now,
+            currentPeriodEnd: trialEndMs,
+            metadata: {
+              ...data,
+              trial: true,
+              trial_ends_at: trialEndMs,
+              authorization_code: authorization?.authorization_code,
+            },
+          },
+        ]);
+      }
+
+      return; // Don't process as regular charge
+    }
+
+    // 3. Handle PLAN UPGRADE (checkout-based upgrade flow)
+    if (metadata.type === "plan_upgrade") {
+      const newPlanId = metadata.new_plan_id as string;
+      const oldSubId = metadata.old_subscription_id as string;
+      const oldPlanId = metadata.old_plan_id as string | undefined;
+      const now = Date.now();
+
+      // Cancel old subscription
+      if (oldSubId) {
+        await this.db
+          .update(schema.subscriptions)
+          .set({ status: "canceled", canceledAt: now, updatedAt: now })
+          .where(eq(schema.subscriptions.id, oldSubId));
+      }
+
+      // Look up new plan to get the correct interval
+      const newPlan = await this.db.query.plans.findFirst({
+        where: eq(schema.plans.id, newPlanId),
+      });
+      const periodMs = newPlan ? intervalToMs(newPlan.interval) : 30 * 24 * 60 * 60 * 1000;
+
+      // Create new subscription for upgraded plan
+      const startMs = new Date(data.paid_at as string).getTime();
+      await this.db.insert(schema.subscriptions).values([
+        {
+          id: crypto.randomUUID(),
+          customerId: dbCustomer.id,
+          planId: newPlanId,
+          paystackSubscriptionCode:
+            (data.plan as any)?.plan_code || "one-time",
+          status: "active",
+          currentPeriodStart: startMs,
+          currentPeriodEnd: startMs + periodMs,
+          metadata: { ...data, switch_type: "upgrade" },
+        },
+      ]);
+
+      // Provision entitlements for the new plan (clean up old plan's features)
+      await this.provisionEntitlements(dbCustomer.id, newPlanId, oldPlanId);
+
+      return; // Don't process as regular charge
+    }
+
+    // 4. Handle regular Subscription / Plan Assignment
+    if (metadata.plan_id) {
+      const planId = metadata.plan_id as string;
+
+      // Check if active subscription exists
+      const existingSub = await this.db.query.subscriptions.findFirst({
+        where: and(
+          eq(schema.subscriptions.customerId, dbCustomer.id),
+          eq(schema.subscriptions.planId, planId),
+          eq(schema.subscriptions.status, "active"),
+        ),
+      });
+
+      if (!existingSub) {
+        const startDate = new Date(data.paid_at as string);
+        const startMs = startDate.getTime();
+
+        // Checks if this is a native Paystack subscription (has plan_code)
+        const isNativeSubscription = (data.plan as any)?.plan_code;
+
+        // Only create a "virtual" subscription for one-time payments
+        if (!isNativeSubscription) {
+          await this.db.insert(schema.subscriptions).values([
+            {
               id: crypto.randomUUID(),
-              customerId: customer.id,
-              balance: metadata.credits,
-            });
-          }
+              customerId: dbCustomer.id,
+              planId: planId,
+              paystackSubscriptionCode: "one-time",
+              status: "active",
+              currentPeriodStart: startMs,
+              currentPeriodEnd: startMs + 30 * 24 * 60 * 60 * 1000,
+              metadata: data,
+            },
+          ]);
         }
+      }
+    }
+
+    // 4. Handle Credits (if applicable)
+    if (typeof metadata.credits === "number") {
+      const existingCredits = await this.db.query.credits.findFirst({
+        where: eq(schema.credits.customerId, dbCustomer.id),
+      });
+
+      if (existingCredits) {
+        await this.db
+          .update(schema.credits)
+          .set({
+            balance: existingCredits.balance + metadata.credits,
+            updatedAt: Date.now(),
+          })
+          .where(eq(schema.credits.id, existingCredits.id));
+      } else {
+        await this.db.insert(schema.credits).values({
+          id: crypto.randomUUID(),
+          customerId: dbCustomer.id,
+          balance: metadata.credits,
+        });
       }
     }
   }
@@ -249,10 +403,67 @@ export class WebhookHandler {
 
     await this.db
       .update(schema.subscriptions)
-      .set({ status: "past_due", updatedAt: new Date() })
+      .set({ status: "past_due", updatedAt: Date.now() })
       .where(
         eq(schema.subscriptions.paystackSubscriptionCode, subscriptionCode),
       );
+  }
+
+  private async provisionEntitlements(
+    customerId: string,
+    newPlanId: string,
+    oldPlanId?: string,
+  ) {
+    const planFeatures = await this.db.query.planFeatures.findMany({
+      where: eq(schema.planFeatures.planId, newPlanId),
+      with: { feature: true },
+    });
+
+    // Remove entitlements from old plan to avoid orphans
+    if (oldPlanId) {
+      const oldPlanFeatures = await this.db.query.planFeatures.findMany({
+        where: eq(schema.planFeatures.planId, oldPlanId),
+      });
+      for (const opf of oldPlanFeatures) {
+        await this.db
+          .delete(schema.entitlements)
+          .where(
+            and(
+              eq(schema.entitlements.customerId, customerId),
+              eq(schema.entitlements.featureId, opf.featureId),
+            ),
+          );
+      }
+    } else {
+      // No old plan — just clear entitlements for features in the new plan
+      for (const pf of planFeatures) {
+        await this.db
+          .delete(schema.entitlements)
+          .where(
+            and(
+              eq(schema.entitlements.customerId, customerId),
+              eq(schema.entitlements.featureId, pf.featureId),
+            ),
+          );
+      }
+    }
+
+    // Create new entitlements
+    const now = Date.now();
+    const values = planFeatures.map((pf: any) => ({
+      id: crypto.randomUUID(),
+      customerId,
+      featureId: pf.featureId,
+      limitValue: pf.limitValue,
+      resetInterval: pf.resetInterval,
+      lastResetAt: pf.resetOnEnable ? now : null,
+      createdAt: now,
+      updatedAt: now,
+    }));
+
+    if (values.length > 0) {
+      await this.db.insert(schema.entitlements).values(values);
+    }
   }
 
   private async handleCustomerIdentified(data: Record<string, unknown>) {
@@ -286,7 +497,20 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
-function parsePaystackDate(dateStr: string): Date {
+function parsePaystackDate(dateStr: string): number {
   // Paystack uses ISO 8601 format
-  return new Date(dateStr);
+  return new Date(dateStr).getTime();
+}
+
+function intervalToMs(interval: string): number {
+  switch (interval) {
+    case "hourly": return 60 * 60 * 1000;
+    case "daily": return 24 * 60 * 60 * 1000;
+    case "weekly": return 7 * 24 * 60 * 60 * 1000;
+    case "monthly": return 30 * 24 * 60 * 60 * 1000;
+    case "quarterly": return 90 * 24 * 60 * 60 * 1000;
+    case "biannually": case "semi_annual": return 180 * 24 * 60 * 60 * 1000;
+    case "annually": case "yearly": return 365 * 24 * 60 * 60 * 1000;
+    default: return 30 * 24 * 60 * 60 * 1000;
+  }
 }

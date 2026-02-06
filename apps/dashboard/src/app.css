@@ -70,11 +70,10 @@ body {
 
 /* Buttons - Boxy, Flat, Shadowed */
 .btn {
-  @apply flex items-center justify-center gap-2 px-4 py-2.5
+  @apply flex items-center justify-center gap-2 px-2 py-1
          font-bold text-xs uppercase tracking-wider whitespace-nowrap
          transition-all duration-100 active:translate-y-[1px]
-         cursor-pointer border border-transparent shadow-sm
-         h-10;
+         cursor-pointer border border-transparent;
 }
 
 .btn-primary {

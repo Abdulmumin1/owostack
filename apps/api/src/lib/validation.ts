@@ -1,4 +1,34 @@
 import { z } from "zod";
+import { errorToResponse, ValidationError } from "./errors";
+
+// =============================================================================
+// Shared Helpers
+// =============================================================================
+
+export function zodErrorToResponse(zodError: {
+  flatten: () => {
+    formErrors: string[];
+    fieldErrors: Record<string, string[] | undefined>;
+  };
+}) {
+  const flattened = zodError.flatten();
+  const fieldErrors = Object.entries(flattened.fieldErrors);
+
+  if (fieldErrors.length > 0) {
+    const [field, messages] = fieldErrors[0];
+    return errorToResponse(
+      new ValidationError({ field, details: messages?.[0] || "Invalid value" }),
+    );
+  }
+
+  const formError = flattened.formErrors[0];
+  return errorToResponse(
+    new ValidationError({
+      field: "input",
+      details: formError || "Invalid request body",
+    }),
+  );
+}
 
 // =============================================================================
 // Zod Schemas

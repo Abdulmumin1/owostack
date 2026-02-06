@@ -3,11 +3,18 @@
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import { onMount } from "svelte";
+  import SidePanel from "$lib/components/ui/SidePanel.svelte";
+  import SubscriptionDetail from "$lib/components/subscriptions/SubscriptionDetail.svelte";
 
   const organizationId = $derived(page.params.projectId);
   let subscriptions = $state<any[]>([]);
   let isLoading = $state(true);
   let searchQuery = $state("");
+  let selectedSubId = $state<string | null>(null);
+
+  const selectedSub = $derived(
+    subscriptions.find(s => s.id === selectedSubId)
+  );
 
   async function loadSubscriptions() {
     isLoading = true;
@@ -123,7 +130,10 @@
         </thead>
         <tbody class="divide-y divide-border/50">
           {#each filteredSubs as sub}
-            <tr class="group hover:bg-white/[0.02] transition-colors cursor-pointer">
+            <tr
+              class="group hover:bg-white/2 transition-colors cursor-pointer {selectedSubId === sub.id ? 'bg-white/5' : ''}"
+              onclick={() => selectedSubId = sub.id}
+            >
               <td class="px-6 py-4">
                 <div class="flex flex-col">
                   <span class="text-sm font-bold text-white">{sub.customer?.email}</span>
@@ -159,3 +169,17 @@
     </div>
   {/if}
 </div>
+
+<!-- Subscription Detail Sidebar -->
+<SidePanel
+  open={!!selectedSubId}
+  title={selectedSub?.plan?.name || "Subscription"}
+  onclose={() => { selectedSubId = null; }}
+>
+  {#if selectedSubId}
+    <SubscriptionDetail
+      subscriptionId={selectedSubId}
+      onupdate={loadSubscriptions}
+    />
+  {/if}
+</SidePanel>

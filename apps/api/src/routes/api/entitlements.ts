@@ -1,37 +1,14 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, or } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
+import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
-import { errorToResponse, ValidationError } from "../../lib/errors";
+import { getResetPeriod } from "../../lib/reset-period";
+import { zodErrorToResponse } from "../../lib/validation";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
-
-function zodErrorToResponse(zodError: {
-  flatten: () => {
-    formErrors: string[];
-    fieldErrors: Record<string, string[] | undefined>;
-  };
-}) {
-  const flattened = zodError.flatten();
-  const fieldErrors = Object.entries(flattened.fieldErrors);
-
-  if (fieldErrors.length > 0) {
-    const [field, messages] = fieldErrors[0];
-    return errorToResponse(
-      new ValidationError({ field, details: messages?.[0] || "Invalid value" }),
-    );
-  }
-
-  const formError = flattened.formErrors[0];
-  return errorToResponse(
-    new ValidationError({
-      field: "input",
-      details: formError || "Invalid request body",
-    }),
-  );
-}
 
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
@@ -50,12 +27,12 @@ app.use("*", async (c, next) => {
   }
 
   c.set("organizationId", keyRecord.organizationId);
-  await next();
+  return await next();
 });
 
 const checkSchema = z.object({
-  customerId: z.string(),
-  featureId: z.string(),
+  customer: z.string(), // email or id
+  feature: z.string(), // slug or id
   value: z.number().default(1),
 });
 
@@ -68,9 +45,10 @@ app.post("/check", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { customerId, featureId, value } = parsed.data;
+  const { customer: customerId, feature: featureId, value } = parsed.data;
   const db = c.get("db");
   const organizationId = c.get("organizationId");
+  const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
 
   if (!organizationId) {
     return c.json(
@@ -79,21 +57,28 @@ app.post("/check", async (c) => {
     );
   }
 
-  // 1. Resolve Customer (by ID or External ID)
-  let customer = await db.query.customers.findFirst({
-    where: and(
-      eq(schema.customers.organizationId, organizationId),
-      eq(schema.customers.id, customerId),
-    ),
-  });
+  // 1. Resolve Customer (cache-first, then DB)
+  // Normalize email to lowercase for case-insensitive matching
+  const customerIdLower = customerId.toLowerCase();
+  let customer = cache
+    ? await cache.getCustomer<typeof schema.customers.$inferSelect>(organizationId, customerIdLower)
+    : null;
 
   if (!customer) {
-    customer = await db.query.customers.findFirst({
+    customer = (await db.query.customers.findFirst({
       where: and(
         eq(schema.customers.organizationId, organizationId),
-        eq(schema.customers.externalId, customerId),
+        or(
+          eq(schema.customers.id, customerId),
+          eq(schema.customers.externalId, customerId),
+          eq(schema.customers.email, customerIdLower),
+        ),
       ),
-    });
+    })) ?? null;
+
+    if (customer && cache) {
+      await cache.setCustomer(organizationId, customerIdLower, customer);
+    }
   }
 
   if (!customer) {
@@ -104,44 +89,57 @@ app.post("/check", async (c) => {
     });
   }
 
-  // 2. Resolve Feature (by slug or ID)
-  let feature = await db.query.features.findFirst({
-    where: and(
-      eq(schema.features.organizationId, organizationId),
-      eq(schema.features.id, featureId),
-    ),
-  });
+  // 2. Resolve Feature (cache-first, then DB)
+  let feature = cache
+    ? await cache.getFeature<typeof schema.features.$inferSelect>(organizationId, featureId)
+    : null;
 
   if (!feature) {
-    feature = await db.query.features.findFirst({
+    feature = (await db.query.features.findFirst({
       where: and(
         eq(schema.features.organizationId, organizationId),
-        eq(schema.features.slug, featureId),
+        or(
+          eq(schema.features.id, featureId),
+          eq(schema.features.slug, featureId),
+        ),
       ),
-    });
+    })) ?? null;
+
+    if (feature && cache) {
+      await cache.setFeature(organizationId, featureId, feature);
+    }
   }
 
   if (!feature) {
     return c.json({ success: true, allowed: false, code: "feature_not_found" });
   }
 
-  // 3. Check Subscription & Plans
-  // Find active subscription
-  const subscription = await db.query.subscriptions.findFirst({
-    where: and(
-      eq(schema.subscriptions.customerId, customer.id),
-      eq(schema.subscriptions.status, "active"),
-    ),
-    with: {
-      plan: true,
-    },
-  });
+  // 3. Check Subscription & Plans (cache-first, then DB)
+  const subsCacheKey = customer.id;
+  let subscriptions = cache
+    ? await cache.getSubscriptions<Awaited<ReturnType<typeof db.query.subscriptions.findMany>>>(
+        organizationId,
+        subsCacheKey
+      )
+    : null;
 
-  // If no subscription, access denied (unless we support freemium without sub later)
-  if (!subscription) {
-    // Check if maybe they are on a free plan that doesn't need a sub object?
-    // For now, assume subs required for access check logic or default to denied.
-    // Autumn usually implies "Plan defines features".
+  if (!subscriptions) {
+    subscriptions = await db.query.subscriptions.findMany({
+      where: and(
+        eq(schema.subscriptions.customerId, customer.id),
+        eq(schema.subscriptions.status, "active"),
+      ),
+      with: {
+        plan: true,
+      },
+    });
+
+    if (subscriptions.length > 0 && cache) {
+      await cache.setSubscriptions(organizationId, subsCacheKey, subscriptions);
+    }
+  }
+
+  if (!subscriptions || subscriptions.length === 0) {
     return c.json({
       success: true,
       allowed: false,
@@ -149,21 +147,53 @@ app.post("/check", async (c) => {
     });
   }
 
-  // 4. Check Plan Features
-  const planFeature = await db.query.planFeatures.findFirst({
-    where: and(
-      eq(schema.planFeatures.planId, subscription.planId),
-      eq(schema.planFeatures.featureId, feature.id),
-    ),
-  });
+  // 4. Check Plan Features (cache-first, then batch DB query)
+  const planIds = subscriptions.map((s: { planId: string }) => s.planId);
+  const pfCacheKey = `${planIds.sort().join(",")}:${feature.id}`;
+  let planFeatures = cache
+    ? await cache.getPlanFeatures<Awaited<ReturnType<typeof db.query.planFeatures.findMany>>>(
+        organizationId,
+        pfCacheKey
+      )
+    : null;
 
-  if (!planFeature) {
+  if (!planFeatures) {
+    planFeatures = await db.query.planFeatures.findMany({
+      where: and(
+        sql`${schema.planFeatures.planId} IN (${sql.join(planIds.map((id: string) => sql`${id}`), sql`, `)})`,
+        eq(schema.planFeatures.featureId, feature.id),
+      ),
+    });
+
+    if (planFeatures.length > 0 && cache) {
+      await cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures);
+    }
+  }
+
+  // Find the first subscription that has a matching planFeature
+  let accessGrantingSubscription: (typeof subscriptions)[number] | null = null;
+  let accessGrantingPlanFeature: (typeof planFeatures)[number] | null = null;
+
+  for (const pf of planFeatures) {
+    const sub = subscriptions.find((s: { planId: string }) => s.planId === pf.planId);
+    if (sub) {
+      accessGrantingSubscription = sub;
+      accessGrantingPlanFeature = pf;
+      break;
+    }
+  }
+
+  if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
     return c.json({
       success: true,
       allowed: false,
       code: "feature_not_in_plan",
     });
   }
+
+  // Use the granting subscription/feature for the rest of the logic
+  const subscription = accessGrantingSubscription;
+  const planFeature = accessGrantingPlanFeature;
 
   // 5. Check Logic based on Type
   if (feature.type === "boolean") {
@@ -183,8 +213,12 @@ app.post("/check", async (c) => {
 
       // Lazy Configuration
       if (doResult.code === "feature_not_found") {
-        const periodStart = subscription.currentPeriodStart;
-        const periodEnd = subscription.currentPeriodEnd;
+        // Use resetInterval-aware period for migration query
+        const { periodStart: migrationPeriodStart, periodEnd: migrationPeriodEnd } = getResetPeriod(
+          planFeature.resetInterval,
+          subscription.currentPeriodStart,
+          subscription.currentPeriodEnd,
+        );
 
         // Calculate usage from DB for migration
         const usageResult = await db
@@ -194,8 +228,8 @@ app.post("/check", async (c) => {
             and(
               eq(schema.usageRecords.customerId, customer.id),
               eq(schema.usageRecords.featureId, feature.id),
-              sql`${schema.usageRecords.createdAt} >= ${periodStart}`,
-              sql`${schema.usageRecords.createdAt} <= ${periodEnd}`,
+              sql`${schema.usageRecords.createdAt} >= ${migrationPeriodStart}`,
+              sql`${schema.usageRecords.createdAt} <= ${migrationPeriodEnd}`,
             ),
           );
         const currentUsage = usageResult[0]?.total || 0;
@@ -242,12 +276,14 @@ app.post("/check", async (c) => {
       return c.json({ success: true, allowed: true, code: "unlimited_access" });
     }
 
-    // Calculate current usage for this period
-    const currentPeriodStart = subscription.currentPeriodStart;
-    const currentPeriodEnd = subscription.currentPeriodEnd;
+    // Calculate current usage for this period using the feature's reset interval
+    const { periodStart: currentPeriodStart, periodEnd: currentPeriodEnd } = getResetPeriod(
+      planFeature.resetInterval,
+      subscription.currentPeriodStart,
+      subscription.currentPeriodEnd,
+    );
 
-    // Sum usage records
-    // D1 Drizzle sum might be tricky, let's fetch roughly or use sql
+    // Sum usage records within the reset-interval-aware period
     const usageResult = await db
       .select({
         total: sql<number>`sum(amount)`,
@@ -317,9 +353,10 @@ app.post("/track", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { customerId, featureId, value } = parsed.data;
+  const { customer: customerId, feature: featureId, value } = parsed.data;
   const db = c.get("db");
   const organizationId = c.get("organizationId");
+  const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
 
   if (!organizationId) {
     return c.json(
@@ -328,75 +365,146 @@ app.post("/track", async (c) => {
     );
   }
 
-  // 1. Resolve Customer
-  let customer = await db.query.customers.findFirst({
-    where: and(
-      eq(schema.customers.organizationId, organizationId),
-      eq(schema.customers.id, customerId),
-    ),
-  });
+  // 1. Resolve Customer (cache-first, then DB)
+  // Normalize email to lowercase for case-insensitive matching
+  const customerIdLowerTrack = customerId.toLowerCase();
+  let customer = cache
+    ? await cache.getCustomer<typeof schema.customers.$inferSelect>(organizationId, customerIdLowerTrack)
+    : null;
 
   if (!customer) {
-    customer = await db.query.customers.findFirst({
+    customer = (await db.query.customers.findFirst({
       where: and(
         eq(schema.customers.organizationId, organizationId),
-        eq(schema.customers.externalId, customerId),
+        or(
+          eq(schema.customers.id, customerId),
+          eq(schema.customers.externalId, customerId),
+          eq(schema.customers.email, customerIdLowerTrack),
+        ),
       ),
-    });
+    })) ?? null;
+
+    if (customer && cache) {
+      await cache.setCustomer(organizationId, customerIdLowerTrack, customer);
+    }
   }
 
   if (!customer) {
     return c.json({ success: false, error: "Customer not found" }, 404);
   }
 
-  // 2. Resolve Feature
-  let feature = await db.query.features.findFirst({
-    where: and(
-      eq(schema.features.organizationId, organizationId),
-      eq(schema.features.id, featureId),
-    ),
-  });
+  // 2. Resolve Feature (cache-first, then DB)
+  let feature = cache
+    ? await cache.getFeature<typeof schema.features.$inferSelect>(organizationId, featureId)
+    : null;
 
   if (!feature) {
-    feature = await db.query.features.findFirst({
+    feature = (await db.query.features.findFirst({
       where: and(
         eq(schema.features.organizationId, organizationId),
-        eq(schema.features.slug, featureId),
+        or(
+          eq(schema.features.id, featureId),
+          eq(schema.features.slug, featureId),
+        ),
       ),
-    });
+    })) ?? null;
+
+    if (feature && cache) {
+      await cache.setFeature(organizationId, featureId, feature);
+    }
   }
 
   if (!feature) {
     return c.json({ success: false, error: "Feature not found" }, 404);
   }
 
-  // 3. Find active subscription period (to tag the usage record properly)
-  const subscription = await db.query.subscriptions.findFirst({
-    where: and(
-      eq(schema.subscriptions.customerId, customer.id),
-      eq(schema.subscriptions.status, "active"),
-    ),
-  });
-
-  const periodStart = subscription?.currentPeriodStart || new Date();
-  const periodEnd =
-    subscription?.currentPeriodEnd ||
-    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // fallback
-
-  // Fetch Plan Feature details if subscription exists (needed for DO config)
-  const planFeature = subscription
-    ? await db.query.planFeatures.findFirst({
-        where: and(
-          eq(schema.planFeatures.planId, subscription.planId),
-          eq(schema.planFeatures.featureId, feature.id),
-        ),
-      })
+  // 3. Find active subscriptions (cache-first, then DB)
+  const subsCacheKey = customer.id;
+  let subscriptions = cache
+    ? await cache.getSubscriptions<Awaited<ReturnType<typeof db.query.subscriptions.findMany>>>(
+        organizationId,
+        subsCacheKey
+      )
     : null;
+
+  if (!subscriptions) {
+    subscriptions = await db.query.subscriptions.findMany({
+      where: and(
+        eq(schema.subscriptions.customerId, customer.id),
+        eq(schema.subscriptions.status, "active"),
+      ),
+    });
+
+    if (subscriptions.length > 0 && cache) {
+      await cache.setSubscriptions(organizationId, subsCacheKey, subscriptions);
+    }
+  }
+
+  if (subscriptions.length === 0) {
+    return c.json(
+      { success: false, error: "No active subscription" },
+      400,
+    );
+  }
+
+  // 4. Find planFeatures (cache-first, then batch DB query)
+  const planIds = subscriptions.map((s: { planId: string }) => s.planId);
+  const pfCacheKey = `${planIds.sort().join(",")}:${feature.id}`;
+  let planFeatures = cache
+    ? await cache.getPlanFeatures<Awaited<ReturnType<typeof db.query.planFeatures.findMany>>>(
+        organizationId,
+        pfCacheKey
+      )
+    : null;
+
+  if (!planFeatures) {
+    planFeatures = await db.query.planFeatures.findMany({
+      where: and(
+        sql`${schema.planFeatures.planId} IN (${sql.join(planIds.map((id: string) => sql`${id}`), sql`, `)})`,
+        eq(schema.planFeatures.featureId, feature.id),
+      ),
+    });
+
+    if (planFeatures.length > 0 && cache) {
+      await cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures);
+    }
+  }
+
+  let accessGrantingSubscription: (typeof subscriptions)[number] | null = null;
+  let accessGrantingPlanFeature: (typeof planFeatures)[number] | null = null;
+
+  for (const pf of planFeatures) {
+    const sub = subscriptions.find((s: { planId: string }) => s.planId === pf.planId);
+    if (sub) {
+      accessGrantingSubscription = sub;
+      accessGrantingPlanFeature = pf;
+      break;
+    }
+  }
+
+  const subscription = accessGrantingSubscription;
+  const planFeature = accessGrantingPlanFeature;
+
+  if (!subscription || !planFeature) {
+    return c.json(
+      {
+        success: false,
+        error: "Feature is not enabled for this customer's plan",
+      },
+      400,
+    );
+  }
+
+  // Use the feature's resetInterval to determine the correct usage period
+  const { periodStart, periodEnd } = getResetPeriod(
+    planFeature.resetInterval,
+    subscription.currentPeriodStart,
+    subscription.currentPeriodEnd,
+  );
 
   try {
     // ===========================================================================
     // Use Durable Object for atomic real-time tracking (if available)
-    // With compat date > 2024-04-03, we use RPC instead of fetch
     // ===========================================================================
     let doResult: { allowed: boolean; balance: number; code: string } | null =
       null;
@@ -406,6 +514,7 @@ app.post("/track", async (c) => {
       const doId = c.env.USAGE_METER.idFromName(
         `${organizationId}:${customer.id}`,
       );
+
       const usageMeter = c.env.USAGE_METER.get(doId);
 
       // Track usage atomically via RPC
@@ -486,7 +595,7 @@ app.post("/track", async (c) => {
           .update(schema.credits)
           .set({
             balance: sql`${schema.credits.balance} - ${cost}`,
-            updatedAt: new Date(),
+            updatedAt: Date.now(),
           })
           .where(eq(schema.credits.customerId, customer.id));
       }

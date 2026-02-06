@@ -49,7 +49,7 @@ app.post("/paystack-config", async (c) => {
   }
 
   const { organizationId, secretKey, publicKey } = parsed.data;
-  const db = c.get("db");
+  const db = c.get("authDb");
   const encryptionKey = c.env.ENCRYPTION_KEY;
 
   if (!encryptionKey) {
@@ -105,7 +105,7 @@ app.post("/paystack-config", async (c) => {
 
   // Prepare update object based on detected environment
   const updateData: Record<string, any> = {
-    updatedAt: new Date(),
+    updatedAt: Date.now(),
   };
 
   if (detectedEnv === "test") {
@@ -167,7 +167,7 @@ app.get("/paystack-config", async (c) => {
     return c.json({ success: false, error: "Organization ID required" }, 400);
   }
 
-  const db = c.get("db");
+  const db = c.get("authDb");
   const project = await db.query.projects.findFirst({
     where: eq(schema.projects.organizationId, organizationId),
   });
@@ -213,7 +213,7 @@ app.post("/switch-environment", async (c) => {
     return c.json({ success: false, error: "Invalid parameters" }, 400);
   }
 
-  const db = c.get("db");
+  const db = c.get("authDb");
   const [project] = await db
     .select()
     .from(schema.projects)
@@ -247,7 +247,7 @@ app.post("/switch-environment", async (c) => {
   // Update active environment
   await db
     .update(schema.projects)
-    .set({ activeEnvironment: environment, updatedAt: new Date() })
+    .set({ activeEnvironment: environment, updatedAt: new Date().getTime() })
     .where(eq(schema.projects.id, project.id));
 
   return c.json({

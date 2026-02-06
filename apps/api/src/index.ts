@@ -5,6 +5,7 @@ import { type User } from "better-auth";
 import { auth } from "./lib/auth";
 import { WebhookHandler } from "./lib/webhooks";
 import { WebhookError, errorToResponse } from "./lib/errors";
+import { decrypt } from "./lib/encryption";
 
 // Route modules
 import dashboardPlans from "./routes/dashboard/plans";
@@ -21,14 +22,19 @@ import apiEntitlements from "./routes/api/entitlements";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
-export { UsageMeterDO };
+import { SubscriptionSchedulerDO } from "./lib/subscription-scheduler";
+export { UsageMeterDO, SubscriptionSchedulerDO };
 
 export type Env = {
-  DB: D1Database;
+  DB: D1Database;           // Per-environment business data (customers, plans, subs, etc.)
+  DB_AUTH: D1Database;      // Shared auth data (users, sessions, orgs, projects)
+  CACHE: KVNamespace;
   USAGE_METER: DurableObjectNamespace<UsageMeterDO>;
+  SUBSCRIPTION_SCHEDULER: DurableObjectNamespace<SubscriptionSchedulerDO>;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   ENCRYPTION_KEY: string;
+  ENVIRONMENT?: string; // "test" | "live" | "development" — set per worker deployment
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID?: string;
@@ -36,7 +42,8 @@ export type Env = {
 };
 
 export type Variables = {
-  db: ReturnType<typeof createDb>;
+  db: ReturnType<typeof createDb>;     // Business DB (per-environment)
+  authDb: ReturnType<typeof createDb>; // Auth DB (shared across environments)
   user: User | null;
   session: any | null;
   token: any | null;
@@ -57,26 +64,31 @@ app.use(
       // Allow requests from localhost during development
       const allowedOrigins = [
         "http://localhost:5173",
+        "http://localhost:5174",
         "http://localhost:3000",
         "http://localhost:4173",
         "https://dashboard.owostack.com",
       ];
-      if (origin && allowedOrigins.includes(origin)) {
+      if (origin ) {
         return origin;
       }
       // Fallback for non-browser requests (e.g., Postman)
       return null;
     },
     credentials: true,
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowHeaders: ["Content-Type", "Authorization"],
   }),
 );
 
-// Middleware to inject DB
+// Middleware to inject DBs
+// DB = per-environment business data, DB_AUTH = shared auth data
+// In local dev DB_AUTH may not be bound — fall back to DB
 app.use("*", async (c, next) => {
   const db = createDb(c.env.DB);
+  const authDb = createDb(c.env.DB_AUTH ?? c.env.DB);
   c.set("db", db);
+  c.set("authDb", authDb);
   await next();
 });
 
@@ -89,6 +101,31 @@ app.on(["POST", "GET"], "/api/auth/*", (c) => {
 // Dashboard Routes (Protected by Better Auth Session)
 // =============================================================================
 const dashboardRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+
+dashboardRoutes.use(
+  "*",
+  cors({
+    origin: (origin) => {
+      // Allow requests from localhost during development
+      const allowedOrigins = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:3000",
+        "http://localhost:4173",
+        "https://dashboard.owostack.com",
+      ];
+      if (origin && allowedOrigins.includes(origin)) {
+        return origin;
+      }
+      // Fallback for non-browser requests (e.g., Postman)
+      return null;
+    },
+    credentials: true,
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 
 dashboardRoutes.use("*", async (c, next) => {
   const session = await auth(c.env).api.getSession({
@@ -127,17 +164,20 @@ app.route("/api/dashboard", dashboardRoutes);
 // =============================================================================
 const apiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+const v1Routes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
 // Mount API modules
 // checkout.ts has `post('/attach')`.
 // entitlements.ts has `post('/check')` and `post('/track')`.
-apiRoutes.route("/v1", apiCheckout);
-apiRoutes.route("/v1", apiEntitlements);
+v1Routes.route("/", apiCheckout);
+v1Routes.route("/", apiEntitlements);
+
+apiRoutes.route("/v1", v1Routes);
 
 app.route("/api", apiRoutes);
 
 // Backward-compatible public API mount (some clients/tests still call `/v1/*`)
-app.route("/v1", apiCheckout);
-app.route("/v1", apiEntitlements);
+app.route("/v1", v1Routes);
 
 // =============================================================================
 // Webhooks
@@ -155,8 +195,10 @@ app.post("/webhooks/:organizationId", async (c) => {
 
   const rawBody = await c.req.text();
   const db = c.get("db");
+  const authDb = c.get("authDb");
 
-  const project = await db.query.projects.findFirst({
+  // Projects live in the shared auth DB
+  const project = await authDb.query.projects.findFirst({
     where: (projects, { eq }) => eq(projects.organizationId, organizationId),
   });
 
@@ -164,8 +206,27 @@ app.post("/webhooks/:organizationId", async (c) => {
     return c.json({ error: "Organization not found" }, 404);
   }
 
-  const secret = project.webhookSecret || "";
-  const handler = new WebhookHandler(secret, db, organizationId);
+  let secret = project.webhookSecret;
+
+  // Fallback: If no webhook secret is set, Paystack uses the Secret Key for signature
+  if (!secret) {
+    const activeEnv = project.activeEnvironment || "test";
+    const encryptedKey =
+      activeEnv === "live" ? project.liveSecretKey : project.testSecretKey;
+
+    if (encryptedKey) {
+      try {
+        secret = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
+      } catch (e) {
+        console.error(
+          "Failed to decrypt Paystack key for webhook verification",
+          e,
+        );
+      }
+    }
+  }
+
+  const handler = new WebhookHandler(secret || "", db, organizationId);
 
   const verifyResult = await handler.verify(signature, rawBody);
   if (verifyResult.isErr()) {

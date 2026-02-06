@@ -12,9 +12,9 @@ export const organizations = sqliteTable("organizations", {
   slug: text("slug").notNull().unique(),
   logo: text("logo"),
   metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: integer("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
+    .$defaultFn(() => Date.now()),
 });
 
 export const members = sqliteTable(
@@ -28,9 +28,9 @@ export const members = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     role: text("role").notNull().default("member"), // owner, admin, member
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [
     index("members_org_idx").on(table.organizationId),
@@ -49,10 +49,10 @@ export const invitations = sqliteTable("invitations", {
   invitedBy: text("invited_by")
     .notNull()
     .references(() => users.id),
-  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  expiresAt: integer("expires_at").notNull(),
+  createdAt: integer("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
+    .$defaultFn(() => Date.now()),
 });
 
 export const projects = sqliteTable(
@@ -82,12 +82,12 @@ export const projects = sqliteTable(
     metadata: text("metadata", { mode: "json" }).$type<
       Record<string, unknown>
     >(),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: integer("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .$defaultFn(() => Date.now()),
   },
   (table) => [index("projects_org_idx").on(table.organizationId)],
 );

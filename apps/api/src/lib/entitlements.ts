@@ -3,8 +3,13 @@ import type { createDb } from "@owostack/db";
 import { schema } from "@owostack/db";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import { NotFoundError, DatabaseError } from "./errors";
+import { getResetPeriod } from "./reset-period";
 
 type DB = ReturnType<typeof createDb>;
+
+type PlanFeatureRow = typeof schema.planFeatures.$inferSelect & {
+  feature: typeof schema.features.$inferSelect;
+};
 
 export interface CheckAccessResult {
   allowed: boolean;
@@ -59,7 +64,7 @@ export class EntitlementService {
         }
 
         let planFeature = subscription.plan.planFeatures.find(
-          (pf) => pf.feature.slug === featureSlug,
+          (pf: PlanFeatureRow) => pf.feature.slug === featureSlug,
         );
 
         let creditMapping: any = null;
@@ -90,7 +95,7 @@ export class EntitlementService {
 
           for (const ms of mappedSystems) {
             const pf = subscription.plan.planFeatures.find(
-              (pf) => pf.feature.slug === ms.creditSystemSlug,
+              (pf: PlanFeatureRow) => pf.feature.slug === ms.creditSystemSlug,
             );
             if (pf) {
               planFeature = pf;
@@ -115,14 +120,17 @@ export class EntitlementService {
           : planFeature.featureId;
 
         if (planFeature.limitValue !== null) {
-          const start = subscription.currentPeriodStart;
-          const end = subscription.currentPeriodEnd;
+          const { periodStart, periodEnd } = getResetPeriod(
+            planFeature.resetInterval,
+            subscription.currentPeriodStart,
+            subscription.currentPeriodEnd,
+          );
 
           const usage = await this.getCurrentUsage(
             customerId,
             featureIdToCheck,
-            start,
-            end,
+            periodStart,
+            periodEnd,
           );
 
           if (usage + effectiveAmount > planFeature.limitValue) {
@@ -133,7 +141,7 @@ export class EntitlementService {
                 current: usage,
                 limit: planFeature.limitValue,
                 remaining: Math.max(0, planFeature.limitValue - usage),
-                resetAt: end.toISOString(),
+                resetAt: new Date(periodEnd).toISOString(),
               },
             };
           }
@@ -147,7 +155,7 @@ export class EntitlementService {
                 0,
                 planFeature.limitValue - usage - effectiveAmount,
               ),
-              resetAt: end.toISOString(),
+              resetAt: new Date(periodEnd).toISOString(),
             },
           };
         }
@@ -192,21 +200,21 @@ export class EntitlementService {
           },
         });
 
-        const now = new Date();
-        const periodStart =
-          subscription?.currentPeriodStart ||
-          new Date(now.getFullYear(), now.getMonth(), 1);
-        const periodEnd =
-          subscription?.currentPeriodEnd ||
-          new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
         let trackingFeatureId = feature.id;
         let trackingAmount = amount;
         let limit: number | null = null;
 
+        // Compute reset-interval-aware period boundaries
+        let periodStart =
+          subscription?.currentPeriodStart ||
+          new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+        let periodEnd =
+          subscription?.currentPeriodEnd ||
+          new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getTime();
+
         if (subscription) {
           let planFeature = subscription.plan.planFeatures.find(
-            (pf) => pf.feature.slug === featureSlug,
+            (pf: PlanFeatureRow) => pf.feature.slug === featureSlug,
           );
 
           if (!planFeature) {
@@ -228,7 +236,7 @@ export class EntitlementService {
             if (mapped.length > 0) {
               const ms = mapped[0];
               const pf = subscription.plan.planFeatures.find(
-                (pf) => pf.feature.slug === ms.creditSystems.slug,
+                (pf: PlanFeatureRow) => pf.feature.slug === ms.creditSystems.slug,
               );
               if (pf) {
                 planFeature = pf;
@@ -239,6 +247,17 @@ export class EntitlementService {
           }
 
           limit = planFeature?.limitValue ?? null;
+
+          // Use the feature's resetInterval for period calculation
+          if (planFeature) {
+            const resetPeriod = getResetPeriod(
+              planFeature.resetInterval,
+              subscription.currentPeriodStart,
+              subscription.currentPeriodEnd,
+            );
+            periodStart = resetPeriod.periodStart;
+            periodEnd = resetPeriod.periodEnd;
+          }
         }
 
         await this.db.insert(schema.usageRecords).values({
@@ -276,8 +295,8 @@ export class EntitlementService {
   private async getCurrentUsage(
     customerId: string,
     featureId: string,
-    start: Date,
-    end: Date,
+    start: number,
+    end: number,
   ): Promise<number> {
     const result = await this.db
       .select({

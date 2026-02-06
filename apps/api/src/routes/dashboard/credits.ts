@@ -42,46 +42,48 @@ app.post("/", async (c) => {
     .replace(/^-|-$/g, "");
 
   try {
-    const result = await db.transaction(async (tx) => {
-      const [feat] = await tx
-        .insert(schema.features)
-        .values({
+    // D1 doesn't support Drizzle transactions - use sequential operations instead
+    const featureId = crypto.randomUUID();
+
+    // 1. Create the feature
+    const [feat] = await db
+      .insert(schema.features)
+      .values({
+        id: featureId,
+        organizationId,
+        name: name,
+        slug: slug,
+        type: "metered",
+        meterType: "consumable",
+        unit: "credit",
+      })
+      .returning();
+
+    // 2. Create the credit system (uses same ID as feature)
+    const [cs] = await (db as any)
+      .insert((schema as any).creditSystems)
+      .values({
+        id: feat.id,
+        organizationId,
+        name,
+        slug,
+        description,
+      })
+      .returning();
+
+    // 3. Create credit system features if any
+    if (csFeatures.length > 0) {
+      await (db as any).insert((schema as any).creditSystemFeatures).values(
+        csFeatures.map((f) => ({
           id: crypto.randomUUID(),
-          organizationId,
-          name: name,
-          slug: slug,
-          type: "metered",
-          meterType: "consumable",
-          unit: "credit",
-        })
-        .returning();
+          creditSystemId: cs.id,
+          featureId: f.featureId,
+          cost: f.cost,
+        })),
+      );
+    }
 
-      const [cs] = await (tx as any)
-        .insert((schema as any).creditSystems)
-        .values({
-          id: feat.id,
-          organizationId,
-          name,
-          slug,
-          description,
-        })
-        .returning();
-
-      if (csFeatures.length > 0) {
-        await (tx as any).insert((schema as any).creditSystemFeatures).values(
-          csFeatures.map((f) => ({
-            id: crypto.randomUUID(),
-            creditSystemId: cs.id,
-            featureId: f.featureId,
-            cost: f.cost,
-          })),
-        );
-      }
-
-      return cs;
-    });
-
-    return c.json({ success: true, data: result });
+    return c.json({ success: true, data: cs });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
   }
@@ -152,12 +154,11 @@ app.delete("/:id", async (c) => {
   const db = c.get("db");
 
   try {
-    await db.transaction(async (tx) => {
-      await tx
-        .delete((schema as any).creditSystems)
-        .where(eq((schema as any).creditSystems.id, id));
-      await tx.delete(schema.features).where(eq(schema.features.id, id));
-    });
+    // D1 doesn't support Drizzle transactions - use sequential operations instead
+    await (db as any)
+      .delete((schema as any).creditSystems)
+      .where(eq((schema as any).creditSystems.id, id));
+    await db.delete(schema.features).where(eq(schema.features.id, id));
     return c.json({ success: true });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);

@@ -4,30 +4,44 @@
   "compatibility_date": "2026-01-31",
   "compatibility_flags": ["nodejs_compat"],
 
-  // D1 Database
+  // D1 Databases (local dev — both point to same DB)
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "owostack",
       "database_id": "be366e9b-8c41-4321-abbe-2bd98a270146",
       "migrations_dir":"../../packages/db/migrations"
+    },
+    {
+      "binding": "DB_AUTH",
+      "database_name": "owostack",
+      "database_id": "be366e9b-8c41-4321-abbe-2bd98a270146",
+      "migrations_dir":"../../packages/db/migrations"
     }
   ],
 
-  // KV Namespace for API Keys
+  // KV Namespaces (local dev — shared)
   "kv_namespaces": [
     {
       "binding": "API_KEYS",
       "id": "ccc79669a6524e398a56e08d8ff82345"
+    },
+    {
+      "binding": "CACHE",
+      "id": "ccc79669a6524e398a56e08d8ff82345"
     }
   ],
 
-  // Durable Objects for usage metering
+  // Durable Objects for usage metering and subscription scheduling
   "durable_objects": {
     "bindings": [
       {
         "name": "USAGE_METER",
         "class_name": "UsageMeterDO"
+      },
+      {
+        "name": "SUBSCRIPTION_SCHEDULER",
+        "class_name": "SubscriptionSchedulerDO"
       }
     ]
   },
@@ -37,17 +51,80 @@
     {
       "tag": "v1",
       "new_classes": ["UsageMeterDO"]
+    },
+    {
+      "tag": "v2",
+      "new_classes": ["SubscriptionSchedulerDO"]
     }
   ],
 
-  // Environment variables
+  // Environment variables (local dev)
   "vars": {
     "ENVIRONMENT": "development",
     "BETTER_AUTH_URL": "http://localhost:8787"
+  },
+
+  // ==========================================================================
+  // Deploy: wrangler deploy --env test
+  // Each environment gets its own worker name, D1, KV, and DOs.
+  // Set secrets per-env: wrangler secret put BETTER_AUTH_SECRET --env test
+  // ==========================================================================
+  "env": {
+    "test": {
+      "name": "owostack-api-test",
+      "vars": {
+        "ENVIRONMENT": "test",
+        "BETTER_AUTH_URL": "https://api-test.owostack.com"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "owostack-test",
+          "database_id": "7a051860-c30d-42f5-8516-54d1c4c121a7",
+          "migrations_dir": "../../packages/db/migrations"
+        },
+        {
+          "binding": "DB_AUTH",
+          "database_name": "owostack-auth",
+          "database_id": "fe5d69b6-5cea-4821-9da9-e88b58111203",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ],
+      "kv_namespaces": [
+        { "binding": "API_KEYS", "id": "8b5d2500402943889b9f6817038fa2e1" },
+        { "binding": "CACHE", "id": "8b5d2500402943889b9f6817038fa2e1" }
+      ]
+    },
+    "live": {
+      "name": "owostack-api-live",
+      "vars": {
+        "ENVIRONMENT": "live",
+        "BETTER_AUTH_URL": "https://api.owostack.com"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "owostack-live",
+          "database_id": "13dfed0c-f6c3-4623-bcaa-0400649f04e4",
+          "migrations_dir": "../../packages/db/migrations"
+        },
+        {
+          "binding": "DB_AUTH",
+          "database_name": "owostack-auth",
+          "database_id": "fe5d69b6-5cea-4821-9da9-e88b58111203",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ],
+      "kv_namespaces": [
+        { "binding": "API_KEYS", "id": "dac98089fb1a48ceacd78e2380a5022f" },
+        { "binding": "CACHE", "id": "dac98089fb1a48ceacd78e2380a5022f" }
+      ]
+    }
   }
 
-  // Secrets (set via: wrangler secret put <NAME>)
-  // PAYSTACK_SECRET_KEY
-  // PAYSTACK_WEBHOOK_SECRET
+  // Secrets (set via: wrangler secret put <NAME> [--env test|live])
+  // ENCRYPTION_KEY
   // BETTER_AUTH_SECRET
+  // GOOGLE_CLIENT_ID
+  // GOOGLE_CLIENT_SECRET
 }
