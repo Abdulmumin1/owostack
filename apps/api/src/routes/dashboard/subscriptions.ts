@@ -4,8 +4,11 @@ import { eq, desc, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { decrypt } from "../../lib/encryption";
 import { getPaystackEnvironment, selectPaystackKey } from "../../lib/environment";
-import { PaystackClient } from "../../lib/paystack";
+import { createProviderRegistry, paystackAdapter } from "@owostack/adapters";
+import type { ProviderAccount } from "@owostack/adapters";
 import { previewSwitch, executeSwitch } from "../../lib/plan-switch";
+import type { ProviderContext } from "../../lib/plan-switch";
+import { deriveProviderEnvironment, loadProviderAccounts } from "../../lib/providers";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 
@@ -104,16 +107,19 @@ app.get("/", async (c) => {
     },
   });
 
+  console.log(customers)
   const subscriptions = customers.flatMap((cust: any) =>
     cust.subscriptions
       .filter((sub: any) => {
         // Exclude one-time purchases
         if (sub.paystackSubscriptionCode === "one-time") return false;
+        if (sub.providerSubscriptionCode === "one-time") return false;
         if ((sub.metadata as any)?.billing_type === "one_time") return false;
         if ((sub.metadata as any)?.type === "one_time_purchase") return false;
         if (sub.plan?.billingType === "one_time") return false;
         // Exclude trials (they show in transactions)
         if (sub.paystackSubscriptionCode?.startsWith("trial-")) return false;
+        if (sub.providerSubscriptionCode?.startsWith("trial-")) return false;
         return true;
       })
       .map((sub: any) => ({
@@ -277,11 +283,13 @@ app.get("/:id", async (c) => {
         subscription: {
           id: subscription.id,
           status: subscription.status,
+          providerId: subscription.providerId || null,
           currentPeriodStart: subscription.currentPeriodStart,
           currentPeriodEnd: subscription.currentPeriodEnd,
           cancelAt: subscription.cancelAt,
           canceledAt: subscription.canceledAt,
           paystackSubscriptionCode: subscription.paystackSubscriptionCode,
+          providerSubscriptionCode: subscription.providerSubscriptionCode,
           metadata: subscription.metadata,
           createdAt: subscription.createdAt,
           updatedAt: subscription.updatedAt,
@@ -367,31 +375,72 @@ app.post("/switch-plan", async (c) => {
   const db = c.get("db");
   const authDb = c.get("authDb");
 
-  // Get Paystack credentials
-  let paystack: PaystackClient | null = null;
-  try {
-    const project = await authDb.query.projects.findFirst({
-      where: eq(schema.projects.organizationId, organizationId),
-    });
+  // Fetch project once for credentials + environment
+  const project = await authDb.query.projects.findFirst({
+    where: eq(schema.projects.organizationId, organizationId),
+  });
 
+  const activeEnv = getPaystackEnvironment(
+    c.env.ENVIRONMENT,
+    project?.activeEnvironment,
+  );
+
+  // Build provider context — try DB-stored provider accounts first, then legacy keys
+  let providerCtx: ProviderContext | null = null;
+  try {
     if (project) {
-      const activeEnv = getPaystackEnvironment(
+      const providerEnv = deriveProviderEnvironment(
         c.env.ENVIRONMENT,
         project.activeEnvironment,
       );
-      const encryptedKey = selectPaystackKey(
-        activeEnv,
-        project.testSecretKey,
-        project.liveSecretKey,
+
+      const registry = createProviderRegistry();
+      registry.register(paystackAdapter);
+
+      // Try provider accounts from DB
+      const providerAccounts = await loadProviderAccounts(
+        db,
+        organizationId,
+        c.env.ENCRYPTION_KEY,
       );
 
-      if (encryptedKey) {
-        const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-        paystack = new PaystackClient({ secretKey });
+      // Find a suitable account (prefer the first one matching environment)
+      const dbAccount = providerAccounts.find(
+        (a) => a.environment === providerEnv,
+      );
+
+      if (dbAccount) {
+        const adapter = registry.get(dbAccount.providerId);
+        if (adapter) {
+          providerCtx = { adapter, account: dbAccount };
+        }
+      }
+
+      // Fall back to legacy Paystack keys
+      if (!providerCtx) {
+        const encryptedKey = selectPaystackKey(
+          activeEnv,
+          project.testSecretKey,
+          project.liveSecretKey,
+        );
+
+        if (encryptedKey) {
+          const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
+          const account: ProviderAccount = {
+            id: `legacy-${project.id}`,
+            organizationId,
+            providerId: "paystack",
+            environment: providerEnv,
+            credentials: { secretKey },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          providerCtx = { adapter: paystackAdapter, account };
+        }
       }
     }
   } catch (e) {
-    console.warn("Failed to get Paystack credentials for switch:", e);
+    console.warn("Failed to get provider credentials for switch:", e);
   }
 
   try {
@@ -399,16 +448,7 @@ app.post("/switch-plan", async (c) => {
     const schedulerId = c.env.SUBSCRIPTION_SCHEDULER.idFromName(organizationId);
     const scheduler = c.env.SUBSCRIPTION_SCHEDULER.get(schedulerId);
 
-    // Reuse project fetched above for Paystack credentials
-    const project = await authDb.query.projects.findFirst({
-      where: eq(schema.projects.organizationId, organizationId),
-    });
-    const activeEnv = getPaystackEnvironment(
-      c.env.ENVIRONMENT,
-      project?.activeEnvironment,
-    );
-
-    const result = await executeSwitch(db, customerId, newPlanId, paystack, {
+    const result = await executeSwitch(db, customerId, newPlanId, providerCtx, {
       scheduler,
       organizationId,
       environment: activeEnv,
@@ -455,11 +495,12 @@ app.post("/cancel", async (c) => {
     return c.json({ success: false, error: "Subscription not found" }, 404);
   }
 
-  // Cancel on Paystack if native sub
+  // Cancel on provider if native sub
+  const subCode = sub.providerSubscriptionCode || sub.paystackSubscriptionCode;
   if (
-    sub.paystackSubscriptionCode &&
-    sub.paystackSubscriptionCode !== "one-time" &&
-    !sub.paystackSubscriptionCode.startsWith("trial-")
+    subCode &&
+    subCode !== "one-time" &&
+    !subCode.startsWith("trial-")
   ) {
     try {
       const project = await authDb.query.projects.findFirst({
@@ -467,33 +508,66 @@ app.post("/cancel", async (c) => {
       });
 
       if (project) {
-        const activeEnv = getPaystackEnvironment(
+        const providerEnv = deriveProviderEnvironment(
           c.env.ENVIRONMENT,
           project.activeEnvironment,
         );
-        const encryptedKey = selectPaystackKey(
-          activeEnv,
-          project.testSecretKey,
-          project.liveSecretKey,
-        );
 
-        if (encryptedKey) {
-          const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-          const paystack = new PaystackClient({ secretKey });
+        const registry = createProviderRegistry();
+        registry.register(paystackAdapter);
 
-          const fetchResult = await paystack.fetchSubscription(
-            sub.paystackSubscriptionCode,
+        const resolvedProviderId = sub.providerId || "paystack";
+        const adapter = registry.get(resolvedProviderId);
+
+        if (adapter) {
+          // Try provider accounts from DB first
+          const providerAccounts = await loadProviderAccounts(
+            db,
+            organizationId,
+            c.env.ENCRYPTION_KEY,
           );
-          if (fetchResult.isOk()) {
-            await paystack.disableSubscription(
-              sub.paystackSubscriptionCode,
-              fetchResult.value.email_token,
+          let account = providerAccounts.find(
+            (a) =>
+              a.providerId === resolvedProviderId &&
+              a.environment === providerEnv,
+          );
+
+          // Fall back to legacy Paystack keys
+          if (!account && resolvedProviderId === "paystack") {
+            const activeEnv = getPaystackEnvironment(
+              c.env.ENVIRONMENT,
+              project.activeEnvironment,
             );
+            const encryptedKey = selectPaystackKey(
+              activeEnv,
+              project.testSecretKey,
+              project.liveSecretKey,
+            );
+            if (encryptedKey) {
+              const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
+              account = {
+                id: `legacy-${project.id}`,
+                organizationId,
+                providerId: "paystack",
+                environment: providerEnv,
+                credentials: { secretKey },
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              };
+            }
+          }
+
+          if (account) {
+            await adapter.cancelSubscription({
+              subscription: { id: subCode, status: sub.status || "active" },
+              environment: providerEnv,
+              account,
+            });
           }
         }
       }
     } catch (e) {
-      console.warn("Failed to cancel Paystack subscription:", e);
+      console.warn("Failed to cancel provider subscription:", e);
     }
   }
 

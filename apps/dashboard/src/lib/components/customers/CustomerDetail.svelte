@@ -3,6 +3,7 @@
   import { apiFetch } from "$lib/auth-client";
   import ProgressBar from "$lib/components/ui/ProgressBar.svelte";
   import Timeline from "$lib/components/ui/Timeline.svelte";
+  import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
 
   let {
     customerId,
@@ -135,7 +136,10 @@
         {data.customer.email[0]}
       </div>
       <div class="flex-1 min-w-0">
-        <h3 class="text-sm font-bold text-white truncate">{data.customer.name || "Anonymous"}</h3>
+        <div class="flex items-center gap-2">
+          <h3 class="text-sm font-bold text-white truncate">{data.customer.name || "Anonymous"}</h3>
+          <ProviderBadge providerId={data.customer.providerId} size="xs" />
+        </div>
         <div class="flex flex-col gap-1 mt-1">
           <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
             <Mail size={10} />

@@ -1,0 +1,52 @@
+---
+title: Entitlements & features
+description: How Owostack models permissions, limits, and feature values
+icon: Key
+---
+
+# Entitlements & features
+
+In Owostack, **features** are the capabilities in your product and **entitlements** are the rules that grant those capabilities to a customer.
+
+## Feature types
+
+- `boolean`
+  - On/off access
+- `metered`
+  - A limit that can be checked and incremented (usage)
+- `static`
+  - A fixed value (configuration)
+
+## Where entitlements come from
+
+- A customer’s active subscription plan
+- Optional customer-level overrides
+
+## Runtime access checks
+
+Use `check()` to decide whether to allow an action.
+
+```ts
+const { allowed, code, remaining } = await owo.check({
+  customer: "user@example.com",
+  feature: "api_calls_monthly",
+});
+```
+
+- `allowed` is the main signal you should gate on.
+- `remaining` is useful for UX (show usage).
+- `code` helps you decide *why* access was denied (upgrade, top-up, etc.).
+
+## Usage tracking
+
+If a feature is metered, call `track()` to record usage.
+
+```ts
+await owo.track({
+  customer: "user@example.com",
+  feature: "api_calls_monthly",
+  amount: 1,
+});
+```
+
+See [Entitlements](/docs/features/entitlements) and [Usage Metering](/docs/features/metering) for deeper detail.

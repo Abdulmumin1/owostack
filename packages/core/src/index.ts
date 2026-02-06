@@ -9,12 +9,14 @@ import type {
 } from "@owostack/types";
 
 /**
- * Owostack - Paystack made delightful
+ * Owostack - Billing infrastructure for Africa
  *
  * Three methods to rule them all:
  * - attach(): Start checkout or manage subscriptions
  * - check(): Verify feature access and usage limits
  * - track(): Record usage and trigger billing
+ *
+ * Customers are auto-created when you pass customerData to any endpoint.
  */
 export class Owostack {
   private config: OwostackConfig;
@@ -29,18 +31,18 @@ export class Owostack {
    * attach() - Checkout & Subscription Management
    *
    * Creates checkout sessions, handles upgrades/downgrades, manages subscriptions.
-   * Returns a URL to redirect users or an inline payment reference.
+   * Auto-creates the customer if customerData is provided and the customer doesn't exist.
    *
    * @example
    * ```ts
-   * const { url, reference } = await owo.attach({
-   *   customer: 'customer@example.com',
+   * const result = await owo.attach({
+   *   customer: 'user_123',
    *   product: 'pro_plan',
-   *   metadata: { source: 'homepage' }
+   *   customerData: { email: 'user@example.com', name: 'Jane' },
    * });
    *
    * // Redirect user to checkout
-   * window.location.href = url;
+   * window.location.href = result.url;
    * ```
    */
   async attach(params: AttachParams): Promise<AttachResult> {
@@ -54,15 +56,18 @@ export class Owostack {
    * Queries whether a customer can access a feature based on their plan,
    * payment status, and usage limits.
    *
+   * Pass sendEvent: true to atomically check AND track usage in one call.
+   *
    * @example
    * ```ts
    * const access = await owo.check({
-   *   customer: 'customer@example.com',
-   *   feature: 'api_calls'
+   *   customer: 'user_123',
+   *   feature: 'api_calls',
+   *   customerData: { email: 'user@example.com' },
    * });
    *
    * if (!access.allowed) {
-   *   throw new Error(access.reason); // "Quota exceeded"
+   *   throw new Error(access.code);
    * }
    * ```
    */
@@ -80,10 +85,10 @@ export class Owostack {
    * @example
    * ```ts
    * await owo.track({
-   *   customer: 'customer@example.com',
+   *   customer: 'user_123',
    *   feature: 'api_calls',
-   *   amount: 1,
-   *   metadata: { endpoint: '/v1/analyze' }
+   *   value: 1,
+   *   customerData: { email: 'user@example.com' },
    * });
    * ```
    */
@@ -107,7 +112,7 @@ export class Owostack {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new OwostackError(error.code, error.message);
+      throw new OwostackError(error.code || "unknown_error", error.message || error.error || "Request failed");
     }
 
     return response.json();
@@ -136,4 +141,5 @@ export type {
   TrackParams,
   TrackResult,
   OwostackConfig,
+  CustomerData,
 } from "@owostack/types";

@@ -8,6 +8,46 @@ icon: Rocket
 
 **Make Paystack billing as easy as Stripe Billing** - metered usage, entitlements, and subscriptions without the complexity.
 
+## What is Owostack?
+
+Owostack is billing infrastructure for Nigerian apps.
+
+You connect your provider account (Paystack today), model plans and features in a dashboard, and then use a tiny SDK to enforce access and track usage.
+
+## How it works
+
+Model your pricing in Owostack
+
+Handle payments
+
+```ts
+checkout
+```
+
+Check permissions and limits
+
+```ts
+check
+```
+
+Track usage
+
+```ts
+track
+```
+
+## Why use Owostack?
+
+- Syncing subscription state (active, overdue payments, canceling) across many webhook edge cases
+- Plan switching (upgrades, scheduled downgrades, add-ons)
+- Usage limits (monthly recurring limits, one-time limits, credits)
+- A simple, consistent interface (`attach`, `check`, `track`) regardless of provider details
+
+## What Owostack is not
+
+- A payment provider: you bring your own provider account and are never locked in to Owostack
+- A full invoicing suite: Owostack focuses on subscription state, entitlements, and usage
+
 ## The Problem
 
 Building billing with Paystack requires you to:

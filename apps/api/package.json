@@ -10,13 +10,14 @@
     "deploy:live": "wrangler deploy --env live",
     "tail": "wrangler tail",
     "test": "vitest",
-    "db:migrate:local": "wrangler d1 migrations apply owostack --local",
+    "db:migrate:local": "wrangler d1 migrations apply owostack --local && wrangler d1 migrations apply owostack-auth --local",
     "db:migrate:auth": "wrangler d1 migrations apply owostack-auth --remote --env test",
     "db:migrate:test": "wrangler d1 migrations apply owostack-test --remote --env test",
     "db:migrate:live": "wrangler d1 migrations apply owostack-live --remote --env live",
     "db:migrate:remote": "pnpm db:migrate:auth && pnpm db:migrate:test && pnpm db:migrate:live"
   },
   "dependencies": {
+    "@owostack/adapters": "workspace:*",
     "@owostack/core": "workspace:*",
     "@owostack/db": "workspace:*",
     "@owostack/types": "workspace:*",

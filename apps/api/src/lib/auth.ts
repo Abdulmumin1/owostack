@@ -5,19 +5,33 @@ import { createDb, schema } from "@owostack/db";
 import type { Env } from "../index";
 
 /**
- * Convert Date objects to timestamps (milliseconds) for D1 compatibility.
- * D1 doesn't support binding Date objects directly.
+ * Wrap a D1Database binding so that any Date objects passed to
+ * prepared-statement .bind() are converted to Unix-ms integers.
+ * D1 doesn't support binding Date objects directly and drizzle-orm's
+ * D1 session doesn't apply column-level mapToDriverValue, so we
+ * intercept here as a safety net.
  */
-function convertDatesToTimestamps(data: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(data)) {
-    if (value instanceof Date) {
-      result[key] = value.getTime();
-    } else {
-      result[key] = value;
-    }
-  }
-  return result;
+function wrapD1ForDates(d1: D1Database): D1Database {
+  return new Proxy(d1, {
+    get(target, prop, receiver) {
+      if (prop === "prepare") {
+        return (sql: string) => {
+          const stmt = target.prepare(sql);
+          const origBind = stmt.bind.bind(stmt);
+          return Object.assign(stmt, {
+            bind(...args: unknown[]) {
+              const safe = args.map((a) =>
+                a instanceof Date ? a.getTime() : a,
+              );
+              return origBind(...safe);
+            },
+          });
+        };
+      }
+      const val = Reflect.get(target, prop, receiver);
+      return typeof val === "function" ? val.bind(target) : val;
+    },
+  });
 }
 
 /**
@@ -32,48 +46,25 @@ function convertDatesToTimestamps(data: Record<string, unknown>): Record<string,
 export function auth(env: Env) {
   // Auth uses the shared DB_AUTH so users/sessions/orgs are consistent
   // across test and live API workers. Falls back to DB for local dev.
-  const db = createDb(env.DB_AUTH ?? env.DB);
-
-  // Create base adapter
-  const baseAdapterFactory = drizzleAdapter(db, {
-    provider: "sqlite",
-    schema: {
-      user: schema.users,
-      session: schema.sessions,
-      account: schema.accounts,
-      verification: schema.verifications,
-      organization: schema.organizations,
-      member: schema.members,
-      invitation: schema.invitations,
-    },
-  });
-
-  // Wrap the adapter factory to intercept create/update calls and convert Dates
-  const d1AdapterFactory = (options: any) => {
-    const adapter = baseAdapterFactory(options);
-    
-    return {
-      ...adapter,
-      create: async (createOpts: any) => {
-        return adapter.create({
-          ...createOpts,
-          data: convertDatesToTimestamps(createOpts.data),
-        });
-      },
-      update: async (updateOpts: any) => {
-        return adapter.update({
-          ...updateOpts,
-          update: convertDatesToTimestamps(updateOpts.update),
-        });
-      },
-    };
-  };
+  const d1 = env.DB_AUTH ?? env.DB;
+  const db = createDb(wrapD1ForDates(d1));
 
   // Determine if running in production (non-localhost)
   const isProduction = env.BETTER_AUTH_URL && !env.BETTER_AUTH_URL.includes("localhost");
 
   return betterAuth({
-    database: d1AdapterFactory as any,
+    database: drizzleAdapter(db, {
+      provider: "sqlite",
+      schema: {
+        user: schema.users,
+        session: schema.sessions,
+        account: schema.accounts,
+        verification: schema.verifications,
+        organization: schema.organizations,
+        member: schema.members,
+        invitation: schema.invitations,
+      },
+    }),
 
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,

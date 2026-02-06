@@ -9,13 +9,13 @@
     {
       "binding": "DB",
       "database_name": "owostack",
-      "database_id": "be366e9b-8c41-4321-abbe-2bd98a270146",
+      "database_id": "7a051860-c30d-42f5-8516-54d1c4c121a7",
       "migrations_dir":"../../packages/db/migrations"
     },
     {
       "binding": "DB_AUTH",
-      "database_name": "owostack",
-      "database_id": "be366e9b-8c41-4321-abbe-2bd98a270146",
+      "database_name": "owostack-auth",
+      "database_id": "fe5d69b6-5cea-4821-9da9-e88b58111203",
       "migrations_dir":"../../packages/db/migrations"
     }
   ],

@@ -7,6 +7,7 @@
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import Timeline from "$lib/components/ui/Timeline.svelte";
+  import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
 
   let {
     subscriptionId,
@@ -230,6 +231,7 @@
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
           <h3 class="text-sm font-bold text-white truncate">{data.plan.name}</h3>
+          <ProviderBadge providerId={data.subscription.providerId} size="xs" />
           <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border {statusColor(data.subscription.status)}">
             {data.subscription.status}
           </span>

@@ -8,6 +8,8 @@ import {
   features,
   planFeatures,
   subscriptions,
+  providerAccounts,
+  providerRules,
   entitlements,
   usageRecords,
   credits,
@@ -56,6 +58,8 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   features: many(features),
   events: many(events),
   apiKeys: many(apiKeys),
+  providerAccounts: many(providerAccounts),
+  providerRules: many(providerRules),
   // Rewards & Referrals
   rewards: many(rewards),
   referralPrograms: many(referralPrograms),
@@ -174,6 +178,23 @@ export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
   plan: one(plans, {
     fields: [subscriptions.planId],
     references: [plans.id],
+  }),
+}));
+
+export const providerAccountsRelations = relations(
+  providerAccounts,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [providerAccounts.organizationId],
+      references: [organizations.id],
+    }),
+  }),
+);
+
+export const providerRulesRelations = relations(providerRules, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [providerRules.organizationId],
+    references: [organizations.id],
   }),
 }));
 

@@ -36,7 +36,7 @@ export function apiKeyAuth(): MiddlewareHandler {
     const apiKey = match[1];
 
     // Get DB from context
-    const db = c.get("db") as DB;
+    const db = (c.get("authDb") ?? c.get("db")) as DB;
 
     // Hash the key to look it up (since we store hashes)
     // For MVP/Demo we might be storing plain keys, but let's check schema

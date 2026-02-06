@@ -5,6 +5,7 @@
   import { onMount } from "svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import SubscriptionDetail from "$lib/components/subscriptions/SubscriptionDetail.svelte";
+  import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
 
   const organizationId = $derived(page.params.projectId);
   let subscriptions = $state<any[]>([]);
@@ -123,6 +124,7 @@
           <tr class="bg-white/5 border-b border-border">
             <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Customer</th>
             <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Plan</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Provider</th>
             <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Status</th>
             <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Next Billing</th>
             <th class="px-6 py-4"></th>
@@ -147,6 +149,9 @@
                     {formatMoney(sub.plan?.price, sub.plan?.currency)} / {sub.plan?.interval}
                   </span>
                 </div>
+              </td>
+              <td class="px-6 py-4">
+                <ProviderBadge providerId={sub.providerId} />
               </td>
               <td class="px-6 py-4">
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border {getStatusColor(sub.status)}">

@@ -1,0 +1,42 @@
+---
+title: How it works
+description: The core Owostack flow from checkout to entitlements
+icon: Workflow
+---
+
+# How it works
+
+Owostack sits between your payment provider and your application.
+
+You model pricing and permissions in Owostack, collect payment through your provider, and then use the SDK to make **allow/deny** decisions and **track usage**.
+
+## The flow
+
+1. Create an organization and connect a provider account.
+2. Create plans and attach features (entitlements).
+3. Start a checkout for a customer.
+4. Owostack processes provider webhooks and keeps subscription state in sync.
+5. Your app calls `check()` and `track()` at runtime.
+
+```text
+Customer -> Provider Checkout -> Provider Webhooks -> Owostack
+                                         |
+                                         v
+                                  Entitlements + Meters
+                                         |
+                                         v
+                               Your app (SDK: check/track)
+```
+
+## What Owostack manages
+
+- Subscription state changes (active, canceled, past-due)
+- Plan switching logic (upgrades, downgrades, lateral moves)
+- Entitlements provisioning (features granted by a plan)
+- Usage metering (atomic increments) and credit balance deductions
+
+## What you manage
+
+- Your app’s auth/user model
+- Where to call `check()` and `track()` (middleware, handlers, background jobs)
+- Your UI for upgrade prompts and billing pages

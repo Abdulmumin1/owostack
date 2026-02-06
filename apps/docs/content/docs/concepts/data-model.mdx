@@ -1,0 +1,32 @@
+---
+title: Data model
+description: Key objects Owostack stores and how they relate
+icon: Database
+---
+
+# Data model
+
+Owostack stores a small set of objects that let it answer two questions quickly:
+
+- Is the customer allowed to use feature X right now?
+- If they use feature X, how do we account for it (meters/credits)?
+
+## Core objects
+
+- Organization
+- Project
+- Customer
+- Plan
+- Feature
+- Subscription
+- Entitlement
+- Usage / Meter state
+- Transactions / events
+
+## Provider references
+
+Most billing objects store provider IDs (for example, a Paystack subscription code) so Owostack can reconcile internal state with provider state.
+
+## Environments
+
+Use separate projects/environments for test and live credentials so you can validate integration safely.

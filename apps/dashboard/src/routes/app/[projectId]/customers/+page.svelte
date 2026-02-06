@@ -6,6 +6,7 @@
   import { onMount } from "svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import CustomerDetail from "$lib/components/customers/CustomerDetail.svelte";
+  import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
 
   const PAGE_SIZE = 25;
 
@@ -184,6 +185,7 @@
           <tr class="bg-white/5 border-b border-border">
             <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Customer</th>
             <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">External ID</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Provider</th>
             <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Joined</th>
             <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Status</th>
             <th class="px-6 py-4"></th>
@@ -208,6 +210,9 @@
               </td>
               <td class="px-6 py-4 text-xs font-mono text-zinc-400">
                 {customer.externalId || '—'}
+              </td>
+              <td class="px-6 py-4">
+                <ProviderBadge providerId={customer.providerId} />
               </td>
               <td class="px-6 py-4 text-xs text-zinc-500">
                 {formatDate(customer.createdAt)}

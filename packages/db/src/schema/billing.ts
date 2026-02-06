@@ -14,6 +14,12 @@ export const customers = sqliteTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
+    providerId: text("provider_id"),
+    providerCustomerId: text("provider_customer_id"),
+    providerAuthorizationCode: text("provider_authorization_code"),
+    providerMetadata: text("provider_metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
     paystackCustomerId: text("paystack_customer_id"),
     paystackAuthorizationCode: text("paystack_authorization_code"), // For charging saved cards
     externalId: text("external_id"), // Developer's user ID
@@ -43,6 +49,11 @@ export const plans = sqliteTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
+    providerId: text("provider_id"),
+    providerPlanId: text("provider_plan_id"),
+    providerMetadata: text("provider_metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
     paystackPlanId: text("paystack_plan_id"),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
@@ -157,6 +168,12 @@ export const subscriptions = sqliteTable(
     planId: text("plan_id")
       .notNull()
       .references(() => plans.id),
+    providerId: text("provider_id"),
+    providerSubscriptionId: text("provider_subscription_id"),
+    providerSubscriptionCode: text("provider_subscription_code"),
+    providerMetadata: text("provider_metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
     paystackSubscriptionId: text("paystack_subscription_id"),
     paystackSubscriptionCode: text("paystack_subscription_code"),
     status: text("status").notNull().default("active"),
@@ -180,6 +197,66 @@ export const subscriptions = sqliteTable(
   ],
 );
 
+export const providerAccounts = sqliteTable(
+  "provider_accounts",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    providerId: text("provider_id").notNull(),
+    environment: text("environment").notNull(),
+    displayName: text("display_name"),
+    credentials: text("credentials", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
+    metadata: text("metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("provider_accounts_org_idx").on(table.organizationId),
+    index("provider_accounts_provider_idx").on(
+      table.providerId,
+      table.environment,
+    ),
+  ],
+);
+
+export const providerRules = sqliteTable(
+  "provider_rules",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    priority: integer("priority").notNull(),
+    isDefault: integer("is_default", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    providerId: text("provider_id").notNull(),
+    conditions: text("conditions", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("provider_rules_org_idx").on(table.organizationId),
+    index("provider_rules_priority_idx").on(table.priority),
+  ],
+);
+
 export const entitlements = sqliteTable(
   "entitlements",
   {
@@ -190,6 +267,7 @@ export const entitlements = sqliteTable(
     featureId: text("feature_id")
       .notNull()
       .references(() => features.id),
+    entityId: text("entity_id"),
     limitValue: integer("limit_value"),
     resetInterval: text("reset_interval").notNull().default("monthly"),
     lastResetAt: integer("last_reset_at"),
@@ -207,6 +285,11 @@ export const entitlements = sqliteTable(
       table.customerId,
       table.featureId,
     ),
+    index("entitlements_entity_idx").on(
+      table.customerId,
+      table.featureId,
+      table.entityId,
+    ),
   ],
 );
 
@@ -220,6 +303,7 @@ export const usageRecords = sqliteTable(
     featureId: text("feature_id")
       .notNull()
       .references(() => features.id),
+    entityId: text("entity_id"),
     amount: integer("amount").notNull().default(1),
     periodStart: integer("period_start").notNull(),
     periodEnd: integer("period_end").notNull(),
@@ -236,6 +320,11 @@ export const usageRecords = sqliteTable(
       table.customerId,
       table.periodStart,
       table.periodEnd,
+    ),
+    index("usage_entity_idx").on(
+      table.customerId,
+      table.featureId,
+      table.entityId,
     ),
   ],
 );

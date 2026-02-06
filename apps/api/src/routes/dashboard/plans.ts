@@ -3,6 +3,17 @@ import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import { PaystackClient } from "../../lib/paystack";
 import { decrypt } from "../../lib/encryption";
+import {
+  createProviderRegistry,
+  paystackAdapter,
+  resolveProvider,
+} from "@owostack/adapters";
+import {
+  buildProviderContext,
+  deriveProviderEnvironment,
+  loadProviderAccounts,
+  loadProviderRules,
+} from "../../lib/providers";
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
@@ -126,6 +137,9 @@ app.post("/", async (c) => {
   // Sync with Paystack
   // ===========================================================================
   let paystackPlanId: string | null = null;
+  let providerId: string | null = null;
+  let providerPlanId: string | null = null;
+  let providerAccountSecret: string | null = null;
 
   // Only sync if it's a paid, recurring plan
   if (type === "paid" && billingType === "recurring") {
@@ -135,13 +149,56 @@ app.post("/", async (c) => {
         where: eq(schema.projects.organizationId, organizationId),
       });
 
+      const registry = createProviderRegistry();
+      registry.register(paystackAdapter);
+      const providerEnv = deriveProviderEnvironment(
+        c.env.ENVIRONMENT,
+        project?.activeEnvironment,
+      );
+      const providerRules = await loadProviderRules(db, organizationId);
+      const providerAccounts = await loadProviderAccounts(
+        db,
+        organizationId,
+        c.env.ENCRYPTION_KEY,
+      );
+      const providerContext = buildProviderContext({
+        currency,
+      });
+
+      const selectionResult = resolveProvider(registry, {
+        organizationId,
+        environment: providerEnv,
+        context: providerContext,
+        rules: providerRules,
+        accounts: providerAccounts,
+      });
+
+      if (selectionResult.isOk()) {
+        providerId = selectionResult.value.adapter.id;
+        providerPlanId = null;
+        providerAccountSecret =
+          typeof selectionResult.value.account.credentials?.secretKey ===
+          "string"
+            ? selectionResult.value.account.credentials.secretKey
+            : null;
+      } else if (providerAccounts.length > 0) {
+        console.warn(
+          "Provider rules exist but no provider matched for plan creation",
+        );
+      }
+
       if (project) {
         const activeEnv = project.activeEnvironment || "test";
         const encryptedKey =
           activeEnv === "live" ? project.liveSecretKey : project.testSecretKey;
 
-        if (encryptedKey) {
-          const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
+        let secretKey = providerAccountSecret;
+
+        if (!secretKey && encryptedKey) {
+          secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
+        }
+
+        if (secretKey) {
           const paystack = new PaystackClient({ secretKey });
 
           const result = await paystack.createPlan({
@@ -154,6 +211,7 @@ app.post("/", async (c) => {
 
           if (result.isOk()) {
             paystackPlanId = result.value.plan_code;
+            providerPlanId = result.value.plan_code;
           } else {
             console.warn("Failed to create Paystack plan:", result.error);
           }
@@ -185,6 +243,8 @@ app.post("/", async (c) => {
         autoEnable,
         planGroup,
         paystackPlanId, // Now populated!
+        providerId: providerId || (paystackPlanId ? "paystack" : null),
+        providerPlanId: providerPlanId || paystackPlanId,
       })
       .returning();
 

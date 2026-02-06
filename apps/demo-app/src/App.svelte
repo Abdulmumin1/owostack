@@ -50,6 +50,7 @@
       const res = await owo.check({
         customer: customerId,
         feature: featureId,
+        customerData: { email: customerId },
       });
       log("Check Result:", res);
     } catch (e: any) {
@@ -65,7 +66,7 @@
       const res = await owo.track({
         customer: customerId,
         feature: featureId,
-        amount: trackAmount,
+        value: trackAmount,
       });
       log("Track Result:", res);
     } catch (e: any) {

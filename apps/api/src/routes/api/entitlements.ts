@@ -19,9 +19,9 @@ app.use("*", async (c, next) => {
   }
 
   const apiKey = authHeader.split(" ")[1];
-  const db = c.get("db");
+  const authDb = c.get("authDb");
 
-  const keyRecord = await verifyApiKey(db, apiKey);
+  const keyRecord = await verifyApiKey(authDb, apiKey);
   if (!keyRecord) {
     return c.json({ success: false, error: "Invalid API Key" }, 401);
   }
@@ -30,35 +30,41 @@ app.use("*", async (c, next) => {
   return await next();
 });
 
-const checkSchema = z.object({
-  customer: z.string(), // email or id
-  feature: z.string(), // slug or id
-  value: z.number().default(1),
+const customerDataSchema = z.object({
+  email: z.string().email(),
+  name: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-// Check Access
-app.post("/check", async (c) => {
-  const body = await c.req.json();
-  const parsed = checkSchema.safeParse(body);
+const checkSchema = z.object({
+  customer: z.string(),
+  feature: z.string(),
+  value: z.number().default(1),
+  customerData: customerDataSchema.optional(),
+  sendEvent: z.boolean().default(false),
+  entity: z.string().optional(),
+});
 
-  if (!parsed.success) {
-    return c.json(zodErrorToResponse(parsed.error), 400);
-  }
+const trackSchema = z.object({
+  customer: z.string(),
+  feature: z.string(),
+  value: z.number().default(1),
+  customerData: customerDataSchema.optional(),
+  entity: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
 
-  const { customer: customerId, feature: featureId, value } = parsed.data;
-  const db = c.get("db");
-  const organizationId = c.get("organizationId");
-  const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
-
-  if (!organizationId) {
-    return c.json(
-      { success: false, error: "Organization Context Missing" },
-      500,
-    );
-  }
-
-  // 1. Resolve Customer (cache-first, then DB)
-  // Normalize email to lowercase for case-insensitive matching
+/**
+ * Resolve an existing customer or auto-create one when customerData is provided.
+ * Returns the customer record or null if not found and no customerData to create from.
+ */
+async function resolveOrCreateCustomer(
+  db: any,
+  organizationId: string,
+  customerId: string,
+  customerData?: { email: string; name?: string; metadata?: Record<string, unknown> },
+  cache?: EntitlementCache | null,
+) {
   const customerIdLower = customerId.toLowerCase();
   let customer = cache
     ? await cache.getCustomer<typeof schema.customers.$inferSelect>(organizationId, customerIdLower)
@@ -81,9 +87,56 @@ app.post("/check", async (c) => {
     }
   }
 
+  // Auto-create customer if not found and customerData provided
+  if (!customer && customerData) {
+    const now = Date.now();
+    const newCustomer = {
+      id: crypto.randomUUID(),
+      organizationId,
+      externalId: customerId,
+      email: customerData.email.toLowerCase(),
+      name: customerData.name || null,
+      metadata: customerData.metadata || null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.insert(schema.customers).values(newCustomer);
+    customer = newCustomer as typeof schema.customers.$inferSelect;
+
+    if (cache) {
+      await cache.setCustomer(organizationId, customerIdLower, customer);
+    }
+  }
+
+  return customer;
+}
+
+// Check Access
+app.post("/check", async (c) => {
+  const body = await c.req.json();
+  const parsed = checkSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(zodErrorToResponse(parsed.error), 400);
+  }
+
+  const { customer: customerId, feature: featureId, value, customerData, sendEvent, entity } = parsed.data;
+  const db = c.get("db");
+  const organizationId = c.get("organizationId");
+  const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
+
+  if (!organizationId) {
+    return c.json(
+      { success: false, error: "Organization Context Missing" },
+      500,
+    );
+  }
+
+  // 1. Resolve Customer (cache-first, then DB, auto-create if customerData provided)
+  const customer = await resolveOrCreateCustomer(db, organizationId, customerId, customerData, cache);
+
   if (!customer) {
     return c.json({
-      success: true,
       allowed: false,
       code: "customer_not_found",
     });
@@ -111,7 +164,7 @@ app.post("/check", async (c) => {
   }
 
   if (!feature) {
-    return c.json({ success: true, allowed: false, code: "feature_not_found" });
+    return c.json({ allowed: false, code: "feature_not_found" });
   }
 
   // 3. Check Subscription & Plans (cache-first, then DB)
@@ -141,7 +194,6 @@ app.post("/check", async (c) => {
 
   if (!subscriptions || subscriptions.length === 0) {
     return c.json({
-      success: true,
       allowed: false,
       code: "no_active_subscription",
     });
@@ -185,7 +237,6 @@ app.post("/check", async (c) => {
 
   if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
     return c.json({
-      success: true,
       allowed: false,
       code: "feature_not_in_plan",
     });
@@ -197,7 +248,7 @@ app.post("/check", async (c) => {
 
   // 5. Check Logic based on Type
   if (feature.type === "boolean") {
-    return c.json({ success: true, allowed: true, code: "access_granted" });
+    return c.json({ allowed: true, code: "access_granted" });
   }
 
   if (feature.type === "metered") {
@@ -212,6 +263,11 @@ app.post("/check", async (c) => {
     // ===========================================================================
     // DO Check (Preferred for atomicity)
     // ===========================================================================
+    // When entity is provided, scope DO feature key and DB queries by entity
+    const featureKey = entity
+      ? `${feature.slug || feature.id}:${entity}`
+      : (feature.slug || feature.id);
+
     if (c.env.USAGE_METER && organizationId) {
       const doId = c.env.USAGE_METER.idFromName(
         `${organizationId}:${customer.id}`,
@@ -229,11 +285,14 @@ app.post("/check", async (c) => {
         creditCost: planFeature.creditCost || 0,
       };
 
-      let doResult = await usageMeter.check(feature.slug || feature.id, value, currentConfig);
+      let doResult = await usageMeter.check(featureKey, value, currentConfig);
 
       // If DO has no state yet (fresh/restart), migrate usage from DB and configure
       if (doResult.code === "feature_not_found") {
         const { periodStart: migPeriodStart, periodEnd: migPeriodEnd } = resetPeriod;
+        const entityFilter = entity
+          ? eq(schema.usageRecords.entityId, entity)
+          : undefined;
         const usageResult = await db
           .select({ total: sql<number>`sum(amount)` })
           .from(schema.usageRecords)
@@ -241,6 +300,7 @@ app.post("/check", async (c) => {
             and(
               eq(schema.usageRecords.customerId, customer.id),
               eq(schema.usageRecords.featureId, feature.id),
+              entityFilter,
               sql`${schema.usageRecords.createdAt} >= ${migPeriodStart}`,
               sql`${schema.usageRecords.createdAt} <= ${migPeriodEnd}`,
             ),
@@ -248,31 +308,56 @@ app.post("/check", async (c) => {
         const currentUsage = usageResult[0]?.total || 0;
 
         await usageMeter.configureFeature(
-          feature.slug || feature.id,
+          featureKey,
           { ...currentConfig, initialUsage: currentUsage },
         );
 
-        doResult = await usageMeter.check(feature.slug || feature.id, value);
+        doResult = await usageMeter.check(featureKey, value);
       }
 
       if (!doResult.allowed) {
         return c.json({
-          success: true,
           allowed: false,
           code: doResult.code,
-          currentUsage: doResult.usage,
+          usage: doResult.usage,
           limit: doResult.limit,
+          balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
           resetsAt,
           resetInterval: planFeature.resetInterval,
         });
       }
 
+      // sendEvent: atomically track usage if check passed
+      if (sendEvent) {
+        const trackResult = await usageMeter.track(featureKey, value, currentConfig);
+        if (trackResult && !trackResult.allowed) {
+          return c.json({
+            allowed: false,
+            code: trackResult.code,
+            balance: trackResult.balance,
+            resetsAt,
+            resetInterval: planFeature.resetInterval,
+          });
+        }
+        // Also persist to DB for audit trail
+        await db.insert(schema.usageRecords).values({
+          id: crypto.randomUUID(),
+          customerId: customer.id,
+          featureId: feature.id,
+          entityId: entity || null,
+          amount: value,
+          periodStart: resetPeriod.periodStart,
+          periodEnd: resetPeriod.periodEnd,
+        });
+      }
+
       return c.json({
-        success: true,
         allowed: true,
         code: "access_granted",
-        remaining:
-          doResult.limit === null ? null : doResult.limit - doResult.usage,
+        usage: doResult.usage,
+        limit: doResult.limit,
+        balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
+        unlimited: doResult.limit === null,
         resetsAt,
         resetInterval: planFeature.resetInterval,
       });
@@ -280,7 +365,7 @@ app.post("/check", async (c) => {
     // Check Usage Limit
     // If limitValue is null, it's unlimited
     if (planFeature.limitValue === null) {
-      return c.json({ success: true, allowed: true, code: "unlimited_access" });
+      return c.json({ allowed: true, code: "access_granted", unlimited: true });
     }
 
     // Calculate current usage for this period using the feature's reset interval
@@ -291,6 +376,9 @@ app.post("/check", async (c) => {
     );
 
     // Sum usage records within the reset-interval-aware period
+    const dbEntityFilter = entity
+      ? eq(schema.usageRecords.entityId, entity)
+      : undefined;
     const usageResult = await db
       .select({
         total: sql<number>`sum(amount)`,
@@ -300,6 +388,7 @@ app.post("/check", async (c) => {
         and(
           eq(schema.usageRecords.customerId, customer.id),
           eq(schema.usageRecords.featureId, feature.id),
+          dbEntityFilter,
           sql`${schema.usageRecords.createdAt} >= ${currentPeriodStart}`,
           sql`${schema.usageRecords.createdAt} <= ${currentPeriodEnd}`,
         ),
@@ -309,11 +398,11 @@ app.post("/check", async (c) => {
 
     if (currentUsage + value > planFeature.limitValue) {
       return c.json({
-        success: true,
         allowed: false,
         code: "limit_exceeded",
-        currentUsage,
+        usage: currentUsage,
         limit: planFeature.limitValue,
+        balance: planFeature.limitValue - currentUsage,
         resetsAt,
         resetInterval: planFeature.resetInterval,
       });
@@ -325,31 +414,43 @@ app.post("/check", async (c) => {
       const creditRecord = await db.query.credits.findFirst({
         where: eq(schema.credits.customerId, customer.id),
       });
-      const balance = creditRecord?.balance || 0;
+      const creditBalance = creditRecord?.balance || 0;
 
-      if (balance < cost) {
+      if (creditBalance < cost) {
         return c.json({
-          success: true,
           allowed: false,
           code: "insufficient_credits",
-          balance,
-          required: cost,
+          balance: creditBalance,
+          limit: cost,
         });
       }
     }
 
+    // sendEvent: track usage inline (DB-only path, no DO)
+    if (sendEvent) {
+      await db.insert(schema.usageRecords).values({
+        id: crypto.randomUUID(),
+        customerId: customer.id,
+        featureId: feature.id,
+        entityId: entity || null,
+        amount: value,
+        periodStart: currentPeriodStart,
+        periodEnd: currentPeriodEnd,
+      });
+    }
+
     return c.json({
-      success: true,
       allowed: true,
       code: "access_granted",
-      remaining: planFeature.limitValue - currentUsage,
+      usage: currentUsage,
+      limit: planFeature.limitValue,
+      balance: planFeature.limitValue - currentUsage,
       resetsAt,
       resetInterval: planFeature.resetInterval,
     });
   }
 
   return c.json({
-    success: true,
     allowed: false,
     code: "unknown_feature_type",
   });
@@ -358,13 +459,13 @@ app.post("/check", async (c) => {
 // Track Usage
 app.post("/track", async (c) => {
   const body = await c.req.json();
-  const parsed = checkSchema.safeParse(body); // Same schema works for now
+  const parsed = trackSchema.safeParse(body);
 
   if (!parsed.success) {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { customer: customerId, feature: featureId, value } = parsed.data;
+  const { customer: customerId, feature: featureId, value, customerData, entity } = parsed.data;
   const db = c.get("db");
   const organizationId = c.get("organizationId");
   const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
@@ -376,32 +477,11 @@ app.post("/track", async (c) => {
     );
   }
 
-  // 1. Resolve Customer (cache-first, then DB)
-  // Normalize email to lowercase for case-insensitive matching
-  const customerIdLowerTrack = customerId.toLowerCase();
-  let customer = cache
-    ? await cache.getCustomer<typeof schema.customers.$inferSelect>(organizationId, customerIdLowerTrack)
-    : null;
+  // 1. Resolve Customer (cache-first, then DB, auto-create if customerData provided)
+  const customer = await resolveOrCreateCustomer(db, organizationId, customerId, customerData, cache);
 
   if (!customer) {
-    customer = (await db.query.customers.findFirst({
-      where: and(
-        eq(schema.customers.organizationId, organizationId),
-        or(
-          eq(schema.customers.id, customerId),
-          eq(schema.customers.externalId, customerId),
-          eq(schema.customers.email, customerIdLowerTrack),
-        ),
-      ),
-    })) ?? null;
-
-    if (customer && cache) {
-      await cache.setCustomer(organizationId, customerIdLowerTrack, customer);
-    }
-  }
-
-  if (!customer) {
-    return c.json({ success: false, error: "Customer not found" }, 404);
+    return c.json({ success: false, allowed: false, code: "customer_not_found" }, 404);
   }
 
   // 2. Resolve Feature (cache-first, then DB)
@@ -426,7 +506,7 @@ app.post("/track", async (c) => {
   }
 
   if (!feature) {
-    return c.json({ success: false, error: "Feature not found" }, 404);
+    return c.json({ success: false, allowed: false, code: "feature_not_found" }, 404);
   }
 
   // 3. Find active subscriptions (cache-first, then DB)
@@ -453,7 +533,7 @@ app.post("/track", async (c) => {
 
   if (subscriptions.length === 0) {
     return c.json(
-      { success: false, error: "No active subscription" },
+      { success: false, allowed: false, code: "no_active_subscription" },
       400,
     );
   }
@@ -498,10 +578,7 @@ app.post("/track", async (c) => {
 
   if (!subscription || !planFeature) {
     return c.json(
-      {
-        success: false,
-        error: "Feature is not enabled for this customer's plan",
-      },
+      { success: false, allowed: false, code: "feature_not_in_plan" },
       400,
     );
   }
@@ -519,6 +596,11 @@ app.post("/track", async (c) => {
     // ===========================================================================
     let doResult: { allowed: boolean; balance: number; code: string } | null =
       null;
+
+    // When entity is provided, scope DO feature key and DB queries by entity
+    const trackFeatureKey = entity
+      ? `${feature.slug || feature.id}:${entity}`
+      : (feature.slug || feature.id);
 
     if (c.env.USAGE_METER && planFeature) {
       // Get customer's DO instance by their ID (scoped to org)
@@ -540,10 +622,13 @@ app.post("/track", async (c) => {
       };
 
       // Track usage atomically via RPC (config synced inline)
-      doResult = await usageMeter.track(feature.slug || feature.id, value, currentConfig);
+      doResult = await usageMeter.track(trackFeatureKey, value, currentConfig);
 
       // If DO has no state yet (fresh/restart), migrate usage from DB and configure
       if (doResult.code === "feature_not_found") {
+        const trackEntityFilter = entity
+          ? eq(schema.usageRecords.entityId, entity)
+          : undefined;
         const usageResult = await db
           .select({ total: sql<number>`sum(amount)` })
           .from(schema.usageRecords)
@@ -551,6 +636,7 @@ app.post("/track", async (c) => {
             and(
               eq(schema.usageRecords.customerId, customer.id),
               eq(schema.usageRecords.featureId, feature.id),
+              trackEntityFilter,
               sql`${schema.usageRecords.createdAt} >= ${periodStart}`,
               sql`${schema.usageRecords.createdAt} <= ${periodEnd}`,
             ),
@@ -558,22 +644,21 @@ app.post("/track", async (c) => {
         const currentUsage = usageResult[0]?.total || 0;
 
         await usageMeter.configureFeature(
-          feature.slug || feature.id,
+          trackFeatureKey,
           { ...currentConfig, initialUsage: currentUsage },
         );
 
-        doResult = await usageMeter.track(feature.slug || feature.id, value);
+        doResult = await usageMeter.track(trackFeatureKey, value);
       }
 
       // If DO says not allowed, return early
       if (doResult && !doResult.allowed) {
-        const resetsAt = new Date(periodEnd).toISOString();
         return c.json({
           success: false,
           allowed: false,
           code: doResult.code,
           balance: doResult.balance,
-          resetsAt,
+          resetsAt: new Date(periodEnd).toISOString(),
           resetInterval: planFeature.resetInterval,
         });
       }
@@ -586,6 +671,7 @@ app.post("/track", async (c) => {
       id: crypto.randomUUID(),
       customerId: customer.id,
       featureId: feature.id,
+      entityId: entity || null,
       amount: value,
       periodStart,
       periodEnd,
@@ -615,13 +701,14 @@ app.post("/track", async (c) => {
     return c.json({
       success: true,
       allowed: true,
-      balance: doResult?.balance,
+      code: "tracked",
+      balance: doResult?.balance ?? null,
       resetsAt: new Date(periodEnd).toISOString(),
       resetInterval: planFeature.resetInterval,
     });
   } catch (e: any) {
     console.error("Track failed:", e);
-    return c.json({ success: false, error: e.message }, 500);
+    return c.json({ success: false, allowed: false, code: "internal_error" }, 500);
   }
 });
 

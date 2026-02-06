@@ -47,7 +47,7 @@ app.post("/", async (c) => {
   }
 
   const { organizationId, name } = parsed.data;
-  const db = c.get("db");
+  const db = c.get("authDb");
 
   // Generate Key
   const finalKey = generateApiKey();
@@ -88,7 +88,7 @@ app.get("/", async (c) => {
     return c.json({ error: "Organization ID required" }, 400);
   }
 
-  const db = c.get("db");
+  const db = c.get("authDb");
   const keys = await db.query.apiKeys.findMany({
     where: eq(schema.apiKeys.organizationId, organizationId),
     orderBy: (keys, { desc }) => [desc(keys.createdAt)],

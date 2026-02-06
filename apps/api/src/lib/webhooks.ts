@@ -1,8 +1,9 @@
 import { Result } from "better-result";
 import type { createDb } from "@owostack/db";
 import { schema } from "@owostack/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { WebhookError, DatabaseError } from "./errors";
+import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
 
 // =============================================================================
 // Types
@@ -20,11 +21,18 @@ type DB = ReturnType<typeof createDb>;
 // =============================================================================
 
 export class WebhookHandler {
+  private adapter: ProviderAdapter | null;
+  private providerAccount: ProviderAccount | null;
+
   constructor(
     private secret: string,
     private db: DB,
     private organizationId: string,
-  ) {}
+    opts?: { adapter?: ProviderAdapter; account?: ProviderAccount },
+  ) {
+    this.adapter = opts?.adapter || null;
+    this.providerAccount = opts?.account || null;
+  }
 
   /**
    * Verify webhook signature using HMAC SHA-512
@@ -139,6 +147,8 @@ export class WebhookHandler {
           id: crypto.randomUUID(),
           organizationId: this.organizationId,
           email: customer.email,
+          providerId: "paystack",
+          providerCustomerId: customer.customer_code,
           paystackCustomerId: customer.customer_code,
         })
         .returning();
@@ -147,39 +157,84 @@ export class WebhookHandler {
 
     const dbPlan = await this.db.query.plans.findFirst({
       where: and(
-        eq(schema.plans.paystackPlanId, plan.plan_code),
+        or(
+          eq(schema.plans.paystackPlanId, plan.plan_code),
+          eq(schema.plans.providerPlanId, plan.plan_code),
+        ),
         eq(schema.plans.organizationId, this.organizationId),
       ),
     });
 
     if (!dbPlan) {
-      console.warn(
-        `Plan ${plan.plan_code} not found in org ${this.organizationId}`,
-      );
+      // Plan not synced to Paystack — try to link subscription_code to an
+      // existing subscription created by charge.success for this customer
+      const existingSubForCustomer = await this.db.query.subscriptions.findFirst({
+        where: and(
+          eq(schema.subscriptions.customerId, dbCustomer.id),
+          eq(schema.subscriptions.status, "active"),
+        ),
+      });
+      if (existingSubForCustomer) {
+        await this.db
+          .update(schema.subscriptions)
+          .set({
+            providerSubscriptionId: data.subscription_code as string,
+            providerSubscriptionCode: data.subscription_code as string,
+            paystackSubscriptionId: data.subscription_code as string,
+            paystackSubscriptionCode: data.subscription_code as string,
+            updatedAt: Date.now(),
+          })
+          .where(eq(schema.subscriptions.id, existingSubForCustomer.id));
+      } else {
+        console.warn(
+          `Plan ${plan.plan_code} not found in org ${this.organizationId}, no existing sub to link`,
+        );
+      }
       return;
     }
 
     // Check for existing subscription (idempotency)
     const existing = await this.db.query.subscriptions.findFirst({
-      where: eq(
-        schema.subscriptions.paystackSubscriptionCode,
-        data.subscription_code as string,
+      where: or(
+        eq(
+          schema.subscriptions.paystackSubscriptionCode,
+          data.subscription_code as string,
+        ),
+        eq(
+          schema.subscriptions.providerSubscriptionCode,
+          data.subscription_code as string,
+        ),
       ),
     });
 
     if (existing) return; // Already processed
 
     // Create subscription
+    // Paystack subscription.create webhook fields vary — use safe fallbacks
+    const now = Date.now();
+    const periodStart =
+      safeParseDate(data.start as string) ||
+      safeParseDate(data.createdAt as string) ||
+      safeParseDate(data.created_at as string) ||
+      now;
+    const periodEnd =
+      safeParseDate(data.next_payment_date as string) ||
+      periodStart + 30 * 24 * 60 * 60 * 1000; // fallback: +30 days
+
     await this.db.insert(schema.subscriptions).values([
       {
         id: crypto.randomUUID(),
         customerId: dbCustomer.id,
         planId: dbPlan.id,
-        paystackSubscriptionId: String(data.id),
+        providerId: "paystack",
+        providerSubscriptionId: data.subscription_code as string,
+        providerSubscriptionCode: data.subscription_code as string,
+        paystackSubscriptionId: data.subscription_code as string,
         paystackSubscriptionCode: data.subscription_code as string,
         status: "active",
-        currentPeriodStart: parsePaystackDate(data.start as string),
-        currentPeriodEnd: parsePaystackDate(data.next_payment_date as string),
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+        providerMetadata: data,
         metadata: data,
       },
     ]);
@@ -200,12 +255,22 @@ export class WebhookHandler {
         ...(status === "canceled" ? { canceledAt: Date.now() } : {}),
       })
       .where(
-        eq(schema.subscriptions.paystackSubscriptionCode, subscriptionCode),
+        or(
+          eq(schema.subscriptions.paystackSubscriptionCode, subscriptionCode),
+          eq(schema.subscriptions.providerSubscriptionCode, subscriptionCode),
+        ),
       );
   }
 
   private async handleChargeSuccess(data: Record<string, unknown>) {
-    const metadata = (data.metadata as Record<string, unknown>) || {};
+    // Paystack metadata can be 0, null, a string, or an object — normalize
+    let metadata: Record<string, unknown> = {};
+    const rawMeta = data.metadata;
+    if (rawMeta && typeof rawMeta === "object" && !Array.isArray(rawMeta)) {
+      metadata = rawMeta as Record<string, unknown>;
+    } else if (typeof rawMeta === "string") {
+      try { metadata = JSON.parse(rawMeta); } catch { metadata = {}; }
+    }
     const customerData = data.customer as {
       email: string;
       customer_code: string;
@@ -234,8 +299,15 @@ export class WebhookHandler {
           id: crypto.randomUUID(),
           organizationId: this.organizationId,
           email: customerData.email.toLowerCase(),
+          providerId: "paystack",
+          providerCustomerId: customerData.customer_code,
+          providerAuthorizationCode: authorization?.reusable
+            ? authorization.authorization_code
+            : null,
           paystackCustomerId: customerData.customer_code,
-          paystackAuthorizationCode: authorization?.reusable ? authorization.authorization_code : null,
+          paystackAuthorizationCode: authorization?.reusable
+            ? authorization.authorization_code
+            : null,
         })
         .returning();
       dbCustomer = newCustomer;
@@ -244,6 +316,9 @@ export class WebhookHandler {
       await this.db
         .update(schema.customers)
         .set({
+          providerId: "paystack",
+          providerCustomerId: customerData.customer_code,
+          providerAuthorizationCode: authorization.authorization_code,
           paystackAuthorizationCode: authorization.authorization_code,
           paystackCustomerId: customerData.customer_code,
           updatedAt: Date.now(),
@@ -259,6 +334,7 @@ export class WebhookHandler {
       const planId = metadata.plan_id as string;
       const now = Date.now();
       const trialEndMs = now + trialDays * 24 * 60 * 60 * 1000;
+      const trialSubscriptionCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
 
       // Check if subscription already exists
       const existingSub = await this.db.query.subscriptions.findFirst({
@@ -275,7 +351,10 @@ export class WebhookHandler {
             id: crypto.randomUUID(),
             customerId: dbCustomer.id,
             planId: planId,
-            paystackSubscriptionCode: `trial-${crypto.randomUUID().slice(0, 8)}`,
+            providerId: (metadata.provider_id as string) || "paystack",
+            providerSubscriptionId: trialSubscriptionCode,
+            providerSubscriptionCode: trialSubscriptionCode,
+            paystackSubscriptionCode: trialSubscriptionCode,
             status: "trialing",
             currentPeriodStart: now,
             currentPeriodEnd: trialEndMs,
@@ -299,12 +378,43 @@ export class WebhookHandler {
       const oldPlanId = metadata.old_plan_id as string | undefined;
       const now = Date.now();
 
-      // Cancel old subscription
+      // Cancel old subscription (both DB and provider)
       if (oldSubId) {
-        await this.db
-          .update(schema.subscriptions)
-          .set({ status: "canceled", canceledAt: now, updatedAt: now })
-          .where(eq(schema.subscriptions.id, oldSubId));
+        const oldSub = await this.db.query.subscriptions.findFirst({
+          where: eq(schema.subscriptions.id, oldSubId),
+        });
+
+        if (oldSub) {
+          // Cancel on provider first
+          const subCode = oldSub.providerSubscriptionCode || oldSub.paystackSubscriptionCode;
+          if (
+            this.adapter &&
+            this.providerAccount &&
+            subCode &&
+            subCode !== "one-time" &&
+            !subCode.startsWith("trial-") &&
+            !subCode.startsWith("charge")
+          ) {
+            try {
+              const cancelResult = await this.adapter.cancelSubscription({
+                subscription: { id: subCode, status: oldSub.status || "active" },
+                environment: this.providerAccount.environment,
+                account: this.providerAccount,
+              });
+              if (cancelResult.isErr()) {
+                console.warn(`Webhook: provider cancel failed for ${subCode}:`, cancelResult.error.message);
+              }
+            } catch (e) {
+              console.warn(`Webhook: provider cancel threw for ${subCode}:`, e);
+            }
+          }
+
+          // Cancel in DB
+          await this.db
+            .update(schema.subscriptions)
+            .set({ status: "canceled", canceledAt: now, updatedAt: now })
+            .where(eq(schema.subscriptions.id, oldSubId));
+        }
       }
 
       // Look up new plan to get the correct interval
@@ -314,14 +424,18 @@ export class WebhookHandler {
       const periodMs = newPlan ? intervalToMs(newPlan.interval) : 30 * 24 * 60 * 60 * 1000;
 
       // Create new subscription for upgraded plan
+      const upgradeProviderId = (metadata.provider_id as string) || "paystack";
+      const upgradeSubCode = (data.plan as any)?.plan_code || "one-time";
       const startMs = new Date(data.paid_at as string).getTime();
       await this.db.insert(schema.subscriptions).values([
         {
           id: crypto.randomUUID(),
           customerId: dbCustomer.id,
           planId: newPlanId,
-          paystackSubscriptionCode:
-            (data.plan as any)?.plan_code || "one-time",
+          providerId: upgradeProviderId,
+          providerSubscriptionId: upgradeSubCode,
+          providerSubscriptionCode: upgradeSubCode,
+          paystackSubscriptionCode: upgradeSubCode,
           status: "active",
           currentPeriodStart: startMs,
           currentPeriodEnd: startMs + periodMs,
@@ -355,6 +469,9 @@ export class WebhookHandler {
             id: crypto.randomUUID(),
             customerId: dbCustomer.id,
             planId: planId,
+            providerId: (metadata.provider_id as string) || "paystack",
+            providerSubscriptionId: "one-time",
+            providerSubscriptionCode: "one-time",
             paystackSubscriptionCode: "one-time",
             status: "active",
             currentPeriodStart: now,
@@ -386,29 +503,30 @@ export class WebhookHandler {
         const startDate = new Date(data.paid_at as string);
         const startMs = startDate.getTime();
 
-        // Checks if this is a native Paystack subscription (has plan_code)
-        const isNativeSubscription = (data.plan as any)?.plan_code;
-
         // Look up plan to determine billing type and interval
         const plan = await this.db.query.plans.findFirst({
           where: eq(schema.plans.id, planId),
         });
         const periodMs = plan ? intervalToMs(plan.interval) : 30 * 24 * 60 * 60 * 1000;
 
-        if (!isNativeSubscription) {
-          await this.db.insert(schema.subscriptions).values([
-            {
-              id: crypto.randomUUID(),
-              customerId: dbCustomer.id,
-              planId: planId,
-              paystackSubscriptionCode: "one-time",
-              status: "active",
-              currentPeriodStart: startMs,
-              currentPeriodEnd: startMs + periodMs,
-              metadata: data,
-            },
-          ]);
-        }
+        // Always create subscription from charge.success when metadata.plan_id
+        // is present. The existingSub check above already prevents duplicates
+        // if subscription.create handled it first.
+        await this.db.insert(schema.subscriptions).values([
+          {
+            id: crypto.randomUUID(),
+            customerId: dbCustomer.id,
+            planId: planId,
+            providerId: (metadata.provider_id as string) || "paystack",
+            providerSubscriptionId: data.reference as string || "charge",
+            providerSubscriptionCode: data.reference as string || "charge",
+            paystackSubscriptionCode: data.reference as string || "charge",
+            status: "active",
+            currentPeriodStart: startMs,
+            currentPeriodEnd: startMs + periodMs,
+            metadata: data,
+          },
+        ]);
       }
 
       // Provision entitlements for the plan
@@ -447,7 +565,10 @@ export class WebhookHandler {
       .update(schema.subscriptions)
       .set({ status: "past_due", updatedAt: Date.now() })
       .where(
-        eq(schema.subscriptions.paystackSubscriptionCode, subscriptionCode),
+        or(
+          eq(schema.subscriptions.paystackSubscriptionCode, subscriptionCode),
+          eq(schema.subscriptions.providerSubscriptionCode, subscriptionCode),
+        ),
       );
   }
 
@@ -539,9 +660,11 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
-function parsePaystackDate(dateStr: string): number {
-  // Paystack uses ISO 8601 format
-  return new Date(dateStr).getTime();
+/** Parse a date string safely — returns 0 (falsy) if invalid/undefined */
+function safeParseDate(value: unknown): number {
+  if (!value || typeof value !== "string") return 0;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
 }
 
 function intervalToMs(interval: string): number {

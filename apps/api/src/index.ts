@@ -1,11 +1,14 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { createDb } from "@owostack/db";
+import { createDb, schema } from "@owostack/db";
+import { eq } from "drizzle-orm";
 import { type User } from "better-auth";
 import { auth } from "./lib/auth";
 import { WebhookHandler } from "./lib/webhooks";
 import { WebhookError, errorToResponse } from "./lib/errors";
 import { decrypt } from "./lib/encryption";
+import { paystackAdapter } from "@owostack/adapters";
+import type { ProviderAccount } from "@owostack/adapters";
 
 // Route modules
 import dashboardPlans from "./routes/dashboard/plans";
@@ -18,6 +21,7 @@ import dashboardEvents from "./routes/dashboard/events";
 import dashboardUsage from "./routes/dashboard/usage";
 import dashboardCredits from "./routes/dashboard/credits";
 import dashboardTransactions from "./routes/dashboard/transactions";
+import dashboardProviders from "./routes/dashboard/providers";
 import apiCheckout from "./routes/api/checkout";
 import apiEntitlements from "./routes/api/entitlements";
 
@@ -139,6 +143,38 @@ dashboardRoutes.use("*", async (c, next) => {
 
   c.set("user", session.user);
   c.set("session", session.session);
+
+  // Sync organization to billing DB so FK constraints work.
+  // Organizations are created by Better Auth in DB_AUTH; billing
+  // tables in DB reference organizations via FK.
+  let organizationId: string | undefined;
+  organizationId = c.req.query("organizationId");
+  if (!organizationId && ["POST", "PATCH", "PUT"].includes(c.req.method)) {
+    try {
+      const body = await c.req.json();
+      organizationId = body?.organizationId;
+    } catch {}
+  }
+  if (organizationId) {
+    const db = c.get("db");
+    const authDb = c.get("authDb");
+    const existing = await db.query.organizations.findFirst({
+      where: eq(schema.organizations.id, organizationId),
+      columns: { id: true },
+    });
+    if (!existing) {
+      const org = await authDb.query.organizations.findFirst({
+        where: eq(schema.organizations.id, organizationId),
+      });
+      if (org) {
+        await db
+          .insert(schema.organizations)
+          .values(org)
+          .onConflictDoNothing();
+      }
+    }
+  }
+
   return await next();
 });
 
@@ -157,6 +193,7 @@ dashboardRoutes.route("/events", dashboardEvents);
 dashboardRoutes.route("/usage", dashboardUsage);
 dashboardRoutes.route("/credits", dashboardCredits);
 dashboardRoutes.route("/transactions", dashboardTransactions);
+dashboardRoutes.route("/providers", dashboardProviders);
 dashboardRoutes.route("/", dashboardConfig); // Config module has paths like /paystack-config
 
 app.route("/api/dashboard", dashboardRoutes);
@@ -199,6 +236,20 @@ app.post("/webhooks/:organizationId", async (c) => {
   const db = c.get("db");
   const authDb = c.get("authDb");
 
+  // Ensure organization row exists in billing DB (same sync as dashboard middleware)
+  const existingOrg = await db.query.organizations.findFirst({
+    where: eq(schema.organizations.id, organizationId),
+    columns: { id: true },
+  });
+  if (!existingOrg) {
+    const org = await authDb.query.organizations.findFirst({
+      where: eq(schema.organizations.id, organizationId),
+    });
+    if (org) {
+      await db.insert(schema.organizations).values(org).onConflictDoNothing();
+    }
+  }
+
   // Projects live in the shared auth DB
   const project = await authDb.query.projects.findFirst({
     where: (projects, { eq }) => eq(projects.organizationId, organizationId),
@@ -228,7 +279,36 @@ app.post("/webhooks/:organizationId", async (c) => {
     }
   }
 
-  const handler = new WebhookHandler(secret || "", db, organizationId);
+  // Build a synthetic provider account so the webhook handler can call
+  // Paystack API (e.g. to cancel old subscriptions during upgrades)
+  let providerAccount: ProviderAccount | undefined;
+  if (secret) {
+    const activeEnv = project.activeEnvironment || "test";
+    // Resolve the actual secret key (not webhook secret) for API calls
+    let apiSecretKey: string | undefined;
+    const encKey = activeEnv === "live" ? project.liveSecretKey : project.testSecretKey;
+    if (encKey) {
+      try {
+        apiSecretKey = await decrypt(encKey, c.env.ENCRYPTION_KEY);
+      } catch { /* already logged above */ }
+    }
+    if (apiSecretKey) {
+      providerAccount = {
+        id: `webhook-${organizationId}`,
+        organizationId,
+        providerId: "paystack",
+        environment: activeEnv,
+        credentials: { secretKey: apiSecretKey },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+    }
+  }
+
+  const handler = new WebhookHandler(secret || "", db, organizationId, {
+    adapter: paystackAdapter,
+    account: providerAccount,
+  });
 
   const verifyResult = await handler.verify(signature, rawBody);
   if (verifyResult.isErr()) {

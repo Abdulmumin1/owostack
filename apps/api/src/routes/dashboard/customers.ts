@@ -83,6 +83,7 @@ app.get("/", async (c) => {
         email: schema.customers.email,
         name: schema.customers.name,
         externalId: schema.customers.externalId,
+        providerId: schema.customers.providerId,
         createdAt: schema.customers.createdAt,
       })
       .from(schema.customers)
@@ -134,6 +135,7 @@ app.get("/:id", async (c) => {
           .select({
             id: schema.subscriptions.id,
             status: schema.subscriptions.status,
+            providerId: schema.subscriptions.providerId,
             currentPeriodStart: schema.subscriptions.currentPeriodStart,
             currentPeriodEnd: schema.subscriptions.currentPeriodEnd,
             cancelAt: schema.subscriptions.cancelAt,

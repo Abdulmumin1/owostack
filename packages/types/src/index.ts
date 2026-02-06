@@ -3,7 +3,7 @@
  */
 
 export interface OwostackConfig {
-  /** Paystack secret key (starts with sk_) */
+  /** API secret key */
   secretKey: string;
 
   /** Optional: Custom API URL for self-hosted deployments */
@@ -14,6 +14,21 @@ export interface OwostackConfig {
 }
 
 /**
+ * CustomerData - Passed to auto-create/update a customer on any endpoint.
+ * Email is always required because billing providers need it.
+ */
+export interface CustomerData {
+  /** Customer email (required for billing providers) */
+  email: string;
+
+  /** Customer display name */
+  name?: string;
+
+  /** Custom metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
  * attach() - Checkout & Subscription Management
  */
 
@@ -21,8 +36,11 @@ export interface AttachParams {
   /** Customer ID or email */
   customer: string;
 
-  /** Product/plan ID to purchase or upgrade to */
+  /** Product/plan slug or ID to purchase or upgrade to */
   product: string;
+
+  /** Optional: Auto-create or update the customer */
+  customerData?: CustomerData;
 
   /** Optional: Custom metadata */
   metadata?: Record<string, unknown>;
@@ -35,6 +53,12 @@ export interface AttachParams {
 
   /** Optional: Redirect URL after successful payment */
   callbackUrl?: string;
+
+  /** Optional: Region selector for provider routing */
+  region?: string;
+
+  /** Optional: Override provider selection */
+  provider?: string;
 }
 
 export interface AttachResult {
@@ -46,6 +70,12 @@ export interface AttachResult {
 
   /** Access code for inline checkout */
   accessCode: string;
+
+  /** Resolved internal customer ID */
+  customerId: string;
+
+  /** Switch type if customer already had a subscription */
+  type: "new" | "upgrade" | "downgrade" | "lateral";
 }
 
 /**
@@ -56,34 +86,46 @@ export interface CheckParams {
   /** Customer ID or email */
   customer: string;
 
-  /** Feature ID to check access for */
+  /** Feature slug or ID to check access for */
   feature: string;
 
-  /** Optional: Amount of usage to check (default: 1) */
-  amount?: number;
+  /** Units to check against limit (default: 1) */
+  value?: number;
+
+  /** Optional: Auto-create customer if not found */
+  customerData?: CustomerData;
+
+  /** Optional: Atomically track usage if allowed (check + track in one call) */
+  sendEvent?: boolean;
+
+  /** Optional: Entity ID to scope usage to (e.g. seat, workspace) */
+  entity?: string;
 }
 
 export interface CheckResult {
   /** Whether access is allowed */
   allowed: boolean;
 
-  /** Reason if access is denied */
-  reason?:
-    | "quota_exceeded"
-    | "payment_failed"
-    | "plan_missing"
-    | "feature_not_included";
+  /** Machine-readable code */
+  code: string;
 
-  /** Current usage for this feature */
-  usage?: {
-    current: number;
-    limit: number | null;
-    percentage: number;
-    resetAt?: string;
-  };
+  /** Remaining balance (null = unlimited) */
+  balance?: number | null;
 
-  /** Upgrade URL if access denied */
-  upgradeUrl?: string;
+  /** Current usage this period */
+  usage?: number;
+
+  /** Plan limit (null = unlimited) */
+  limit?: number | null;
+
+  /** Whether feature is unlimited */
+  unlimited?: boolean;
+
+  /** ISO timestamp when usage resets */
+  resetsAt?: string;
+
+  /** Reset interval */
+  resetInterval?: string;
 }
 
 /**
@@ -94,35 +136,40 @@ export interface TrackParams {
   /** Customer ID or email */
   customer: string;
 
-  /** Feature ID to track usage for */
+  /** Feature slug or ID to track usage for */
   feature: string;
 
   /** Amount to track (default: 1) */
-  amount?: number;
+  value?: number;
+
+  /** Optional: Auto-create customer if not found */
+  customerData?: CustomerData;
+
+  /** Optional: Entity ID to scope usage to (e.g. seat, workspace) */
+  entity?: string;
 
   /** Optional: Event metadata */
   metadata?: Record<string, unknown>;
-
-  /** Optional: Credits to deduct instead of amount */
-  credits?: number;
 }
 
 export interface TrackResult {
   /** Whether tracking was successful */
   success: boolean;
 
-  /** Updated usage after tracking */
-  usage: {
-    current: number;
-    limit: number | null;
-    remaining: number | null;
-  };
+  /** Whether the tracked usage was within limits */
+  allowed: boolean;
 
-  /** Amount billed (if pay-as-you-go) */
-  billed?: {
-    amount: number;
-    currency: Currency;
-  };
+  /** Machine-readable code */
+  code: string;
+
+  /** Remaining balance after tracking (null = unlimited) */
+  balance?: number | null;
+
+  /** ISO timestamp when usage resets */
+  resetsAt?: string;
+
+  /** Reset interval */
+  resetInterval?: string;
 }
 
 /**
@@ -200,7 +247,12 @@ export interface Feature {
 
 export interface Customer {
   id: string;
+  providerId?: string;
+  providerCustomerId?: string;
+  providerAuthorizationCode?: string;
+  providerMetadata?: Record<string, unknown>;
   paystackCustomerId?: string;
+  paystackAuthorizationCode?: string;
   email: string;
   name?: string;
   metadata?: Record<string, unknown>;
@@ -211,7 +263,12 @@ export interface Customer {
 export interface Subscription {
   id: string;
   customerId: string;
+  providerId?: string;
+  providerSubscriptionId?: string;
+  providerSubscriptionCode?: string;
+  providerMetadata?: Record<string, unknown>;
   paystackSubscriptionId?: string;
+  paystackSubscriptionCode?: string;
   planId: string;
   status: SubscriptionStatus;
   currentPeriodStart: Date;

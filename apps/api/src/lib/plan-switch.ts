@@ -1,9 +1,14 @@
 import { eq, and, inArray } from "drizzle-orm";
 import { createDb, schema } from "@owostack/db";
-import { PaystackClient } from "./paystack";
+import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
 import type { SubscriptionSchedulerDO } from "./subscription-scheduler";
 
 type DB = ReturnType<typeof createDb>;
+
+export interface ProviderContext {
+  adapter: ProviderAdapter;
+  account: ProviderAccount;
+}
 
 // =============================================================================
 // Types
@@ -29,6 +34,16 @@ export interface SwitchResult {
   subscriptionId?: string;
   message: string;
   scheduledAt?: number;
+}
+
+function resolveProviderId(
+  provider: ProviderContext | null,
+  metadata?: Record<string, unknown>,
+): string | null {
+  const providerId =
+    typeof metadata?.provider_id === "string" ? metadata.provider_id : null;
+  if (providerId) return providerId;
+  return provider ? provider.adapter.id : null;
 }
 
 // =============================================================================
@@ -186,7 +201,7 @@ export async function executeSwitch(
   db: DB,
   customerId: string,
   newPlanId: string,
-  paystack: PaystackClient | null,
+  provider: ProviderContext | null,
   options: {
     callbackUrl?: string;
     metadata?: Record<string, unknown>;
@@ -215,7 +230,7 @@ export async function executeSwitch(
   // ONE-TIME purchase — skip subscription switch logic entirely
   // =========================================================================
   if (newPlan.billingType === "one_time") {
-    return handleOneTimePurchase(db, customer, newPlan, paystack, options);
+    return handleOneTimePurchase(db, customer, newPlan, provider, options);
   }
 
   const existingSub = await findSwitchableSubscription(db, customerId, newPlan);
@@ -239,14 +254,14 @@ export async function executeSwitch(
   // FREE plan — handle entirely in DB, no Paystack
   // =========================================================================
   if (newPlan.price === 0) {
-    return handleFreePlanSwitch(db, customer, existingSub, newPlan, switchType, paystack);
+    return handleFreePlanSwitch(db, customer, existingSub, newPlan, switchType, provider, options);
   }
 
   // =========================================================================
   // UPGRADE — immediate switch, prorated charge
   // =========================================================================
   if (switchType === "upgrade") {
-    return handleUpgrade(db, customer, existingSub!, newPlan, paystack, options);
+    return handleUpgrade(db, customer, existingSub!, newPlan, provider, options);
   }
 
   // =========================================================================
@@ -266,7 +281,7 @@ export async function executeSwitch(
   // =========================================================================
   // NEW — no existing subscription in this group
   // =========================================================================
-  return handleNewSubscription(db, customer, newPlan, paystack, options);
+  return handleNewSubscription(db, customer, newPlan, provider, options);
 }
 
 // =============================================================================
@@ -279,14 +294,15 @@ async function handleFreePlanSwitch(
   existingSub: any,
   newPlan: any,
   switchType: SwitchType,
-  paystack: PaystackClient | null = null,
+  provider: ProviderContext | null = null,
+  options: { metadata?: Record<string, unknown> } = {},
 ): Promise<SwitchResult> {
   const now = Date.now();
   const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
 
-  // Cancel the old subscription (both in DB and on Paystack)
+  // Cancel the old subscription (both in DB and on provider)
   if (existingSub) {
-    await cancelSubscription(db, existingSub, paystack);
+    await cancelSubscription(db, existingSub, provider);
   }
 
   // Create new free subscription
@@ -296,6 +312,7 @@ async function handleFreePlanSwitch(
       id: crypto.randomUUID(),
       customerId: customer.id,
       planId: newPlan.id,
+      providerId: resolveProviderId(provider, options.metadata),
       status: "active",
       currentPeriodStart: now,
       currentPeriodEnd: now + thirtyDaysMs,
@@ -320,7 +337,7 @@ async function handleUpgrade(
   customer: any,
   existingSub: any,
   newPlan: any,
-  paystack: PaystackClient | null,
+  provider: ProviderContext | null,
   options: { callbackUrl?: string; metadata?: Record<string, unknown> },
 ): Promise<SwitchResult> {
   const now = Date.now();
@@ -331,19 +348,26 @@ async function handleUpgrade(
     existingSub.currentPeriodEnd,
   );
 
+  const providerId = resolveProviderId(provider, options.metadata);
+  const authCode = customer.providerAuthorizationCode || customer.paystackAuthorizationCode;
+  const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
+  const planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
+
   // If prorated amount is 0 or negative (near end of period), just switch directly
   if (proratedAmount <= 0) {
-    await cancelSubscription(db, existingSub, paystack);
+    await cancelSubscription(db, existingSub, provider);
 
-    let paystackSubCode: string | undefined;
-    if (paystack && newPlan.paystackPlanId && customer.paystackAuthorizationCode) {
-      const subResult = await paystack.createSubscription({
-        customer: customer.email,
-        plan: newPlan.paystackPlanId,
-        authorization: customer.paystackAuthorizationCode,
+    let providerSubCode: string | undefined;
+    if (provider && planRef && authCode) {
+      const subResult = await provider.adapter.createSubscription({
+        customer: { id: customerRef, email: customer.email },
+        plan: { id: planRef },
+        authorizationCode: authCode,
+        environment: provider.account.environment,
+        account: provider.account,
       });
       if (subResult.isOk()) {
-        paystackSubCode = subResult.value.subscription_code;
+        providerSubCode = subResult.value.id;
       }
     }
 
@@ -354,7 +378,10 @@ async function handleUpgrade(
         id: crypto.randomUUID(),
         customerId: customer.id,
         planId: newPlan.id,
-        paystackSubscriptionCode: paystackSubCode || null,
+        paystackSubscriptionCode: providerId === "paystack" ? (providerSubCode || null) : null,
+        providerId,
+        providerSubscriptionId: providerSubCode || null,
+        providerSubscriptionCode: providerSubCode || null,
         status: "active",
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
@@ -378,12 +405,13 @@ async function handleUpgrade(
     };
   }
 
-  // If customer has a saved card and Paystack is configured, charge directly
-  if (paystack && customer.paystackAuthorizationCode && proratedAmount > 0) {
-    const chargeResult = await paystack.chargeAuthorization({
-      authorization_code: customer.paystackAuthorizationCode,
-      email: customer.email,
+  // If customer has a saved card and provider is configured, charge directly
+  if (provider && authCode && proratedAmount > 0) {
+    const chargeResult = await provider.adapter.chargeAuthorization({
+      customer: { id: customerRef, email: customer.email },
+      authorizationCode: authCode,
       amount: proratedAmount,
+      currency: newPlan.currency || "NGN",
       metadata: {
         type: "plan_upgrade_proration",
         old_plan_id: existingSub.plan.id,
@@ -391,28 +419,32 @@ async function handleUpgrade(
         customer_id: customer.id,
         ...options.metadata,
       },
+      environment: provider.account.environment,
+      account: provider.account,
     });
 
     if (chargeResult.isErr()) {
       // Charge failed — fall through to checkout
       return createUpgradeCheckout(
-        db, customer, existingSub, newPlan, paystack, proratedAmount, options,
+        db, customer, existingSub, newPlan, provider, proratedAmount, options,
       );
     }
 
     // Charge succeeded — cancel old sub and create new one
-    await cancelSubscription(db, existingSub, paystack);
+    await cancelSubscription(db, existingSub, provider);
 
-    // Create new subscription via Paystack API if plan has a paystack plan code
-    let paystackSubCode: string | undefined;
-    if (newPlan.paystackPlanId && customer.paystackAuthorizationCode) {
-      const subResult = await paystack.createSubscription({
-        customer: customer.email,
-        plan: newPlan.paystackPlanId,
-        authorization: customer.paystackAuthorizationCode,
+    // Create new subscription via provider API if plan has a provider plan code
+    let providerSubCode: string | undefined;
+    if (planRef && authCode) {
+      const subResult = await provider.adapter.createSubscription({
+        customer: { id: customerRef, email: customer.email },
+        plan: { id: planRef },
+        authorizationCode: authCode,
+        environment: provider.account.environment,
+        account: provider.account,
       });
       if (subResult.isOk()) {
-        paystackSubCode = subResult.value.subscription_code;
+        providerSubCode = subResult.value.id;
       }
     }
 
@@ -423,7 +455,10 @@ async function handleUpgrade(
         id: crypto.randomUUID(),
         customerId: customer.id,
         planId: newPlan.id,
-        paystackSubscriptionCode: paystackSubCode || null,
+        paystackSubscriptionCode: providerId === "paystack" ? (providerSubCode || null) : null,
+        providerId,
+        providerSubscriptionId: providerSubCode || null,
+        providerSubscriptionCode: providerSubCode || null,
         status: "active",
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
@@ -449,7 +484,7 @@ async function handleUpgrade(
 
   // No saved card — return checkout URL
   return createUpgradeCheckout(
-    db, customer, existingSub, newPlan, paystack, proratedAmount, options,
+    db, customer, existingSub, newPlan, provider, proratedAmount, options,
   );
 }
 
@@ -458,28 +493,30 @@ async function createUpgradeCheckout(
   customer: any,
   existingSub: any,
   newPlan: any,
-  paystack: PaystackClient | null,
+  provider: ProviderContext | null,
   proratedAmount: number,
   options: { callbackUrl?: string; metadata?: Record<string, unknown> },
 ): Promise<SwitchResult> {
-  if (!paystack) {
+  if (!provider) {
     return {
       success: false,
       type: "upgrade",
       requiresCheckout: true,
-      message: "Paystack not configured — cannot process upgrade payment",
+      message: "Payment provider not configured — cannot process upgrade payment",
     };
   }
 
-  // NOTE: Do NOT pass `plan` here. When both amount and plan are provided,
-  // Paystack ignores the custom amount and charges the plan's full price.
-  // We charge the prorated amount as a one-time payment; the webhook handler
-  // creates the new subscription when the charge succeeds.
-  const result = await paystack.initializeTransaction({
-    email: customer.email,
-    amount: String(Math.max(proratedAmount, 100)), // Minimum 100 (1 NGN/GHS)
-    callback_url: options.callbackUrl,
-    metadata: JSON.stringify({
+  const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
+
+  // NOTE: Do NOT pass `plan` here. We charge the prorated amount as a one-time
+  // payment; the webhook handler creates the new subscription when the charge succeeds.
+  const result = await provider.adapter.createCheckoutSession({
+    customer: { id: customerRef, email: customer.email },
+    plan: null,
+    amount: Math.max(proratedAmount, 100),
+    currency: newPlan.currency || "NGN",
+    callbackUrl: options.callbackUrl,
+    metadata: {
       type: "plan_upgrade",
       old_plan_id: existingSub.plan.id,
       old_subscription_id: existingSub.id,
@@ -487,7 +524,9 @@ async function createUpgradeCheckout(
       customer_id: customer.id,
       prorated_amount: proratedAmount,
       ...options.metadata,
-    }),
+    },
+    environment: provider.account.environment,
+    account: provider.account,
   });
 
   if (result.isErr()) {
@@ -503,14 +542,14 @@ async function createUpgradeCheckout(
     success: true,
     type: "upgrade",
     requiresCheckout: true,
-    checkoutUrl: result.value.authorization_url,
+    checkoutUrl: result.value.url,
     message: `Checkout created for upgrade to ${newPlan.name}`,
   };
 }
 
 async function handleDowngrade(
   db: DB,
-  _customer: any,
+  customer: any,
   existingSub: any,
   newPlan: any,
   options: {
@@ -552,10 +591,11 @@ async function handleDowngrade(
         existingSub.currentPeriodEnd,
         {
           old_plan_id: existingSub.plan.id,
-          paystack_subscription_code: existingSub.paystackSubscriptionCode,
-          customer_email: _customer.email,
-          customer_authorization_code: _customer.paystackAuthorizationCode,
-          new_plan_paystack_id: newPlan.paystackPlanId,
+          provider_id: existingSub.providerId || "paystack",
+          provider_subscription_code: existingSub.providerSubscriptionCode || existingSub.paystackSubscriptionCode,
+          customer_email: customer.email,
+          customer_authorization_code: customer.providerAuthorizationCode || customer.paystackAuthorizationCode,
+          new_plan_provider_id: newPlan.providerPlanId || newPlan.paystackPlanId,
         },
       );
     } catch (e) {
@@ -587,6 +627,9 @@ async function handleLateralSwitch(
     .update(schema.subscriptions)
     .set({
       planId: newPlan.id,
+      providerId:
+        existingSub.providerId ||
+        (existingSub.paystackSubscriptionCode ? "paystack" : null),
       metadata: {
         ...(typeof existingSub.metadata === "object" ? existingSub.metadata : {}),
         switched_from: existingSub.plan.id,
@@ -612,10 +655,11 @@ async function handleOneTimePurchase(
   db: DB,
   customer: any,
   plan: any,
-  paystack: PaystackClient | null,
+  provider: ProviderContext | null,
   options: { callbackUrl?: string; metadata?: Record<string, unknown> },
 ): Promise<SwitchResult> {
   const now = Date.now();
+  const providerId = resolveProviderId(provider, options.metadata);
 
   // Free one-time → just create purchase record + entitlements
   if (plan.price === 0) {
@@ -625,10 +669,13 @@ async function handleOneTimePurchase(
         id: crypto.randomUUID(),
         customerId: customer.id,
         planId: plan.id,
-        paystackSubscriptionCode: "one-time",
+        paystackSubscriptionCode: providerId === "paystack" ? "one-time" : null,
+        providerId,
+        providerSubscriptionId: "one-time",
+        providerSubscriptionCode: "one-time",
         status: "active",
         currentPeriodStart: now,
-        currentPeriodEnd: now, // No recurring period
+        currentPeriodEnd: now,
         metadata: { ...options.metadata, billing_type: "one_time" },
       })
       .returning();
@@ -644,13 +691,16 @@ async function handleOneTimePurchase(
     };
   }
 
+  const authCode = customer.providerAuthorizationCode || customer.paystackAuthorizationCode;
+  const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
+
   // Card on file → charge directly
-  if (paystack && customer.paystackAuthorizationCode) {
-    const chargeResult = await paystack.chargeAuthorization({
-      authorization_code: customer.paystackAuthorizationCode,
-      email: customer.email,
+  if (provider && authCode) {
+    const chargeResult = await provider.adapter.chargeAuthorization({
+      customer: { id: customerRef, email: customer.email },
+      authorizationCode: authCode,
       amount: plan.price,
-      currency: plan.currency,
+      currency: plan.currency || "NGN",
       metadata: {
         type: "one_time_purchase",
         plan_id: plan.id,
@@ -658,6 +708,8 @@ async function handleOneTimePurchase(
         customer_id: customer.id,
         ...options.metadata,
       },
+      environment: provider.account.environment,
+      account: provider.account,
     });
 
     if (chargeResult.isOk()) {
@@ -667,14 +719,17 @@ async function handleOneTimePurchase(
           id: crypto.randomUUID(),
           customerId: customer.id,
           planId: plan.id,
-          paystackSubscriptionCode: "one-time",
+          paystackSubscriptionCode: providerId === "paystack" ? "one-time" : null,
+          providerId,
+          providerSubscriptionId: "one-time",
+          providerSubscriptionCode: "one-time",
           status: "active",
           currentPeriodStart: now,
-          currentPeriodEnd: now, // No recurring period
+          currentPeriodEnd: now,
           metadata: {
             ...options.metadata,
             billing_type: "one_time",
-            paystack_reference: chargeResult.value.reference,
+            payment_reference: chargeResult.value.reference,
           },
         })
         .returning();
@@ -693,27 +748,30 @@ async function handleOneTimePurchase(
   }
 
   // No card or charge failed → checkout
-  if (!paystack) {
+  if (!provider) {
     return {
       success: false,
       type: "new",
       requiresCheckout: true,
-      message: "Paystack not configured",
+      message: "Payment provider not configured",
     };
   }
 
-  const result = await paystack.initializeTransaction({
-    email: customer.email,
-    amount: String(plan.price),
-    // No plan parameter — one-time charge, not a Paystack subscription
-    callback_url: options.callbackUrl,
-    metadata: JSON.stringify({
+  const result = await provider.adapter.createCheckoutSession({
+    customer: { id: customerRef, email: customer.email },
+    plan: null,
+    amount: plan.price,
+    currency: plan.currency || "NGN",
+    callbackUrl: options.callbackUrl,
+    metadata: {
       type: "one_time_purchase",
       plan_id: plan.id,
       plan_slug: plan.slug,
       customer_id: customer.id,
       ...options.metadata,
-    }),
+    },
+    environment: provider.account.environment,
+    account: provider.account,
   });
 
   if (result.isErr()) {
@@ -729,7 +787,7 @@ async function handleOneTimePurchase(
     success: true,
     type: "new",
     requiresCheckout: true,
-    checkoutUrl: result.value.authorization_url,
+    checkoutUrl: result.value.url,
     message: `Checkout created for ${plan.name} (one-time)`,
   };
 }
@@ -738,15 +796,22 @@ async function handleNewSubscription(
   db: DB,
   customer: any,
   newPlan: any,
-  paystack: PaystackClient | null,
+  provider: ProviderContext | null,
   options: { callbackUrl?: string; metadata?: Record<string, unknown> },
 ): Promise<SwitchResult> {
-  // If card on file and Paystack available, create subscription directly
-  if (paystack && customer.paystackAuthorizationCode && newPlan.paystackPlanId) {
-    const subResult = await paystack.createSubscription({
-      customer: customer.email,
-      plan: newPlan.paystackPlanId,
-      authorization: customer.paystackAuthorizationCode,
+  const providerId = resolveProviderId(provider, options.metadata);
+  const authCode = customer.providerAuthorizationCode || customer.paystackAuthorizationCode;
+  const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
+  const planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
+
+  // If card on file and provider available, create subscription directly
+  if (provider && authCode && planRef) {
+    const subResult = await provider.adapter.createSubscription({
+      customer: { id: customerRef, email: customer.email },
+      plan: { id: planRef },
+      authorizationCode: authCode,
+      environment: provider.account.environment,
+      account: provider.account,
     });
 
     if (subResult.isOk()) {
@@ -759,7 +824,10 @@ async function handleNewSubscription(
           id: crypto.randomUUID(),
           customerId: customer.id,
           planId: newPlan.id,
-          paystackSubscriptionCode: subResult.value.subscription_code,
+          paystackSubscriptionCode: providerId === "paystack" ? subResult.value.id : null,
+          providerId,
+          providerSubscriptionId: subResult.value.id,
+          providerSubscriptionCode: subResult.value.id,
           status: "active",
           currentPeriodStart: now,
           currentPeriodEnd: now + periodMs,
@@ -780,28 +848,31 @@ async function handleNewSubscription(
     // Fall through to checkout if direct sub creation failed
   }
 
-  // No card or Paystack not available — need checkout
-  if (!paystack) {
+  // No card or provider not available — need checkout
+  if (!provider) {
     return {
       success: false,
       type: "new",
       requiresCheckout: true,
-      message: "Paystack not configured",
+      message: "Payment provider not configured",
     };
   }
 
-  const result = await paystack.initializeTransaction({
-    email: customer.email,
-    amount: String(newPlan.price),
-    plan: newPlan.paystackPlanId || undefined,
-    callback_url: options.callbackUrl,
-    metadata: JSON.stringify({
+  const result = await provider.adapter.createCheckoutSession({
+    customer: { id: customerRef, email: customer.email },
+    plan: planRef ? { id: planRef } : null,
+    amount: newPlan.price,
+    currency: newPlan.currency || "NGN",
+    callbackUrl: options.callbackUrl,
+    metadata: {
       type: "new_subscription",
       plan_id: newPlan.id,
       plan_slug: newPlan.slug,
       customer_id: customer.id,
       ...options.metadata,
-    }),
+    },
+    environment: provider.account.environment,
+    account: provider.account,
   });
 
   if (result.isErr()) {
@@ -817,7 +888,7 @@ async function handleNewSubscription(
     success: true,
     type: "new",
     requiresCheckout: true,
-    checkoutUrl: result.value.authorization_url,
+    checkoutUrl: result.value.url,
     message: `Checkout created for ${newPlan.name}`,
   };
 }
@@ -857,24 +928,29 @@ async function findSwitchableSubscription(
 async function cancelSubscription(
   db: DB,
   sub: any,
-  paystack: PaystackClient | null,
+  provider: ProviderContext | null,
 ) {
   const now = Date.now();
 
-  // Cancel on Paystack if it's a native subscription
+  // Cancel on the provider if it's a native subscription
+  const subCode = sub.providerSubscriptionCode || sub.paystackSubscriptionCode;
   if (
-    paystack &&
-    sub.paystackSubscriptionCode &&
-    sub.paystackSubscriptionCode !== "one-time" &&
-    !sub.paystackSubscriptionCode.startsWith("trial-")
+    provider &&
+    subCode &&
+    subCode !== "one-time" &&
+    !subCode.startsWith("trial-")
   ) {
-    // Fetch subscription to get the email_token needed for disable
-    const fetchResult = await paystack.fetchSubscription(sub.paystackSubscriptionCode);
-    if (fetchResult.isOk()) {
-      await paystack.disableSubscription(
-        sub.paystackSubscriptionCode,
-        fetchResult.value.email_token,
-      );
+    try {
+      const result = await provider.adapter.cancelSubscription({
+        subscription: { id: subCode, status: sub.status || "active" },
+        environment: provider.account.environment,
+        account: provider.account,
+      });
+      if (result.isErr()) {
+        console.warn(`Provider cancel failed for ${subCode}:`, result.error.message);
+      }
+    } catch (e) {
+      console.warn(`Provider cancel threw for ${subCode}:`, e);
     }
   }
 

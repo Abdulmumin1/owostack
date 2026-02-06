@@ -1,0 +1,40 @@
+---
+title: Providers & accounts
+description: Provider adapters and provider accounts
+icon: Plug
+---
+
+# Providers & accounts
+
+Owostack is provider-agnostic.
+
+A **provider adapter** implements the provider-specific details (API calls, webhook verification, event parsing). A **provider account** stores the credentials and configuration for a specific organization.
+
+## Adapter model
+
+Owostack uses a shared adapter interface so core billing logic (checkout, plan switching, cancelation) can be reused across providers.
+
+Conceptually:
+
+- `ProviderAdapter`
+  - Verify/parse webhooks
+  - Fetch subscription details
+  - Create subscriptions / charge authorizations (provider-dependent)
+- `ProviderAccount`
+  - The organization’s configured provider credentials
+
+## Multiple providers
+
+An organization can have different projects configured with different providers.
+
+- This is useful if you have multiple apps, regions, or business units.
+
+## Adding a new provider
+
+At a high level:
+
+1. Implement a new adapter in `packages/adapters`
+2. Register it in the adapter registry
+3. Configure an account in the dashboard
+
+Once configured, checkout and plan switching should work through the adapter.

@@ -14,6 +14,7 @@
   import { apiFetch } from "$lib/auth-client";
   import { Result } from "better-result";
   import { onMount } from "svelte";
+  import SidePanel from "$lib/components/ui/SidePanel.svelte";
 
   let {
     organizationId,
@@ -199,37 +200,9 @@
   }
 </script>
 
-{#if isOpen}
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 text-sm"
-    transition:fade={{ duration: 150 }}
-  >
-    <div
-      class="w-full max-w-lg bg-bg-secondary border border-border rounded-xl relative flex flex-col max-h-[90vh]"
-      transition:fly={{ y: 20, duration: 200 }}
-    >
-      <!-- Header -->
-      <div
-        class="px-6 py-5 border-b border-border flex items-center justify-between"
-      >
-        <div>
-          <h2 class="text-lg font-bold text-white tracking-tight">
-            Create Plan
-          </h2>
-          <p class="text-zinc-500 text-xs mt-0.5">
-            Create a new free or paid plan for your application
-          </p>
-        </div>
-        <button
-          class="text-zinc-500 hover:text-white transition-colors"
-          onclick={close}
-        >
-          <X size={18} />
-        </button>
-      </div>
-
-      <!-- Content (Scrollable) -->
-      <div class="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
+<SidePanel open={isOpen} title="Create Plan" onclose={close} width="max-w-md">
+  <div class="text-sm">
+    <div class="p-5 space-y-6">
         <!-- Name & ID -->
         <div class="grid grid-cols-2 gap-4">
           <div>
@@ -777,36 +750,35 @@
             {error}
           </div>
         {/if}
-      </div>
+    </div>
 
-      <!-- Footer -->
-      <div
-        class="p-6 border-t border-border flex items-center justify-end gap-3 bg-bg-secondary/20"
+    <!-- Footer -->
+    <div
+      class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card"
+    >
+      <button
+        class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors"
+        onclick={close}
       >
-        <button
-          class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors"
-          onclick={close}
-        >
-          Cancel <span class="text-zinc-600 ml-1 font-normal">Esc</span>
-        </button>
-        <button
-          class="px-6 py-2 bg-accent hover:bg-accent-hover text-black text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          onclick={handleSubmit}
-          disabled={!planName || (planType === "paid" && !price) || isCreating}
-        >
-          {#if isCreating}
-            <Loader2 size={12} class="animate-spin" />
-            Creating...
-          {:else}
-            Create plan <span class="bg-black/10 px-1 rounded ml-1 text-[10px]"
-              >⌘↵</span
-            >
-          {/if}
-        </button>
-      </div>
+        Cancel <span class="text-zinc-600 ml-1 font-normal">Esc</span>
+      </button>
+      <button
+        class="px-6 py-2 bg-accent hover:bg-accent-hover text-black text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        onclick={handleSubmit}
+        disabled={!planName || (planType === "paid" && !price) || isCreating}
+      >
+        {#if isCreating}
+          <Loader2 size={12} class="animate-spin" />
+          Creating...
+        {:else}
+          Create plan <span class="bg-black/10 px-1 rounded ml-1 text-[10px]"
+            >⌘↵</span
+          >
+        {/if}
+      </button>
     </div>
   </div>
-{/if}
+</SidePanel>
 
 <style>
   /* Custom Scrollbar for the modal content */

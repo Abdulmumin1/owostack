@@ -1,0 +1,41 @@
+---
+title: Checkout
+description: Starting a subscription or purchase flow
+icon: ShoppingCart
+---
+
+# Checkout
+
+Owostack’s checkout flow is responsible for:
+
+- Creating (or reusing) a customer
+- Starting a provider checkout session when needed
+- Ensuring provider webhooks can be mapped back to your organization/project/customer
+
+## Subscriptions
+
+Use `attach()` to subscribe a customer to a plan.
+
+```ts
+const result = await owo.attach({
+  customer: "user@example.com",
+  plan: "pro-monthly",
+});
+
+if (result.checkoutUrl) {
+  // Redirect to provider checkout
+}
+```
+
+## When checkout is not required
+
+Owostack may return an already-active subscription when:
+
+- The customer is already subscribed to the requested plan
+- The switch is lateral and can be applied immediately without payment
+
+## Webhooks are required
+
+Checkout only becomes “real” after webhooks confirm payment/subscription changes.
+
+Make sure you’ve completed [Webhook Setup](/docs/webhook-setup).

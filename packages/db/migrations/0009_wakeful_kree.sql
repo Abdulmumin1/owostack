@@ -1,1 +1,0 @@
-ALTER TABLE `customers` ADD `paystack_authorization_code` text;
