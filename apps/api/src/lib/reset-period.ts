@@ -27,7 +27,30 @@ export function getResetPeriod(
   const now = new Date();
 
   switch (resetInterval) {
-    case "hour": {
+    case "5min": {
+      // 5-minute rolling window aligned to clock (e.g. :00, :05, :10, ...)
+      const minute5 = Math.floor(now.getMinutes() / 5) * 5;
+      const start = new Date(now);
+      start.setMinutes(minute5, 0, 0);
+      const end = new Date(start.getTime() + 5 * 60 * 1000 - 1);
+      return { periodStart: start.getTime(), periodEnd: end.getTime() };
+    }
+    case "15min": {
+      const minute15 = Math.floor(now.getMinutes() / 15) * 15;
+      const start = new Date(now);
+      start.setMinutes(minute15, 0, 0);
+      const end = new Date(start.getTime() + 15 * 60 * 1000 - 1);
+      return { periodStart: start.getTime(), periodEnd: end.getTime() };
+    }
+    case "30min": {
+      const minute30 = Math.floor(now.getMinutes() / 30) * 30;
+      const start = new Date(now);
+      start.setMinutes(minute30, 0, 0);
+      const end = new Date(start.getTime() + 30 * 60 * 1000 - 1);
+      return { periodStart: start.getTime(), periodEnd: end.getTime() };
+    }
+    case "hour":
+    case "hourly": {
       const start = new Date(now);
       start.setMinutes(0, 0, 0);
       const end = new Date(start.getTime() + 60 * 60 * 1000 - 1);

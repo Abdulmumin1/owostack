@@ -194,6 +194,11 @@
   const isActive = $derived(data?.subscription?.status === "active" || data?.subscription?.status === "trialing");
   const hasPendingCancel = $derived(!!data?.subscription?.cancelAt && !data?.subscription?.canceledAt);
   const hasPendingDowngrade = $derived(!!(data?.subscription?.metadata as any)?.scheduled_downgrade);
+  const isOneTime = $derived(
+    (data?.subscription?.metadata as any)?.billing_type === "one_time" ||
+    (data?.subscription?.paystackSubscriptionCode === "one-time" &&
+      data?.subscription?.currentPeriodStart === data?.subscription?.currentPeriodEnd)
+  );
 
   const timeline = $derived.by(() => {
     if (!data?.timeline) return [];
@@ -232,16 +237,23 @@
         <div class="flex flex-col gap-1">
           <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
             <CreditCard size={10} />
-            {formatCurrency(data.plan.price, data.plan.currency)} / {data.plan.interval}
+            {formatCurrency(data.plan.price, data.plan.currency)}{isOneTime ? ' (one-time)' : ` / ${data.plan.interval}`}
           </span>
           <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
             <Mail size={10} />
             {data.customer.email}
           </span>
-          <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
-            <Clock size={10} />
-            {formatDate(data.subscription.currentPeriodStart)} – {formatDate(data.subscription.currentPeriodEnd)}
-          </span>
+          {#if !isOneTime}
+            <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+              <Clock size={10} />
+              {formatDate(data.subscription.currentPeriodStart)} – {formatDate(data.subscription.currentPeriodEnd)}
+            </span>
+          {:else}
+            <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+              <Clock size={10} />
+              Purchased {formatDate(data.subscription.createdAt)}
+            </span>
+          {/if}
           {#if data.subscription.paystackSubscriptionCode && data.subscription.paystackSubscriptionCode !== "one-time"}
             <span class="flex items-center gap-1.5 text-[10px] text-zinc-600 font-mono">
               <Hash size={10} />
@@ -297,27 +309,29 @@
       <div>
         <h4 class="text-[10px] font-bold text-white uppercase tracking-widest mb-3">Actions</h4>
         <div class="flex flex-wrap gap-2">
-          <button
-            class="btn btn-secondary gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5"
-            disabled={actionLoading !== null}
-            onclick={() => { showSwitchPlan = !showSwitchPlan; switchPreview = null; }}
-          >
-            <RefreshCw size={11} />
-            Switch Plan
-          </button>
-          {#if !hasPendingCancel}
+          {#if !isOneTime}
             <button
               class="btn btn-secondary gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5"
               disabled={actionLoading !== null}
-              onclick={() => cancelSubscription(false)}
+              onclick={() => { showSwitchPlan = !showSwitchPlan; switchPreview = null; }}
             >
-              {#if actionLoading === "cancel"}
-                <Loader2 size={11} class="animate-spin" />
-              {:else}
-                <Clock size={11} />
-              {/if}
-              Cancel at Period End
+              <RefreshCw size={11} />
+              Switch Plan
             </button>
+            {#if !hasPendingCancel}
+              <button
+                class="btn btn-secondary gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5"
+                disabled={actionLoading !== null}
+                onclick={() => cancelSubscription(false)}
+              >
+                {#if actionLoading === "cancel"}
+                  <Loader2 size={11} class="animate-spin" />
+                {:else}
+                  <Clock size={11} />
+                {/if}
+                Cancel at Period End
+              </button>
+            {/if}
           {/if}
           <button
             class="btn gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"
@@ -329,7 +343,7 @@
             {:else}
               <Ban size={11} />
             {/if}
-            Cancel Now
+            {isOneTime ? 'Revoke Access' : 'Cancel Now'}
           </button>
         </div>
       </div>

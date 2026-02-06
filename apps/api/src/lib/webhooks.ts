@@ -335,7 +335,41 @@ export class WebhookHandler {
       return; // Don't process as regular charge
     }
 
-    // 4. Handle regular Subscription / Plan Assignment
+    // 4. Handle ONE-TIME PURCHASE (from plan-switch.ts one-time flow via checkout)
+    if (metadata.type === "one_time_purchase" && metadata.plan_id) {
+      const planId = metadata.plan_id as string;
+      const now = Date.now();
+
+      // Check if purchase already exists (idempotency)
+      const existingPurchase = await this.db.query.subscriptions.findFirst({
+        where: and(
+          eq(schema.subscriptions.customerId, dbCustomer.id),
+          eq(schema.subscriptions.planId, planId),
+          eq(schema.subscriptions.status, "active"),
+        ),
+      });
+
+      if (!existingPurchase) {
+        await this.db.insert(schema.subscriptions).values([
+          {
+            id: crypto.randomUUID(),
+            customerId: dbCustomer.id,
+            planId: planId,
+            paystackSubscriptionCode: "one-time",
+            status: "active",
+            currentPeriodStart: now,
+            currentPeriodEnd: now, // No recurring period for one-time
+            metadata: { ...data, billing_type: "one_time" },
+          },
+        ]);
+      }
+
+      // Provision entitlements for the purchased plan
+      await this.provisionEntitlements(dbCustomer.id, planId);
+      return; // Don't process as regular charge
+    }
+
+    // 5. Handle regular Subscription / Plan Assignment
     if (metadata.plan_id) {
       const planId = metadata.plan_id as string;
 
@@ -355,7 +389,12 @@ export class WebhookHandler {
         // Checks if this is a native Paystack subscription (has plan_code)
         const isNativeSubscription = (data.plan as any)?.plan_code;
 
-        // Only create a "virtual" subscription for one-time payments
+        // Look up plan to determine billing type and interval
+        const plan = await this.db.query.plans.findFirst({
+          where: eq(schema.plans.id, planId),
+        });
+        const periodMs = plan ? intervalToMs(plan.interval) : 30 * 24 * 60 * 60 * 1000;
+
         if (!isNativeSubscription) {
           await this.db.insert(schema.subscriptions).values([
             {
@@ -365,12 +404,15 @@ export class WebhookHandler {
               paystackSubscriptionCode: "one-time",
               status: "active",
               currentPeriodStart: startMs,
-              currentPeriodEnd: startMs + 30 * 24 * 60 * 60 * 1000,
+              currentPeriodEnd: startMs + periodMs,
               metadata: data,
             },
           ]);
         }
       }
+
+      // Provision entitlements for the plan
+      await this.provisionEntitlements(dbCustomer.id, planId);
     }
 
     // 4. Handle Credits (if applicable)

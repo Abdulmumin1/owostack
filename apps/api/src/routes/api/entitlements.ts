@@ -201,6 +201,14 @@ app.post("/check", async (c) => {
   }
 
   if (feature.type === "metered") {
+    // Compute reset period once for all response paths
+    const resetPeriod = getResetPeriod(
+      planFeature.resetInterval,
+      subscription.currentPeriodStart,
+      subscription.currentPeriodEnd,
+    );
+    const resetsAt = new Date(resetPeriod.periodEnd).toISOString();
+
     // ===========================================================================
     // DO Check (Preferred for atomicity)
     // ===========================================================================
@@ -209,18 +217,23 @@ app.post("/check", async (c) => {
         `${organizationId}:${customer.id}`,
       );
       const usageMeter = c.env.USAGE_METER.get(doId);
-      let doResult = await usageMeter.check(feature.slug || feature.id, value);
 
-      // Lazy Configuration
+      // Pass current config inline — single RPC call, no extra round-trip
+      const currentConfig = {
+        limit: planFeature.limitValue,
+        resetInterval: planFeature.resetInterval,
+        resetOnEnable: planFeature.resetOnEnable || false,
+        rolloverEnabled: planFeature.rolloverEnabled || false,
+        rolloverMaxBalance: planFeature.rolloverMaxBalance,
+        usageModel: planFeature.usageModel || "included",
+        creditCost: planFeature.creditCost || 0,
+      };
+
+      let doResult = await usageMeter.check(feature.slug || feature.id, value, currentConfig);
+
+      // If DO has no state yet (fresh/restart), migrate usage from DB and configure
       if (doResult.code === "feature_not_found") {
-        // Use resetInterval-aware period for migration query
-        const { periodStart: migrationPeriodStart, periodEnd: migrationPeriodEnd } = getResetPeriod(
-          planFeature.resetInterval,
-          subscription.currentPeriodStart,
-          subscription.currentPeriodEnd,
-        );
-
-        // Calculate usage from DB for migration
+        const { periodStart: migPeriodStart, periodEnd: migPeriodEnd } = resetPeriod;
         const usageResult = await db
           .select({ total: sql<number>`sum(amount)` })
           .from(schema.usageRecords)
@@ -228,25 +241,15 @@ app.post("/check", async (c) => {
             and(
               eq(schema.usageRecords.customerId, customer.id),
               eq(schema.usageRecords.featureId, feature.id),
-              sql`${schema.usageRecords.createdAt} >= ${migrationPeriodStart}`,
-              sql`${schema.usageRecords.createdAt} <= ${migrationPeriodEnd}`,
+              sql`${schema.usageRecords.createdAt} >= ${migPeriodStart}`,
+              sql`${schema.usageRecords.createdAt} <= ${migPeriodEnd}`,
             ),
           );
         const currentUsage = usageResult[0]?.total || 0;
 
         await usageMeter.configureFeature(
           feature.slug || feature.id,
-          {
-            limit: planFeature.limitValue,
-            resetInterval: planFeature.resetInterval,
-            resetOnEnable: planFeature.resetOnEnable || false,
-            rolloverEnabled: planFeature.rolloverEnabled || false,
-            rolloverMaxBalance: planFeature.rolloverMaxBalance,
-            usageModel: planFeature.usageModel || "included",
-            creditCost: planFeature.creditCost || 0,
-            initialUsage: currentUsage,
-          },
-          { lazy: true },
+          { ...currentConfig, initialUsage: currentUsage },
         );
 
         doResult = await usageMeter.check(feature.slug || feature.id, value);
@@ -259,6 +262,8 @@ app.post("/check", async (c) => {
           code: doResult.code,
           currentUsage: doResult.usage,
           limit: doResult.limit,
+          resetsAt,
+          resetInterval: planFeature.resetInterval,
         });
       }
 
@@ -268,6 +273,8 @@ app.post("/check", async (c) => {
         code: "access_granted",
         remaining:
           doResult.limit === null ? null : doResult.limit - doResult.usage,
+        resetsAt,
+        resetInterval: planFeature.resetInterval,
       });
     }
     // Check Usage Limit
@@ -307,6 +314,8 @@ app.post("/check", async (c) => {
         code: "limit_exceeded",
         currentUsage,
         limit: planFeature.limitValue,
+        resetsAt,
+        resetInterval: planFeature.resetInterval,
       });
     }
 
@@ -334,6 +343,8 @@ app.post("/check", async (c) => {
       allowed: true,
       code: "access_granted",
       remaining: planFeature.limitValue - currentUsage,
+      resetsAt,
+      resetInterval: planFeature.resetInterval,
     });
   }
 
@@ -517,16 +528,24 @@ app.post("/track", async (c) => {
 
       const usageMeter = c.env.USAGE_METER.get(doId);
 
-      // Track usage atomically via RPC
-      doResult = await usageMeter.track(feature.slug || feature.id, value);
+      // Pass current config inline — single RPC call, no extra round-trip
+      const currentConfig = {
+        limit: planFeature.limitValue,
+        resetInterval: planFeature.resetInterval,
+        resetOnEnable: planFeature.resetOnEnable || false,
+        rolloverEnabled: planFeature.rolloverEnabled || false,
+        rolloverMaxBalance: planFeature.rolloverMaxBalance,
+        usageModel: planFeature.usageModel || "included",
+        creditCost: planFeature.creditCost || 0,
+      };
 
-      // Lazy Configuration: If feature not found, configure and retry
+      // Track usage atomically via RPC (config synced inline)
+      doResult = await usageMeter.track(feature.slug || feature.id, value, currentConfig);
+
+      // If DO has no state yet (fresh/restart), migrate usage from DB and configure
       if (doResult.code === "feature_not_found") {
-        // Calculate current usage from DB for migration (so we don't start at 0)
         const usageResult = await db
-          .select({
-            total: sql<number>`sum(amount)`,
-          })
+          .select({ total: sql<number>`sum(amount)` })
           .from(schema.usageRecords)
           .where(
             and(
@@ -540,30 +559,22 @@ app.post("/track", async (c) => {
 
         await usageMeter.configureFeature(
           feature.slug || feature.id,
-          {
-            limit: planFeature.limitValue,
-            resetInterval: planFeature.resetInterval,
-            resetOnEnable: planFeature.resetOnEnable || false,
-            rolloverEnabled: planFeature.rolloverEnabled || false,
-            rolloverMaxBalance: planFeature.rolloverMaxBalance,
-            usageModel: planFeature.usageModel || "included",
-            creditCost: planFeature.creditCost || 0,
-            initialUsage: currentUsage,
-          },
-          { lazy: true },
+          { ...currentConfig, initialUsage: currentUsage },
         );
 
-        // Retry tracking
         doResult = await usageMeter.track(feature.slug || feature.id, value);
       }
 
       // If DO says not allowed, return early
       if (doResult && !doResult.allowed) {
+        const resetsAt = new Date(periodEnd).toISOString();
         return c.json({
           success: false,
           allowed: false,
           code: doResult.code,
           balance: doResult.balance,
+          resetsAt,
+          resetInterval: planFeature.resetInterval,
         });
       }
     }
@@ -605,6 +616,8 @@ app.post("/track", async (c) => {
       success: true,
       allowed: true,
       balance: doResult?.balance,
+      resetsAt: new Date(periodEnd).toISOString(),
+      resetInterval: planFeature.resetInterval,
     });
   } catch (e: any) {
     console.error("Track failed:", e);

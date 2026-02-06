@@ -2,7 +2,7 @@
   "name": "owostack-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-01-31",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "durable_object_alarms"],
 
   // D1 Databases (local dev — both point to same DB)
   "d1_databases": [

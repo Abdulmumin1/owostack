@@ -238,7 +238,7 @@
     <!-- Row 3: Feature Consumption + Subscription Status -->
     <div class="grid lg:grid-cols-3 gap-4 mb-6">
       <!-- Feature Consumption (takes 2 cols) -->
-      <div class="lg:col-span-2 bg-bg-card border border-border shadow-md overflow-hidden">
+      <div class="lg:col-span-3 bg-bg-card border border-border shadow-md overflow-hidden">
         <div class="p-5 border-b border-border">
           <div class="flex items-center justify-between">
             <h3 class="text-[10px] font-bold text-white uppercase tracking-widest">Feature Consumption</h3>
@@ -246,33 +246,39 @@
           </div>
         </div>
         {#if usage.featureConsumption?.length > 0}
-          <table class="w-full">
+          <table class="w-full table-fixed">
+            <colgroup>
+              <col class="w-[30%]" />
+              <col class="w-[20%]" />
+              <col class="w-[20%]" />
+              <col class="w-[30%]" />
+            </colgroup>
             <thead>
               <tr class="bg-white/2">
                 <th class="px-5 py-2.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-left">Feature</th>
-                <th class="px-5 py-2.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-right">Consumers</th>
-                <th class="px-5 py-2.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-right">Total Usage</th>
-                <th class="px-5 py-2.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-right w-32"></th>
+                <th class="px-5 py-2.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Consumers</th>
+                <th class="px-5 py-2.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Total Usage</th>
+                <th class="px-5 py-2.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-left pl-6">Volume</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border/30">
               {#each usage.featureConsumption as feat}
                 <tr class="hover:bg-white/2 transition-colors">
                   <td class="px-5 py-3">
-                    <div class="text-sm text-white font-medium">{feat.featureName}</div>
-                    <div class="text-[10px] text-zinc-600 font-mono">{feat.featureSlug}</div>
+                    <div class="text-sm text-white font-medium truncate">{feat.featureName}</div>
+                    <div class="text-[10px] text-zinc-600 font-mono truncate">{feat.featureSlug}</div>
                   </td>
-                  <td class="px-5 py-3 text-right">
+                  <td class="px-5 py-3 text-center">
                     <span class="text-sm text-white font-bold">{feat.uniqueConsumers}</span>
                     <span class="text-[10px] text-zinc-600 ml-1">{feat.uniqueConsumers === 1 ? 'user' : 'users'}</span>
                   </td>
-                  <td class="px-5 py-3 text-right">
+                  <td class="px-5 py-3 text-center">
                     <span class="text-sm text-white font-bold">{formatNumber(feat.totalUsage)}</span>
                     {#if feat.unit}
                       <span class="text-[10px] text-zinc-600 ml-1">{feat.unit}</span>
                     {/if}
                   </td>
-                  <td class="px-5 py-3">
+                  <td class="px-5 py-3 pl-6">
                     <ProgressBar value={feat.totalUsage} max={maxFeatureUsage} color="bg-accent/70" />
                   </td>
                 </tr>
@@ -324,7 +330,7 @@
     </div>
 
     <!-- Recent Usage Activity (lazy-loaded) -->
-    <div class="bg-bg-card border border-border shadow-md overflow-hidden">
+    <!-- <div class="bg-bg-card border border-border shadow-md overflow-hidden">
       <div class="p-5 border-b border-border flex items-center justify-between">
         <h3 class="text-[10px] font-bold text-white uppercase tracking-widest">Recent Activity</h3>
         {#if activityLoaded && activityTotal > 0}
@@ -392,7 +398,7 @@
           No usage activity recorded yet
         </div>
       {/if}
-    </div>
+    </div> -->
   {:else}
     <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
       <div class="w-12 h-12 bg-white/5 flex items-center justify-center mb-4 rounded">

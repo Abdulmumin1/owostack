@@ -105,14 +105,25 @@ app.get("/", async (c) => {
   });
 
   const subscriptions = customers.flatMap((cust: any) =>
-    cust.subscriptions.map((sub: any) => ({
-      ...sub,
-      customer: {
-        id: cust.id,
-        email: cust.email,
-        name: cust.name,
-      },
-    })),
+    cust.subscriptions
+      .filter((sub: any) => {
+        // Exclude one-time purchases
+        if (sub.paystackSubscriptionCode === "one-time") return false;
+        if ((sub.metadata as any)?.billing_type === "one_time") return false;
+        if ((sub.metadata as any)?.type === "one_time_purchase") return false;
+        if (sub.plan?.billingType === "one_time") return false;
+        // Exclude trials (they show in transactions)
+        if (sub.paystackSubscriptionCode?.startsWith("trial-")) return false;
+        return true;
+      })
+      .map((sub: any) => ({
+        ...sub,
+        customer: {
+          id: cust.id,
+          email: cust.email,
+          name: cust.name,
+        },
+      })),
   );
 
   return c.json({ success: true, data: subscriptions });

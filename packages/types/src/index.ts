@@ -146,7 +146,7 @@ export type PlanInterval =
   | "quarterly"
   | "yearly";
 
-export type ResetInterval = "never" | "daily" | "weekly" | "monthly" | "yearly";
+export type ResetInterval = "never" | "5min" | "15min" | "30min" | "hourly" | "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
 
 export type SubscriptionStatus =
   | "active"

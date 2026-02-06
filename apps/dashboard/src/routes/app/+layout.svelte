@@ -15,6 +15,7 @@
     Boxes,
     BarChart3,
     ChartNoAxesColumn,
+    Receipt,
   } from "lucide-svelte";
   import { page } from "$app/state";
   import {
@@ -121,7 +122,7 @@
       label: null, // No label - standalone items
       items: [
         { href: "/customers", icon: Users, label: "Customers" },
-        { href: "/events", icon: Webhook, label: "Events" },
+        { href: "/transactions", icon: Receipt, label: "Transactions" },
         { href: "/usage", icon: ChartNoAxesColumn, label: "Usage" },
       ],
     },
@@ -129,6 +130,7 @@
       label: "Developer",
       items: [
         { href: "/keys", icon: Key, label: "API Keys" },
+        { href: "/events", icon: Webhook, label: "Events" },
         { href: "/settings", icon: Settings, label: "Settings" },
       ],
     },

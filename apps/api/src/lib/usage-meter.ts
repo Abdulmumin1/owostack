@@ -79,11 +79,38 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
   ): Promise<{ success: boolean }> {
     await this.init();
 
-    // If lazy initialization and state already exists, prevent reset/overwrite
+    // If lazy initialization, prevent reset/overwrite of existing state
     const existingState = this.featureUsage.get(featureId);
-    if (options?.lazy && existingState) {
-      this.featureConfigs.set(featureId, config); // Update config in case it changed
+    if (options?.lazy) {
+      if (!existingState) {
+        // No state yet — save config but DON'T create state.
+        // Caller should handle "feature_not_found" and provide initialUsage via non-lazy configure.
+        this.featureConfigs.set(featureId, config);
+        await this.persist();
+        return { success: true };
+      }
+
+      const oldConfig = this.featureConfigs.get(featureId);
+
+      // If config hasn't changed, skip entirely (no persist, no write)
+      const configChanged =
+        oldConfig?.resetInterval !== config.resetInterval ||
+        oldConfig?.limit !== config.limit;
+
+      if (!configChanged) {
+        return { success: true };
+      }
+
+      console.log(`[UsageMeter] Config changed for ${featureId}: interval ${oldConfig?.resetInterval} -> ${config.resetInterval}, limit ${oldConfig?.limit} -> ${config.limit}`);
+      this.featureConfigs.set(featureId, config);
+      existingState.limit = config.limit;
+      if (config.limit !== null) {
+        existingState.balance = Math.max(0, config.limit - existingState.usage);
+      }
       await this.persist();
+      await this.scheduleResetAlarm();
+      await this.maybeReset(featureId);
+
       return { success: true };
     }
 
@@ -122,14 +149,43 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
   }
 
   /**
+   * Check if the period has elapsed and reset inline if needed.
+   * Catches cases where the alarm was missed or interval was too short.
+   */
+  private async maybeReset(featureId: string): Promise<void> {
+    const state = this.featureUsage.get(featureId);
+    const config = this.featureConfigs.get(featureId);
+    if (!state || !config || config.resetInterval === "none") return;
+
+    const intervalMs = this.getIntervalMs(config.resetInterval);
+    console.log(`[UsageMeter] maybeReset(${featureId}): interval=${config.resetInterval}, intervalMs=${intervalMs}, lastReset=${new Date(state.lastReset).toISOString()}, nextReset=${new Date(state.lastReset + intervalMs).toISOString()}, now=${new Date().toISOString()}, usage=${state.usage}, balance=${state.balance}`);
+    if (intervalMs === 0) return;
+
+    const nextReset = state.lastReset + intervalMs;
+    if (Date.now() >= nextReset) {
+      console.log(`[UsageMeter] Period elapsed for ${featureId}, resetting now...`);
+      await this.resetFeature(featureId);
+      await this.scheduleResetAlarm();
+    } else {
+      console.log(`[UsageMeter] Period NOT elapsed for ${featureId}, ${Math.round((nextReset - Date.now()) / 1000)}s remaining`);
+    }
+  }
+
+  /**
    * Check if usage is allowed (without consuming)
    * This is an RPC method - call directly on the stub
    */
   async check(
     featureId: string,
     requiredBalance: number = 1,
+    currentConfig?: FeatureConfig,
   ): Promise<TrackResult> {
     await this.init();
+
+    // Inline config sync (avoids separate RPC call)
+    if (currentConfig) {
+      await this.configureFeature(featureId, currentConfig, { lazy: true });
+    }
 
     const state = this.featureUsage.get(featureId);
     const config = this.featureConfigs.get(featureId);
@@ -143,6 +199,9 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
         code: "feature_not_found",
       };
     }
+
+    // Auto-reset if period has elapsed
+    await this.maybeReset(featureId);
 
     // For unlimited features
     if (state.limit === null) {
@@ -171,8 +230,13 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
    * Track usage (consume credits/units)
    * This is an RPC method - call directly on the stub
    */
-  async track(featureId: string, delta: number = 1): Promise<TrackResult> {
+  async track(featureId: string, delta: number = 1, currentConfig?: FeatureConfig): Promise<TrackResult> {
     await this.init();
+
+    // Inline config sync (avoids separate RPC call)
+    if (currentConfig) {
+      await this.configureFeature(featureId, currentConfig, { lazy: true });
+    }
 
     const state = this.featureUsage.get(featureId);
     const config = this.featureConfigs.get(featureId);
@@ -186,6 +250,9 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
         code: "feature_not_found",
       };
     }
+
+    // Auto-reset if period has elapsed
+    await this.maybeReset(featureId);
 
     // Apply credit cost multiplier if applicable (0 means 1:1)
     const creditMultiplier = config.creditCost > 0 ? config.creditCost : 1;
@@ -258,8 +325,11 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
     const config = this.featureConfigs.get(featureId);
 
     if (!state || !config) {
+      console.log(`[UsageMeter] resetFeature(${featureId}): no state or config found`);
       return { success: false };
     }
+
+    console.log(`[UsageMeter] resetFeature(${featureId}): usage ${state.usage} -> 0, balance -> ${config.limit ?? 'Infinity'}`);
 
     // Handle rollovers
     if (config.rolloverEnabled) {
@@ -325,6 +395,7 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
    */
   async alarm(): Promise<void> {
     await this.init();
+    console.log(`[UsageMeter] ⏰ Alarm fired at ${new Date().toISOString()}`);
 
     const now = Date.now();
 
@@ -351,7 +422,11 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
    */
   private getIntervalMs(interval: string): number {
     const intervals: Record<string, number> = {
+      "5min": 5 * 60 * 1000,
+      "15min": 15 * 60 * 1000,
+      "30min": 30 * 60 * 1000,
       hour: 60 * 60 * 1000,
+      hourly: 60 * 60 * 1000,
       day: 24 * 60 * 60 * 1000,
       daily: 24 * 60 * 60 * 1000,
       week: 7 * 24 * 60 * 60 * 1000,
@@ -359,6 +434,7 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
       month: 30 * 24 * 60 * 60 * 1000,
       monthly: 30 * 24 * 60 * 60 * 1000,
       quarter: 90 * 24 * 60 * 60 * 1000,
+      quarterly: 90 * 24 * 60 * 60 * 1000,
       semi_annual: 180 * 24 * 60 * 60 * 1000,
       year: 365 * 24 * 60 * 60 * 1000,
       yearly: 365 * 24 * 60 * 60 * 1000,

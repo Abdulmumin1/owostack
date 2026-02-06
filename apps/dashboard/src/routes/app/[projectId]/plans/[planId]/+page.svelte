@@ -556,7 +556,7 @@
         e.preventDefault();
         const data = {
           usageModel: 'included',
-          limitValue: configLimitValue.trim() === '' ? null : Number(configLimitValue),
+          limitValue: String(configLimitValue).trim() === '' ? null : Number(configLimitValue),
           resetInterval: configResetInterval,
         };
         handleUpdateFeatureConfig(data);
@@ -626,8 +626,12 @@
         <!-- Interval -->
         <div class="space-y-4">
           <div class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Interval</div>
-          <div class="grid grid-cols-3 gap-2">
+          <div class="grid grid-cols-4 gap-2">
             {#each [
+              { value: '5min', label: '5 Min' },
+              { value: '15min', label: '15 Min' },
+              { value: '30min', label: '30 Min' },
+              { value: 'hourly', label: 'Hourly' },
               { value: 'daily', label: 'Daily' },
               { value: 'weekly', label: 'Weekly' },
               { value: 'monthly', label: 'Monthly' },

@@ -17,6 +17,7 @@ import dashboardSubscriptions from "./routes/dashboard/subscriptions";
 import dashboardEvents from "./routes/dashboard/events";
 import dashboardUsage from "./routes/dashboard/usage";
 import dashboardCredits from "./routes/dashboard/credits";
+import dashboardTransactions from "./routes/dashboard/transactions";
 import apiCheckout from "./routes/api/checkout";
 import apiEntitlements from "./routes/api/entitlements";
 
@@ -155,6 +156,7 @@ dashboardRoutes.route("/subscriptions", dashboardSubscriptions);
 dashboardRoutes.route("/events", dashboardEvents);
 dashboardRoutes.route("/usage", dashboardUsage);
 dashboardRoutes.route("/credits", dashboardCredits);
+dashboardRoutes.route("/transactions", dashboardTransactions);
 dashboardRoutes.route("/", dashboardConfig); // Config module has paths like /paystack-config
 
 app.route("/api/dashboard", dashboardRoutes);

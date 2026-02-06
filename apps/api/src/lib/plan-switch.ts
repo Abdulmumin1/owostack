@@ -211,6 +211,13 @@ export async function executeSwitch(
     throw new Error(`Customer '${customerId}' not found`);
   }
 
+  // =========================================================================
+  // ONE-TIME purchase — skip subscription switch logic entirely
+  // =========================================================================
+  if (newPlan.billingType === "one_time") {
+    return handleOneTimePurchase(db, customer, newPlan, paystack, options);
+  }
+
   const existingSub = await findSwitchableSubscription(db, customerId, newPlan);
 
   // Guard: switching to the same plan is a no-op
@@ -598,6 +605,132 @@ async function handleLateralSwitch(
     requiresCheckout: false,
     subscriptionId: existingSub.id,
     message: `Switched to ${newPlan.name}. Features updated immediately.`,
+  };
+}
+
+async function handleOneTimePurchase(
+  db: DB,
+  customer: any,
+  plan: any,
+  paystack: PaystackClient | null,
+  options: { callbackUrl?: string; metadata?: Record<string, unknown> },
+): Promise<SwitchResult> {
+  const now = Date.now();
+
+  // Free one-time → just create purchase record + entitlements
+  if (plan.price === 0) {
+    const [sub] = await db
+      .insert(schema.subscriptions)
+      .values({
+        id: crypto.randomUUID(),
+        customerId: customer.id,
+        planId: plan.id,
+        paystackSubscriptionCode: "one-time",
+        status: "active",
+        currentPeriodStart: now,
+        currentPeriodEnd: now, // No recurring period
+        metadata: { ...options.metadata, billing_type: "one_time" },
+      })
+      .returning();
+
+    await provisionEntitlements(db, customer.id, plan.id);
+
+    return {
+      success: true,
+      type: "new",
+      requiresCheckout: false,
+      subscriptionId: sub.id,
+      message: `${plan.name} activated (one-time)`,
+    };
+  }
+
+  // Card on file → charge directly
+  if (paystack && customer.paystackAuthorizationCode) {
+    const chargeResult = await paystack.chargeAuthorization({
+      authorization_code: customer.paystackAuthorizationCode,
+      email: customer.email,
+      amount: plan.price,
+      currency: plan.currency,
+      metadata: {
+        type: "one_time_purchase",
+        plan_id: plan.id,
+        plan_slug: plan.slug,
+        customer_id: customer.id,
+        ...options.metadata,
+      },
+    });
+
+    if (chargeResult.isOk()) {
+      const [sub] = await db
+        .insert(schema.subscriptions)
+        .values({
+          id: crypto.randomUUID(),
+          customerId: customer.id,
+          planId: plan.id,
+          paystackSubscriptionCode: "one-time",
+          status: "active",
+          currentPeriodStart: now,
+          currentPeriodEnd: now, // No recurring period
+          metadata: {
+            ...options.metadata,
+            billing_type: "one_time",
+            paystack_reference: chargeResult.value.reference,
+          },
+        })
+        .returning();
+
+      await provisionEntitlements(db, customer.id, plan.id);
+
+      return {
+        success: true,
+        type: "new",
+        requiresCheckout: false,
+        subscriptionId: sub.id,
+        message: `${plan.name} purchased (one-time)`,
+      };
+    }
+    // Fall through to checkout if charge failed
+  }
+
+  // No card or charge failed → checkout
+  if (!paystack) {
+    return {
+      success: false,
+      type: "new",
+      requiresCheckout: true,
+      message: "Paystack not configured",
+    };
+  }
+
+  const result = await paystack.initializeTransaction({
+    email: customer.email,
+    amount: String(plan.price),
+    // No plan parameter — one-time charge, not a Paystack subscription
+    callback_url: options.callbackUrl,
+    metadata: JSON.stringify({
+      type: "one_time_purchase",
+      plan_id: plan.id,
+      plan_slug: plan.slug,
+      customer_id: customer.id,
+      ...options.metadata,
+    }),
+  });
+
+  if (result.isErr()) {
+    return {
+      success: false,
+      type: "new",
+      requiresCheckout: true,
+      message: `Failed to create checkout: ${result.error.message}`,
+    };
+  }
+
+  return {
+    success: true,
+    type: "new",
+    requiresCheckout: true,
+    checkoutUrl: result.value.authorization_url,
+    message: `Checkout created for ${plan.name} (one-time)`,
   };
 }
 
