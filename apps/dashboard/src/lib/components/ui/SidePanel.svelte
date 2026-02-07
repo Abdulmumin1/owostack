@@ -21,7 +21,7 @@
 {#if open}
   <!-- Backdrop -->
   <button
-    class="fixed inset-0 bg-black/50 z-40 cursor-default"
+    class="fixed inset-0 bg-black/50 backdrop-blur-xs z-40 cursor-default"
     transition:fade={{ duration: 150 }}
     onclick={onclose}
     aria-label="Close panel"
@@ -29,7 +29,7 @@
 
   <!-- Panel -->
   <div
-    class="fixed top-0 right-0 h-full {width} w-full bg-bg-card border-l border-border z-50 flex flex-col shadow-2xl"
+    class="fixed top-0 right-0 h-full {width} w-full bg-bg-secondary border-l border-border z-50 flex flex-col shadow-2xl"
     transition:fly={{ x: 400, duration: 200 }}
   >
     <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">

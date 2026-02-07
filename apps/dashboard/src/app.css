@@ -91,10 +91,22 @@ body {
 
 /* Inputs - Boxy, Dark, High Contrast Border */
 .input {
-  @apply w-full bg-bg-secondary border border-border px-4 py-3
+  @apply w-full bg-bg-secondary border border-border px-4 py-2.5
          text-white text-sm placeholder:text-text-dim
          focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent
          transition-all duration-150 shadow-sm;
+}
+
+.input-icon-wrapper {
+  @apply relative w-full;
+}
+
+.input-has-icon-left {
+  @apply pl-10;
+}
+
+.input-icon-left {
+  @apply absolute left-3 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none;
 }
 
 /* Cards - Flat blocks with borders and shadows */

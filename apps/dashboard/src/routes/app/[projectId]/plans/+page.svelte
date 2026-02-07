@@ -4,6 +4,7 @@
   import { fade, fly } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
   import CreatePlanModal from "$lib/components/plans/CreatePlanModal.svelte";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   // URL param is the organization ID from Better Auth
   const organizationId = $derived(page.params.projectId);
@@ -91,9 +92,32 @@
   </div>
 
   {#if isLoading}
-    <div class="flex items-center gap-2 text-zinc-500">
-      <Loader2 size={16} class="animate-spin" />
-      <span>Loading plans...</span>
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {#each Array(3) as _}
+        <div class="bg-bg-card border border-border p-6 shadow-sm flex flex-col h-full space-y-6">
+          <div class="space-y-3">
+            <Skeleton class="h-6 w-3/4" />
+            <Skeleton class="h-8 w-1/2" />
+            <Skeleton class="h-4 w-full" />
+          </div>
+          <div class="flex gap-2">
+            <Skeleton class="h-5 w-12" />
+            <Skeleton class="h-5 w-16" />
+          </div>
+          <div class="flex-1 space-y-3">
+            <Skeleton class="h-3 w-20" />
+            <div class="space-y-2">
+              <Skeleton class="h-4 w-full" />
+              <Skeleton class="h-4 w-5/6" />
+              <Skeleton class="h-4 w-4/6" />
+            </div>
+          </div>
+          <div class="pt-4 border-t border-border flex justify-between">
+            <Skeleton class="h-3 w-24" />
+            <Skeleton class="h-5 w-12" />
+          </div>
+        </div>
+      {/each}
     </div>
   {:else if plans.length === 0}
     <div
@@ -185,7 +209,7 @@
               {#if plan.trialDays > 0}
                 <span
                   class="text-[10px] font-bold bg-blue-900/30 text-blue-400 px-2 py-0.5 rounded border border-blue-800/50"
-                  >{plan.trialDays}d Trial</span
+                  >{plan.trialDays}{plan.metadata?.trialUnit === 'minutes' ? 'm' : 'd'} Trial</span
                 >
               {/if}
             </div>

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and, sql, or } from "drizzle-orm";
+import { eq, and, sql, or, inArray } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
 import { EntitlementCache } from "../../lib/cache";
@@ -83,7 +83,7 @@ async function resolveOrCreateCustomer(
     })) ?? null;
 
     if (customer && cache) {
-      await cache.setCustomer(organizationId, customerIdLower, customer);
+      cache.setCustomer(organizationId, customerIdLower, customer); // fire-and-forget
     }
   }
 
@@ -104,7 +104,7 @@ async function resolveOrCreateCustomer(
     customer = newCustomer as typeof schema.customers.$inferSelect;
 
     if (cache) {
-      await cache.setCustomer(organizationId, customerIdLower, customer);
+      cache.setCustomer(organizationId, customerIdLower, customer); // fire-and-forget
     }
   }
 
@@ -139,6 +139,7 @@ app.post("/check", async (c) => {
     return c.json({
       allowed: false,
       code: "customer_not_found",
+      details: { message: `Customer '${customerId}' not found in this organization.` },
     });
   }
 
@@ -159,12 +160,12 @@ app.post("/check", async (c) => {
     })) ?? null;
 
     if (feature && cache) {
-      await cache.setFeature(organizationId, featureId, feature);
+      cache.setFeature(organizationId, featureId, feature); // fire-and-forget
     }
   }
 
   if (!feature) {
-    return c.json({ allowed: false, code: "feature_not_found" });
+    return c.json({ allowed: false, code: "feature_not_found", details: { message: `Feature '${featureId}' not found.` } });
   }
 
   // 3. Check Subscription & Plans (cache-first, then DB)
@@ -180,7 +181,7 @@ app.post("/check", async (c) => {
     subscriptions = await db.query.subscriptions.findMany({
       where: and(
         eq(schema.subscriptions.customerId, customer.id),
-        eq(schema.subscriptions.status, "active"),
+        inArray(schema.subscriptions.status, ["active", "trialing"]),
       ),
       with: {
         plan: true,
@@ -188,7 +189,30 @@ app.post("/check", async (c) => {
     });
 
     if (subscriptions.length > 0 && cache) {
-      await cache.setSubscriptions(organizationId, subsCacheKey, subscriptions);
+      cache.setSubscriptions(organizationId, subsCacheKey, subscriptions); // fire-and-forget
+    }
+  }
+
+  // Filter out expired trialing subscriptions and lazily mark them in DB
+  const now = Date.now();
+  const expiredTrialIds: string[] = [];
+  subscriptions = subscriptions.filter((s: any) => {
+    if (s.status === "trialing" && s.currentPeriodEnd && s.currentPeriodEnd < now) {
+      expiredTrialIds.push(s.id);
+      return false;
+    }
+    return true;
+  });
+  if (expiredTrialIds.length > 0) {
+    // Fire-and-forget: mark expired trials in DB
+    c.executionCtx.waitUntil(
+      db.update(schema.subscriptions)
+        .set({ status: "expired", updatedAt: now })
+        .where(inArray(schema.subscriptions.id, expiredTrialIds))
+    );
+    // Invalidate cache so next request gets fresh data
+    if (cache) {
+      cache.invalidateSubscriptions(organizationId, subsCacheKey);
     }
   }
 
@@ -196,6 +220,7 @@ app.post("/check", async (c) => {
     return c.json({
       allowed: false,
       code: "no_active_subscription",
+      details: { message: "No active or trialing subscription found for this customer." },
     });
   }
 
@@ -218,7 +243,7 @@ app.post("/check", async (c) => {
     });
 
     if (planFeatures.length > 0 && cache) {
-      await cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures);
+      cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures); // fire-and-forget
     }
   }
 
@@ -239,6 +264,7 @@ app.post("/check", async (c) => {
     return c.json({
       allowed: false,
       code: "feature_not_in_plan",
+      details: { message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.` },
     });
   }
 
@@ -246,9 +272,34 @@ app.post("/check", async (c) => {
   const subscription = accessGrantingSubscription;
   const planFeature = accessGrantingPlanFeature;
 
+  // Build reusable details context
+  const isTrial = subscription.status === "trialing";
+  const trialEndsAt = isTrial && subscription.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd).toISOString()
+    : null;
+  const planName = (subscription as any).plan?.name || "current plan";
+
+  // Helper to build the details object — only includes truthy optional fields
+  function buildDetails(message: string, extra?: Record<string, unknown>) {
+    return {
+      message,
+      planName,
+      ...(isTrial ? { trial: true, trialEndsAt } : {}),
+      ...extra,
+    };
+  }
+
   // 5. Check Logic based on Type
   if (feature.type === "boolean") {
-    return c.json({ allowed: true, code: "access_granted" });
+    return c.json({
+      allowed: true,
+      code: "access_granted",
+      details: buildDetails(
+        isTrial
+          ? `Feature '${feature.slug || feature.id}' enabled on ${planName} via free trial (ends ${trialEndsAt}).`
+          : `Feature '${feature.slug || feature.id}' enabled on ${planName}.`,
+      ),
+    });
   }
 
   if (feature.type === "metered") {
@@ -316,6 +367,33 @@ app.post("/check", async (c) => {
       }
 
       if (!doResult.allowed) {
+        const overageSetting = planFeature.overage || "block";
+        
+        // If overage is "charge", allow but indicate overage
+        if (overageSetting === "charge") {
+          return c.json({
+            allowed: true,
+            code: "overage_allowed",
+            usage: doResult.usage,
+            limit: doResult.limit,
+            balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
+            resetsAt,
+            resetInterval: planFeature.resetInterval,
+            details: buildDetails(
+              `Usage exceeds limit (${doResult.usage}/${doResult.limit}), overage will be billed.`,
+              {
+                overage: {
+                  type: overageSetting,
+                  willBeBilled: true,
+                  pricePerUnit: planFeature.pricePerUnit,
+                  billingUnits: planFeature.billingUnits,
+                },
+              },
+            ),
+          });
+        }
+        
+        // Otherwise block
         return c.json({
           allowed: false,
           code: doResult.code,
@@ -324,6 +402,7 @@ app.post("/check", async (c) => {
           balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
           resetsAt,
           resetInterval: planFeature.resetInterval,
+          details: buildDetails(`Usage limit reached (${doResult.usage}/${doResult.limit}). Resets at ${resetsAt}.`),
         });
       }
 
@@ -337,6 +416,7 @@ app.post("/check", async (c) => {
             balance: trackResult.balance,
             resetsAt,
             resetInterval: planFeature.resetInterval,
+            details: buildDetails(`Usage tracking denied — insufficient balance (${trackResult.balance} remaining). Resets at ${resetsAt}.`),
           });
         }
         // Also persist to DB for audit trail
@@ -360,12 +440,22 @@ app.post("/check", async (c) => {
         unlimited: doResult.limit === null,
         resetsAt,
         resetInterval: planFeature.resetInterval,
+        details: buildDetails(
+          doResult.limit === null
+            ? `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`
+            : `Access granted — used ${doResult.usage} of ${doResult.limit}.`,
+        ),
       });
     }
     // Check Usage Limit
     // If limitValue is null, it's unlimited
     if (planFeature.limitValue === null) {
-      return c.json({ allowed: true, code: "access_granted", unlimited: true });
+      return c.json({
+        allowed: true,
+        code: "access_granted",
+        unlimited: true,
+        details: buildDetails(`Unlimited access to '${feature.slug || feature.id}' on ${planName}.`),
+      });
     }
 
     // Calculate current usage for this period using the feature's reset interval
@@ -397,6 +487,32 @@ app.post("/check", async (c) => {
     const currentUsage = usageResult[0]?.total || 0;
 
     if (currentUsage + value > planFeature.limitValue) {
+      const overageSetting = planFeature.overage || "block";
+      
+      // If overage is "charge" or "notify", allow but indicate overage
+      if (overageSetting === "charge" || overageSetting === "notify") {
+        return c.json({
+          allowed: true,
+          code: "overage_allowed",
+          usage: currentUsage,
+          limit: planFeature.limitValue,
+          balance: planFeature.limitValue - currentUsage,
+          resetsAt,
+          resetInterval: planFeature.resetInterval,
+          details: buildDetails(
+            `Usage exceeds limit (${currentUsage}/${planFeature.limitValue}), overage will be ${overageSetting === "charge" ? "billed" : "notified"}.`,
+            {
+              overage: {
+                type: overageSetting,
+                willBeBilled: overageSetting === "charge",
+                pricePerUnit: planFeature.pricePerUnit,
+                billingUnits: planFeature.billingUnits,
+              },
+            },
+          ),
+        });
+      }
+      
       return c.json({
         allowed: false,
         code: "limit_exceeded",
@@ -405,6 +521,7 @@ app.post("/check", async (c) => {
         balance: planFeature.limitValue - currentUsage,
         resetsAt,
         resetInterval: planFeature.resetInterval,
+        details: buildDetails(`Usage limit exceeded (${currentUsage}/${planFeature.limitValue}). Resets at ${resetsAt}.`),
       });
     }
 
@@ -422,6 +539,7 @@ app.post("/check", async (c) => {
           code: "insufficient_credits",
           balance: creditBalance,
           limit: cost,
+          details: buildDetails(`Insufficient credits — balance: ${creditBalance}, required: ${cost}.`),
         });
       }
     }
@@ -447,12 +565,14 @@ app.post("/check", async (c) => {
       balance: planFeature.limitValue - currentUsage,
       resetsAt,
       resetInterval: planFeature.resetInterval,
+      details: buildDetails(`Access granted — used ${currentUsage} of ${planFeature.limitValue}.`),
     });
   }
 
   return c.json({
     allowed: false,
     code: "unknown_feature_type",
+    details: { message: `Unrecognized feature type '${feature.type}'.` },
   });
 });
 
@@ -481,7 +601,7 @@ app.post("/track", async (c) => {
   const customer = await resolveOrCreateCustomer(db, organizationId, customerId, customerData, cache);
 
   if (!customer) {
-    return c.json({ success: false, allowed: false, code: "customer_not_found" }, 404);
+    return c.json({ success: false, allowed: false, code: "customer_not_found", details: { message: `Customer '${customerId}' not found in this organization.` } }, 404);
   }
 
   // 2. Resolve Feature (cache-first, then DB)
@@ -501,15 +621,15 @@ app.post("/track", async (c) => {
     })) ?? null;
 
     if (feature && cache) {
-      await cache.setFeature(organizationId, featureId, feature);
+      cache.setFeature(organizationId, featureId, feature); // fire-and-forget
     }
   }
 
   if (!feature) {
-    return c.json({ success: false, allowed: false, code: "feature_not_found" }, 404);
+    return c.json({ success: false, allowed: false, code: "feature_not_found", details: { message: `Feature '${featureId}' not found.` } }, 404);
   }
 
-  // 3. Find active subscriptions (cache-first, then DB)
+  // 3. Find active/trialing subscriptions (cache-first, then DB)
   const subsCacheKey = customer.id;
   let subscriptions = cache
     ? await cache.getSubscriptions<Awaited<ReturnType<typeof db.query.subscriptions.findMany>>>(
@@ -522,18 +642,39 @@ app.post("/track", async (c) => {
     subscriptions = await db.query.subscriptions.findMany({
       where: and(
         eq(schema.subscriptions.customerId, customer.id),
-        eq(schema.subscriptions.status, "active"),
+        inArray(schema.subscriptions.status, ["active", "trialing"]),
       ),
     });
 
     if (subscriptions.length > 0 && cache) {
-      await cache.setSubscriptions(organizationId, subsCacheKey, subscriptions);
+      cache.setSubscriptions(organizationId, subsCacheKey, subscriptions); // fire-and-forget
+    }
+  }
+
+  // Filter out expired trialing subscriptions and lazily mark them in DB
+  const trackNow = Date.now();
+  const trackExpiredTrialIds: string[] = [];
+  subscriptions = subscriptions.filter((s: any) => {
+    if (s.status === "trialing" && s.currentPeriodEnd && s.currentPeriodEnd < trackNow) {
+      trackExpiredTrialIds.push(s.id);
+      return false;
+    }
+    return true;
+  });
+  if (trackExpiredTrialIds.length > 0) {
+    c.executionCtx.waitUntil(
+      db.update(schema.subscriptions)
+        .set({ status: "expired", updatedAt: trackNow })
+        .where(inArray(schema.subscriptions.id, trackExpiredTrialIds))
+    );
+    if (cache) {
+      cache.invalidateSubscriptions(organizationId, subsCacheKey);
     }
   }
 
   if (subscriptions.length === 0) {
     return c.json(
-      { success: false, allowed: false, code: "no_active_subscription" },
+      { success: false, allowed: false, code: "no_active_subscription", details: { message: "No active or trialing subscription found for this customer." } },
       400,
     );
   }
@@ -557,7 +698,7 @@ app.post("/track", async (c) => {
     });
 
     if (planFeatures.length > 0 && cache) {
-      await cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures);
+      cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures); // fire-and-forget
     }
   }
 
@@ -578,9 +719,23 @@ app.post("/track", async (c) => {
 
   if (!subscription || !planFeature) {
     return c.json(
-      { success: false, allowed: false, code: "feature_not_in_plan" },
+      { success: false, allowed: false, code: "feature_not_in_plan", details: { message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.` } },
       400,
     );
+  }
+
+  // Build reusable details context for track responses
+  const isTrial = subscription.status === "trialing";
+  const trialEndsAt = isTrial && subscription.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd).toISOString()
+    : null;
+
+  function buildTrackDetails(message: string, extra?: Record<string, unknown>) {
+    return {
+      message,
+      ...(isTrial ? { trial: true, trialEndsAt } : {}),
+      ...extra,
+    };
   }
 
   // Use the feature's resetInterval to determine the correct usage period
@@ -651,64 +806,78 @@ app.post("/track", async (c) => {
         doResult = await usageMeter.track(trackFeatureKey, value);
       }
 
-      // If DO says not allowed, return early
+      // If DO says not allowed, check overage setting
       if (doResult && !doResult.allowed) {
-        return c.json({
-          success: false,
-          allowed: false,
-          code: doResult.code,
-          balance: doResult.balance,
-          resetsAt: new Date(periodEnd).toISOString(),
-          resetInterval: planFeature.resetInterval,
-        });
+        const overageSetting = planFeature.overage || "block";
+        
+        // If overage is "block", deny the request
+        if (overageSetting === "block") {
+          return c.json({
+            success: false,
+            allowed: false,
+            code: doResult.code,
+            balance: doResult.balance,
+            resetsAt: new Date(periodEnd).toISOString(),
+            resetInterval: planFeature.resetInterval,
+            details: buildTrackDetails(`Usage tracking denied — limit reached (${doResult.balance} remaining). Resets at ${new Date(periodEnd).toISOString()}.`),
+          });
+        }
+        
+        // If overage is "charge", allow the usage (will be billed later)
+        // Continue to persist the usage record
       }
     }
 
     // ===========================================================================
-    // Persist to DB (for audit trail and backup)
+    // Persist to DB asynchronously (for audit trail and backup)
+    // Using waitUntil to avoid blocking the response
     // ===========================================================================
-    await db.insert(schema.usageRecords).values({
-      id: crypto.randomUUID(),
-      customerId: customer.id,
-      featureId: feature.id,
-      entityId: entity || null,
-      amount: value,
-      periodStart,
-      periodEnd,
-    });
+    c.executionCtx.waitUntil(
+      db.insert(schema.usageRecords).values({
+        id: crypto.randomUUID(),
+        customerId: customer.id,
+        featureId: feature.id,
+        entityId: entity || null,
+        amount: value,
+        periodStart,
+        periodEnd,
+      })
+    );
 
     // Deduct Credits if applicable (DB fallback for non-DO path)
-    if (subscription && !c.env.USAGE_METER) {
-      const planFeature = await db.query.planFeatures.findFirst({
-        where: and(
-          eq(schema.planFeatures.planId, subscription.planId),
-          eq(schema.planFeatures.featureId, feature.id),
-        ),
-      });
-
-      if (planFeature && planFeature.creditCost && planFeature.creditCost > 0) {
-        const cost = value * planFeature.creditCost;
-        await db
+    if (subscription && !c.env.USAGE_METER && planFeature.creditCost && planFeature.creditCost > 0) {
+      const cost = value * planFeature.creditCost;
+      c.executionCtx.waitUntil(
+        db
           .update(schema.credits)
           .set({
             balance: sql`${schema.credits.balance} - ${cost}`,
             updatedAt: Date.now(),
           })
-          .where(eq(schema.credits.customerId, customer.id));
-      }
+          .where(eq(schema.credits.customerId, customer.id))
+      );
     }
 
+    // Determine if this was an overage usage
+    const isOverage = doResult && !doResult.allowed && planFeature.overage === "charge";
+    
     return c.json({
       success: true,
       allowed: true,
-      code: "tracked",
+      code: isOverage ? "tracked_overage" : "tracked",
       balance: doResult?.balance ?? null,
       resetsAt: new Date(periodEnd).toISOString(),
       resetInterval: planFeature.resetInterval,
+      details: isOverage
+        ? buildTrackDetails(
+            `Usage tracked as overage (will be billed).`,
+            { overage: { type: planFeature.overage, willBeBilled: true } },
+          )
+        : buildTrackDetails(`Usage tracked successfully (${doResult?.balance ?? 'n/a'} remaining).`),
     });
   } catch (e: any) {
     console.error("Track failed:", e);
-    return c.json({ success: false, allowed: false, code: "internal_error" }, 500);
+    return c.json({ success: false, allowed: false, code: "internal_error", details: { message: "An internal error occurred while tracking usage." } }, 500);
   }
 });
 

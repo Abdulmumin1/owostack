@@ -155,6 +155,7 @@ export class SubscriptionSchedulerDO extends DurableObject<Env> {
         dueTasks.push({ key, task });
       }
     }
+    console.log(`[SCHEDULER] Alarm fired: ${dueTasks.length} due task(s) out of ${this.tasks.size} total`);
     for (const { key } of dueTasks) {
       this.tasks.delete(key);
     }
@@ -201,13 +202,22 @@ export class SubscriptionSchedulerDO extends DurableObject<Env> {
    * Fetches the org's Paystack secret key from project config
    */
   private async handleTrialEnd(task: ScheduledTask): Promise<void> {
+    console.log(`[SCHEDULER] handleTrialEnd fired: subscription=${task.subscriptionId}, plan=${task.planId}, customer=${task.customerId}, scheduledAt=${new Date(task.scheduledAt).toISOString()}`);
     const authorizationCode = task.metadata?.authorization_code as string | undefined;
     const email = task.metadata?.email as string | undefined;
     const amount = task.metadata?.amount as number | undefined;
 
     if (!authorizationCode || !email || !amount) {
-      console.error(`Missing data for trial end: ${task.subscriptionId}`);
-      // Mark subscription as past_due or canceled
+      console.log(`[SCHEDULER] No card on file for trial end — expiring subscription=${task.subscriptionId}, hasAuth=${!!authorizationCode}, hasEmail=${!!email}, hasAmount=${!!amount}`);
+      // No card to charge — mark subscription as expired
+      try {
+        await this.env.DB.prepare(
+          `UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ?`
+        ).bind(Date.now(), task.subscriptionId).run();
+        console.log(`[SCHEDULER] Subscription expired: ${task.subscriptionId}`);
+      } catch (dbErr) {
+        console.error(`[SCHEDULER] Failed to expire subscription=${task.subscriptionId}:`, dbErr);
+      }
       return;
     }
 
@@ -244,12 +254,14 @@ export class SubscriptionSchedulerDO extends DurableObject<Env> {
       const data = await response.json() as { status: boolean; message: string };
 
       if (!response.ok || !data.status) {
-        console.error(`Failed to charge authorization: ${data.message}`);
+        console.error(`[SCHEDULER] Charge FAILED for trial end: subscription=${task.subscriptionId}, message=${data.message}`);
         // The webhook will handle updating subscription status based on charge result
+      } else {
+        console.log(`[SCHEDULER] Charge SUCCESS for trial end: subscription=${task.subscriptionId}, message=${data.message}`);
       }
 
       // Success - webhook will handle subscription activation
-      console.log(`Trial conversion charge initiated for subscription ${task.subscriptionId}`);
+      console.log(`[SCHEDULER] Trial conversion charge initiated for subscription=${task.subscriptionId}, email=${email}, amount=${amount}`);
     } catch (error) {
       console.error(`Error charging authorization:`, error);
       throw error; // Will trigger retry

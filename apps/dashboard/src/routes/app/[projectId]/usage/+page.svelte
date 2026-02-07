@@ -6,6 +6,7 @@
   import StatCard from "$lib/components/ui/StatCard.svelte";
   import BarChart from "$lib/components/ui/BarChart.svelte";
   import ProgressBar from "$lib/components/ui/ProgressBar.svelte";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   const ACTIVITY_PAGE_SIZE = 20;
 
@@ -154,8 +155,64 @@
   </div>
 
   {#if isLoading}
-    <div class="flex items-center justify-center py-24">
-      <Loader2 size={24} class="text-zinc-500 animate-spin" />
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      {#each Array(4) as _}
+        <div class="bg-bg-card border border-border p-5 shadow-md space-y-4">
+          <div class="flex items-center justify-between">
+            <Skeleton class="h-3 w-20" />
+            <Skeleton class="w-8 h-8 rounded" />
+          </div>
+          <Skeleton class="h-8 w-24" />
+          <Skeleton class="h-3 w-32" />
+        </div>
+      {/each}
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-4 mb-6">
+      <div class="bg-bg-card border border-border p-5 shadow-md h-64">
+        <div class="flex items-center justify-between mb-6">
+          <Skeleton class="h-3 w-32" />
+          <Skeleton class="h-3 w-20" />
+        </div>
+        <div class="flex items-end justify-between h-32 gap-2">
+          {#each Array(12) as _}
+            <Skeleton class="w-full" style="height: {Math.random() * 100}%" />
+          {/each}
+        </div>
+      </div>
+      <div class="bg-bg-card border border-border p-5 shadow-md h-64">
+        <Skeleton class="h-3 w-32 mb-6" />
+        <div class="space-y-4">
+          {#each Array(4) as _}
+            <div class="space-y-2">
+              <div class="flex justify-between">
+                <Skeleton class="h-3 w-24" />
+                <Skeleton class="h-3 w-8" />
+              </div>
+              <Skeleton class="h-2 w-full" />
+            </div>
+          {/each}
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-bg-card border border-border shadow-md overflow-hidden">
+      <div class="p-5 border-b border-border">
+        <Skeleton class="h-3 w-32" />
+      </div>
+      <div class="p-5 space-y-4">
+        {#each Array(5) as _}
+          <div class="flex items-center justify-between py-2">
+            <div class="space-y-2">
+              <Skeleton class="h-4 w-32" />
+              <Skeleton class="h-3 w-48" />
+            </div>
+            <Skeleton class="h-4 w-12" />
+            <Skeleton class="h-4 w-16" />
+            <Skeleton class="h-2 w-32" />
+          </div>
+        {/each}
+      </div>
     </div>
   {:else if usage}
     <!-- Summary Cards -->
@@ -349,8 +406,16 @@
           </button>
         </div>
       {:else if activityLoading && activityRecords.length === 0}
-        <div class="p-8 flex items-center justify-center text-zinc-500">
-          <Loader2 size={16} class="animate-spin" />
+        <div class="p-5 space-y-3">
+          {#each Array(5) as _}
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <Skeleton class="w-7 h-7 rounded" />
+                <Skeleton class="h-4 w-64" />
+              </div>
+              <Skeleton class="h-3 w-16" />
+            </div>
+          {/each}
         </div>
       {:else if activityRecords.length > 0}
         <div class="divide-y divide-border/30">

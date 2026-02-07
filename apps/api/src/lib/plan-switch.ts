@@ -1,7 +1,8 @@
 import { eq, and, inArray } from "drizzle-orm";
 import { createDb, schema } from "@owostack/db";
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
-import type { SubscriptionSchedulerDO } from "./subscription-scheduler";
+// Workflow type (any since it's a Cloudflare Workflow binding)
+type WorkflowBinding = { create: (opts: { params: Record<string, unknown> }) => Promise<unknown> };
 
 type DB = ReturnType<typeof createDb>;
 
@@ -205,7 +206,7 @@ export async function executeSwitch(
   options: {
     callbackUrl?: string;
     metadata?: Record<string, unknown>;
-    scheduler?: DurableObjectStub<SubscriptionSchedulerDO>;
+    downgradeWorkflow?: WorkflowBinding;
     organizationId?: string;
     environment?: string;
   } = {},
@@ -553,7 +554,7 @@ async function handleDowngrade(
   existingSub: any,
   newPlan: any,
   options: {
-    scheduler?: DurableObjectStub<SubscriptionSchedulerDO>;
+    downgradeWorkflow?: WorkflowBinding;
     organizationId?: string;
     environment?: string;
     metadata?: Record<string, unknown>;
@@ -579,27 +580,28 @@ async function handleDowngrade(
     })
     .where(eq(schema.subscriptions.id, existingSub.id));
 
-  // Schedule a Durable Object alarm to execute the downgrade at period end
-  if (options.scheduler && options.organizationId) {
+  // Dispatch downgrade workflow (sleeps until period end, then executes)
+  if (options.downgradeWorkflow && options.organizationId) {
     try {
-      await options.scheduler.scheduleDowngrade(
-        existingSub.id,
-        existingSub.customerId,
-        newPlan.id,
-        options.organizationId,
-        (options.environment || "test") as any,
-        existingSub.currentPeriodEnd,
-        {
-          old_plan_id: existingSub.plan.id,
-          provider_id: existingSub.providerId || "paystack",
-          provider_subscription_code: existingSub.providerSubscriptionCode || existingSub.paystackSubscriptionCode,
-          customer_email: customer.email,
-          customer_authorization_code: customer.providerAuthorizationCode || customer.paystackAuthorizationCode,
-          new_plan_provider_id: newPlan.providerPlanId || newPlan.paystackPlanId,
+      await options.downgradeWorkflow.create({
+        params: {
+          subscriptionId: existingSub.id,
+          customerId: existingSub.customerId,
+          newPlanId: newPlan.id,
+          organizationId: options.organizationId,
+          providerId: existingSub.providerId || "paystack",
+          environment: options.environment || "test",
+          executeAt: existingSub.currentPeriodEnd,
+          oldPlanId: existingSub.plan?.id,
+          providerSubscriptionCode: existingSub.providerSubscriptionCode || existingSub.paystackSubscriptionCode,
+          customerEmail: customer.email,
+          customerAuthorizationCode: customer.providerAuthorizationCode || customer.paystackAuthorizationCode,
+          newPlanProviderCode: newPlan.providerPlanId || newPlan.paystackPlanId,
         },
-      );
+      });
+      console.log(`[plan-switch] Downgrade workflow dispatched: sub=${existingSub.id}, newPlan=${newPlan.id}`);
     } catch (e) {
-      console.error("Failed to schedule downgrade alarm:", e);
+      console.error("Failed to dispatch downgrade workflow:", e);
       // The metadata is still stored, so a manual process can pick it up
     }
   }

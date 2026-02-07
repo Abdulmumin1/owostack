@@ -12,9 +12,13 @@
     Webhook,
     Settings as SettingsIcon,
     Cpu,
+    Lock,
+    Key,
+    X,
   } from "lucide-svelte";
   import { page } from "$app/state";
   import { organization, apiFetch } from "$lib/auth-client";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   let projectId = $derived(page.params.projectId);
   let projectName = $state("");
@@ -187,7 +191,27 @@
   </div>
 
   <div class="min-h-[400px]">
-    {#if activeTab === "general"}
+    {#if isLoading}
+      <div class="bg-bg-card border border-border p-8 shadow-md space-y-8">
+        <div class="space-y-2">
+          <Skeleton class="h-4 w-32" />
+          <Skeleton class="h-3 w-48" />
+        </div>
+        <div class="space-y-6">
+          <div class="space-y-2">
+            <Skeleton class="h-3 w-24" />
+            <Skeleton class="h-10 w-full" />
+          </div>
+          <div class="space-y-2">
+            <Skeleton class="h-3 w-24" />
+            <Skeleton class="h-10 w-full" />
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <Skeleton class="h-10 w-32" />
+        </div>
+      </div>
+    {:else if activeTab === "general"}
       <!-- General Settings -->
       <div class="bg-bg-card border border-border p-8 shadow-md">
         <div class="mb-8">
@@ -305,14 +329,24 @@
             <label for="secretKey" class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
               Secret Key {#if paystackConnected}<span class="text-emerald-500 font-bold tracking-normal ml-1">✓</span>{/if}
             </label>
-            <div class="relative">
+            <div class="input-icon-wrapper">
+              <Lock size={14} class="input-icon-left" />
               <input
                 type={showSecretKey ? "text" : "password"}
                 id="secretKey"
                 bind:value={paystackSecretKey}
                 placeholder={paystackConnected ? paystackMaskedKey : "sk_test_xxxxxxxxxxxxxxx"}
-                class="input pr-12 font-mono text-xs w-full"
+                class="input input-has-icon-left pr-12 font-mono text-xs w-full"
               />
+              {#if paystackSecretKey || paystackConnected}
+                <button
+                  type="button"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-white transition-colors"
+                  onclick={() => (paystackSecretKey = "")}
+                >
+                  <X size={14} />
+                </button>
+              {/if}
               <button
                 type="button"
                 class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors"
@@ -333,18 +367,17 @@
             </p>
           </div>
 
-          <!-- Public Key -->
           <div>
-            <label for="publicKey" class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
-              Public Key <span class="text-zinc-700 ml-1 font-bold">(Optional)</span>
-            </label>
-            <input
-              type="text"
-              id="publicKey"
-              bind:value={paystackPublicKey}
-              placeholder="pk_test_xxxxxxxxxxxxxxx"
-              class="input font-mono text-xs w-full"
-            />
+            <label for="publicKey" class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Public Key</label>
+            <div class="input-icon-wrapper">
+              <Key size={14} class="input-icon-left" />
+              <input 
+                id="publicKey"
+                bind:value={paystackPublicKey}
+                placeholder="pk_test_xxxxxxxxxxxxxxx"
+                class="input input-has-icon-left font-mono text-xs w-full"
+              />
+            </div>
           </div>
 
           <!-- Environment -->

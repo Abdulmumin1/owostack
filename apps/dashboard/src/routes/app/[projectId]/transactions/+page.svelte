@@ -6,6 +6,7 @@
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import TransactionDetail from "$lib/components/transactions/TransactionDetail.svelte";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   const organizationId = $derived(page.params.projectId);
   let transactions = $state<any[]>([]);
@@ -144,24 +145,72 @@
 
   <!-- Search -->
   <div class="flex items-center justify-between gap-4 mb-6">
-    <div class="relative flex-1 max-w-sm">
+    <div class="input-icon-wrapper max-w-sm">
       <Search
         size={14}
-        class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+        class="input-icon-left"
       />
       <input
         type="text"
         placeholder="Search by customer, plan, or type..."
         bind:value={searchQuery}
-        class="input pl-9"
+        class="input input-has-icon-left"
       />
     </div>
   </div>
 
   {#if isLoading && transactions.length === 0}
-    <div class="flex items-center gap-2 text-zinc-500 p-12 justify-center">
-      <Loader2 size={16} class="animate-spin" />
-      <span>Loading transactions...</span>
+    <div class="bg-bg-card border border-border overflow-hidden shadow-md">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-white/5 border-b border-border">
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Type</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Customer</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Plan</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Amount</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Provider</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Status</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Date</th>
+            <th class="px-6 py-4"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border/50">
+          {#each Array(5) as _}
+            <tr>
+              <td class="px-6 py-4">
+                <div class="flex items-center gap-2">
+                  <Skeleton class="w-7 h-7 rounded" />
+                  <Skeleton class="h-3 w-16" />
+                </div>
+              </td>
+              <td class="px-6 py-4">
+                <div class="space-y-2">
+                  <Skeleton class="h-4 w-32" />
+                  <Skeleton class="h-3 w-20" />
+                </div>
+              </td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-4 w-24" />
+              </td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-4 w-16" />
+              </td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-4 w-20" />
+              </td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-5 w-16" />
+              </td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-4 w-24" />
+              </td>
+              <td class="px-6 py-4 text-right">
+                <Skeleton class="h-4 w-4 ml-auto" />
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     </div>
   {:else if filteredTx.length === 0}
     <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">

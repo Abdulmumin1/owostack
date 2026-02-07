@@ -20,6 +20,9 @@ import {
   referralRedemptions,
   creditSystems,
   creditSystemFeatures,
+  invoices,
+  invoiceItems,
+  paymentAttempts,
 } from "./billing";
 
 /**
@@ -138,6 +141,7 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   entitlements: many(entitlements),
   usageRecords: many(usageRecords),
   credits: many(credits),
+  invoices: many(invoices),
 }));
 
 export const plansRelations = relations(plans, ({ one, many }) => ({
@@ -290,3 +294,39 @@ export const referralRedemptionsRelations = relations(
     }),
   }),
 );
+
+// Invoice relations
+export const invoicesRelations = relations(invoices, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [invoices.organizationId],
+    references: [organizations.id],
+  }),
+  customer: one(customers, {
+    fields: [invoices.customerId],
+    references: [customers.id],
+  }),
+  subscription: one(subscriptions, {
+    fields: [invoices.subscriptionId],
+    references: [subscriptions.id],
+  }),
+  items: many(invoiceItems),
+  paymentAttempts: many(paymentAttempts),
+}));
+
+export const invoiceItemsRelations = relations(invoiceItems, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoiceItems.invoiceId],
+    references: [invoices.id],
+  }),
+  feature: one(features, {
+    fields: [invoiceItems.featureId],
+    references: [features.id],
+  }),
+}));
+
+export const paymentAttemptsRelations = relations(paymentAttempts, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [paymentAttempts.invoiceId],
+    references: [invoices.id],
+  }),
+}));

@@ -5,6 +5,7 @@
   import { apiFetch } from "$lib/auth-client";
   import CreateFeatureModal from "$lib/components/features/CreateFeatureModal.svelte";
   import CreateCreditSystemModal from "$lib/components/features/CreateCreditSystemModal.svelte";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import { 
     ChevronRight, 
     Boxes, 
@@ -127,11 +128,23 @@
         </thead>
         <tbody class="divide-y divide-border/30">
           {#if isLoading}
-            <tr>
-              <td colspan="4" class="px-6 py-12 text-center">
-                <Loader2 size={24} class="animate-spin text-zinc-700 mx-auto" />
-              </td>
-            </tr>
+            {#each Array(3) as _}
+              <tr>
+                <td class="px-6 py-4">
+                  <Skeleton class="h-4 w-32" />
+                </td>
+                <td class="px-6 py-4">
+                  <Skeleton class="h-3 w-24" />
+                </td>
+                <td class="px-6 py-4">
+                  <div class="flex items-center gap-2">
+                    <Skeleton class="w-4 h-4 rounded" />
+                    <Skeleton class="h-3 w-16" />
+                  </div>
+                </td>
+                <td class="px-6 py-4"></td>
+              </tr>
+            {/each}
           {:else if features.length === 0}
             <tr>
               <td colspan="4" class="px-6 py-12 text-center text-zinc-600 text-sm italic">
@@ -219,24 +232,30 @@
         </thead>
         <tbody class="divide-y divide-border/30">
           {#if isLoading}
-            <tr>
-              <td colspan="4" class="px-6 py-12 text-center">
-                <Loader2 size={24} class="animate-spin text-zinc-700 mx-auto" />
-              </td>
-            </tr>
+            {#each Array(2) as _}
+              <tr>
+                <td class="px-6 py-4">
+                  <Skeleton class="h-4 w-32" />
+                </td>
+                <td class="px-6 py-4">
+                  <Skeleton class="h-3 w-24" />
+                </td>
+                <td class="px-6 py-4">
+                  <div class="flex gap-1">
+                    <Skeleton class="h-4 w-12" />
+                    <Skeleton class="h-4 w-12" />
+                  </div>
+                </td>
+                <td class="px-6 py-4"></td>
+              </tr>
+            {/each}
           {:else if creditSystems.length === 0}
             <tr>
               <td colspan="4" class="px-6 py-10 text-center">
                 <p class="text-zinc-500 text-[11px] mb-4">
                   Credit systems let you assign different credit costs to features, and draw usage from a common balance
                 </p>
-                <a 
-                  href="https://docs.useautumn.com/documentation/pricing/credits" 
-                  target="_blank" 
-                  class="bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-bold text-zinc-400 px-3 py-1.5 rounded inline-flex items-center gap-2 transition-all"
-                >
-                  Docs <ExternalLink size={12} />
-                </a>
+            
               </td>
             </tr>
           {:else}

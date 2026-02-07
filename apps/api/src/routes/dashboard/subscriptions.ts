@@ -117,9 +117,6 @@ app.get("/", async (c) => {
         if ((sub.metadata as any)?.billing_type === "one_time") return false;
         if ((sub.metadata as any)?.type === "one_time_purchase") return false;
         if (sub.plan?.billingType === "one_time") return false;
-        // Exclude trials (they show in transactions)
-        if (sub.paystackSubscriptionCode?.startsWith("trial-")) return false;
-        if (sub.providerSubscriptionCode?.startsWith("trial-")) return false;
         return true;
       })
       .map((sub: any) => ({
@@ -444,12 +441,8 @@ app.post("/switch-plan", async (c) => {
   }
 
   try {
-    // Get scheduler DO stub for downgrade alarms
-    const schedulerId = c.env.SUBSCRIPTION_SCHEDULER.idFromName(organizationId);
-    const scheduler = c.env.SUBSCRIPTION_SCHEDULER.get(schedulerId);
-
     const result = await executeSwitch(db, customerId, newPlanId, providerCtx, {
-      scheduler,
+      downgradeWorkflow: c.env.DOWNGRADE_WORKFLOW,
       organizationId,
       environment: activeEnv,
     });

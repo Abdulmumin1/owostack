@@ -102,12 +102,73 @@ export interface CheckParams {
   entity?: string;
 }
 
+/** Machine-readable codes returned by check() */
+export type CheckCode =
+  | "access_granted"
+  | "customer_not_found"
+  | "feature_not_found"
+  | "no_active_subscription"
+  | "feature_not_in_plan"
+  | "overage_allowed"
+  | "limit_exceeded"
+  | "insufficient_balance"
+  | "insufficient_credits"
+  | "unknown_feature_type";
+
+/** Machine-readable codes returned by track() */
+export type TrackCode =
+  | "tracked"
+  | "tracked_overage"
+  | "customer_not_found"
+  | "feature_not_found"
+  | "no_active_subscription"
+  | "feature_not_in_plan"
+  | "insufficient_balance"
+  | "internal_error";
+
+/** Overage billing details included when usage exceeds the plan limit */
+export interface OverageDetails {
+  /** Overage handling type */
+  type: "charge" | "notify" | "block";
+
+  /** Whether this overage will be billed */
+  willBeBilled: boolean;
+
+  /** Price per overage unit in minor currency units (e.g. kobo) */
+  pricePerUnit?: number | null;
+
+  /** Number of units per billing increment */
+  billingUnits?: number | null;
+}
+
+/**
+ * Contextual details object returned alongside standard check/track fields.
+ * Contains all optional/situational information that isn't part of the
+ * core response shape (trial status, plan info, overage billing, etc.).
+ */
+export interface ResponseDetails {
+  /** Human-readable explanation of the result */
+  message: string;
+
+  /** Name of the plan granting access */
+  planName?: string;
+
+  /** Whether access is via a free trial */
+  trial?: boolean;
+
+  /** ISO timestamp when the trial ends */
+  trialEndsAt?: string | null;
+
+  /** Overage billing details (present when usage exceeds plan limit) */
+  overage?: OverageDetails;
+}
+
 export interface CheckResult {
   /** Whether access is allowed */
   allowed: boolean;
 
   /** Machine-readable code */
-  code: string;
+  code: CheckCode | string;
 
   /** Remaining balance (null = unlimited) */
   balance?: number | null;
@@ -126,6 +187,9 @@ export interface CheckResult {
 
   /** Reset interval */
   resetInterval?: string;
+
+  /** Contextual details (trial info, plan name, overage, human message) */
+  details?: ResponseDetails;
 }
 
 /**
@@ -160,7 +224,7 @@ export interface TrackResult {
   allowed: boolean;
 
   /** Machine-readable code */
-  code: string;
+  code: TrackCode | string;
 
   /** Remaining balance after tracking (null = unlimited) */
   balance?: number | null;
@@ -170,6 +234,9 @@ export interface TrackResult {
 
   /** Reset interval */
   resetInterval?: string;
+
+  /** Contextual details (trial info, overage, human message) */
+  details?: ResponseDetails;
 }
 
 /**
@@ -198,6 +265,7 @@ export type ResetInterval = "never" | "5min" | "15min" | "30min" | "hourly" | "d
 export type SubscriptionStatus =
   | "active"
   | "canceled"
+  | "expired"
   | "incomplete"
   | "incomplete_expired"
   | "past_due"
@@ -227,7 +295,7 @@ export interface FeatureLimit {
   reset: ResetInterval;
 
   /** Overage behavior */
-  overage?: "block" | "charge" | "notify";
+  overage?: "block" | "charge";
 
   /** Overage price per unit */
   overagePrice?: number;

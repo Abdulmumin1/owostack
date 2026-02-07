@@ -138,8 +138,12 @@ export type {
   AttachResult,
   CheckParams,
   CheckResult,
+  CheckCode,
   TrackParams,
   TrackResult,
+  TrackCode,
   OwostackConfig,
   CustomerData,
+  ResponseDetails,
+  OverageDetails,
 } from "@owostack/types";

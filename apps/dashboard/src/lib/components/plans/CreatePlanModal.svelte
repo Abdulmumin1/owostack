@@ -123,10 +123,18 @@
         planType === "free" ? 0 : Math.round(parseFloat(price) * 100);
 
       let finalTrialDays = 0;
+      let finalTrialUnit = "days";
       if (hasTrial) {
-        if (trialUnit === "days") finalTrialDays = trialDuration;
-        if (trialUnit === "weeks") finalTrialDays = trialDuration * 7;
-        if (trialUnit === "months") finalTrialDays = trialDuration * 30;
+        if (trialUnit === "minutes") {
+          finalTrialDays = trialDuration;
+          finalTrialUnit = "minutes";
+        } else if (trialUnit === "days") {
+          finalTrialDays = trialDuration;
+        } else if (trialUnit === "weeks") {
+          finalTrialDays = trialDuration * 7;
+        } else if (trialUnit === "months") {
+          finalTrialDays = trialDuration * 30;
+        }
       }
 
       const planRes = await apiFetch("/api/dashboard/plans", {
@@ -141,6 +149,7 @@
           billingModel,
           billingType,
           trialDays: finalTrialDays,
+          trialUnit: finalTrialUnit,
           trialCardRequired: hasTrial && trialCardRequired,
           isAddon,
           autoEnable,
@@ -210,27 +219,31 @@
               class="block text-xs font-medium text-zinc-400 mb-1.5"
               for="planName">Plan Name</label
             >
-            <input
-              type="text"
-              id="planName"
-              bind:value={planName}
-              placeholder="eg. Pro Plan"
-              class="w-full bg-bg-secondary border border-border rounded-md px-3 py-2 text-white placeholder:text-zinc-700 focus:outline-none focus:border-zinc-500 transition-colors"
-              autofocus
-            />
+            <div class="input-icon-wrapper">
+              <input
+                type="text"
+                id="planName"
+                bind:value={planName}
+                placeholder="eg. Pro Plan"
+                class="input"
+                autofocus
+              />
+            </div>
           </div>
           <div>
             <label
               class="block text-xs font-medium text-zinc-400 mb-1.5"
               for="planId">ID</label
             >
-            <input
-              type="text"
-              id="planId"
-              value={planId || "fills automatically"}
-              disabled
-              class="w-full bg-bg-secondary/50 border border-border rounded-md px-3 py-2 text-zinc-500 cursor-not-allowed"
-            />
+            <div class="input-icon-wrapper">
+              <input
+                type="text"
+                id="planId"
+                value={planId || "fills automatically"}
+                disabled
+                class="input opacity-50 cursor-not-allowed"
+              />
+            </div>
           </div>
         </div>
 
@@ -394,17 +407,17 @@
                       class="block text-xs font-medium text-zinc-400 mb-1.5"
                       for="priceInput">Price</label
                     >
-                    <div class="relative">
+                    <div class="input-icon-wrapper">
                       <input
                         type="number"
                         id="priceInput"
                         bind:value={price}
                         placeholder="eg. 100"
                         min="0"
-                        class="w-full bg-bg-secondary border border-border rounded-md pl-3 pr-12 py-2 text-white placeholder:text-zinc-700 focus:outline-none focus:border-zinc-500 transition-colors"
+                        class="input pr-12"
                       />
                       <div
-                        class="absolute right-3 top-2 text-xs font-bold text-zinc-500 pointer-events-none"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-500 pointer-events-none"
                       >
                         {currency}
                       </div>
@@ -417,16 +430,18 @@
                         class="block text-xs font-medium text-zinc-400 mb-1.5"
                         for="intervalSelect">Billing Interval</label
                       >
-                      <select
-                        id="intervalSelect"
-                        bind:value={interval}
-                        class="w-full bg-bg-secondary border border-border rounded-md px-3 py-2 text-white focus:outline-none focus:border-zinc-500 transition-colors appearance-none"
-                      >
-                        <option value="monthly">per month</option>
-                        <option value="yearly">per year</option>
-                        <option value="quarterly">per quarter</option>
-                        <option value="weekly">per week</option>
-                      </select>
+                      <div class="input-icon-wrapper">
+                        <select
+                          id="intervalSelect"
+                          bind:value={interval}
+                          class="input appearance-none"
+                        >
+                          <option value="monthly">per month</option>
+                          <option value="yearly">per year</option>
+                          <option value="quarterly">per quarter</option>
+                          <option value="weekly">per week</option>
+                        </select>
+                      </div>
                     </div>
                   {/if}
                 </div>
@@ -478,6 +493,7 @@
                       bind:value={trialUnit}
                       class="flex-1 bg-bg-secondary border border-border rounded-r-md px-2 py-1.5 text-white text-xs focus:outline-none focus:border-zinc-500"
                     >
+                      <option value="minutes">minutes</option>
                       <option value="days">days</option>
                       <option value="weeks">weeks</option>
                       <option value="months">months</option>
@@ -559,13 +575,15 @@
               class="block text-xs font-medium text-zinc-400 mb-1.5"
               for="planGroup">Plan Group (optional)</label
             >
-            <input
-              type="text"
-              id="planGroup"
-              bind:value={planGroup}
-              placeholder="eg. support, sales"
-              class="w-full bg-bg-secondary border border-border rounded-md px-3 py-2 text-white placeholder:text-zinc-700 focus:outline-none focus:border-zinc-500 transition-colors"
-            />
+                  <div class="input-icon-wrapper">
+                    <input
+                      type="text"
+                      id="planGroup"
+                      bind:value={planGroup}
+                      placeholder="eg. support, sales"
+                      class="input"
+                    />
+                  </div>
             <p class="text-[10px] text-zinc-500 mt-1">
               Group related plans together (e.g., different tiers of the same
               product)

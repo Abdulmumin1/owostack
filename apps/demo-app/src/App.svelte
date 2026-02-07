@@ -14,6 +14,10 @@
   let featureId = $state("api-calls");
   let trackAmount = $state(1);
 
+  // Billing State
+  let unbilledUsage = $state<any>(null);
+  let invoiceResult = $state<any>(null);
+
   // Initialize SDK
   // In a real app, this would happen server-side or with a public key
   let owo = $derived(new Owostack({ secretKey, apiUrl }));
@@ -71,6 +75,43 @@
       log("Track Result:", res);
     } catch (e: any) {
       log("Track Failed:", e.message);
+    }
+  }
+
+  async function handleGetUnbilledUsage() {
+    if (!customerId) return alert("Customer required");
+    log(`Fetching unbilled usage for ${customerId}...`);
+
+    try {
+      const res = await fetch(`${apiUrl}/billing/usage?customer=${encodeURIComponent(customerId)}`, {
+        headers: { Authorization: `Bearer ${secretKey}` },
+      });
+      const data = await res.json();
+      unbilledUsage = data;
+      log("Unbilled Usage:", data);
+    } catch (e: any) {
+      log("Fetch Failed:", e.message);
+    }
+  }
+
+  async function handleGenerateInvoice() {
+    if (!customerId) return alert("Customer required");
+    log(`Generating invoice for ${customerId}...`);
+
+    try {
+      const res = await fetch(`${apiUrl}/billing/invoice`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${secretKey}`,
+        },
+        body: JSON.stringify({ customer: customerId }),
+      });
+      const data = await res.json();
+      invoiceResult = data;
+      log("Invoice Generated:", data);
+    } catch (e: any) {
+      log("Invoice Failed:", e.message);
     }
   }
 </script>
@@ -223,6 +264,68 @@
             Track Usage
           </button>
         </div>
+      </div>
+
+      <div
+        class="space-y-4 bg-zinc-800/50 p-6 rounded-xl border border-zinc-700"
+      >
+        <h2 class="text-sm font-bold text-zinc-400 uppercase tracking-wider">
+          4. Billing (Usage-Based)
+        </h2>
+
+        <div class="flex gap-2">
+          <button
+            onclick={handleGetUnbilledUsage}
+            disabled={!secretKey}
+            class="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold px-4 py-2 rounded transition-colors disabled:opacity-50"
+          >
+            View Unbilled
+          </button>
+          <button
+            onclick={handleGenerateInvoice}
+            disabled={!secretKey}
+            class="flex-1 bg-amber-900/50 hover:bg-amber-900 text-amber-400 border border-amber-800 font-bold px-4 py-2 rounded transition-colors disabled:opacity-50"
+          >
+            Generate Invoice
+          </button>
+        </div>
+
+        {#if unbilledUsage?.success}
+          <div class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-zinc-400">Unbilled Amount</span>
+              <span class="text-amber-400 font-bold">
+                {unbilledUsage.currency} {(unbilledUsage.totalEstimated / 100).toFixed(2)}
+              </span>
+            </div>
+            {#each unbilledUsage.features || [] as f}
+              <div class="border-t border-zinc-800 pt-2 mt-2 text-zinc-500">
+                <div class="flex justify-between">
+                  <span>{f.featureName}</span>
+                  <span>{f.billableQuantity} units</span>
+                </div>
+                <div class="text-xs text-zinc-600">
+                  Usage: {f.usage} | Included: {f.included ?? "∞"} | Model: {f.usageModel}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        {#if invoiceResult?.success}
+          <div class="bg-zinc-900 p-3 rounded border border-emerald-800 text-xs">
+            <div class="text-emerald-400 font-bold mb-2">
+              Invoice {invoiceResult.invoice.number}
+            </div>
+            <div class="flex justify-between text-zinc-400">
+              <span>Total</span>
+              <span>{invoiceResult.invoice.currency} {(invoiceResult.invoice.total / 100).toFixed(2)}</span>
+            </div>
+            <div class="text-zinc-600 text-xs mt-1">
+              Status: {invoiceResult.invoice.status}
+            </div>
+          </div>
+        {/if}
       </div>
     </div>
 

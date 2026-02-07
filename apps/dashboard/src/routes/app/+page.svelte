@@ -8,9 +8,14 @@
     EyeOff,
     Loader2,
     CheckCircle,
+    Link2,
+    Lock,
+    Key,
   } from "lucide-svelte";
   import { organization, apiFetch } from "$lib/auth-client";
+  import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import { goto } from "$app/navigation";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   let orgs = $state<any[]>([]);
   let isLoading = $state(true);
@@ -128,9 +133,24 @@
   </div>
 
   {#if isLoading}
-    <div class="text-zinc-500 flex items-center gap-2">
-      <Loader2 size={16} class="animate-spin" />
-      <span>Loading organizations...</span>
+    <div class="space-y-3">
+      {#each Array(3) as _}
+        <div class="bg-bg-card border border-border p-5 shadow-sm">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+              <Skeleton class="w-10 h-10 rounded" />
+              <div class="space-y-2">
+                <Skeleton class="h-4 w-32" />
+                <Skeleton class="h-3 w-24" />
+              </div>
+            </div>
+            <div class="flex items-center gap-4">
+              <Skeleton class="h-3 w-32" />
+              <Skeleton class="w-8 h-8" />
+            </div>
+          </div>
+        </div>
+      {/each}
     </div>
   {:else if orgs.length > 0}
     <!-- Organizations List -->
@@ -191,34 +211,22 @@
   {/if}
 </div>
 
-<!-- Create Modal (Multi-step) -->
-{#if showCreateModal}
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-  >
-    <div
-      class="w-full max-w-lg bg-bg-card border border-border p-6 shadow-2xl relative"
-    >
-      <button
-        class="absolute top-4 right-4 text-zinc-500 hover:text-white"
-        onclick={closeModal}
-      >
-        <X size={18} />
-      </button>
-
+<!-- Create Organization SidePanel -->
+<SidePanel open={showCreateModal} title="Create Organization" onclose={closeModal} width="max-w-md">
+  <div class="text-sm">
+    <div class="p-5 space-y-6">
       <!-- Step Indicator -->
-      <div class="flex items-center gap-4 mb-6">
+      <div class="flex items-center gap-4 mb-2">
         <div class="flex items-center gap-2">
           <div
-            class="w-6 h-6 flex items-center justify-center text-xs font-bold {currentStep >=
-            1
+            class="w-6 h-6 flex items-center justify-center text-[10px] font-bold {currentStep >= 1
               ? 'bg-accent text-black'
               : 'bg-bg-secondary text-zinc-500'}"
           >
             {currentStep > 1 ? "✓" : "1"}
           </div>
           <span
-            class="text-xs font-bold uppercase tracking-wider {currentStep >= 1
+            class="text-[10px] font-bold uppercase tracking-widest {currentStep >= 1
               ? 'text-white'
               : 'text-zinc-500'}">Details</span
           >
@@ -226,15 +234,14 @@
         <div class="flex-1 h-px bg-border"></div>
         <div class="flex items-center gap-2">
           <div
-            class="w-6 h-6 flex items-center justify-center text-xs font-bold {currentStep >=
-            2
+            class="w-6 h-6 flex items-center justify-center text-[10px] font-bold {currentStep >= 2
               ? 'bg-accent text-black'
               : 'bg-bg-secondary text-zinc-500'}"
           >
             2
           </div>
           <span
-            class="text-xs font-bold uppercase tracking-wider {currentStep >= 2
+            class="text-[10px] font-bold uppercase tracking-widest {currentStep >= 2
               ? 'text-white'
               : 'text-zinc-500'}">Paystack</span
           >
@@ -242,93 +249,71 @@
       </div>
 
       {#if createError}
-        <div
-          class="mb-4 p-3 bg-red-900/20 border border-red-500/50 text-red-400 text-sm"
-        >
+        <div class="mb-4 p-3 bg-red-900/20 border border-red-500/50 text-red-400 text-xs uppercase tracking-tight">
           {createError}
         </div>
       {/if}
 
       {#if currentStep === 1}
         <!-- Step 1: Organization Details -->
-        <h2 class="text-lg font-bold text-white mb-1">Create Organization</h2>
-        <p class="text-zinc-400 text-xs mb-6">
-          Set up your organization details.
-        </p>
-
-        <div class="space-y-4 mb-6">
+        <div class="space-y-5">
           <div>
             <label
               for="orgName"
-              class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2"
+              class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2"
               >Organization Name</label
             >
-            <input
-              type="text"
-              id="orgName"
-              bind:value={newOrgName}
-              placeholder="e.g. Acme Corp"
-              class="input"
-            />
+            <div class="input-icon-wrapper">
+              <Building2 size={14} class="input-icon-left" />
+              <input
+                type="text"
+                id="orgName"
+                bind:value={newOrgName}
+                placeholder="e.g. Acme Corp"
+                class="input input-has-icon-left font-bold"
+              />
+            </div>
           </div>
 
           <div>
             <label
               for="orgSlug"
-              class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2"
+              class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2"
               >Slug</label
             >
-            <input
-              type="text"
-              id="orgSlug"
-              bind:value={newOrgSlug}
-              placeholder="e.g. acme-corp"
-              class="input"
-            />
+            <div class="input-icon-wrapper">
+              <Link2 size={14} class="input-icon-left" />
+              <input
+                type="text"
+                id="orgSlug"
+                bind:value={newOrgSlug}
+                placeholder="e.g. acme-corp"
+                class="input input-has-icon-left font-bold"
+              />
+            </div>
           </div>
-        </div>
-
-        <div class="flex items-center justify-end gap-3">
-          <button
-            class="btn btn-ghost text-xs uppercase tracking-wider font-bold"
-            onclick={closeModal}
-          >
-            Cancel
-          </button>
-          <button
-            class="btn btn-primary"
-            onclick={nextStep}
-            disabled={!newOrgName || !newOrgSlug}
-          >
-            Continue
-            <ArrowRight size={14} />
-          </button>
         </div>
       {:else}
         <!-- Step 2: Paystack Integration -->
-        <h2 class="text-lg font-bold text-white mb-1">Connect Paystack</h2>
-        <p class="text-zinc-400 text-xs mb-6">
-          Link your Paystack account to process payments.
-        </p>
-
-        <div class="space-y-4 mb-6">
+        <div class="space-y-5">
           <div>
             <label
               for="secretKey"
-              class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2"
+              class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2"
               >Secret Key <span class="text-red-500">*</span></label
             >
-            <div class="relative">
+            <div class="input-icon-wrapper">
+              <Lock size={14} class="input-icon-left" />
               <input
                 type={showSecretKey ? "text" : "password"}
                 id="secretKey"
                 bind:value={paystackSecretKey}
                 placeholder="sk_test_xxxxxxxxxxxxxxx"
-                class="input pr-10 font-mono"
+                class="input input-has-icon-left pr-10 font-mono text-xs"
               />
               <button
                 type="button"
-                class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors"
                 onclick={() => (showSecretKey = !showSecretKey)}
               >
                 {#if showSecretKey}
@@ -338,11 +323,11 @@
                 {/if}
               </button>
             </div>
-            <p class="mt-1.5 text-[10px] text-zinc-600">
+            <p class="mt-2 text-[10px] text-zinc-600 uppercase tracking-tight">
               Find this at <a
                 href="https://dashboard.paystack.com/#/settings/developers"
                 target="_blank"
-                class="text-accent hover:underline"
+                class="text-accent hover:underline font-bold"
                 >Paystack Dashboard → API Keys</a
               >
             </p>
@@ -351,79 +336,81 @@
           <div>
             <label
               for="publicKey"
-              class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2"
-              >Public Key <span class="text-zinc-600">(Optional)</span></label
+              class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2"
+              >Public Key <span class="text-zinc-600 font-normal">(Optional)</span></label
             >
-            <input
-              type="text"
-              id="publicKey"
-              bind:value={paystackPublicKey}
-              placeholder="pk_test_xxxxxxxxxxxxxxx"
-              class="input font-mono"
-            />
+            <div class="input-icon-wrapper">
+              <Key size={14} class="input-icon-left" />
+              <input
+                type="text"
+                id="publicKey"
+                bind:value={paystackPublicKey}
+                placeholder="pk_test_xxxxxxxxxxxxxxx"
+                class="input input-has-icon-left font-mono text-xs"
+              />
+            </div>
           </div>
 
           <div>
-            <label
-              class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2"
-            >
+            <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
               Environment
             </label>
             <div class="flex gap-4">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="env"
-                  value="test"
-                  bind:group={paystackEnvironment}
-                  class="accent-accent w-4 h-4"
-                />
-                <span
-                  class="text-sm {paystackEnvironment === 'test'
-                    ? 'text-white'
-                    : 'text-zinc-500'}">Test</span
-                >
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="env"
-                  value="live"
-                  bind:group={paystackEnvironment}
-                  class="accent-accent w-4 h-4"
-                />
-                <span
-                  class="text-sm {paystackEnvironment === 'live'
-                    ? 'text-white'
-                    : 'text-zinc-500'}">Live</span
-                >
-              </label>
+              {#each ['test', 'live'] as env}
+                <label class="flex items-center gap-2 cursor-pointer group">
+                  <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all {paystackEnvironment === env ? 'border-accent' : 'border-zinc-700 group-hover:border-zinc-500'}">
+                    {#if paystackEnvironment === env}
+                      <div class="w-2 h-2 rounded-full bg-accent"></div>
+                    {/if}
+                  </div>
+                  <input type="radio" name="env" value={env} bind:group={paystackEnvironment} class="hidden" />
+                  <span class="text-[10px] font-bold uppercase tracking-widest {paystackEnvironment === env ? 'text-white' : 'text-zinc-500'}">{env}</span>
+                </label>
+              {/each}
             </div>
           </div>
         </div>
+      {/if}
+    </div>
 
-        <div class="flex items-center justify-between">
-          <button
-            class="btn btn-ghost text-xs uppercase tracking-wider font-bold"
-            onclick={prevStep}
-          >
-            Back
-          </button>
-          <button
-            class="btn btn-primary"
-            onclick={createOrganization}
-            disabled={!paystackSecretKey || isCreating}
-          >
-            {#if isCreating}
-              <Loader2 size={14} class="animate-spin" />
-              Creating...
-            {:else}
-              <CheckCircle size={14} />
-              Create & Connect
-            {/if}
-          </button>
-        </div>
+    <!-- Footer -->
+    <div class="p-5 border-t border-border flex items-center justify-between sticky bottom-0 bg-bg-card">
+      {#if currentStep === 1}
+        <button
+          class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
+          onclick={closeModal}
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-primary px-6"
+          onclick={nextStep}
+          disabled={!newOrgName || !newOrgSlug}
+        >
+          Continue
+          <ArrowRight size={14} />
+        </button>
+      {:else}
+        <button
+          class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
+          onclick={prevStep}
+        >
+          Back
+        </button>
+        <button
+          class="btn btn-primary px-6"
+          onclick={createOrganization}
+          disabled={!paystackSecretKey || isCreating}
+        >
+          {#if isCreating}
+            <Loader2 size={14} class="animate-spin" />
+            Creating...
+          {:else}
+            <CheckCircle size={14} />
+            Create & Connect
+          {/if}
+        </button>
       {/if}
     </div>
   </div>
-{/if}
+</SidePanel>

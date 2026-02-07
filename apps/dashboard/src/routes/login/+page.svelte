@@ -65,10 +65,10 @@
         <label for="email" class="block text-sm font-medium text-zinc-400 mb-2"
           >Email</label
         >
-        <div class="relative">
+        <div class="input-icon-wrapper">
           <Mail
             size={18}
-            class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+            class="input-icon-left"
           />
           <input
             type="email"
@@ -76,7 +76,7 @@
             bind:value={email}
             placeholder="you@example.com"
             required
-            class="input pl-10"
+            class="input input-has-icon-left"
           />
         </div>
       </div>
@@ -86,10 +86,10 @@
           for="password"
           class="block text-sm font-medium text-zinc-400 mb-2">Password</label
         >
-        <div class="relative">
+        <div class="input-icon-wrapper">
           <Lock
             size={18}
-            class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+            class="input-icon-left"
           />
           <input
             type="password"
@@ -97,7 +97,7 @@
             bind:value={password}
             placeholder="••••••••"
             required
-            class="input pl-10"
+            class="input input-has-icon-left"
           />
         </div>
       </div>
@@ -132,7 +132,7 @@
     <p class="text-center mt-6 text-zinc-400 text-sm">
       Don't have an account? <a
         href="/signup"
-        class="text-fuchsia-400 hover:text-fuchsia-300">Sign up</a
+        class="text-accent hover:text-accent-hover">Sign up</a
       >
     </p>
   </div>

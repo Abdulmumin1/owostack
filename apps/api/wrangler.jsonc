@@ -46,6 +46,25 @@
     ]
   },
 
+  // Cloudflare Workflows for durable multi-step processes
+  "workflows": [
+    {
+      "name": "trial-end-workflow",
+      "binding": "TRIAL_END_WORKFLOW",
+      "class_name": "TrialEndWorkflow"
+    },
+    {
+      "name": "downgrade-workflow",
+      "binding": "DOWNGRADE_WORKFLOW",
+      "class_name": "DowngradeWorkflow"
+    },
+    {
+      "name": "plan-upgrade-workflow",
+      "binding": "PLAN_UPGRADE_WORKFLOW",
+      "class_name": "PlanUpgradeWorkflow"
+    }
+  ],
+
   // Migrations for Durable Objects
   "migrations": [
     {

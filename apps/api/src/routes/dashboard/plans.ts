@@ -58,6 +58,7 @@ const createPlanSchema = z.object({
   billingModel: z.enum(["base", "per_unit", "variable"]).default("base"),
   billingType: z.enum(["recurring", "one_time"]).default("recurring"),
   trialDays: z.number().min(0).default(0),
+  trialUnit: z.enum(["minutes", "days"]).default("days"),
   trialCardRequired: z.boolean().default(false),
   // New Autumn-style fields
   isAddon: z.boolean().default(false),
@@ -77,6 +78,7 @@ const updatePlanSchema = z.object({
   billingModel: z.enum(["base", "per_unit", "variable"]).optional(),
   billingType: z.enum(["recurring", "one_time"]).optional(),
   trialDays: z.number().min(0).optional(),
+  trialUnit: z.enum(["minutes", "days"]).optional(),
   trialCardRequired: z.boolean().optional(),
   isAddon: z.boolean().optional(),
   autoEnable: z.boolean().optional(),
@@ -103,6 +105,7 @@ app.post("/", async (c) => {
     billingModel,
     billingType,
     trialDays,
+    trialUnit,
     trialCardRequired,
     isAddon,
     autoEnable,
@@ -245,6 +248,7 @@ app.post("/", async (c) => {
         paystackPlanId, // Now populated!
         providerId: providerId || (paystackPlanId ? "paystack" : null),
         providerPlanId: providerPlanId || paystackPlanId,
+        metadata: trialUnit === "minutes" ? { trialUnit: "minutes" } : undefined,
       })
       .returning();
 
@@ -310,11 +314,25 @@ app.patch("/:id", async (c) => {
 
   const db = c.get("db");
 
+  // trialUnit is not a DB column — store in metadata
+  const { trialUnit, ...dbFields } = parsed.data;
+
   try {
+    // If trialUnit was provided, merge it into existing metadata
+    let metadataUpdate: Record<string, unknown> | undefined;
+    if (trialUnit !== undefined) {
+      const existing = await db.query.plans.findFirst({ where: eq(schema.plans.id, id) });
+      const existingMeta = (existing?.metadata as Record<string, unknown>) || {};
+      metadataUpdate = trialUnit === "minutes"
+        ? { ...existingMeta, trialUnit: "minutes" }
+        : { ...existingMeta, trialUnit: undefined };
+    }
+
     const [updated] = await db
       .update(schema.plans)
       .set({
-        ...parsed.data,
+        ...dbFields,
+        ...(metadataUpdate ? { metadata: metadataUpdate } : {}),
         updatedAt: Date.now(),
       })
       .where(eq(schema.plans.id, id))
@@ -414,7 +432,7 @@ const addFeatureSchema = z.object({
   rolloverMaxBalance: z.number().optional().nullable(),
 
   // Priced feature config
-  usageModel: z.literal("included").default("included"),
+  usageModel: z.enum(["included", "usage_based"]).default("included"),
   pricePerUnit: z.number().optional().nullable(),
   billingUnits: z.number().default(1),
   maxPurchaseLimit: z.number().optional().nullable(),
@@ -423,7 +441,7 @@ const addFeatureSchema = z.object({
   creditCost: z.number().default(0),
 
   // Overage
-  overage: z.enum(["block", "charge", "notify"]).default("block"),
+  overage: z.enum(["block", "charge"]).default("block"),
   overagePrice: z.number().optional().nullable(),
 });
 
@@ -443,6 +461,7 @@ app.post("/:planId/features", async (c) => {
     resetOnEnable,
     rolloverEnabled,
     rolloverMaxBalance,
+    usageModel,
     pricePerUnit,
     billingUnits,
     maxPurchaseLimit,
@@ -464,7 +483,7 @@ app.post("/:planId/features", async (c) => {
         resetOnEnable,
         rolloverEnabled,
         rolloverMaxBalance,
-        usageModel: "included",
+        usageModel,
         pricePerUnit,
         billingUnits,
         maxPurchaseLimit,

@@ -152,7 +152,7 @@ export const planFeatures = sqliteTable(
     creditCost: integer("credit_cost").default(0), // Cost in credits per unit
 
     // Overage handling
-    overage: text("overage").notNull().default("block"), // block, charge, notify
+    overage: text("overage").notNull().default("block"), // block, charge
     overagePrice: integer("overage_price"), // In cents
   },
   (table) => [index("plan_features_plan_idx").on(table.planId)],
@@ -304,6 +304,7 @@ export const usageRecords = sqliteTable(
       .notNull()
       .references(() => features.id),
     entityId: text("entity_id"),
+    invoiceId: text("invoice_id"),
     amount: integer("amount").notNull().default(1),
     periodStart: integer("period_start").notNull(),
     periodEnd: integer("period_end").notNull(),
@@ -326,6 +327,7 @@ export const usageRecords = sqliteTable(
       table.featureId,
       table.entityId,
     ),
+    index("usage_invoice_idx").on(table.invoiceId),
   ],
 );
 
@@ -519,5 +521,122 @@ export const referralRedemptions = sqliteTable(
   (table) => [
     index("referral_redemptions_code_idx").on(table.codeId),
     index("referral_redemptions_redeemer_idx").on(table.redeemerId),
+  ],
+);
+
+// =============================================================================
+// Invoices & Billing (for usage-based/priced features)
+// =============================================================================
+
+export const invoices = sqliteTable(
+  "invoices",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    subscriptionId: text("subscription_id").references(() => subscriptions.id),
+
+    // Invoice details
+    number: text("number"), // Human-readable invoice number (INV-001)
+    status: text("status").notNull().default("draft"), // draft, open, paid, void, uncollectible
+    currency: text("currency").notNull().default("NGN"),
+
+    // Amounts (in smallest unit - kobo/cents)
+    subtotal: integer("subtotal").notNull().default(0),
+    tax: integer("tax").notNull().default(0),
+    total: integer("total").notNull().default(0),
+    amountPaid: integer("amount_paid").notNull().default(0),
+    amountDue: integer("amount_due").notNull().default(0),
+
+    // Period this invoice covers
+    periodStart: integer("period_start").notNull(),
+    periodEnd: integer("period_end").notNull(),
+    usageCutoffAt: integer("usage_cutoff_at"), // Usage before this timestamp is included
+
+    // Payment details
+    dueAt: integer("due_at"),
+    paidAt: integer("paid_at"),
+
+    // Metadata
+    description: text("description"),
+    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("invoices_org_idx").on(table.organizationId),
+    index("invoices_customer_idx").on(table.customerId),
+    index("invoices_status_idx").on(table.status),
+  ],
+);
+
+export const invoiceItems = sqliteTable(
+  "invoice_items",
+  {
+    id: text("id").primaryKey(),
+    invoiceId: text("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    featureId: text("feature_id").references(() => features.id),
+
+    // Item details
+    description: text("description").notNull(),
+    quantity: integer("quantity").notNull().default(1),
+    unitPrice: integer("unit_price").notNull().default(0), // In smallest unit
+    amount: integer("amount").notNull().default(0), // quantity * unitPrice
+
+    // For usage-based: period this line item covers
+    periodStart: integer("period_start"),
+    periodEnd: integer("period_end"),
+
+    // Metadata
+    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [index("invoice_items_invoice_idx").on(table.invoiceId)],
+);
+
+export const paymentAttempts = sqliteTable(
+  "payment_attempts",
+  {
+    id: text("id").primaryKey(),
+    invoiceId: text("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+
+    // Payment details
+    amount: integer("amount").notNull(),
+    currency: text("currency").notNull().default("NGN"),
+    status: text("status").notNull().default("pending"), // pending, succeeded, failed
+
+    // Provider info
+    provider: text("provider"), // paystack, flutterwave, etc.
+    providerReference: text("provider_reference"),
+    providerMetadata: text("provider_metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+
+    // Retry logic
+    attemptNumber: integer("attempt_number").notNull().default(1),
+    nextRetryAt: integer("next_retry_at"),
+    lastError: text("last_error"),
+
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("payment_attempts_invoice_idx").on(table.invoiceId),
+    index("payment_attempts_status_idx").on(table.status),
   ],
 );

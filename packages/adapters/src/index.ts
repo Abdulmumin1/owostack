@@ -137,6 +137,7 @@ export interface NormalizedWebhookEvent {
 export interface ProviderAdapter {
   id: ProviderId;
   displayName: string;
+  signatureHeaderName?: string;
 
   createCheckoutSession(params: {
     customer: ProviderCustomerRef;

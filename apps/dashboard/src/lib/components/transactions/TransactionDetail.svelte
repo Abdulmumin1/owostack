@@ -6,6 +6,7 @@
   import { apiFetch } from "$lib/auth-client";
   import Timeline from "$lib/components/ui/Timeline.svelte";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   let {
     transactionId,
@@ -132,8 +133,27 @@
 </script>
 
 {#if isLoading}
-  <div class="flex items-center justify-center py-16">
-    <Loader2 size={20} class="text-zinc-500 animate-spin" />
+  <div class="p-5 space-y-6">
+    <div class="flex items-start gap-3">
+      <Skeleton class="w-10 h-10 rounded-full shrink-0" />
+      <div class="flex-1 space-y-2">
+        <Skeleton class="h-4 w-32" />
+        <Skeleton class="h-3 w-48" />
+        <Skeleton class="h-3 w-36" />
+      </div>
+    </div>
+    <Skeleton class="h-12 w-full rounded" />
+    <div class="grid grid-cols-2 gap-3">
+      {#each Array(2) as _}
+        <Skeleton class="h-16 w-full rounded" />
+      {/each}
+    </div>
+    <div class="space-y-3">
+      <Skeleton class="h-3 w-24" />
+      {#each Array(3) as _}
+        <Skeleton class="h-12 w-full rounded" />
+      {/each}
+    </div>
   </div>
 {:else if data}
   <div class="p-5 space-y-5">

@@ -15,6 +15,13 @@
       "when": 1770402147738,
       "tag": "0001_add-entity-id",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1770466992301,
+      "tag": "0002_first_santa_claus",
+      "breakpoints": true
     }
   ]
 }

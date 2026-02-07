@@ -217,6 +217,7 @@ function resolveClient(account: ProviderAccount): ProviderResult<PaystackClient>
 export const paystackAdapter: ProviderAdapter = {
   id: "paystack",
   displayName: "Paystack",
+  signatureHeaderName: "x-paystack-signature",
 
   async createCheckoutSession(params): Promise<ProviderResult<CheckoutSession>> {
     const clientResult = resolveClient(params.account);
@@ -411,7 +412,14 @@ export const paystackAdapter: ProviderAdapter = {
     const customer = data.customer || {};
     const authorization = data.authorization || {};
     const plan = data.plan || {};
-    const metadata = data.metadata || {};
+    // Paystack metadata can be a string, object, or null — normalize
+    let metadata: Record<string, unknown> = {};
+    const rawMeta = data.metadata;
+    if (rawMeta && typeof rawMeta === "object" && !Array.isArray(rawMeta)) {
+      metadata = rawMeta as Record<string, unknown>;
+    } else if (typeof rawMeta === "string") {
+      try { metadata = JSON.parse(rawMeta); } catch { metadata = {}; }
+    }
 
     const base = {
       provider: "paystack" as const,
@@ -498,6 +506,16 @@ export const paystackAdapter: ProviderAdapter = {
           },
         });
 
+      case "subscription.enable":
+        return Result.ok({
+          ...base,
+          type: "subscription.active",
+          subscription: {
+            providerCode: data.subscription_code || "",
+            status: "active",
+          },
+        });
+
       case "subscription.disable":
         return Result.ok({
           ...base,
@@ -506,6 +524,33 @@ export const paystackAdapter: ProviderAdapter = {
             providerCode: data.subscription_code || "",
             status: "canceled",
           },
+        });
+
+      case "invoice.payment_failed": {
+        // Invoice events nest subscription under data.subscription object
+        const invoiceSub = data.subscription as Record<string, any> | undefined;
+        const invoiceSubCode = invoiceSub?.subscription_code || data.subscription_code;
+        return Result.ok({
+          ...base,
+          type: "charge.failed",
+          payment: {
+            amount: data.amount || invoiceSub?.amount || 0,
+            currency: data.currency || "NGN",
+            reference: data.reference || data.invoice_code || "",
+          },
+          subscription: invoiceSubCode
+            ? {
+                providerCode: invoiceSubCode,
+                status: "past_due",
+              }
+            : undefined,
+        });
+      }
+
+      case "customeridentification.success":
+        return Result.ok({
+          ...base,
+          type: "customer.identified",
         });
 
       default:

@@ -3,6 +3,7 @@
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import { onMount } from "svelte";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   const organizationId = $derived(page.params.projectId);
   let events = $state<any[]>([]);
@@ -79,24 +80,43 @@
   <div
     class="bg-bg-card border border-border p-4 flex items-center gap-4 mb-6 shadow-sm"
   >
-    <div class="relative flex-1">
+    <div class="input-icon-wrapper max-w-sm">
       <Search
         size={14}
-        class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+        class="input-icon-left"
       />
       <input
         type="text"
         placeholder="Filter by event type, customer, or ID..."
         bind:value={searchQuery}
-        class="input pl-9"
+        class="input input-has-icon-left"
       />
     </div>
   </div>
 
   {#if isLoading && events.length === 0}
-    <div class="flex items-center gap-2 text-zinc-500 p-12 justify-center">
-      <Loader2 size={16} class="animate-spin" />
-      <span>Loading events...</span>
+    <div class="space-y-3">
+      {#each Array(5) as _}
+        <div class="bg-bg-card border border-border p-4 flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <Skeleton class="w-10 h-10 rounded" />
+            <div class="space-y-2">
+              <div class="flex items-center gap-2">
+                <Skeleton class="h-4 w-32" />
+                <Skeleton class="h-3 w-16" />
+              </div>
+              <Skeleton class="h-3 w-48" />
+            </div>
+          </div>
+          <div class="flex items-center gap-6">
+            <div class="space-y-1 text-right">
+              <Skeleton class="h-3 w-20 ml-auto" />
+              <Skeleton class="h-2 w-16 ml-auto" />
+            </div>
+            <Skeleton class="h-4 w-4" />
+          </div>
+        </div>
+      {/each}
     </div>
   {:else if filteredEvents.length === 0}
     <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">

@@ -17,10 +17,12 @@
     Box,
     Copy
   } from "lucide-svelte";
-  import { page } from "$app/state";
+  import SidePanel from "$lib/components/ui/SidePanel.svelte";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import { fade, slide, fly } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
   import { goto } from "$app/navigation";
+  import { page } from "$app/state";
 
   const projectId = $derived(page.params.projectId);
   const planId = $derived(page.params.planId);
@@ -39,6 +41,10 @@
 
   let configLimitValue = $state<string>("");
   let configResetInterval = $state<string>("monthly");
+  let configUsageModel = $state<"included" | "usage_based">("included");
+  let configPricePerUnit = $state<string>("");
+  let configBillingUnits = $state<string>("1");
+  let configOverage = $state<"block" | "charge">("block");
 
   let featureSearchQuery = $state<string>("");
 
@@ -51,6 +57,10 @@
       const rawInterval = editingPlanFeature.resetInterval || "monthly";
       const intervalAliases: Record<string, string> = { month: 'monthly', week: 'weekly', day: 'daily', year: 'yearly' };
       configResetInterval = intervalAliases[rawInterval] || rawInterval;
+      configUsageModel = editingPlanFeature.usageModel || "included";
+      configPricePerUnit = editingPlanFeature.pricePerUnit ? String(editingPlanFeature.pricePerUnit / 100) : "";
+      configBillingUnits = String(editingPlanFeature.billingUnits || 1);
+      configOverage = editingPlanFeature.overage || "block";
     }
   });
 
@@ -62,6 +72,7 @@
   let editCurrency = $state<string>("NGN");
   let editPrice = $state<string>("");
   let editTrialDays = $state<string>("0");
+  let editTrialUnit = $state<string>("days");
 
   $effect(() => {
     if (showEditPlanModal && plan) {
@@ -73,6 +84,7 @@
       editCurrency = plan.currency || "NGN";
       editPrice = typeof plan.price === "number" ? String(plan.price / 100) : "";
       editTrialDays = String(plan.trialDays || 0);
+      editTrialUnit = (plan.metadata as any)?.trialUnit === "minutes" ? "minutes" : "days";
     }
   });
 
@@ -89,6 +101,7 @@
         interval: editBillingType === "one_time" ? "monthly" : editInterval,
         currency: editCurrency,
         trialDays: Math.max(0, Number(editTrialDays || 0)),
+        trialUnit: editTrialUnit,
       };
 
       if (editType === "free") {
@@ -247,9 +260,68 @@
   </div>
 
   {#if isLoading}
-    <div class="flex flex-col items-center justify-center py-24 gap-4 text-text-dim">
-      <Loader2 size={32} class="animate-spin" />
-      <span class="text-[10px] font-bold uppercase tracking-widest">Loading plan structure...</span>
+    <div class="space-y-10">
+      <div class="flex items-end justify-between border-b border-border pb-8">
+        <div class="space-y-4">
+          <div class="flex items-center gap-3">
+            <Skeleton class="w-12 h-12" />
+            <div class="space-y-2">
+              <Skeleton class="h-8 w-48" />
+              <Skeleton class="h-4 w-32" />
+            </div>
+          </div>
+          <Skeleton class="h-4 w-2/3" />
+        </div>
+        <div class="flex flex-col items-end gap-2">
+          <Skeleton class="h-10 w-32" />
+          <Skeleton class="h-3 w-20" />
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-12 gap-12">
+        <div class="lg:col-span-8 space-y-6">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <Skeleton class="w-8 h-8 rounded" />
+              <Skeleton class="h-4 w-48" />
+            </div>
+            <Skeleton class="h-9 w-32" />
+          </div>
+          <div class="bg-bg-card border border-border divide-y divide-border/50">
+            {#each Array(3) as _}
+              <div class="p-6 flex items-center justify-between">
+                <div class="flex items-center gap-5">
+                  <Skeleton class="w-10 h-10 rounded" />
+                  <div class="space-y-2">
+                    <Skeleton class="h-4 w-32" />
+                    <Skeleton class="h-3 w-48" />
+                  </div>
+                </div>
+                <Skeleton class="h-8 w-8 rounded" />
+              </div>
+            {/each}
+          </div>
+        </div>
+        <div class="lg:col-span-4 space-y-8">
+          <div class="bg-bg-card border border-border p-6 space-y-6">
+            <Skeleton class="h-4 w-32" />
+            <div class="space-y-4">
+              <div class="space-y-2">
+                <Skeleton class="h-3 w-24" />
+                <Skeleton class="h-8 w-full" />
+              </div>
+              <div class="space-y-2">
+                <Skeleton class="h-3 w-24" />
+                <Skeleton class="h-8 w-full" />
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <Skeleton class="h-12 w-full" />
+                <Skeleton class="h-12 w-full" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   {:else if plan}
     <div class="grid lg:grid-cols-12 gap-12">
@@ -403,7 +475,7 @@
               <div class="space-y-1.5">
                 <div class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Trial</div>
                 <div class="text-sm font-bold text-white uppercase tracking-tight">
-                  {plan.trialDays > 0 ? `${plan.trialDays} days` : 'None'}
+                  {plan.trialDays > 0 ? `${plan.trialDays} ${(plan.metadata as any)?.trialUnit === 'minutes' ? 'minutes' : 'days'}` : 'None'}
                 </div>
               </div>
               <div class="space-y-1.5">
@@ -439,45 +511,20 @@
   {/if}
 </div>
 
-<!-- Attach Feature Side Panel (Autumn Style) -->
-{#if showAttachModal}
-  <div 
-    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-60"
-    transition:fade={{ duration: 200 }}
-  >
-    <!-- Backdrop overlay to close -->
-    <button 
-      type="button"
-      class="absolute inset-0 w-full h-full cursor-default"
-      onclick={() => (showAttachModal = false)}
-      aria-label="Close side panel"
-    ></button>
-  </div>
-  <div 
-    class="fixed top-0 right-0 bottom-0 w-full max-w-[400px] bg-bg-primary border-l border-border z-[70] shadow-2xl flex flex-col"
-    transition:fly={{ x: 400, duration: 300, opacity: 1 }}
-  >
-    <div class="p-6 border-b border-border flex items-center justify-between bg-bg-card">
-      <div>
-        <h3 class="text-sm font-bold text-white uppercase tracking-widest">Select Feature</h3>
-        <p class="text-[10px] text-text-secondary font-bold uppercase tracking-widest mt-1">Add feature to plan</p>
-      </div>
-      <button class="text-text-dim hover:text-white transition-colors" onclick={() => (showAttachModal = false)}>
-        <X size={20} />
-      </button>
-    </div>
-
-    <div class="p-6 flex-1 overflow-y-auto space-y-6 custom-scrollbar">
+<!-- Attach Feature Side Panel -->
+<SidePanel open={showAttachModal} title="Select Feature" onclose={() => (showAttachModal = false)} width="max-w-[400px]">
+  <div class="text-sm">
+    <div class="p-6 space-y-6">
       <div class="space-y-4">
         <label for="featureSearch" class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Available Features</label>
-        <div class="relative">
-          <Search size={14} class="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" />
+        <div class="input-icon-wrapper">
+          <Search size={14} class="input-icon-left" />
           <input 
             id="featureSearch"
             type="text" 
             placeholder="SEARCH FEATURES..." 
             bind:value={featureSearchQuery}
-            class="input pl-9 font-bold placeholder:text-text-dim text-xs"
+            class="input input-has-icon-left font-bold placeholder:text-text-dim text-xs"
           />
         </div>
 
@@ -511,109 +558,137 @@
       </div>
     </div>
   </div>
-{/if}
+</SidePanel>
 
 <!-- Configure Feature Side Panel -->
-{#if showConfigModal && editingPlanFeature}
-  <div 
-    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-60"
-    transition:fade={{ duration: 200 }}
-  >
-    <!-- Backdrop overlay to close -->
-    <button 
-      type="button"
-      class="absolute inset-0 w-full h-full cursor-default"
-      onclick={() => (showConfigModal = false)}
-      aria-label="Close configuration panel"
-    ></button>
-  </div>
-  <div 
-    class="fixed top-0 right-0 bottom-0 w-full max-w-[450px] bg-bg-primary border-l border-border z-[70] shadow-2xl flex flex-col"
-    transition:fly={{ x: 450, duration: 300, opacity: 1 }}
-  >
-    <div class="p-6 border-b border-border flex items-center justify-between bg-bg-card">
-      <div>
-        <h3 class="text-sm font-bold text-white uppercase tracking-widest">Configure {editingPlanFeature.feature.name}</h3>
-        <p class="text-[10px] text-text-secondary font-bold uppercase tracking-widest mt-1">Set usage limits for plan</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <button 
-          class="btn btn-secondary h-8 px-3 text-[10px]! uppercase"
-          onclick={() => goto(`/app/${projectId}/features`)}
-        >
-          <Edit3 size={12} />
-          Edit Feature
-        </button>
-        <button class="text-text-dim hover:text-white transition-colors ml-2" onclick={() => (showConfigModal = false)}>
-          <X size={20} />
-        </button>
-      </div>
-    </div>
-
+<SidePanel open={showConfigModal && !!editingPlanFeature} title={`Configure ${editingPlanFeature?.feature?.name}`} onclose={() => (showConfigModal = false)} width="max-w-[450px]">
+  <div class="text-sm">
     <form 
-      class="flex-1 flex flex-col overflow-hidden"
+      class="flex flex-col"
       onsubmit={(e) => {
         e.preventDefault();
         const data = {
-          usageModel: 'included',
+          usageModel: configUsageModel,
           limitValue: String(configLimitValue).trim() === '' ? null : Number(configLimitValue),
           resetInterval: configResetInterval,
+          pricePerUnit: String(configPricePerUnit).trim() === '' ? null : Math.round(Number(configPricePerUnit) * 100),
+          billingUnits: Number(configBillingUnits) || 1,
+          overage: configOverage,
         };
         handleUpdateFeatureConfig(data);
       }}
     >
-      <div class="p-6 flex-1 overflow-y-auto space-y-8 custom-scrollbar">
+      <div class="p-6 space-y-8">
         <!-- Feature Type -->
         <div class="space-y-4">
           <label class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Feature Type</label>
           <div class="space-y-3">
-            <div class="relative p-4 bg-lime-600/5 border border-lime-600 flex gap-4 shadow-md">
+            <button
+              type="button"
+              class="relative w-full p-4 text-left flex gap-4 shadow-md transition-all {configUsageModel === 'included' ? 'bg-lime-600/5 border border-lime-600' : 'bg-bg-card border border-border hover:border-border-light'}"
+              onclick={() => (configUsageModel = 'included')}
+            >
               <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0">
-                <Calendar size={18} class="text-lime-600" />
+                <Calendar size={18} class={configUsageModel === 'included' ? 'text-lime-600' : 'text-text-dim'} />
               </div>
               <div>
                 <div class="text-xs font-bold text-white uppercase tracking-tight mb-0.5">Included</div>
                 <p class="text-[10px] font-bold text-text-dim uppercase tracking-widest leading-relaxed">Included usage limit.</p>
               </div>
-              <div class="absolute top-4 right-4 w-4 h-4 border-2 border-lime-600 flex items-center justify-center">
-                <div class="w-2 h-2 bg-lime-600"></div>
-              </div>
-            </div>
+              {#if configUsageModel === 'included'}
+                <div class="absolute top-4 right-4 w-4 h-4 border-2 border-lime-600 flex items-center justify-center">
+                  <div class="w-2 h-2 bg-lime-600"></div>
+                </div>
+              {/if}
+            </button>
 
-            <div class="relative p-4 bg-bg-card border border-border flex gap-4 opacity-50 cursor-not-allowed grayscale">
+            <button
+              type="button"
+              class="relative w-full p-4 text-left flex gap-4 transition-all {configUsageModel === 'usage_based' ? 'bg-lime-600/5 border border-lime-600' : 'bg-bg-card border border-border hover:border-border-light'}"
+              onclick={() => (configUsageModel = 'usage_based')}
+            >
               <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0">
-                <Settings2 size={18} class="text-text-dim" />
+                <Settings2 size={18} class={configUsageModel === 'usage_based' ? 'text-lime-600' : 'text-text-dim'} />
               </div>
               <div>
                 <div class="text-xs font-bold text-white uppercase tracking-tight mb-0.5">Priced</div>
                 <p class="text-[10px] font-bold text-text-dim uppercase tracking-widest leading-relaxed">Charge for usage.</p>
               </div>
-              <div class="absolute top-2 right-2">
-                <span class="px-1.5 py-0.5 bg-bg-primary border border-border text-[8px] font-bold text-text-dim uppercase tracking-tighter">Soon</span>
-              </div>
-            </div>
+              {#if configUsageModel === 'usage_based'}
+                <div class="absolute top-4 right-4 w-4 h-4 border-2 border-lime-600 flex items-center justify-center">
+                  <div class="w-2 h-2 bg-lime-600"></div>
+                </div>
+              {/if}
+            </button>
           </div>
         </div>
 
-        <!-- Grant Amount -->
+        <!-- Pricing Config (shown when Priced is selected) -->
+        {#if configUsageModel === 'usage_based'}
+          <div class="space-y-4 p-4 bg-amber-900/10 border border-amber-800/50">
+            <div class="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Pricing Configuration</div>
+            
+            <div class="grid grid-cols-2 gap-4">
+              <div class="space-y-2">
+                <label for="pricePerUnit" class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Price per Unit</label>
+                <div class="input-icon-wrapper">
+                  <input 
+                    id="pricePerUnit"
+                    type="number"
+                    step="0.01"
+                    placeholder="5.00"
+                    class="input font-bold pl-12"
+                    bind:value={configPricePerUnit}
+                  />
+                  <div class="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-bold text-text-dim uppercase">
+                    ₦
+                  </div>
+                </div>
+              </div>
+              
+              <div class="space-y-2">
+                <label for="billingUnits" class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Per X Units</label>
+                <input 
+                  id="billingUnits"
+                  type="number"
+                  placeholder="1000"
+                  class="input font-bold"
+                  bind:value={configBillingUnits}
+                />
+              </div>
+            </div>
+            
+            <p class="text-[9px] text-text-dim">
+              {#if configPricePerUnit && configBillingUnits}
+                Charging ₦{configPricePerUnit} per {configBillingUnits} {editingPlanFeature.feature.unit || 'units'}
+              {:else}
+                Set price and units to configure billing
+              {/if}
+            </p>
+          </div>
+        {/if}
+
+        <!-- Grant Amount (Included limit for both models) -->
         <div class="space-y-4">
           <div class="flex items-center justify-between">
-            <label for="limitValueConfig" class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Grant Amount</label>
+            <label for="limitValueConfig" class="text-[10px] font-bold text-text-dim uppercase tracking-widest">
+              {configUsageModel === 'usage_based' ? 'Included Free' : 'Grant Amount'}
+            </label>
             <button 
               type="button"
               class="text-[10px] font-bold text-text-dim hover:text-lime-600 flex items-center gap-1.5 transition-colors uppercase tracking-widest"
               onclick={() => (configLimitValue = '')}
             >
-              ∞ Unlimited
+              {configUsageModel === 'usage_based' ? '0 Free' : '∞ Unlimited'}
             </button>
           </div>
           
-          <div class="relative">
+          <div class="input-icon-wrapper">
             <input 
               id="limitValueConfig"
               name="limitValue"
               type="number"
-              placeholder="EG. 100"
+              placeholder={configUsageModel === 'usage_based' ? '0' : 'EG. 100'}
               class="input font-bold"
               bind:value={configLimitValue}
             />
@@ -621,7 +696,67 @@
               {editingPlanFeature.feature.unit || 'units'}
             </div>
           </div>
+          
+          {#if configUsageModel === 'usage_based' && configLimitValue}
+            <p class="text-[9px] text-text-dim">
+              First {configLimitValue} {editingPlanFeature.feature.unit || 'units'} are free, then billing starts.
+            </p>
+          {/if}
         </div>
+
+        <!-- Overage Behavior (shown when Included is selected) -->
+        {#if configUsageModel === 'included'}
+          <div class="space-y-4">
+            <div class="text-[10px] font-bold text-text-dim uppercase tracking-widest">When Limit Exceeded</div>
+            <div class="grid grid-cols-2 gap-2">
+              {#each [
+                { value: 'block', label: 'Block' },
+                { value: 'charge', label: 'Charge' },
+                
+              ] as opt}
+                <button 
+                  type="button"
+                  class="py-2.5 text-[10px] font-bold uppercase tracking-widest border transition-all {configOverage === opt.value ? 'bg-lime-600 text-lime-600-contrast border-lime-600' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-white'}"
+                  onclick={() => (configOverage = opt.value as typeof configOverage)}
+                >
+                  {opt.label}
+                </button>
+              {/each}
+            </div>
+            
+            {#if configOverage === 'charge'}
+              <div class="grid grid-cols-2 gap-4 p-4 bg-amber-900/10 border border-amber-800/50">
+                <div class="space-y-2">
+                  <label for="overagePricePerUnit" class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Overage Price</label>
+                  <div class="input-icon-wrapper">
+                    <input 
+                      id="overagePricePerUnit"
+                      type="number"
+                      step="0.01"
+                      placeholder="5.00"
+                      class="input font-bold pl-12"
+                      bind:value={configPricePerUnit}
+                    />
+                    <div class="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-bold text-text-dim uppercase">
+                      ₦
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="space-y-2">
+                  <label for="overageBillingUnits" class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Per X Units</label>
+                  <input 
+                    id="overageBillingUnits"
+                    type="number"
+                    placeholder="1000"
+                    class="input font-bold"
+                    bind:value={configBillingUnits}
+                  />
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         <!-- Interval -->
         <div class="space-y-4">
@@ -651,10 +786,10 @@
         </div>
       </div>
 
-      <div class="p-6 border-t border-border bg-bg-card shadow-md">
+      <div class="p-6 border-t border-border bg-bg-card sticky bottom-0">
         <button 
           type="submit" 
-          class="btn btn-primary w-full"
+          class="btn btn-primary w-full py-2.5 uppercase tracking-widest font-bold"
           disabled={isSaving}
         >
           {#if isSaving}
@@ -667,118 +802,113 @@
       </div>
     </form>
   </div>
-{/if}
+</SidePanel>
 
 <!-- Edit Plan Side Panel -->
-{#if showEditPlanModal && plan}
-  <div 
-    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-60"
-    transition:fade={{ duration: 200 }}
-  >
-    <!-- Backdrop overlay to close -->
-    <button 
-      type="button"
-      class="absolute inset-0 w-full h-full cursor-default"
-      onclick={() => (showEditPlanModal = false)}
-      aria-label="Close edit panel"
-    ></button>
-  </div>
-  <div 
-    class="fixed top-0 right-0 bottom-0 w-full max-w-112.5 bg-bg-primary border-l border-border z-70 shadow-2xl flex flex-col"
-    transition:fly={{ x: 450, duration: 300, opacity: 1 }}
-  >
-    <div class="p-6 border-b border-border flex items-center justify-between bg-bg-card">
-      <div>
-        <h3 class="text-sm font-bold text-white uppercase tracking-widest">Edit Plan</h3>
-        <p class="text-[10px] text-text-secondary font-bold uppercase tracking-widest mt-1">Update basic information</p>
-      </div>
-      <button class="text-text-dim hover:text-white transition-colors" onclick={() => (showEditPlanModal = false)}>
-        <X size={20} />
-      </button>
-    </div>
-
+<SidePanel open={showEditPlanModal && !!plan} title="Edit Plan" onclose={() => (showEditPlanModal = false)} width="max-w-[450px]">
+  <div class="text-sm">
     <form
       onsubmit={(e) => {
         e.preventDefault();
         savePlanEdits();
       }}
-      class="flex-1 flex flex-col overflow-hidden"
+      class="flex flex-col"
     >
-      <div class="p-6 flex-1 overflow-y-auto space-y-5 custom-scrollbar">
+      <div class="p-6 space-y-5">
         <div>
           <label for="editName" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Name</label>
-          <input id="editName" class="input font-bold" type="text" bind:value={editName} />
+          <div class="input-icon-wrapper">
+            <input id="editName" class="input font-bold" type="text" bind:value={editName} />
+          </div>
         </div>
 
         <div>
           <label for="editDescription" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Description</label>
-          <textarea id="editDescription" class="input font-bold min-h-22.5" bind:value={editDescription}></textarea>
+          <div class="input-icon-wrapper">
+            <textarea id="editDescription" class="input font-bold min-h-22.5" bind:value={editDescription}></textarea>
+          </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label for="editType" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Type</label>
-            <select id="editType" class="input font-bold" bind:value={editType}>
-              <option value="paid">Paid</option>
-              <option value="free">Free</option>
-            </select>
+            <div class="input-icon-wrapper">
+              <select id="editType" class="input font-bold" bind:value={editType}>
+                <option value="paid">Paid</option>
+                <option value="free">Free</option>
+              </select>
+            </div>
           </div>
 
           <div>
             <label for="editBillingType" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Billing</label>
-            <select id="editBillingType" class="input font-bold" bind:value={editBillingType}>
-              <option value="recurring">Recurring</option>
-              <option value="one_time">One-off</option>
-            </select>
+            <div class="input-icon-wrapper">
+              <select id="editBillingType" class="input font-bold" bind:value={editBillingType}>
+                <option value="recurring">Recurring</option>
+                <option value="one_time">One-off</option>
+              </select>
+            </div>
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label for="editPrice" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Price</label>
-            <input
-              id="editPrice"
-              class="input font-bold"
-              type="number"
-              step="0.01"
-              min="0"
-              bind:value={editPrice}
-              disabled={editType === 'free'}
-            />
+            <div class="input-icon-wrapper">
+              <input
+                id="editPrice"
+                class="input font-bold"
+                type="number"
+                step="0.01"
+                min="0"
+                bind:value={editPrice}
+                disabled={editType === 'free'}
+              />
+            </div>
           </div>
 
           <div>
             <label for="editInterval" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Interval</label>
-            <select id="editInterval" class="input font-bold" bind:value={editInterval} disabled={editBillingType === 'one_time'}>
-              <option value="monthly">Monthly</option>
-              <option value="yearly">Yearly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="weekly">Weekly</option>
-              <option value="annually">Annually</option>
-            </select>
+            <div class="input-icon-wrapper">
+              <select id="editInterval" class="input font-bold" bind:value={editInterval} disabled={editBillingType === 'one_time'}>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="weekly">Weekly</option>
+                <option value="annually">Annually</option>
+              </select>
+            </div>
           </div>
         </div>
 
         <div>
-          <label for="editTrialDays" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Trial Days</label>
-          <input id="editTrialDays" class="input font-bold" type="number" min="0" bind:value={editTrialDays} />
+          <label for="editTrialDays" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Trial Duration</label>
+          <div class="flex gap-2">
+            <div class="input-icon-wrapper flex-1">
+              <input id="editTrialDays" class="input font-bold" type="number" min="0" bind:value={editTrialDays} />
+            </div>
+            <select class="input font-bold w-28" bind:value={editTrialUnit}>
+              <option value="minutes">minutes</option>
+              <option value="days">days</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      <div class="p-6 border-t border-border bg-bg-card flex justify-end gap-3 shadow-md">
-        <button type="button" class="btn btn-secondary px-6" onclick={() => (showEditPlanModal = false)}>Cancel</button>
+      <div class="p-6 border-t border-border bg-bg-card flex justify-end gap-3 sticky bottom-0">
+        <button type="button" class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest" onclick={() => (showEditPlanModal = false)}>Cancel</button>
         <button type="submit" class="btn btn-primary px-8" disabled={isSaving || !editName.trim()}>
           {#if isSaving}
             <Loader2 size={16} class="animate-spin text-accent-contrast" />
             Saving...
           {:else}
-            Save
+            Save Changes
           {/if}
         </button>
       </div>
     </form>
   </div>
-{/if}
+</SidePanel>
 
 <style lang="postcss">
   .custom-scrollbar::-webkit-scrollbar {

@@ -3,6 +3,7 @@
   import { Copy, CheckCircle, Circle, ArrowRight, Loader2, Link2, ExternalLink } from "lucide-svelte";
   import { apiFetch } from "$lib/auth-client";
   import { onMount } from "svelte";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   const projectId = $derived(page.params.projectId);
 
@@ -62,14 +63,40 @@
   <div class="mb-12">
     <div class="flex items-center justify-between mb-2">
       <h1 class="text-2xl font-bold text-white uppercase tracking-wide">Onboarding</h1>
-      {#if isLoading}
-        <Loader2 size={16} class="animate-spin text-zinc-500" />
-      {/if}
     </div>
     <p class="text-zinc-500 font-mono text-xs">Project ID: {projectId}</p>
   </div>
 
-  {#if !isLoading}
+  {#if isLoading}
+    <div class="grid md:grid-cols-4 gap-4 mb-12">
+      {#each Array(4) as _}
+        <div class="bg-bg-card border border-border p-5 shadow-md flex flex-col space-y-6">
+          <div class="flex items-start justify-between">
+            <Skeleton class="w-7 h-7" />
+            <Skeleton class="w-5 h-5 rounded-full" />
+          </div>
+          <div class="space-y-2">
+            <Skeleton class="h-4 w-3/4" />
+            <Skeleton class="h-3 w-full" />
+          </div>
+          <Skeleton class="h-3 w-20" />
+        </div>
+      {/each}
+    </div>
+    <div class="bg-bg-card border border-border p-8 shadow-md">
+      <Skeleton class="h-6 w-32 mb-6" />
+      <div class="space-y-8">
+        <div class="space-y-3">
+          <Skeleton class="h-4 w-48" />
+          <Skeleton class="h-12 w-full" />
+        </div>
+        <div class="space-y-3">
+          <Skeleton class="h-4 w-48" />
+          <Skeleton class="h-24 w-full" />
+        </div>
+      </div>
+    </div>
+  {:else}
     <!-- Workflow Steps -->
     <div class="grid md:grid-cols-4 gap-4 mb-12">
       {#each steps as step}

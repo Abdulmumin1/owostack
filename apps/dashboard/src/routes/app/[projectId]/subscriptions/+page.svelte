@@ -6,6 +6,7 @@
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import SubscriptionDetail from "$lib/components/subscriptions/SubscriptionDetail.svelte";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   const organizationId = $derived(page.params.projectId);
   let subscriptions = $state<any[]>([]);
@@ -46,7 +47,9 @@
   function getStatusColor(status: string) {
     switch (status.toLowerCase()) {
       case 'active': return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
+      case 'trialing': return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
       case 'canceled': return 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20';
+      case 'expired': return 'text-orange-400 bg-orange-500/10 border-orange-500/20';
       case 'past_due': return 'text-amber-500 bg-amber-500/10 border-amber-500/20';
       case 'incomplete': return 'text-red-500 bg-red-500/10 border-red-500/20';
       default: return 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20';
@@ -85,24 +88,64 @@
 
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-4 mb-6">
-    <div class="relative flex-1 max-w-sm">
+    <div class="input-icon-wrapper max-w-sm">
       <Search
         size={14}
-        class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+        class="input-icon-left"
       />
       <input
         type="text"
         placeholder="Search by customer or plan..."
         bind:value={searchQuery}
-        class="input pl-9"
+        class="input input-has-icon-left"
       />
     </div>
   </div>
 
   {#if isLoading && subscriptions.length === 0}
-    <div class="flex items-center gap-2 text-zinc-500 p-12 justify-center">
-      <Loader2 size={16} class="animate-spin" />
-      <span>Loading subscriptions...</span>
+    <div class="bg-bg-card border border-border overflow-hidden shadow-md">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-white/5 border-b border-border">
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Customer</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Plan</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Provider</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Status</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Next Billing</th>
+            <th class="px-6 py-4"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border/50">
+          {#each Array(5) as _}
+            <tr>
+              <td class="px-6 py-4">
+                <div class="space-y-2">
+                  <Skeleton class="h-4 w-32" />
+                  <Skeleton class="h-3 w-20" />
+                </div>
+              </td>
+              <td class="px-6 py-4">
+                <div class="space-y-2">
+                  <Skeleton class="h-4 w-24" />
+                  <Skeleton class="h-3 w-16" />
+                </div>
+              </td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-4 w-20" />
+              </td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-5 w-16" />
+              </td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-4 w-24" />
+              </td>
+              <td class="px-6 py-4 text-right">
+                <Skeleton class="h-4 w-4 ml-auto" />
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     </div>
   {:else if filteredSubs.length === 0}
     <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
@@ -161,7 +204,13 @@
               <td class="px-6 py-4">
                 <div class="flex items-center gap-2 text-xs text-zinc-500">
                   <Clock size={12} />
-                  {new Date(sub.currentPeriodEnd).toLocaleDateString()}
+                  {#if sub.status === 'trialing'}
+                    <span class="text-blue-400">Trial ends {new Date(sub.currentPeriodEnd).toLocaleDateString()}</span>
+                  {:else if sub.status === 'expired'}
+                    <span class="text-orange-400">Expired {new Date(sub.currentPeriodEnd).toLocaleDateString()}</span>
+                  {:else}
+                    {new Date(sub.currentPeriodEnd).toLocaleDateString()}
+                  {/if}
                 </div>
               </td>
               <td class="px-6 py-4 text-right">

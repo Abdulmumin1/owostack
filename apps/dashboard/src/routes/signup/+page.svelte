@@ -75,10 +75,10 @@
         <label for="name" class="block text-sm font-medium text-zinc-400 mb-2"
           >Full Name</label
         >
-        <div class="relative">
+        <div class="input-icon-wrapper">
           <User
             size={18}
-            class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+            class="input-icon-left"
           />
           <input
             type="text"
@@ -86,7 +86,7 @@
             bind:value={name}
             placeholder="Ada Lovelace"
             required
-            class="input pl-10"
+            class="input input-has-icon-left"
           />
         </div>
       </div>
@@ -95,10 +95,10 @@
         <label for="email" class="block text-sm font-medium text-zinc-400 mb-2"
           >Email</label
         >
-        <div class="relative">
+        <div class="input-icon-wrapper">
           <Mail
             size={18}
-            class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+            class="input-icon-left"
           />
           <input
             type="email"
@@ -106,7 +106,7 @@
             bind:value={email}
             placeholder="you@example.com"
             required
-            class="input pl-10"
+            class="input input-has-icon-left"
           />
         </div>
       </div>
@@ -117,17 +117,17 @@
           class="block text-sm font-medium text-zinc-400 mb-2"
           >Organization <span class="text-zinc-500">(optional)</span></label
         >
-        <div class="relative">
+        <div class="input-icon-wrapper">
           <Building
             size={18}
-            class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+            class="input-icon-left"
           />
           <input
             type="text"
             id="organization"
             bind:value={organization}
             placeholder="Acme Inc"
-            class="input pl-10"
+            class="input input-has-icon-left"
           />
         </div>
       </div>
@@ -137,10 +137,10 @@
           for="password"
           class="block text-sm font-medium text-zinc-400 mb-2">Password</label
         >
-        <div class="relative">
+        <div class="input-icon-wrapper">
           <Lock
             size={18}
-            class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+            class="input-icon-left"
           />
           <input
             type="password"
@@ -149,7 +149,7 @@
             placeholder="••••••••"
             minlength="8"
             required
-            class="input pl-10"
+            class="input input-has-icon-left"
           />
         </div>
       </div>
@@ -184,7 +184,7 @@
     <p class="text-center mt-6 text-zinc-400 text-sm">
       Already have an account? <a
         href="/login"
-        class="text-fuchsia-400 hover:text-fuchsia-300">Sign in</a
+        class="text-accent hover:text-accent-hover">Sign in</a
       >
     </p>
   </div>

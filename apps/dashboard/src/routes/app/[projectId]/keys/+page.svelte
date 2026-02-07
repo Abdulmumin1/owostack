@@ -3,6 +3,8 @@
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import { fade, fly } from "svelte/transition";
+  import SidePanel from "$lib/components/ui/SidePanel.svelte";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
   
   // Note: projectId in URL is actually the organization ID from Better Auth
   const organizationId = $derived(page.params.projectId);
@@ -95,9 +97,22 @@
   </div>
 
   {#if isLoading}
-    <div class="flex items-center gap-2 text-zinc-500">
-      <Loader2 size={16} class="animate-spin" />
-      <span>Loading keys...</span>
+    <div class="space-y-4">
+      {#each Array(3) as _}
+        <div class="bg-bg-card border border-border p-5 flex items-center justify-between shadow-sm">
+          <div class="flex-1 space-y-2">
+            <Skeleton class="h-4 w-32" />
+            <Skeleton class="h-3 w-48" />
+          </div>
+          <div class="flex items-center gap-6">
+            <div class="space-y-1 text-right">
+              <Skeleton class="h-3 w-16 ml-auto" />
+              <Skeleton class="h-2 w-20 ml-auto" />
+            </div>
+            <Skeleton class="h-8 w-8 rounded" />
+          </div>
+        </div>
+      {/each}
     </div>
   {:else if keys.length === 0}
     <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
@@ -154,73 +169,81 @@
   {/if}
 </div>
 
-<!-- Create Modal -->
-{#if showCreateModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" transition:fade={{ duration: 150 }}>
-    <div class="w-full max-w-md bg-bg-card border border-border p-6 shadow-2xl relative" transition:fly={{ y: 20, duration: 200 }}>
+<!-- Create API Key SidePanel -->
+<SidePanel open={showCreateModal} title="Create API Key" onclose={closeAndReset} width="max-w-md">
+  <div class="text-sm">
+    <div class="p-5 space-y-6">
       {#if !generatedKey}
-        <h2 class="text-lg font-bold text-white mb-4">Create API Key</h2>
-        
-        <div class="mb-6">
-          <label for="keyName" class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Key Name</label>
-          <input 
-            type="text" 
-            id="keyName" 
-            bind:value={newKeyName}
-            placeholder="e.g. Production Server" 
-            class="input"
-            autoFocus
-          />
-        </div>
-        
-        <div class="flex items-center justify-end gap-3">
-          <button 
-            class="btn-ghost text-xs uppercase tracking-wider font-bold"
-            onclick={() => showCreateModal = false}
-          >
-            Cancel
-          </button>
-          <button 
-            class="btn btn-primary"
-            onclick={createKey}
-            disabled={!newKeyName || isCreating}
-          >
-            {#if isCreating}
-              Creating...
-            {:else}
-              Create Key
-            {/if}
-          </button>
+        <div class="space-y-5">
+          <div>
+            <label for="keyName" class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2">Key Name</label>
+            <div class="input-icon-wrapper">
+              <Key size={14} class="input-icon-left" />
+              <input 
+                id="keyName" 
+                bind:value={newKeyName}
+                placeholder="e.g. Production Server" 
+                class="input input-has-icon-left font-bold"
+                autoFocus
+              />
+            </div>
+          </div>
         </div>
       {:else}
         <!-- Success State - Show Key -->
-        <div class="text-center mb-6">
-          <div class="w-12 h-12 bg-green-500/10 flex items-center justify-center mx-auto mb-4 rounded-full">
-            <Check size={24} class="text-green-500" />
+        <div class="space-y-6">
+          <div class="text-center">
+            <div class="w-12 h-12 bg-emerald-500/10 flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
+              <Check size={24} class="text-emerald-500" />
+            </div>
+            <h2 class="text-sm font-bold text-white uppercase tracking-wider mb-1">API Key Created</h2>
+            <p class="text-zinc-500 text-[10px] uppercase tracking-tight">
+              This key will not be shown again. Copy it now and store it securely.
+            </p>
           </div>
-          <h2 class="text-lg font-bold text-white mb-2">API Key Created</h2>
-          <p class="text-zinc-400 text-xs mb-6">
-            This key will not be shown again. Copy it now and store it securely.
-          </p>
           
-          <div class="bg-black border border-border p-3 flex items-center gap-2 mb-2">
-            <code class="flex-1 font-mono text-sm text-green-400 break-all text-left">
+          <div class="bg-black border border-border p-4 flex items-center gap-3 shadow-inner group transition-colors hover:border-zinc-500">
+            <code class="flex-1 font-mono text-xs text-emerald-400 break-all select-all">
               {generatedKey}
             </code>
             <button 
-              class="p-2 hover:text-white text-zinc-500 transition-colors"
+              class="p-2 hover:text-white text-zinc-500 transition-colors border border-transparent hover:border-border bg-white/5"
               onclick={() => copyToClipboard(generatedKey!)}
+              title="Copy to clipboard"
             >
-              <Copy size={16} />
+              <Copy size={14} />
             </button>
           </div>
         </div>
-        
-        <button class=" btn btn-primary w-full" onclick={closeAndReset}>
+      {/if}
+    </div>
+
+    <!-- Footer -->
+    <div class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card">
+      {#if !generatedKey}
+        <button 
+          class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
+          onclick={closeAndReset}
+        >
+          Cancel
+        </button>
+        <button 
+          class="btn btn-primary px-6"
+          onclick={createKey}
+          disabled={!newKeyName || isCreating}
+        >
+          {#if isCreating}
+            <Loader2 size={14} class="animate-spin" />
+            Creating...
+          {:else}
+            Create Key
+          {/if}
+        </button>
+      {:else}
+        <button class="btn btn-primary w-full py-2.5" onclick={closeAndReset}>
           I've saved it
         </button>
       {/if}
     </div>
   </div>
-{/if}
-
+</SidePanel>

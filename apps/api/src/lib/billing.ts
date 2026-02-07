@@ -1,0 +1,310 @@
+import { Result } from "better-result";
+import type { createDb } from "@owostack/db";
+import { schema } from "@owostack/db";
+import { eq, and, gte, lte, sql, isNull, desc } from "drizzle-orm";
+import { DatabaseError, NotFoundError } from "./errors";
+import { getResetPeriod } from "./reset-period";
+
+type DB = ReturnType<typeof createDb>;
+
+export interface InvoiceLineItem {
+  featureId: string;
+  featureSlug: string;
+  description: string;
+  quantity: number;
+  unitPrice: number; // in smallest unit (kobo)
+  amount: number;
+  periodStart: number;
+  periodEnd: number;
+}
+
+export interface GenerateInvoiceResult {
+  invoiceId: string;
+  number: string;
+  status: string;
+  currency: string;
+  subtotal: number;
+  total: number;
+  items: InvoiceLineItem[];
+  periodStart: number;
+  periodEnd: number;
+}
+
+export interface UnbilledUsageResult {
+  customerId: string;
+  features: {
+    featureId: string;
+    featureSlug: string;
+    featureName: string;
+    usageModel: string;
+    usage: number;
+    included: number | null;
+    billableQuantity: number;
+    pricePerUnit: number;
+    billingUnits: number;
+    estimatedAmount: number;
+    periodStart: number;
+    periodEnd: number;
+  }[];
+  totalEstimated: number;
+  currency: string;
+}
+
+export class BillingService {
+  constructor(private db: DB) {}
+
+  async getUnbilledUsage(
+    customerId: string,
+    organizationId: string,
+  ): Promise<Result<UnbilledUsageResult, NotFoundError | DatabaseError>> {
+    return Result.tryPromise({
+      try: async () => {
+        const customer = await this.db.query.customers.findFirst({
+          where: and(
+            eq(schema.customers.organizationId, organizationId),
+            eq(schema.customers.id, customerId),
+          ),
+        });
+
+        if (!customer) {
+          throw new NotFoundError({ resource: "Customer", id: customerId });
+        }
+
+        const subscription = await this.db.query.subscriptions.findFirst({
+          where: and(
+            eq(schema.subscriptions.customerId, customerId),
+            eq(schema.subscriptions.status, "active"),
+          ),
+          with: {
+            plan: {
+              with: {
+                planFeatures: {
+                  with: { feature: true },
+                },
+              },
+            },
+          },
+        });
+
+        if (!subscription) {
+          return {
+            customerId,
+            features: [],
+            totalEstimated: 0,
+            currency: "NGN",
+          };
+        }
+
+        const features: UnbilledUsageResult["features"] = [];
+        let totalEstimated = 0;
+
+        for (const pf of subscription.plan.planFeatures) {
+          if (pf.usageModel !== "usage_based" && pf.overage !== "charge") {
+            continue;
+          }
+
+          const { periodStart, periodEnd } = getResetPeriod(
+            pf.resetInterval,
+            subscription.currentPeriodStart,
+            subscription.currentPeriodEnd,
+          );
+
+          const usageResult = await this.db
+            .select({
+              total: sql<number>`COALESCE(SUM(${schema.usageRecords.amount}), 0)`,
+            })
+            .from(schema.usageRecords)
+            .where(
+              and(
+                eq(schema.usageRecords.customerId, customerId),
+                eq(schema.usageRecords.featureId, pf.featureId),
+                gte(schema.usageRecords.periodStart, periodStart),
+                lte(schema.usageRecords.periodEnd, periodEnd),
+                isNull(schema.usageRecords.invoiceId),
+              ),
+            );
+
+          const usage = Number(usageResult[0]?.total || 0);
+          if (usage === 0) continue;
+
+          let billableQuantity = usage;
+          const included = pf.limitValue;
+
+          if (pf.usageModel === "included" && pf.overage === "charge") {
+            billableQuantity = Math.max(0, usage - (included || 0));
+          }
+
+          if (billableQuantity === 0) continue;
+
+          const pricePerUnit = pf.pricePerUnit || pf.overagePrice || 0;
+          const billingUnits = pf.billingUnits || 1;
+
+          const packages = Math.ceil(billableQuantity / billingUnits);
+          const amount = packages * pricePerUnit;
+
+          features.push({
+            featureId: pf.featureId,
+            featureSlug: pf.feature.slug,
+            featureName: pf.feature.name,
+            usageModel: pf.usageModel || "included",
+            usage,
+            included,
+            billableQuantity,
+            pricePerUnit,
+            billingUnits,
+            estimatedAmount: amount,
+            periodStart,
+            periodEnd,
+          });
+
+          totalEstimated += amount;
+        }
+
+        return {
+          customerId,
+          features,
+          totalEstimated,
+          currency: subscription.plan.currency || "NGN",
+        };
+      },
+      catch: (e) => {
+        if (e instanceof NotFoundError) return e;
+        return new DatabaseError({ operation: "getUnbilledUsage", cause: e });
+      },
+    });
+  }
+
+  async generateInvoice(
+    customerId: string,
+    organizationId: string,
+  ): Promise<Result<GenerateInvoiceResult, NotFoundError | DatabaseError>> {
+    return Result.tryPromise({
+      try: async () => {
+        const unbilledResult = await this.getUnbilledUsage(customerId, organizationId);
+        if (unbilledResult.isErr()) {
+          throw unbilledResult.error;
+        }
+
+        const unbilled = unbilledResult.value;
+        if (unbilled.features.length === 0) {
+          throw new NotFoundError({ resource: "Unbilled usage", id: customerId });
+        }
+
+        const invoiceCount = await this.db
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(schema.invoices)
+          .where(eq(schema.invoices.organizationId, organizationId));
+
+        const invoiceNumber = `INV-${String((invoiceCount[0]?.count || 0) + 1).padStart(5, "0")}`;
+
+        const periodStart = Math.min(...unbilled.features.map(f => f.periodStart));
+        const periodEnd = Math.max(...unbilled.features.map(f => f.periodEnd));
+        const usageCutoffAt = Date.now();
+
+        const invoiceId = crypto.randomUUID();
+        const now = Date.now();
+
+        await this.db.insert(schema.invoices).values({
+          id: invoiceId,
+          organizationId,
+          customerId,
+          number: invoiceNumber,
+          status: "open",
+          currency: unbilled.currency,
+          subtotal: unbilled.totalEstimated,
+          tax: 0,
+          total: unbilled.totalEstimated,
+          amountPaid: 0,
+          amountDue: unbilled.totalEstimated,
+          periodStart,
+          periodEnd,
+          usageCutoffAt,
+          dueAt: now + 7 * 24 * 60 * 60 * 1000,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const items: InvoiceLineItem[] = [];
+        for (const f of unbilled.features) {
+          const itemId = crypto.randomUUID();
+          const description = `${f.featureName}: ${f.billableQuantity} ${f.billingUnits > 1 ? `units (${f.billingUnits} per package)` : "units"}`;
+
+          await this.db.insert(schema.invoiceItems).values({
+            id: itemId,
+            invoiceId,
+            featureId: f.featureId,
+            description,
+            quantity: f.billableQuantity,
+            unitPrice: Math.round(f.pricePerUnit / f.billingUnits),
+            amount: f.estimatedAmount,
+            periodStart: f.periodStart,
+            periodEnd: f.periodEnd,
+            createdAt: now,
+          });
+
+          items.push({
+            featureId: f.featureId,
+            featureSlug: f.featureSlug,
+            description,
+            quantity: f.billableQuantity,
+            unitPrice: Math.round(f.pricePerUnit / f.billingUnits),
+            amount: f.estimatedAmount,
+            periodStart: f.periodStart,
+            periodEnd: f.periodEnd,
+          });
+
+          await this.db
+            .update(schema.usageRecords)
+            .set({ invoiceId })
+            .where(
+              and(
+                eq(schema.usageRecords.customerId, customerId),
+                eq(schema.usageRecords.featureId, f.featureId),
+                gte(schema.usageRecords.periodStart, f.periodStart),
+                lte(schema.usageRecords.periodEnd, f.periodEnd),
+                isNull(schema.usageRecords.invoiceId),
+                lte(schema.usageRecords.createdAt, usageCutoffAt),
+              ),
+            );
+        }
+
+        return {
+          invoiceId,
+          number: invoiceNumber,
+          status: "open",
+          currency: unbilled.currency,
+          subtotal: unbilled.totalEstimated,
+          total: unbilled.totalEstimated,
+          items,
+          periodStart,
+          periodEnd,
+        };
+      },
+      catch: (e) => {
+        if (e instanceof NotFoundError) return e;
+        return new DatabaseError({ operation: "generateInvoice", cause: e });
+      },
+    });
+  }
+
+  async getInvoices(
+    customerId: string,
+    organizationId: string,
+  ): Promise<Result<typeof schema.invoices.$inferSelect[], DatabaseError>> {
+    return Result.tryPromise({
+      try: async () => {
+        return await this.db.query.invoices.findMany({
+          where: and(
+            eq(schema.invoices.organizationId, organizationId),
+            eq(schema.invoices.customerId, customerId),
+          ),
+          orderBy: [desc(schema.invoices.createdAt)],
+          with: {
+            items: true,
+          },
+        });
+      },
+      catch: (e) => new DatabaseError({ operation: "getInvoices", cause: e }),
+    });
+  }
+}

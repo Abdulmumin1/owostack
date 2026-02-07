@@ -285,11 +285,15 @@ app.post("/attach", async (c) => {
   // 4. Handle TRIAL plans (trialDays > 0, no card required) — separate path
   const trialDays = plan.trialDays || 0;
   const trialCardRequired = plan.trialCardRequired || false;
+  const trialUnit = (plan.metadata as Record<string, unknown>)?.trialUnit === "minutes" ? "minutes" : "days";
 
   if (trialDays > 0 && !trialCardRequired) {
     try {
       const now = Date.now();
-      const trialEndMs = now + trialDays * 24 * 60 * 60 * 1000;
+      const trialEndMs = trialUnit === "minutes"
+        ? now + trialDays * 60 * 1000
+        : now + trialDays * 24 * 60 * 60 * 1000;
+      console.log(`[TRIAL] Creating no-card trial: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}, endsAt=${new Date(trialEndMs).toISOString()}`);
 
       const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
       const [subscription] = await db
@@ -309,10 +313,33 @@ app.post("/attach", async (c) => {
         })
         .returning();
 
+      // Dispatch trial-end workflow (sleeps until trial ends, then expires)
+      try {
+        await c.env.TRIAL_END_WORKFLOW.create({
+          params: {
+            subscriptionId: subscription.id,
+            customerId: customerRecord.id,
+            planId: plan.id,
+            organizationId: keyRecord.organizationId,
+            providerId: selectedProviderId,
+            environment: activeEnv,
+            trialEndMs,
+            email,
+            amount: plan.price,
+            currency: plan.currency,
+            planSlug: plan.slug,
+          },
+        });
+        console.log(`[TRIAL] Trial end workflow dispatched: subscription=${subscription.id}, trialEnds=${new Date(trialEndMs).toISOString()}`);
+      } catch (wfErr) {
+        console.error(`[TRIAL] Failed to dispatch trial end workflow for subscription=${subscription.id}:`, wfErr);
+      }
+
+      console.log(`[TRIAL] No-card trial activated: subscription=${subscription.id}, trialEnds=${new Date(trialEndMs).toISOString()}`);
       return c.json({
         success: true,
         trial: true,
-        message: `${trialDays}-day trial activated`,
+        message: trialUnit === "minutes" ? `${trialDays}-minute trial activated` : `${trialDays}-day trial activated`,
         subscription_id: subscription.id,
         customer_id: customerRecord.id,
         trial_ends_at: new Date(trialEndMs).toISOString(),
@@ -327,6 +354,7 @@ app.post("/attach", async (c) => {
 
   // 5. Handle trial with card required — checkout for card capture
   if (trialDays > 0 && trialCardRequired) {
+    console.log(`[TRIAL] Initiating card-required trial checkout: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}`);
     const trialMetadata = {
       ...metadata,
       organization_id: keyRecord.organizationId,
@@ -337,6 +365,7 @@ app.post("/attach", async (c) => {
       environment: activeEnv,
       provider_id: selectedProviderId,
       trial_days: trialDays,
+      trial_unit: trialUnit,
       is_trial: true,
     };
 
@@ -382,10 +411,6 @@ app.post("/attach", async (c) => {
   //    - Lateral: switches features immediately, no charge
   //    - New: creates subscription (direct if card on file, checkout if not)
   try {
-    // Get scheduler DO stub for downgrade alarms
-    const schedulerId = c.env.SUBSCRIPTION_SCHEDULER.idFromName(keyRecord.organizationId);
-    const scheduler = c.env.SUBSCRIPTION_SCHEDULER.get(schedulerId);
-
     const result = await executeSwitch(db, customerRecord.id, plan.id, providerCtx, {
       callbackUrl,
       metadata: {
@@ -395,7 +420,7 @@ app.post("/attach", async (c) => {
         environment: activeEnv,
         provider_id: selectedProviderId,
       },
-      scheduler,
+      downgradeWorkflow: c.env.DOWNGRADE_WORKFLOW,
       organizationId: keyRecord.organizationId,
       environment: activeEnv,
     });

@@ -7,8 +7,12 @@ import { auth } from "./lib/auth";
 import { WebhookHandler } from "./lib/webhooks";
 import { WebhookError, errorToResponse } from "./lib/errors";
 import { decrypt } from "./lib/encryption";
-import { paystackAdapter } from "@owostack/adapters";
+import { paystackAdapter, createProviderRegistry } from "@owostack/adapters";
 import type { ProviderAccount } from "@owostack/adapters";
+
+// Provider registry — register all supported adapters
+const providerRegistry = createProviderRegistry();
+providerRegistry.register(paystackAdapter);
 
 // Route modules
 import dashboardPlans from "./routes/dashboard/plans";
@@ -24,11 +28,18 @@ import dashboardTransactions from "./routes/dashboard/transactions";
 import dashboardProviders from "./routes/dashboard/providers";
 import apiCheckout from "./routes/api/checkout";
 import apiEntitlements from "./routes/api/entitlements";
+import apiBilling from "./routes/api/billing";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
 import { SubscriptionSchedulerDO } from "./lib/subscription-scheduler";
 export { UsageMeterDO, SubscriptionSchedulerDO };
+
+// Workflows
+import { TrialEndWorkflow } from "./lib/workflows/trial-end";
+import { DowngradeWorkflow } from "./lib/workflows/downgrade";
+import { PlanUpgradeWorkflow } from "./lib/workflows/plan-upgrade";
+export { TrialEndWorkflow, DowngradeWorkflow, PlanUpgradeWorkflow };
 
 export type Env = {
   DB: D1Database;           // Per-environment business data (customers, plans, subs, etc.)
@@ -36,6 +47,9 @@ export type Env = {
   CACHE: KVNamespace;
   USAGE_METER: DurableObjectNamespace<UsageMeterDO>;
   SUBSCRIPTION_SCHEDULER: DurableObjectNamespace<SubscriptionSchedulerDO>;
+  TRIAL_END_WORKFLOW: Workflow;
+  DOWNGRADE_WORKFLOW: Workflow;
+  PLAN_UPGRADE_WORKFLOW: Workflow;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   ENCRYPTION_KEY: string;
@@ -210,6 +224,7 @@ const v1Routes = new Hono<{ Bindings: Env; Variables: Variables }>();
 // entitlements.ts has `post('/check')` and `post('/track')`.
 v1Routes.route("/", apiCheckout);
 v1Routes.route("/", apiEntitlements);
+v1Routes.route("/billing", apiBilling);
 
 apiRoutes.route("/v1", v1Routes);
 
@@ -219,11 +234,25 @@ app.route("/api", apiRoutes);
 app.route("/v1", v1Routes);
 
 // =============================================================================
-// Webhooks
+// Webhooks — provider-agnostic
+// POST /webhooks/:organizationId/:provider  (e.g. /webhooks/org123/paystack)
+// POST /webhooks/:organizationId            (backward compat — defaults to paystack)
 // =============================================================================
-app.post("/webhooks/:organizationId", async (c) => {
-  const organizationId = c.req.param("organizationId");
-  const signature = c.req.header("x-paystack-signature");
+
+async function handleWebhookRequest(c: any, organizationId: string, providerId: string) {
+  console.log(`[WEBHOOK-ROUTE] Received webhook for org=${organizationId}, provider=${providerId}`);
+
+  // 1. Resolve adapter from registry
+  const adapter = providerRegistry.get(providerId);
+  if (!adapter) {
+    console.error(`[WEBHOOK-ROUTE] Unknown provider: ${providerId}`);
+    return c.json({ error: `Unsupported provider: ${providerId}` }, 400);
+  }
+
+  // 2. Get the signature from the provider-specific header
+  const sigHeader = adapter.signatureHeaderName || `x-${providerId}-signature`;
+  const signature = c.req.header(sigHeader);
+  console.log(`[WEBHOOK-ROUTE] Signature header=${sigHeader}, hasSignature=${!!signature}`);
 
   if (!signature) {
     return c.json(
@@ -236,7 +265,7 @@ app.post("/webhooks/:organizationId", async (c) => {
   const db = c.get("db");
   const authDb = c.get("authDb");
 
-  // Ensure organization row exists in billing DB (same sync as dashboard middleware)
+  // 3. Ensure organization row exists in billing DB
   const existingOrg = await db.query.organizations.findFirst({
     where: eq(schema.organizations.id, organizationId),
     columns: { id: true },
@@ -250,7 +279,7 @@ app.post("/webhooks/:organizationId", async (c) => {
     }
   }
 
-  // Projects live in the shared auth DB
+  // 4. Resolve the webhook secret for this provider
   const project = await authDb.query.projects.findFirst({
     where: (projects, { eq }) => eq(projects.organizationId, organizationId),
   });
@@ -259,65 +288,49 @@ app.post("/webhooks/:organizationId", async (c) => {
     return c.json({ error: "Organization not found" }, 404);
   }
 
-  let secret = project.webhookSecret;
+  const workerEnv = c.env.ENVIRONMENT === "live" ? "live" : "test";
+  let secret: string | null = project.webhookSecret;
 
-  // Fallback: If no webhook secret is set, Paystack uses the Secret Key for signature
+  // Fallback: provider uses the API secret key for webhook signatures
   if (!secret) {
-    const activeEnv = project.activeEnvironment || "test";
     const encryptedKey =
-      activeEnv === "live" ? project.liveSecretKey : project.testSecretKey;
+      workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
+    console.log(`[WEBHOOK-ROUTE] No webhookSecret, falling back to ${workerEnv} secret key (hasKey=${!!encryptedKey})`);
 
     if (encryptedKey) {
       try {
         secret = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
       } catch (e) {
-        console.error(
-          "Failed to decrypt Paystack key for webhook verification",
-          e,
-        );
+        console.error(`[WEBHOOK-ROUTE] Failed to decrypt key for verification:`, e);
       }
     }
   }
 
-  // Build a synthetic provider account so the webhook handler can call
-  // Paystack API (e.g. to cancel old subscriptions during upgrades)
-  let providerAccount: ProviderAccount | undefined;
-  if (secret) {
-    const activeEnv = project.activeEnvironment || "test";
-    // Resolve the actual secret key (not webhook secret) for API calls
-    let apiSecretKey: string | undefined;
-    const encKey = activeEnv === "live" ? project.liveSecretKey : project.testSecretKey;
-    if (encKey) {
-      try {
-        apiSecretKey = await decrypt(encKey, c.env.ENCRYPTION_KEY);
-      } catch { /* already logged above */ }
-    }
-    if (apiSecretKey) {
-      providerAccount = {
-        id: `webhook-${organizationId}`,
-        organizationId,
-        providerId: "paystack",
-        environment: activeEnv,
-        credentials: { secretKey: apiSecretKey },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-    }
+  if (!secret) {
+    console.error(`[WEBHOOK-ROUTE] No secret available for org=${organizationId}, provider=${providerId}`);
+    return c.json({ error: "Webhook secret not configured" }, 500);
   }
 
-  const handler = new WebhookHandler(secret || "", db, organizationId, {
-    adapter: paystackAdapter,
-    account: providerAccount,
+  // 5. Verify signature via adapter
+  const verifyResult = await adapter.verifyWebhook({
+    signature,
+    payload: rawBody,
+    secret,
   });
 
-  const verifyResult = await handler.verify(signature, rawBody);
-  if (verifyResult.isErr()) {
-    return c.json(errorToResponse(verifyResult.error), 401);
+  if (verifyResult.isErr() || !verifyResult.value) {
+    console.error(`[WEBHOOK-ROUTE] Signature verification FAILED for org=${organizationId}, provider=${providerId}`);
+    return c.json(
+      errorToResponse(new WebhookError({ reason: "invalid_signature" })),
+      401,
+    );
   }
+  console.log(`[WEBHOOK-ROUTE] Signature verified for org=${organizationId}`);
 
-  let payload: any;
+  // 6. Parse raw payload → normalized event via adapter
+  let rawPayload: Record<string, unknown>;
   try {
-    payload = JSON.parse(rawBody);
+    rawPayload = JSON.parse(rawBody);
   } catch {
     return c.json(
       errorToResponse(new WebhookError({ reason: "parse_failed" })),
@@ -325,13 +338,58 @@ app.post("/webhooks/:organizationId", async (c) => {
     );
   }
 
-  const handleResult = await handler.handle(payload);
+  const parseResult = adapter.parseWebhookEvent({ payload: rawPayload });
+  if (parseResult.isErr()) {
+    // Unknown events are not errors — just ACK them
+    console.log(`[WEBHOOK-ROUTE] Unhandled event from ${providerId}: ${parseResult.error.message}`);
+    return c.json({ success: true, received: true, skipped: true });
+  }
+
+  const normalizedEvent = parseResult.value;
+  console.log(`[WEBHOOK-ROUTE] Event: ${normalizedEvent.type}, provider=${normalizedEvent.provider}, ref=${normalizedEvent.payment?.reference || "n/a"}`);
+
+  // 7. Build provider account for API calls (cancel sub, etc.)
+  let providerAccount: ProviderAccount | undefined;
+  const encKey = workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
+  if (encKey) {
+    try {
+      const apiSecretKey = await decrypt(encKey, c.env.ENCRYPTION_KEY);
+      providerAccount = {
+        id: `webhook-${organizationId}`,
+        organizationId,
+        providerId,
+        environment: workerEnv,
+        credentials: { secretKey: apiSecretKey },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+    } catch { /* already logged above */ }
+  }
+
+  // 8. Handle via provider-agnostic WebhookHandler
+  const handler = new WebhookHandler(db, organizationId, {
+    adapter,
+    account: providerAccount,
+    trialEndWorkflow: c.env.TRIAL_END_WORKFLOW,
+    planUpgradeWorkflow: c.env.PLAN_UPGRADE_WORKFLOW,
+  });
+
+  const handleResult = await handler.handle(normalizedEvent);
   if (handleResult.isErr()) {
-    // swallow to always ack (Paystack will retry otherwise)
     console.error("Webhook handling error:", handleResult.error);
   }
 
   return c.json({ success: true, received: true });
+}
+
+// Backward compat: /webhooks/:orgId → defaults to paystack
+app.post("/webhooks/:organizationId", async (c) => {
+  return handleWebhookRequest(c, c.req.param("organizationId"), "paystack");
+});
+
+// Provider-agnostic: /webhooks/:orgId/:provider
+app.post("/webhooks/:organizationId/:provider", async (c) => {
+  return handleWebhookRequest(c, c.req.param("organizationId"), c.req.param("provider"));
 });
 
 export default app;
