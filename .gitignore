@@ -30,6 +30,7 @@ pnpm-debug.log*
 # Testing
 coverage
 .nyc_output
+provider-agnostic-architecture.md
 
 # Wrangler
 .wrangler
