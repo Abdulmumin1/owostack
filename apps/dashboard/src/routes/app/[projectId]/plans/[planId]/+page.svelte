@@ -29,6 +29,7 @@
 
   let plan = $state<any>(null);
   let features = $state<any[]>([]);
+  let creditSystems = $state<any[]>([]);
   let isLoading = $state(true);
   let isSaving = $state(false);
 
@@ -137,13 +138,15 @@
   async function loadData() {
     isLoading = true;
     try {
-      const [planRes, featuresRes] = await Promise.all([
+      const [planRes, featuresRes, creditsRes] = await Promise.all([
         apiFetch(`/api/dashboard/plans/${planId}`),
-        apiFetch(`/api/dashboard/features?organizationId=${projectId}`)
+        apiFetch(`/api/dashboard/features?organizationId=${projectId}`),
+        apiFetch(`/api/dashboard/credits?organizationId=${projectId}`),
       ]);
       
       if (planRes.data) plan = planRes.data.data;
       if (featuresRes.data) features = featuresRes.data.data;
+      if (creditsRes.data) creditSystems = creditsRes.data.data || [];
     } catch (e) {
       console.error("Failed to load data", e);
     } finally {
@@ -349,63 +352,129 @@
           <div class="bg-bg-card border border-border divide-y divide-border/50 shadow-md">
             {#if plan.planFeatures && plan.planFeatures.length > 0}
               {#each plan.planFeatures as pf}
-                <div class="p-6 flex items-center justify-between group hover:bg-bg-card-hover transition-colors">
-                  <div class="flex items-center gap-5">
-                    <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center group-hover:border-border-light transition-colors">
-                      <Zap size={18} class="text-text-dim group-hover:text-accent transition-colors" />
-                    </div>
-                    <div class="space-y-1">
-                      <h4 class="text-sm font-bold text-white uppercase tracking-tight">{pf.feature.name}</h4>
-                      <div class="flex items-center gap-2">
-                        <span class="text-[9px] font-bold text-text-dim bg-bg-primary border border-border px-1.5 py-0.5 uppercase tracking-tighter">
-                          {pf.feature.type}
-                        </span>
-                        
-                        {#if pf.feature.type === 'metered'}
-                          <div class="h-1 w-1 bg-text-dim"></div>
-                          {#if pf.limitValue === null}
-                            <span class="text-[10px] font-bold text-accent uppercase tracking-tighter">
-                              Unlimited access
+                {@const cs = creditSystems.find((s: any) => s.id === pf.featureId)}
+                {#if cs}
+                  <!-- Credit System Feature -->
+                  <div class="group hover:bg-bg-card-hover transition-colors">
+                    <div class="p-6 flex items-center justify-between">
+                      <div class="flex items-center gap-5">
+                        <div class="w-10 h-10 bg-amber-900/20 border border-amber-800/40 flex items-center justify-center group-hover:border-amber-600 transition-colors">
+                          <span class="text-amber-500 text-lg">&#9733;</span>
+                        </div>
+                        <div class="space-y-1">
+                          <h4 class="text-sm font-bold text-white uppercase tracking-tight">{cs.name}</h4>
+                          <div class="flex items-center gap-2">
+                            <span class="text-[9px] font-bold text-amber-500 bg-amber-900/20 border border-amber-800/40 px-1.5 py-0.5 uppercase tracking-tighter">
+                              Credit System
                             </span>
-                          {:else}
-                            <span class="text-[10px] font-bold text-white uppercase tracking-tighter">
-                              Included: {pf.limitValue} {pf.feature.unit || 'units'}
-                            </span>
-                          {/if}
-
-                          {#if pf.resetInterval !== 'none'}
                             <div class="h-1 w-1 bg-text-dim"></div>
-                            <span class="text-[10px] font-bold text-text-secondary uppercase tracking-tighter">
-                              Resets {pf.resetInterval}
-                            </span>
-                          {/if}
-                        {/if}
+                            {#if pf.limitValue === null}
+                              <span class="text-[10px] font-bold text-accent uppercase tracking-tighter">Unlimited credits</span>
+                            {:else}
+                              <span class="text-[10px] font-bold text-white uppercase tracking-tighter">Pool: {pf.limitValue} credits</span>
+                            {/if}
+                            {#if pf.resetInterval !== 'none'}
+                              <div class="h-1 w-1 bg-text-dim"></div>
+                              <span class="text-[10px] font-bold text-text-secondary uppercase tracking-tighter">Resets {pf.resetInterval}</span>
+                            {/if}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+                        <button 
+                          class="p-2 text-text-secondary hover:text-white transition-colors"
+                          title="Configure credit pool"
+                          onclick={() => {
+                            editingPlanFeature = pf;
+                            showConfigModal = true;
+                          }}
+                        >
+                          <Settings2 size={16} />
+                        </button>
+                        <button 
+                          class="p-2 text-text-secondary hover:text-red-500 transition-colors"
+                          title="Remove credit system"
+                          onclick={() => detachFeature(pf.id)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </div>
-                  </div>
-
-                  <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                    {#if pf.feature.type === 'metered'}
-                      <button 
-                        class="p-2 text-text-secondary hover:text-white transition-colors"
-                        title="Configure limits"
-                        onclick={() => {
-                          editingPlanFeature = pf;
-                          showConfigModal = true;
-                        }}
-                      >
-                        <Settings2 size={16} />
-                      </button>
+                    <!-- Child features -->
+                    {#if cs.features && cs.features.length > 0}
+                      <div class="mx-6 mb-4 border border-border/50 divide-y divide-border/30 bg-bg-primary/50">
+                        {#each cs.features as csf}
+                          <div class="px-4 py-3 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                              <div class="w-1.5 h-1.5 bg-amber-500/60"></div>
+                              <span class="text-xs font-bold text-text-secondary uppercase tracking-tight">{csf.feature?.name || csf.featureId}</span>
+                            </div>
+                            <span class="text-[10px] font-bold text-amber-500 uppercase tracking-widest">{csf.cost} credits/use</span>
+                          </div>
+                        {/each}
+                      </div>
                     {/if}
-                    <button 
-                      class="p-2 text-text-secondary hover:text-red-500 transition-colors"
-                      title="Remove feature"
-                      onclick={() => detachFeature(pf.id)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
                   </div>
-                </div>
+                {:else}
+                  <!-- Regular Feature -->
+                  <div class="p-6 flex items-center justify-between group hover:bg-bg-card-hover transition-colors">
+                    <div class="flex items-center gap-5">
+                      <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center group-hover:border-border-light transition-colors">
+                        <Zap size={18} class="text-text-dim group-hover:text-accent transition-colors" />
+                      </div>
+                      <div class="space-y-1">
+                        <h4 class="text-sm font-bold text-white uppercase tracking-tight">{pf.feature.name}</h4>
+                        <div class="flex items-center gap-2">
+                          <span class="text-[9px] font-bold text-text-dim bg-bg-primary border border-border px-1.5 py-0.5 uppercase tracking-tighter">
+                            {pf.feature.type}
+                          </span>
+                          
+                          {#if pf.feature.type === 'metered'}
+                            <div class="h-1 w-1 bg-text-dim"></div>
+                            {#if pf.limitValue === null}
+                              <span class="text-[10px] font-bold text-accent uppercase tracking-tighter">
+                                Unlimited access
+                              </span>
+                            {:else}
+                              <span class="text-[10px] font-bold text-white uppercase tracking-tighter">
+                                Included: {pf.limitValue} {pf.feature.unit || 'units'}
+                              </span>
+                            {/if}
+
+                            {#if pf.resetInterval !== 'none'}
+                              <div class="h-1 w-1 bg-text-dim"></div>
+                              <span class="text-[10px] font-bold text-text-secondary uppercase tracking-tighter">
+                                Resets {pf.resetInterval}
+                              </span>
+                            {/if}
+                          {/if}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+                      {#if pf.feature.type === 'metered'}
+                        <button 
+                          class="p-2 text-text-secondary hover:text-white transition-colors"
+                          title="Configure limits"
+                          onclick={() => {
+                            editingPlanFeature = pf;
+                            showConfigModal = true;
+                          }}
+                        >
+                          <Settings2 size={16} />
+                        </button>
+                      {/if}
+                      <button 
+                        class="p-2 text-text-secondary hover:text-red-500 transition-colors"
+                        title="Remove feature"
+                        onclick={() => detachFeature(pf.id)}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                {/if}
               {/each}
             {:else}
               <div class="p-16 text-center space-y-4">
@@ -454,16 +523,29 @@
             </div>
 
             <div class="space-y-2">
-              <div class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Paystack Plan</div>
-              {#if plan.paystackPlanId}
-                <a 
-                  href="https://dashboard.paystack.com/#/plans/{plan.paystackPlanId}" 
-                  target="_blank"
-                  class="flex items-center justify-between text-xs text-text-secondary bg-bg-primary px-3 py-2 border border-border hover:border-border-light transition-colors"
-                >
-                  <span class="font-mono">{plan.paystackPlanId}</span>
-                  <ExternalLink size={12} class="text-text-dim" />
-                </a>
+              <div class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Provider Plan</div>
+              {#if plan.providerPlanId || plan.paystackPlanId}
+                {@const planCode = plan.providerPlanId || plan.paystackPlanId}
+                {@const providerDashUrl = plan.providerId === 'paystack' || (!plan.providerId && plan.paystackPlanId)
+                  ? `https://dashboard.paystack.com/#/plans/${planCode}`
+                  : null}
+                {#if providerDashUrl}
+                  <a 
+                    href={providerDashUrl}
+                    target="_blank"
+                    class="flex items-center justify-between text-xs text-text-secondary bg-bg-primary px-3 py-2 border border-border hover:border-border-light transition-colors"
+                  >
+                    <span class="font-mono">{planCode}</span>
+                    <ExternalLink size={12} class="text-text-dim" />
+                  </a>
+                {:else}
+                  <div class="flex items-center justify-between text-xs text-text-secondary bg-bg-primary px-3 py-2 border border-border">
+                    <span class="font-mono">{planCode}</span>
+                    {#if plan.providerId}
+                      <span class="text-[9px] text-text-dim uppercase tracking-widest">{plan.providerId}</span>
+                    {/if}
+                  </div>
+                {/if}
               {:else}
                 <div class="text-xs text-text-dim italic bg-bg-primary px-3 py-2 border border-border border-dashed font-bold uppercase tracking-widest">
                   Not synced

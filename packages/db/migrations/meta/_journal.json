@@ -22,6 +22,34 @@
       "when": 1770466992301,
       "tag": "0002_first_santa_claus",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1770548165779,
+      "tag": "0003_add-provider-accounts-unique-index",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1770556584319,
+      "tag": "0004_glorious_the_anarchist",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1770557791799,
+      "tag": "0005_scoped-credit-balances",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1770558419089,
+      "tag": "0006_unique-csb-index",
+      "breakpoints": true
     }
   ]
 }

@@ -214,8 +214,12 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
       };
     }
 
+    // Apply credit cost multiplier (same as track) so check and track are consistent
+    const creditMultiplier = config.creditCost > 0 ? config.creditCost : 1;
+    const actualRequired = requiredBalance * creditMultiplier;
+
     const effectiveBalance = state.balance + state.rolloverBalance;
-    const allowed = effectiveBalance >= requiredBalance;
+    const allowed = effectiveBalance >= actualRequired;
 
     return {
       allowed,

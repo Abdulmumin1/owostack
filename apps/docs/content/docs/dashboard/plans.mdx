@@ -6,7 +6,7 @@ icon: Layers
 
 # Plans
 
-Plans define what your customers can subscribe to. Each plan maps to a Paystack plan.
+Plans define what your customers can subscribe to. Each plan maps to a provider plan.
 
 ## Creating a Plan
 
@@ -17,13 +17,13 @@ Plans define what your customers can subscribe to. Each plan maps to a Paystack 
 | Field       | Description                             |
 | ----------- | --------------------------------------- |
 | Name        | Display name (e.g., "Pro Plan")         |
-| Price       | Amount in kobo (₦50 = 5000)             |
+| Price       | Amount in the provider's smallest unit |
 | Interval    | `monthly`, `quarterly`, `annually`      |
 | Description | Optional description for your reference |
 
 <Callout type="important">
   When you create a plan, Owostack automatically creates a corresponding plan in
-  your Paystack account. The `paystackPlanId` is generated automatically.
+  your provider account. The provider plan ID is generated automatically.
 </Callout>
 
 ## Plan Features
@@ -71,10 +71,10 @@ When you update a plan:
 - **Price changes** affect new subscribers only
 - **Feature changes** affect all subscribers immediately
 
-## Syncing with Paystack
+## Syncing with providers
 
-If you create plans directly in Paystack:
+If you create plans directly in a provider dashboard:
 
-1. Go to **Plans** → **Sync from Paystack**
-2. Owostack will import your existing Paystack plans
+1. Go to **Plans** → **Sync from Provider**
+2. Owostack will import your existing plans
 3. Configure features for each imported plan

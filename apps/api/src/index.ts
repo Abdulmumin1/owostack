@@ -7,12 +7,11 @@ import { auth } from "./lib/auth";
 import { WebhookHandler } from "./lib/webhooks";
 import { WebhookError, errorToResponse } from "./lib/errors";
 import { decrypt } from "./lib/encryption";
-import { paystackAdapter, createProviderRegistry } from "@owostack/adapters";
 import type { ProviderAccount } from "@owostack/adapters";
+import { getProviderRegistry } from "./lib/providers";
 
-// Provider registry — register all supported adapters
-const providerRegistry = createProviderRegistry();
-providerRegistry.register(paystackAdapter);
+// Provider registry — single source of truth in lib/providers.ts
+const providerRegistry = getProviderRegistry();
 
 // Route modules
 import dashboardPlans from "./routes/dashboard/plans";
@@ -26,14 +25,15 @@ import dashboardUsage from "./routes/dashboard/usage";
 import dashboardCredits from "./routes/dashboard/credits";
 import dashboardTransactions from "./routes/dashboard/transactions";
 import dashboardProviders from "./routes/dashboard/providers";
+import dashboardCreditPacks from "./routes/dashboard/credit-packs";
 import apiCheckout from "./routes/api/checkout";
 import apiEntitlements from "./routes/api/entitlements";
 import apiBilling from "./routes/api/billing";
+import apiAddon from "./routes/api/addon";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
-import { SubscriptionSchedulerDO } from "./lib/subscription-scheduler";
-export { UsageMeterDO, SubscriptionSchedulerDO };
+export { UsageMeterDO };
 
 // Workflows
 import { TrialEndWorkflow } from "./lib/workflows/trial-end";
@@ -46,7 +46,6 @@ export type Env = {
   DB_AUTH: D1Database;      // Shared auth data (users, sessions, orgs, projects)
   CACHE: KVNamespace;
   USAGE_METER: DurableObjectNamespace<UsageMeterDO>;
-  SUBSCRIPTION_SCHEDULER: DurableObjectNamespace<SubscriptionSchedulerDO>;
   TRIAL_END_WORKFLOW: Workflow;
   DOWNGRADE_WORKFLOW: Workflow;
   PLAN_UPGRADE_WORKFLOW: Workflow;
@@ -54,6 +53,7 @@ export type Env = {
   BETTER_AUTH_URL: string;
   ENCRYPTION_KEY: string;
   ENVIRONMENT?: string; // "test" | "live" | "development" — set per worker deployment
+  ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack" or "paystack,stripe"
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID?: string;
@@ -208,6 +208,7 @@ dashboardRoutes.route("/usage", dashboardUsage);
 dashboardRoutes.route("/credits", dashboardCredits);
 dashboardRoutes.route("/transactions", dashboardTransactions);
 dashboardRoutes.route("/providers", dashboardProviders);
+dashboardRoutes.route("/credit-packs", dashboardCreditPacks);
 dashboardRoutes.route("/", dashboardConfig); // Config module has paths like /paystack-config
 
 app.route("/api/dashboard", dashboardRoutes);
@@ -224,6 +225,7 @@ const v1Routes = new Hono<{ Bindings: Env; Variables: Variables }>();
 // entitlements.ts has `post('/check')` and `post('/track')`.
 v1Routes.route("/", apiCheckout);
 v1Routes.route("/", apiEntitlements);
+v1Routes.route("/", apiAddon);
 v1Routes.route("/billing", apiBilling);
 
 apiRoutes.route("/v1", v1Routes);
@@ -372,6 +374,7 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
     account: providerAccount,
     trialEndWorkflow: c.env.TRIAL_END_WORKFLOW,
     planUpgradeWorkflow: c.env.PLAN_UPGRADE_WORKFLOW,
+    cache: c.env.CACHE,
   });
 
   const handleResult = await handler.handle(normalizedEvent);

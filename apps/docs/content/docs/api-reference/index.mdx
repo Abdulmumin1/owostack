@@ -8,6 +8,8 @@ icon: FileCode
 
 Base URL: `https://api.owostack.dev`
 
+Public API paths are available at both `/v1/*` and `/api/v1/*`.
+
 All endpoints require authentication via API key in the `Authorization` header.
 
 ---
@@ -30,24 +32,28 @@ Subscribe a customer to a plan.
 {
   "customer": "user@example.com",
   "product": "pro-monthly",
-  "metadata": {}
+  "metadata": {},
+  "provider": "{provider-id}"
 }
 ```
 
-| Field      | Type   | Required | Description     |
-| ---------- | ------ | -------- | --------------- |
-| `customer` | string | ✅       | Customer email  |
-| `product`  | string | ✅       | Plan slug       |
-| `metadata` | object | -        | Custom metadata |
+| Field      | Type   | Required | Description                     |
+| ---------- | ------ | -------- | ------------------------------- |
+| `customer` | string | ✅       | Customer email or external ID   |
+| `product`  | string | ✅       | Plan slug or ID                 |
+| `metadata` | object | -        | Custom metadata                 |
+| `provider` | string | -        | Optional provider override      |
 
 ### Response
 
 ```json
 {
   "success": true,
-  "authorization_url": "https://checkout.paystack.com/xxx",
-  "access_code": "xxx",
-  "reference": "ref_xxx"
+  "checkoutUrl": "https://provider.example/checkout",
+  "subscription": {
+    "id": "sub_123",
+    "status": "pending"
+  }
 }
 ```
 
@@ -63,27 +69,26 @@ Check customer entitlements for a feature.
 {
   "customer": "user@example.com",
   "feature": "api_calls",
-  "amount": 1
+  "value": 1
 }
 ```
 
-| Field      | Type   | Required | Description                  |
-| ---------- | ------ | -------- | ---------------------------- |
-| `customer` | string | ✅       | Customer email               |
-| `feature`  | string | ✅       | Feature key                  |
-| `amount`   | number | -        | Amount to check (default: 1) |
+| Field          | Type   | Required | Description                  |
+| -------------- | ------ | -------- | ---------------------------- |
+| `customer`     | string | ✅       | Customer email or ID         |
+| `feature`      | string | ✅       | Feature key                  |
+| `value`        | number | -        | Amount to check (default: 1) |
+| `customerData` | object | -        | Auto-create customer payload |
 
 ### Response
 
 ```json
 {
-  "success": true,
   "allowed": true,
-  "usage": {
-    "current": 500,
-    "limit": 10000,
-    "remaining": 9500
-  }
+  "code": "access_granted",
+  "remaining": 9500,
+  "limit": 10000,
+  "resetAt": "2024-06-01T00:00:00Z"
 }
 ```
 
@@ -99,17 +104,18 @@ Record usage for metered billing.
 {
   "customer": "user@example.com",
   "feature": "api_calls",
-  "amount": 1,
+  "value": 1,
   "metadata": {}
 }
 ```
 
-| Field      | Type   | Required | Description               |
-| ---------- | ------ | -------- | ------------------------- |
-| `customer` | string | ✅       | Customer email            |
-| `feature`  | string | ✅       | Feature key               |
-| `amount`   | number | -        | Usage amount (default: 1) |
-| `metadata` | object | -        | Event metadata            |
+| Field          | Type   | Required | Description               |
+| -------------- | ------ | -------- | ------------------------- |
+| `customer`     | string | ✅       | Customer email or ID      |
+| `feature`      | string | ✅       | Feature key               |
+| `value`        | number | -        | Usage amount (default: 1) |
+| `metadata`     | object | -        | Event metadata            |
+| `customerData` | object | -        | Auto-create customer payload |
 
 ### Response
 
@@ -117,7 +123,9 @@ Record usage for metered billing.
 {
   "success": true,
   "allowed": true,
-  "balance": 9499
+  "code": "tracked",
+  "balance": 9499,
+  "resetsAt": "2024-06-01T00:00:00Z"
 }
 ```
 
@@ -151,10 +159,10 @@ All errors follow this format:
 
 ## Webhooks
 
-Owostack receives webhooks from Paystack at:
+Owostack receives webhooks from providers at:
 
 ```
-POST /webhooks/{organizationId}
+POST /webhooks/{organizationId}/{providerId}
 ```
 
-This is configured in your Paystack dashboard. See [Webhook Setup](/docs/webhook-setup) for details.
+Configure this in your provider dashboard. See [Webhook Setup](/docs/webhook-setup) for details.

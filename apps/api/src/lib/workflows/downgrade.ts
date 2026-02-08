@@ -64,8 +64,8 @@ export class DowngradeWorkflow extends WorkflowEntrypoint<WorkflowEnv, Downgrade
       return;
     }
 
-    // If subscription is already canceled/expired, don't proceed
-    if (sub.status === "canceled" || sub.status === "expired") {
+    // If subscription is already canceled/expired/refunded, don't proceed
+    if (sub.status === "canceled" || sub.status === "expired" || sub.status === "refunded") {
       console.log(`[DowngradeWorkflow] Subscription ${subscriptionId} already ${sub.status}, skipping`);
       return;
     }
@@ -146,7 +146,7 @@ export class DowngradeWorkflow extends WorkflowEntrypoint<WorkflowEnv, Downgrade
       if (!adapter) return null;
 
       const result = await adapter.createSubscription({
-        customer: { id: customerId, email: customerEmail },
+        customer: { id: customerEmail, email: customerEmail },
         plan: { id: newPlanProviderCode },
         authorizationCode: customerAuthorizationCode,
         environment: account.environment as "test" | "live",
@@ -166,9 +166,9 @@ export class DowngradeWorkflow extends WorkflowEntrypoint<WorkflowEnv, Downgrade
     await step.do("create-downgraded-sub-db", async () => {
       const now = Date.now();
 
-      // Idempotency: check if already created
+      // Idempotency: check if already created (active or trialing)
       const existing = await this.env.DB.prepare(
-        "SELECT id FROM subscriptions WHERE customer_id = ? AND plan_id = ? AND status = 'active' LIMIT 1",
+        "SELECT id FROM subscriptions WHERE customer_id = ? AND plan_id = ? AND status IN ('active', 'trialing') LIMIT 1",
       ).bind(customerId, newPlanId).first<{ id: string }>();
 
       if (existing) {

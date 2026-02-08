@@ -2,8 +2,8 @@
  * Environment-aware API routing for test vs live mode.
  *
  * The dashboard talks to TWO separate API workers:
- *   - Test API  (sandbox data, test Paystack keys, own D1)
- *   - Live API  (production data, live Paystack keys, own D1)
+ *   - Test API  (sandbox data, test provider keys, own D1)
+ *   - Live API  (production data, live provider keys, own D1)
  *
  * Both workers share a DB_AUTH binding (users, sessions, orgs, projects)
  * and use cross-subdomain cookies, so auth works on either endpoint.

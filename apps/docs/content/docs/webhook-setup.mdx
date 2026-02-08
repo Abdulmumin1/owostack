@@ -1,86 +1,59 @@
 ---
 title: Webhook Setup
-description: Configure Paystack to send events to Owostack
+description: Configure your provider to send events to Owostack
 icon: Webhook
 ---
 
-# Webhook Setup
+# Webhook setup
 
-Owostack receives webhooks from Paystack on your behalf. This allows us to keep your subscription and usage data in sync automatically.
+Owostack receives provider webhooks on your behalf. This keeps subscriptions, entitlements, and usage in sync.
 
-## 1. Find Your Webhook URL
+## 1. Find your webhook URL
 
 Your webhook URL is:
 
 ```
-https://api.owostack.dev/webhooks/{your-organization-id}
+https://api.owostack.dev/webhooks/{your-organization-id}/{provider-id}
 ```
 
-Find your organization ID in the Owostack dashboard URL:
+Example:
 
-- Dashboard URL: `https://dashboard.owostack.dev/app/abc123def`
-- Webhook URL: `https://api.owostack.dev/webhooks/abc123def`
+```
+https://api.owostack.dev/webhooks/org_123/{provider-id}
+```
 
-## 2. Configure Paystack
+## 2. Configure your provider
 
-1. Go to [Paystack Dashboard](https://dashboard.paystack.com)
-2. Navigate to **Settings** → **API Keys & Webhooks**
-3. Under **Webhook URL**, paste your Owostack webhook URL
-4. Click **Save**
+In your provider dashboard, paste the webhook URL and save. Use the provider's test environment when setting up test data.
 
 <Callout type="important">
-  Copy the **Webhook Secret** shown on the Paystack page. You'll need this in
-  the next step.
+  If your provider supports webhook signing secrets, copy the secret and save it
+  in **Settings → Payment Providers** for the matching account.
 </Callout>
 
-## 3. Save Webhook Secret in Owostack
+## 3. Verify delivery
 
-1. Go to your organization's **Settings** in the Owostack dashboard
-2. Under **Webhooks**, paste the webhook secret from Paystack
-3. Click **Save**
+Trigger a test payment or subscription in your provider dashboard. You should see:
 
-This secret is used to verify that incoming webhooks are actually from Paystack.
-
-## 4. Test the Connection
-
-Create a test subscription in Paystack:
-
-1. Use Paystack's test mode
-2. Create a new subscription using [Paystack's inline checkout](https://paystack.com/docs/payments/accept-payments/)
-3. Complete the payment with a test card
-
-If everything is configured correctly, you'll see:
-
-- The subscription appear in your Owostack dashboard
+- A subscription appear in the Owostack dashboard
 - An event logged in the **Events** tab
 
-## Events We Handle
+## Common events Owostack handles
 
-| Event                    | What We Do                                |
-| ------------------------ | ----------------------------------------- |
-| `subscription.create`    | Create subscription, grant entitlements   |
-| `subscription.enable`    | Activate subscription                     |
-| `subscription.disable`   | Cancel/pause subscription                 |
-| `subscription.not_renew` | Mark as pending cancellation              |
-| `charge.success`         | Record payment, add credits if applicable |
-| `invoice.payment_failed` | Mark subscription as past due             |
+- Subscription created, updated, canceled
+- Payment succeeded or failed
+- Refunds (when supported by the provider)
 
 ## Troubleshooting
 
 ### Webhooks not arriving
 
-1. Verify the URL is correct in Paystack
-2. Check that your organization ID matches
-3. Ensure Paystack isn't in maintenance mode
+1. Confirm the URL includes both organization ID and provider ID
+2. Confirm the provider account environment matches your test/live setup
+3. Check the provider dashboard for delivery errors
 
 ### Invalid signature errors
 
-1. Confirm the webhook secret matches exactly
-2. Make sure there are no extra spaces when copying
-3. Regenerate the secret in both Paystack and Owostack
-
-### Events not processing
-
-1. Check the **Events** tab for error logs
-2. Verify your plans are configured correctly
-3. Ensure customer emails match between systems
+1. Confirm the saved webhook secret matches the provider account
+2. Ensure you pasted the secret without whitespace
+3. Regenerate the secret and save it again

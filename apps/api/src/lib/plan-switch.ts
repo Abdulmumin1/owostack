@@ -434,13 +434,16 @@ async function handleUpgrade(
     // Charge succeeded — cancel old sub and create new one
     await cancelSubscription(db, existingSub, provider);
 
-    // Create new subscription via provider API if plan has a provider plan code
+    // Create new subscription via provider API if plan has a provider plan code.
+    // Use startDate = current period end so the provider doesn't charge immediately
+    // (we already charged the prorated amount for the remaining current period).
     let providerSubCode: string | undefined;
     if (planRef && authCode) {
       const subResult = await provider.adapter.createSubscription({
         customer: { id: customerRef, email: customer.email },
         plan: { id: planRef },
         authorizationCode: authCode,
+        startDate: new Date(existingSub.currentPeriodEnd).toISOString(),
         environment: provider.account.environment,
         account: provider.account,
       });
@@ -907,11 +910,12 @@ async function findSwitchableSubscription(
   // Add-ons stack — they don't replace existing subs
   if (newPlan.isAddon) return null;
 
-  // Find active or trialing subscriptions for this customer
+  // Find active, trialing, or pending_cancel subscriptions for this customer.
+  // pending_cancel included so re-subscribing triggers a proper switch instead of a duplicate.
   const subs = await db.query.subscriptions.findMany({
     where: and(
       eq(schema.subscriptions.customerId, customerId),
-      inArray(schema.subscriptions.status, ["active", "trialing"]),
+      inArray(schema.subscriptions.status, ["active", "trialing", "pending_cancel"]),
     ),
     with: { plan: true },
   });
@@ -962,7 +966,7 @@ async function cancelSubscription(
     .where(eq(schema.subscriptions.id, sub.id));
 }
 
-async function provisionEntitlements(
+export async function provisionEntitlements(
   db: DB,
   customerId: string,
   planId: string,
@@ -1020,6 +1024,7 @@ async function provisionEntitlements(
   if (entitlementValues.length > 0) {
     await db.insert(schema.entitlements).values(entitlementValues);
   }
+
 }
 
 function intervalToMs(interval: string): number {

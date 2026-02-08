@@ -4,11 +4,11 @@ import { eq, desc, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { decrypt } from "../../lib/encryption";
 import { getPaystackEnvironment, selectPaystackKey } from "../../lib/environment";
-import { createProviderRegistry, paystackAdapter } from "@owostack/adapters";
 import type { ProviderAccount } from "@owostack/adapters";
 import { previewSwitch, executeSwitch } from "../../lib/plan-switch";
 import type { ProviderContext } from "../../lib/plan-switch";
-import { deriveProviderEnvironment, loadProviderAccounts } from "../../lib/providers";
+import { getProviderRegistry, deriveProviderEnvironment, loadProviderAccounts } from "../../lib/providers";
+import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 
@@ -107,7 +107,7 @@ app.get("/", async (c) => {
     },
   });
 
-  console.log(customers)
+  // console.log(customers)
   const subscriptions = customers.flatMap((cust: any) =>
     cust.subscriptions
       .filter((sub: any) => {
@@ -391,8 +391,7 @@ app.post("/switch-plan", async (c) => {
         project.activeEnvironment,
       );
 
-      const registry = createProviderRegistry();
-      registry.register(paystackAdapter);
+      const registry = getProviderRegistry();
 
       // Try provider accounts from DB
       const providerAccounts = await loadProviderAccounts(
@@ -432,7 +431,10 @@ app.post("/switch-plan", async (c) => {
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
-          providerCtx = { adapter: paystackAdapter, account };
+          const legacyAdapter = registry.get("paystack");
+          if (legacyAdapter) {
+            providerCtx = { adapter: legacyAdapter, account };
+          }
         }
       }
     }
@@ -506,8 +508,7 @@ app.post("/cancel", async (c) => {
           project.activeEnvironment,
         );
 
-        const registry = createProviderRegistry();
-        registry.register(paystackAdapter);
+        const registry = getProviderRegistry();
 
         const resolvedProviderId = sub.providerId || "paystack";
         const adapter = registry.get(resolvedProviderId);
@@ -571,14 +572,26 @@ app.post("/cancel", async (c) => {
       .where(eq(schema.subscriptions.id, subscriptionId));
   } else {
     // Schedule cancellation at period end
+    // For trialing subs, keep "trialing" so trial-end workflow can
+    // see cancelAt and expire instead of charging.
     await db
       .update(schema.subscriptions)
       .set({
-        status: "active",
+        status: sub.status === "trialing" ? "trialing" : "active",
         cancelAt: sub.currentPeriodEnd,
         updatedAt: now,
       })
       .where(eq(schema.subscriptions.id, subscriptionId));
+  }
+
+  // Invalidate cached subscriptions so /check and /track see the change immediately
+  if (c.env.CACHE) {
+    try {
+      const cache = new EntitlementCache(c.env.CACHE);
+      await cache.invalidateSubscriptions(organizationId, sub.customerId);
+    } catch (e) {
+      console.warn("[subscriptions/cancel] Cache invalidation failed:", e);
+    }
   }
 
   return c.json({

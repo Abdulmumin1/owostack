@@ -16,6 +16,7 @@
     BarChart3,
     ChartNoAxesColumn,
     Receipt,
+    Coins,
   } from "lucide-svelte";
   import { page } from "$app/state";
   import {
@@ -68,13 +69,17 @@
   async function loadEnvironmentStatus() {
     try {
       const res = await apiFetch(
-        `/api/dashboard/paystack-config?organizationId=${projectId}`,
+        `/api/dashboard/providers/accounts?organizationId=${projectId}`,
       );
       if (res.data?.data) {
-        activeEnvironment = res.data.data.activeEnvironment || "test";
+        const accounts = res.data.data as any[];
+        testConnected = accounts.some((a: any) => a.environment === "test");
+        liveConnected = accounts.some((a: any) => a.environment === "live");
+        // Default to test; if only live accounts exist, use live
+        if (!testConnected && liveConnected) {
+          activeEnvironment = "live";
+        }
         setActiveEnvironment(activeEnvironment);
-        testConnected = res.data.data.testConnected || false;
-        liveConnected = res.data.data.liveConnected || false;
       }
     } catch (e) {
       console.error("Failed to load environment", e);
@@ -115,6 +120,7 @@
       items: [
         { href: "/plans", icon: CreditCard, label: "Plans" },
         { href: "/features", icon: Boxes, label: "Features" },
+        { href: "/addons", icon: Coins, label: "Add-ons" },
         { href: "/subscriptions", icon: CreditCard, label: "Subscriptions" },
       ],
     },

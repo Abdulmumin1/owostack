@@ -84,6 +84,18 @@ export interface ProviderPlanRef {
   metadata?: Record<string, unknown>;
 }
 
+export interface ProviderProductRef {
+  productId: string;
+  priceId: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CheckoutLineItem {
+  priceId: string;
+  quantity: number;
+  adjustableQuantity?: { enabled: boolean; minimum?: number; maximum?: number };
+}
+
 // =============================================================================
 // Normalized Webhook Events
 // =============================================================================
@@ -96,6 +108,8 @@ export type WebhookEventType =
   | "subscription.past_due"
   | "charge.success"
   | "charge.failed"
+  | "refund.success"
+  | "refund.failed"
   | "customer.identified";
 
 export interface NormalizedWebhookEvent {
@@ -130,6 +144,15 @@ export interface NormalizedWebhookEvent {
   plan?: {
     providerPlanCode: string;
   };
+  refund?: {
+    amount: number;
+    currency: string;
+    reference: string;
+    reason?: string;
+  };
+  checkout?: {
+    lineItems?: Array<{ priceId?: string; quantity: number }>;
+  };
   metadata: Record<string, unknown>;
   raw: Record<string, unknown>;
 }
@@ -147,9 +170,21 @@ export interface ProviderAdapter {
     callbackUrl?: string;
     metadata?: Record<string, unknown>;
     channels?: string[];
+    lineItems?: CheckoutLineItem[];
     environment: ProviderEnvironment;
     account: ProviderAccount;
   }): Promise<ProviderResult<CheckoutSession>>;
+
+  // Optional: create a one-time product + price on the provider (for credit packs)
+  createProduct?(params: {
+    name: string;
+    description?: string | null;
+    amount: number;
+    currency: string;
+    environment: ProviderEnvironment;
+    account: ProviderAccount;
+    metadata?: Record<string, unknown>;
+  }): Promise<ProviderResult<ProviderProductRef>>;
 
   createCustomer(params: {
     email: string;
@@ -173,6 +208,7 @@ export interface ProviderAdapter {
     customer: ProviderCustomerRef;
     plan: ProviderPlanRef;
     authorizationCode?: string | null;
+    startDate?: string; // ISO date — delays first charge (e.g. after trial conversion)
     environment: ProviderEnvironment;
     account: ProviderAccount;
     metadata?: Record<string, unknown>;

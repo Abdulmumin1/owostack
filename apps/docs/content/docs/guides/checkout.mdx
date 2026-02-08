@@ -14,7 +14,7 @@ Owostack’s checkout flow is responsible for:
 
 ## Subscriptions
 
-Use `attach()` to subscribe a customer to a plan.
+Use `attach()` to subscribe a customer to a plan. If payment is required, Owostack returns a `checkoutUrl` for the provider.
 
 ```ts
 const result = await owo.attach({
@@ -33,9 +33,10 @@ Owostack may return an already-active subscription when:
 
 - The customer is already subscribed to the requested plan
 - The switch is lateral and can be applied immediately without payment
+- The plan is free or trial-only
 
 ## Webhooks are required
 
-Checkout only becomes “real” after webhooks confirm payment/subscription changes.
+Checkout only becomes “real” after webhooks confirm payment or subscription changes. Make sure your webhook URL includes the provider ID.
 
 Make sure you’ve completed [Webhook Setup](/docs/webhook-setup).

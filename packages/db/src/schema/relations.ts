@@ -20,6 +20,9 @@ import {
   referralRedemptions,
   creditSystems,
   creditSystemFeatures,
+  creditPacks,
+  creditPurchases,
+  creditSystemBalances,
   invoices,
   invoiceItems,
   paymentAttempts,
@@ -228,6 +231,44 @@ export const creditsRelations = relations(credits, ({ one }) => ({
   customer: one(customers, {
     fields: [credits.customerId],
     references: [customers.id],
+  }),
+}));
+
+export const creditPacksRelations = relations(creditPacks, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [creditPacks.organizationId],
+    references: [organizations.id],
+  }),
+  creditSystem: one(creditSystems, {
+    fields: [creditPacks.creditSystemId],
+    references: [creditSystems.id],
+  }),
+  purchases: many(creditPurchases),
+}));
+
+export const creditPurchasesRelations = relations(creditPurchases, ({ one }) => ({
+  customer: one(customers, {
+    fields: [creditPurchases.customerId],
+    references: [customers.id],
+  }),
+  creditPack: one(creditPacks, {
+    fields: [creditPurchases.creditPackId],
+    references: [creditPacks.id],
+  }),
+  creditSystem: one(creditSystems, {
+    fields: [creditPurchases.creditSystemId],
+    references: [creditSystems.id],
+  }),
+}));
+
+export const creditSystemBalancesRelations = relations(creditSystemBalances, ({ one }) => ({
+  customer: one(customers, {
+    fields: [creditSystemBalances.customerId],
+    references: [customers.id],
+  }),
+  creditSystem: one(creditSystems, {
+    fields: [creditSystemBalances.creditSystemId],
+    references: [creditSystems.id],
   }),
 }));
 

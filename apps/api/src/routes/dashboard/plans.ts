@@ -3,12 +3,9 @@ import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import { PaystackClient } from "../../lib/paystack";
 import { decrypt } from "../../lib/encryption";
+import { resolveProvider } from "@owostack/adapters";
 import {
-  createProviderRegistry,
-  paystackAdapter,
-  resolveProvider,
-} from "@owostack/adapters";
-import {
+  getProviderRegistry,
   buildProviderContext,
   deriveProviderEnvironment,
   loadProviderAccounts,
@@ -137,12 +134,11 @@ app.post("/", async (c) => {
   }
 
   // ===========================================================================
-  // Sync with Paystack
+  // Sync plan with payment provider
   // ===========================================================================
   let paystackPlanId: string | null = null;
   let providerId: string | null = null;
   let providerPlanId: string | null = null;
-  let providerAccountSecret: string | null = null;
 
   // Only sync if it's a paid, recurring plan
   if (type === "paid" && billingType === "recurring") {
@@ -152,8 +148,7 @@ app.post("/", async (c) => {
         where: eq(schema.projects.organizationId, organizationId),
       });
 
-      const registry = createProviderRegistry();
-      registry.register(paystackAdapter);
+      const registry = getProviderRegistry();
       const providerEnv = deriveProviderEnvironment(
         c.env.ENVIRONMENT,
         project?.activeEnvironment,
@@ -178,35 +173,44 @@ app.post("/", async (c) => {
 
       if (selectionResult.isOk()) {
         providerId = selectionResult.value.adapter.id;
-        providerPlanId = null;
-        providerAccountSecret =
-          typeof selectionResult.value.account.credentials?.secretKey ===
-          "string"
-            ? selectionResult.value.account.credentials.secretKey
-            : null;
+
+        // Use the adapter's createPlan (provider-agnostic)
+        const planResult = await selectionResult.value.adapter.createPlan({
+          name,
+          amount: price,
+          interval: interval as any,
+          currency,
+          description: description || undefined,
+          environment: providerEnv,
+          account: selectionResult.value.account,
+        });
+
+        if (planResult.isOk()) {
+          providerPlanId = planResult.value.id;
+          if (providerId === "paystack") paystackPlanId = planResult.value.id;
+          console.log(`[plans] Created plan on ${providerId}: ${planResult.value.id}`);
+        } else {
+          console.warn(`[plans] Failed to create plan on ${providerId}:`, planResult.error);
+        }
       } else if (providerAccounts.length > 0) {
         console.warn(
           "Provider rules exist but no provider matched for plan creation",
         );
       }
 
-      if (project) {
+      // Legacy fallback: create on Paystack using project-level keys
+      if (!providerPlanId && project) {
         const activeEnv = project.activeEnvironment || "test";
         const encryptedKey =
           activeEnv === "live" ? project.liveSecretKey : project.testSecretKey;
 
-        let secretKey = providerAccountSecret;
-
-        if (!secretKey && encryptedKey) {
-          secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-        }
-
-        if (secretKey) {
+        if (encryptedKey) {
+          const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
           const paystack = new PaystackClient({ secretKey });
 
           const result = await paystack.createPlan({
             name,
-            amount: price, // stored in kobo/cents
+            amount: price,
             interval: interval as any,
             description: description || undefined,
             currency,
@@ -215,8 +219,9 @@ app.post("/", async (c) => {
           if (result.isOk()) {
             paystackPlanId = result.value.plan_code;
             providerPlanId = result.value.plan_code;
+            if (!providerId) providerId = "paystack";
           } else {
-            console.warn("Failed to create Paystack plan:", result.error);
+            console.warn("Legacy Paystack plan creation failed:", result.error);
           }
         }
       }

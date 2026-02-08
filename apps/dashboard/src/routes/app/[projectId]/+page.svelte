@@ -16,7 +16,7 @@
     isLoading = true;
     try {
       const [configRes, plansRes, featuresRes] = await Promise.all([
-        apiFetch(`/api/dashboard/config/paystack-config?organizationId=${projectId}`),
+        apiFetch(`/api/dashboard/providers/accounts?organizationId=${projectId}`),
         apiFetch(`/api/dashboard/plans?organizationId=${projectId}`),
         apiFetch(`/api/dashboard/features?organizationId=${projectId}`)
       ]);
@@ -37,13 +37,13 @@
 
   const hasPlans = $derived(plans.length > 0);
   const hasFeatures = $derived(features.length > 0);
-  const hasKeys = $derived(config?.connected || false);
+  const hasKeys = $derived(Array.isArray(config) ? config.length > 0 : config?.connected || false);
   const hasIntegration = $derived(false); // We can't easily check this yet
 
   const activeStep = $derived(!hasKeys ? 1 : !hasFeatures ? 2 : !hasPlans ? 3 : 4);
 
   const steps = $derived([
-    { num: 1, title: "Connect Paystack", desc: "Add your API keys", link: "settings", check: hasKeys },
+    { num: 1, title: "Connect Provider", desc: "Add payment provider keys", link: "settings", check: hasKeys },
     { num: 2, title: "Define Features", desc: "Create product features", link: "features", check: hasFeatures },
     { num: 3, title: "Create Plans", desc: "Set up pricing tiers", link: "plans", check: hasPlans },
     { num: 4, title: "Integrate SDK", desc: "Connect your app", link: null, check: hasIntegration }
@@ -136,9 +136,9 @@
       <!-- Empty State / Call to Action -->
       <div class="bg-accent/5 border border-accent/20 p-8 mb-12 flex flex-col items-center text-center">
         <Link2 size={40} class="text-accent mb-4" />
-        <h2 class="text-xl font-bold text-white mb-2">Connect your Paystack account</h2>
+        <h2 class="text-xl font-bold text-white mb-2">Connect a payment provider</h2>
         <p class="text-zinc-400 max-w-md mb-6 text-sm">
-          To start using Owostack, you need to connect your Paystack account by providing your API keys. This allows us to sync plans and manage subscriptions.
+          To start using Owostack, connect a payment provider (Paystack, Stripe, etc.) by providing your API keys. This allows us to sync plans and manage subscriptions.
         </p>
         <a href="/app/{projectId}/settings" class="btn btn-primary">
           Configure API Keys
@@ -173,9 +173,9 @@
           <h3 class="font-bold text-white text-sm">Initialize</h3>
         </div>
         <div class="bg-black border border-border p-4 overflow-x-auto">
-          <pre class="font-mono text-sm text-zinc-300"><code>import &#123; Paystack &#125; from '@owostack/core';
+          <pre class="font-mono text-sm text-zinc-300"><code>import &#123; Owostack &#125; from '@owostack/core';
 
-const paystack = new Paystack(&#123; 
+const client = new Owostack(&#123; 
   secretKey: "owosk_..." 
 &#125;);</code></pre>
         </div>

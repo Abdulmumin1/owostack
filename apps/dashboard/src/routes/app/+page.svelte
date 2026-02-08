@@ -11,11 +11,46 @@
     Link2,
     Lock,
     Key,
+    Cpu,
   } from "lucide-svelte";
   import { organization, apiFetch } from "$lib/auth-client";
+  import { getActiveEnvironment } from "$lib/env";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
+  import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import { goto } from "$app/navigation";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
+
+  const SUPPORTED_PROVIDERS = [
+    {
+      id: "paystack",
+      name: "Paystack",
+      description: "Accept payments across Africa",
+      docsUrl: "https://dashboard.paystack.com/#/settings/developers",
+      fields: [
+        { key: "secretKey", label: "Secret Key", placeholder: "sk_test_xxxxxxxxxxxxxxx", secret: true },
+        { key: "publicKey", label: "Public Key", placeholder: "pk_test_xxxxxxxxxxxxxxx", secret: false, optional: true },
+      ],
+    },
+    {
+      id: "stripe",
+      name: "Stripe",
+      description: "Global payment infrastructure",
+      docsUrl: "https://dashboard.stripe.com/apikeys",
+      fields: [
+        { key: "secretKey", label: "Secret Key", placeholder: "sk_test_xxxxxxxxxxxxxxx", secret: true },
+        { key: "publishableKey", label: "Publishable Key", placeholder: "pk_test_xxxxxxxxxxxxxxx", secret: false, optional: true },
+      ],
+    },
+    {
+      id: "dodopayments",
+      name: "Dodo Payments",
+      description: "Simple payment processing",
+      docsUrl: "https://dodopayments.com/docs",
+      fields: [
+        { key: "secretKey", label: "API Key", placeholder: "dodo_sk_xxxxxxxxxxxxxxx", secret: true },
+      ],
+    },
+  ];
 
   let orgs = $state<any[]>([]);
   let isLoading = $state(true);
@@ -25,16 +60,33 @@
   let newOrgName = $state("");
   let newOrgSlug = $state("");
 
-  // Paystack fields (required for onboarding)
-  let paystackSecretKey = $state("");
-  let paystackPublicKey = $state("");
-  let paystackEnvironment = $state<"test" | "live">("test");
-  let showSecretKey = $state(false);
+  // Provider fields
+  let selectedProviderId = $state("paystack");
+  let providerCredentials = $state<Record<string, string>>({});
+  let showSecretFields = $state<Record<string, boolean>>({});
+  let enabledProviderIds = $state<string[]>([]);
+
+  let availableProviders = $derived(
+    SUPPORTED_PROVIDERS.filter((p) => enabledProviderIds.includes(p.id))
+  );
 
   // UI state
   let isCreating = $state(false);
   let createError = $state<string | null>(null);
-  let currentStep = $state(1); // 1 = org details, 2 = paystack
+  let currentStep = $state(1); // 1 = org details, 2 = provider
+
+  let selectedProviderConfig = $derived(
+    availableProviders.find((p) => p.id === selectedProviderId) ||
+    SUPPORTED_PROVIDERS.find((p) => p.id === selectedProviderId)
+  );
+
+  let hasRequiredCredentials = $derived(() => {
+    const config = availableProviders.find((p) => p.id === selectedProviderId);
+    if (!config) return false;
+    return config.fields.some(
+      (f) => !f.optional && providerCredentials[f.key]?.trim()
+    );
+  });
 
   async function loadOrgs() {
     isLoading = true;
@@ -45,7 +97,22 @@
 
   $effect(() => {
     loadOrgs();
+    loadEnabledProviders();
   });
+
+  async function loadEnabledProviders() {
+    try {
+      const res = await apiFetch(`/api/dashboard/providers/enabled`);
+      if (res.data?.data) {
+        enabledProviderIds = res.data.data;
+        if (enabledProviderIds.length > 0) {
+          selectedProviderId = enabledProviderIds[0];
+        }
+      }
+    } catch (e) {
+      enabledProviderIds = ["paystack"];
+    }
+  }
 
   function nextStep() {
     if (!newOrgName || !newOrgSlug) return;
@@ -56,8 +123,9 @@
     currentStep = 1;
   }
 
-  async function createOrganization() {
-    if (!newOrgName || !newOrgSlug || !paystackSecretKey) return;
+  async function createOrganization(skipProvider = false) {
+    if (!newOrgName || !newOrgSlug) return;
+    if (!skipProvider && !hasRequiredCredentials()) return;
 
     isCreating = true;
     createError = null;
@@ -72,20 +140,32 @@
       if (orgError) throw new Error(orgError.message);
       if (!orgData?.id) throw new Error("Failed to create organization");
 
-      // Step 2: Configure Paystack for the new org
-      const configRes = await apiFetch("/api/dashboard/paystack-config", {
-        method: "POST",
-        body: JSON.stringify({
-          organizationId: orgData.id,
-          secretKey: paystackSecretKey,
-          publicKey: paystackPublicKey || undefined,
-          environment: paystackEnvironment,
-        }),
-      });
+      // Step 2: Connect provider (if not skipped)
+      if (!skipProvider) {
+        const credentials: Record<string, unknown> = {};
+        const config = SUPPORTED_PROVIDERS.find((p) => p.id === selectedProviderId);
+        if (config) {
+          for (const field of config.fields) {
+            const val = providerCredentials[field.key];
+            if (val && val.trim().length > 0) {
+              credentials[field.key] = val.trim();
+            }
+          }
+        }
 
-      if (configRes.error) {
-        // Org was created but Paystack failed - still redirect but warn
-        console.error("Paystack config failed:", configRes.error);
+        const configRes = await apiFetch("/api/dashboard/providers/accounts", {
+          method: "POST",
+          body: JSON.stringify({
+            organizationId: orgData.id,
+            providerId: selectedProviderId,
+            environment: getActiveEnvironment(),
+            credentials,
+          }),
+        });
+
+        if (configRes.error) {
+          console.error("Provider config failed:", configRes.error);
+        }
       }
 
       // Success - redirect to the new org
@@ -102,9 +182,9 @@
     showCreateModal = false;
     newOrgName = "";
     newOrgSlug = "";
-    paystackSecretKey = "";
-    paystackPublicKey = "";
-    paystackEnvironment = "test";
+    selectedProviderId = availableProviders[0]?.id || "paystack";
+    providerCredentials = {};
+    showSecretFields = {};
     currentStep = 1;
     createError = null;
   }
@@ -199,7 +279,7 @@
       </div>
       <h3 class="text-white font-bold mb-2">No organizations yet</h3>
       <p class="text-zinc-500 text-sm mb-6 max-w-xs">
-        Create your first organization and connect your Paystack account to get
+        Create your first organization and connect a payment provider to get
         started.
       </p>
 
@@ -243,7 +323,7 @@
           <span
             class="text-[10px] font-bold uppercase tracking-widest {currentStep >= 2
               ? 'text-white'
-              : 'text-zinc-500'}">Paystack</span
+              : 'text-zinc-500'}">Provider</span
           >
         </div>
       </div>
@@ -294,81 +374,83 @@
           </div>
         </div>
       {:else}
-        <!-- Step 2: Paystack Integration -->
+        <!-- Step 2: Connect Payment Provider -->
         <div class="space-y-5">
-          <div>
-            <label
-              for="secretKey"
-              class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2"
-              >Secret Key <span class="text-red-500">*</span></label
-            >
-            <div class="input-icon-wrapper">
-              <Lock size={14} class="input-icon-left" />
-              <input
-                type={showSecretKey ? "text" : "password"}
-                id="secretKey"
-                bind:value={paystackSecretKey}
-                placeholder="sk_test_xxxxxxxxxxxxxxx"
-                class="input input-has-icon-left pr-10 font-mono text-xs"
-              />
-              <button
-                type="button"
-                class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors"
-                onclick={() => (showSecretKey = !showSecretKey)}
-              >
-                {#if showSecretKey}
-                  <EyeOff size={16} />
-                {:else}
-                  <Eye size={16} />
-                {/if}
-              </button>
-            </div>
-            <p class="mt-2 text-[10px] text-zinc-600 uppercase tracking-tight">
-              Find this at <a
-                href="https://dashboard.paystack.com/#/settings/developers"
-                target="_blank"
-                class="text-accent hover:underline font-bold"
-                >Paystack Dashboard → API Keys</a
-              >
-            </p>
-          </div>
-
-          <div>
-            <label
-              for="publicKey"
-              class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2"
-              >Public Key <span class="text-zinc-600 font-normal">(Optional)</span></label
-            >
-            <div class="input-icon-wrapper">
-              <Key size={14} class="input-icon-left" />
-              <input
-                type="text"
-                id="publicKey"
-                bind:value={paystackPublicKey}
-                placeholder="pk_test_xxxxxxxxxxxxxxx"
-                class="input input-has-icon-left font-mono text-xs"
-              />
-            </div>
-          </div>
-
+          <!-- Provider Selection -->
           <div>
             <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
-              Environment
+              Select Provider
             </label>
-            <div class="flex gap-4">
-              {#each ['test', 'live'] as env}
-                <label class="flex items-center gap-2 cursor-pointer group">
-                  <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all {paystackEnvironment === env ? 'border-accent' : 'border-zinc-700 group-hover:border-zinc-500'}">
-                    {#if paystackEnvironment === env}
-                      <div class="w-2 h-2 rounded-full bg-accent"></div>
-                    {/if}
+            <div class="space-y-2">
+              {#each availableProviders as provider}
+                <button
+                  class="w-full p-3 border text-left transition-all flex items-center gap-3 {selectedProviderId === provider.id
+                    ? 'border-accent bg-accent/5'
+                    : 'border-border bg-bg-secondary/30 hover:border-zinc-600'}"
+                  onclick={() => {
+                    selectedProviderId = provider.id;
+                    providerCredentials = {};
+                  }}
+                >
+                  <Cpu size={16} class="text-zinc-500 shrink-0" />
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-bold text-white">{provider.name}</span>
+                      <ProviderBadge providerId={provider.id} size="xs" />
+                    </div>
+                    <p class="text-[9px] text-zinc-500 mt-0.5">{provider.description}</p>
                   </div>
-                  <input type="radio" name="env" value={env} bind:group={paystackEnvironment} class="hidden" />
-                  <span class="text-[10px] font-bold uppercase tracking-widest {paystackEnvironment === env ? 'text-white' : 'text-zinc-500'}">{env}</span>
-                </label>
+                </button>
               {/each}
             </div>
           </div>
+
+          <!-- Dynamic Credential Fields -->
+          {#if selectedProviderConfig}
+            {#each selectedProviderConfig.fields as field}
+              <div>
+                <label
+                  for={field.key}
+                  class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2"
+                  >{field.label} {#if field.optional}<span class="text-zinc-600 font-normal">(Optional)</span>{:else}<span class="text-red-500">*</span>{/if}</label
+                >
+                <div class="input-icon-wrapper">
+                  <Lock size={14} class="input-icon-left" />
+                  <input
+                    type={field.secret && !showSecretFields[field.key] ? "password" : "text"}
+                    id={field.key}
+                    bind:value={providerCredentials[field.key]}
+                    placeholder={field.placeholder}
+                    class="input input-has-icon-left pr-10 font-mono text-xs"
+                  />
+                  {#if field.secret}
+                    <button
+                      type="button"
+                      class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors"
+                      onclick={() => (showSecretFields[field.key] = !showSecretFields[field.key])}
+                    >
+                      {#if showSecretFields[field.key]}
+                        <EyeOff size={16} />
+                      {:else}
+                        <Eye size={16} />
+                      {/if}
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+
+            {#if selectedProviderConfig.docsUrl}
+              <p class="text-[10px] text-zinc-600 uppercase tracking-tight">
+                Find your keys at <a
+                  href={selectedProviderConfig.docsUrl}
+                  target="_blank"
+                  class="text-accent hover:underline font-bold"
+                  >{selectedProviderConfig.name} Developer Settings</a
+                >
+              </p>
+            {/if}
+          {/if}
         </div>
       {/if}
     </div>
@@ -391,16 +473,25 @@
           <ArrowRight size={14} />
         </button>
       {:else}
-        <button
-          class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
-          onclick={prevStep}
-        >
-          Back
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
+            onclick={prevStep}
+          >
+            Back
+          </button>
+          <button
+            class="px-4 py-2 text-xs font-bold text-zinc-600 hover:text-zinc-400 transition-colors uppercase tracking-widest"
+            onclick={() => createOrganization(true)}
+            disabled={isCreating}
+          >
+            Skip
+          </button>
+        </div>
         <button
           class="btn btn-primary px-6"
-          onclick={createOrganization}
-          disabled={!paystackSecretKey || isCreating}
+          onclick={() => createOrganization(false)}
+          disabled={!hasRequiredCredentials() || isCreating}
         >
           {#if isCreating}
             <Loader2 size={14} class="animate-spin" />

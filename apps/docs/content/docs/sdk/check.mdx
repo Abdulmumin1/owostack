@@ -29,6 +29,7 @@ await owo.check({
 ```ts
 interface CheckResult {
   allowed: boolean; // Whether the customer has access
+  code?: string; // Reason code (e.g., access_granted, limit_exceeded)
   remaining?: number; // For metered features, remaining quota
   limit?: number; // Total quota for the period
   resetAt?: string; // When the quota resets (ISO date)

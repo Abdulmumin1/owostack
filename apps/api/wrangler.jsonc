@@ -32,16 +32,12 @@
     }
   ],
 
-  // Durable Objects for usage metering and subscription scheduling
+  // Durable Objects for usage metering
   "durable_objects": {
     "bindings": [
       {
         "name": "USAGE_METER",
         "class_name": "UsageMeterDO"
-      },
-      {
-        "name": "SUBSCRIPTION_SCHEDULER",
-        "class_name": "SubscriptionSchedulerDO"
       }
     ]
   },
@@ -70,10 +66,6 @@
     {
       "tag": "v1",
       "new_classes": ["UsageMeterDO"]
-    },
-    {
-      "tag": "v2",
-      "new_classes": ["SubscriptionSchedulerDO"]
     }
   ],
 

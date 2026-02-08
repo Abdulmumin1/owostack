@@ -33,11 +33,11 @@ await owo.track({
 ```ts
 interface TrackResult {
   success: boolean;
-  usage?: {
-    used: number; // Total used in current period
-    limit: number; // Total limit
-    remaining: number; // Remaining quota
-  };
+  allowed?: boolean; // Whether the usage was accepted
+  code?: string; // tracked, tracked_overage, limit_exceeded, etc.
+  balance?: number | null; // Remaining balance when applicable
+  resetsAt?: string; // Period reset time
+  resetInterval?: string;
   error?: string;
 }
 ```

@@ -198,7 +198,7 @@
   const hasPendingDowngrade = $derived(!!(data?.subscription?.metadata as any)?.scheduled_downgrade);
   const isOneTime = $derived(
     (data?.subscription?.metadata as any)?.billing_type === "one_time" ||
-    (data?.subscription?.paystackSubscriptionCode === "one-time" &&
+    ((data?.subscription?.providerSubscriptionCode || data?.subscription?.paystackSubscriptionCode) === "one-time" &&
       data?.subscription?.currentPeriodStart === data?.subscription?.currentPeriodEnd)
   );
 
@@ -281,10 +281,10 @@
               Purchased {formatDate(data.subscription.createdAt)}
             </span>
           {/if}
-          {#if data.subscription.paystackSubscriptionCode && data.subscription.paystackSubscriptionCode !== "one-time"}
+          {#if (data.subscription.providerSubscriptionCode || data.subscription.paystackSubscriptionCode) && (data.subscription.providerSubscriptionCode || data.subscription.paystackSubscriptionCode) !== "one-time"}
             <span class="flex items-center gap-1.5 text-[10px] text-zinc-600 font-mono">
               <Hash size={10} />
-              {data.subscription.paystackSubscriptionCode}
+              {data.subscription.providerSubscriptionCode || data.subscription.paystackSubscriptionCode}
             </span>
           {/if}
         </div>

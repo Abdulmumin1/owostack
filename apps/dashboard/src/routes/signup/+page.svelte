@@ -59,7 +59,7 @@
         <span>Owostack</span>
       </a>
       <h1 class="text-2xl font-bold mb-2">Create your account</h1>
-      <p class="text-zinc-400">Start building with Paystack in minutes</p>
+      <p class="text-zinc-400">Start building billing in minutes</p>
     </div>
 
     {#if error}

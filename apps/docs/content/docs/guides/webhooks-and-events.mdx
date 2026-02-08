@@ -10,7 +10,7 @@ Webhooks are how Owostack stays in sync with your payment provider.
 
 ## Verification
 
-Owostack verifies webhook payloads using your provider’s recommended method (for Paystack this is HMAC SHA-512). If verification fails, events are rejected.
+Owostack verifies webhook payloads using your provider’s recommended method. If verification fails, events are rejected.
 
 ## Processing
 
@@ -24,11 +24,12 @@ After verification, Owostack:
 
 - Subscription created / enabled / disabled
 - Payment succeeded / failed
+- Refunds (when supported by the provider)
 
 ## Debugging
 
 If something looks off:
 
 - Confirm your provider webhook secret is correct
-- Confirm you’re sending events to the right organization webhook URL
+- Confirm you’re sending events to the correct `/webhooks/{orgId}/{providerId}` URL
 - Check the dashboard events/logs for processing errors

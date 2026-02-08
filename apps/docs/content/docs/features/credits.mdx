@@ -36,12 +36,10 @@ await owo.track({
 // Deducts 20 credits from balance
 ```
 
-## Adding Credits
+## Adding credits
 
-You can add credits to a customer via the API or when they purchase a specific "Add-on" product.
+Credits are typically added when a customer purchases a credit-pack add-on. Configure an add-on plan with a credit feature and Owostack will apply the balance when the payment succeeds.
 
-_(API endpoint for manual credit adjustment coming soon)_
+## Monitoring balances
 
-## Low Balance Events
-
-When a user's credit balance drops below a threshold, Owostack can trigger a webhook (e.g., `credits.low_balance`), allowing you to prompt the user to top up.
+Use `check()` to show remaining balances in your UI and `track()` to decrement credits for usage-based actions.

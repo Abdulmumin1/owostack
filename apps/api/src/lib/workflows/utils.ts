@@ -1,8 +1,9 @@
 import { createDb, schema } from "@owostack/db";
 import { eq, and } from "drizzle-orm";
-import { createProviderRegistry, paystackAdapter } from "@owostack/adapters";
+import { provisionEntitlements as provisionEntitlementsShared } from "../plan-switch";
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
 import { decrypt } from "../encryption";
+import { getProviderRegistry } from "../providers";
 
 // ---------------------------------------------------------------------------
 // Env subset that workflows need
@@ -16,15 +17,11 @@ export interface WorkflowEnv {
 }
 
 // ---------------------------------------------------------------------------
-// Provider adapter registry (singleton)
+// Provider adapter registry (delegates to centralized registry)
 // ---------------------------------------------------------------------------
 
-const registry = createProviderRegistry();
-registry.register(paystackAdapter);
-// registry.register(stripeAdapter);  ← add future providers here
-
 export function getAdapter(providerId: string): ProviderAdapter | undefined {
-  return registry.get(providerId);
+  return getProviderRegistry().get(providerId);
 }
 
 // ---------------------------------------------------------------------------
@@ -60,8 +57,8 @@ export async function resolveProviderAccount(
   if (matched) {
     const credentials = { ...((matched as any).credentials || {}) };
 
-    // Decrypt sensitive credential fields per provider
-    if (providerId === "paystack" && typeof credentials.secretKey === "string") {
+    // Decrypt sensitive credential fields (provider-agnostic)
+    if (typeof credentials.secretKey === "string") {
       try {
         credentials.secretKey = await decrypt(credentials.secretKey, env.ENCRYPTION_KEY);
       } catch {
@@ -127,53 +124,7 @@ export async function provisionEntitlements(
   oldPlanId?: string,
 ): Promise<void> {
   const db = createDb(env.DB);
-
-  const planFeatures = await db.query.planFeatures.findMany({
-    where: eq(schema.planFeatures.planId, newPlanId),
-    with: { feature: true },
-  });
-
-  // Remove old entitlements
-  if (oldPlanId) {
-    const oldPlanFeatures = await db.query.planFeatures.findMany({
-      where: eq(schema.planFeatures.planId, oldPlanId),
-    });
-    for (const opf of oldPlanFeatures) {
-      await db.delete(schema.entitlements).where(
-        and(
-          eq(schema.entitlements.customerId, customerId),
-          eq(schema.entitlements.featureId, opf.featureId),
-        ),
-      );
-    }
-  } else {
-    // No old plan — clear entitlements for features in the new plan to avoid dups
-    for (const pf of planFeatures) {
-      await db.delete(schema.entitlements).where(
-        and(
-          eq(schema.entitlements.customerId, customerId),
-          eq(schema.entitlements.featureId, pf.featureId),
-        ),
-      );
-    }
-  }
-
-  // Create new entitlements
-  const now = Date.now();
-  const values = planFeatures.map((pf: any) => ({
-    id: crypto.randomUUID(),
-    customerId,
-    featureId: pf.featureId,
-    limitValue: pf.limitValue,
-    resetInterval: pf.resetInterval,
-    lastResetAt: pf.resetOnEnable ? now : null,
-    createdAt: now,
-    updatedAt: now,
-  }));
-
-  if (values.length > 0) {
-    await db.insert(schema.entitlements).values(values);
-  }
+  await provisionEntitlementsShared(db, customerId, newPlanId, oldPlanId);
 }
 
 // ---------------------------------------------------------------------------

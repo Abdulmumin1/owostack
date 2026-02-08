@@ -6,52 +6,53 @@ icon: Zap
 
 # Quickstart
 
-Get up and running with Owostack in 5 minutes.
+Get to a working subscription flow end-to-end. This tutorial assumes you already have a payment provider account.
 
-## 1. Create an Account
+## 1. Create an organization
 
 Sign up at [dashboard.owostack.dev](https://dashboard.owostack.dev) and create an organization.
 
-## 2. Link Your Paystack Account
+## 2. Connect a provider account
 
-During organization creation (or in Settings), enter your Paystack credentials:
-
-- **Secret Key** (required) - Found at Paystack Dashboard → Settings → API Keys
-- **Public Key** (optional) - For client-side integrations
-- **Environment** - Test or Live
+In **Settings → Payment Providers**, add your provider credentials.
 
 <Callout type="info">
-  We validate your keys with Paystack before saving. Invalid keys will be
-  rejected.
+  We validate your keys before saving. Invalid keys will be rejected.
 </Callout>
 
-## 3. Configure Paystack Webhooks
+## 3. Configure webhooks
 
-In your Paystack Dashboard, set the webhook URL to:
+In your provider dashboard, set the webhook URL to:
 
 ```
-https://api.owostack.dev/webhooks/{your-organization-id}
+https://api.owostack.dev/webhooks/{your-organization-id}/{provider-id}
 ```
 
-Find your organization ID in the Owostack dashboard URL.
+Example:
+
+```
+https://api.owostack.dev/webhooks/org_123/{provider-id}
+```
 
 <Callout type="warning">
-  This step is critical! Without webhooks, we can't sync subscription events.
+  Webhooks are required for subscription state and entitlements. Without them,
+  `check()` and `track()` won’t reflect real-time payment events.
 </Callout>
 
-## 4. Create a Plan
+## 4. Create a plan
 
-In the Owostack dashboard:
+In the dashboard:
 
 1. Go to **Plans**
 2. Click **Create Plan**
-3. Set name, price, and billing interval
+3. Set name, price, billing interval, and plan group
+4. Attach features to the plan
 
-## 5. Get Your API Key
+## 5. Generate an API key
 
 1. Go to **API Keys**
 2. Click **Create New Key**
-3. Copy the key (shown only once!)
+3. Copy the key (shown only once)
 
 ## 6. Install the SDK
 
@@ -76,7 +77,7 @@ await owo.attach({
   plan: "pro-monthly",
 });
 
-// Check access (e.g., in middleware)
+// Gate a feature
 const { allowed } = await owo.check({
   customer: "user@example.com",
   feature: "premium_features",
@@ -86,7 +87,7 @@ if (!allowed) {
   return res.status(403).json({ error: "Upgrade to Pro" });
 }
 
-// Track usage (for metered billing)
+// Track usage (metered billing)
 await owo.track({
   customer: "user@example.com",
   feature: "api_calls",
@@ -94,10 +95,10 @@ await owo.track({
 });
 ```
 
-## Next Steps
+## Next steps
 
 <Cards>
-  <Card title="SDK Reference" href="/docs/sdk/attach" />
-  <Card title="Entitlements & Features" href="/docs/features/entitlements" />
   <Card title="Webhook Setup" href="/docs/webhook-setup" />
+  <Card title="Plan Switching" href="/docs/guides/plan-switching" />
+  <Card title="SDK Reference" href="/docs/sdk/attach" />
 </Cards>

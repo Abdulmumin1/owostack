@@ -14,7 +14,7 @@ Owostack provides a high-performance, atomic usage metering system powered by **
 2.  **Set Limits**: Define the `limit` (e.g., 500) and `reset_interval` (e.g., "monthly").
 3.  **Track Usage**: Call the SDK to record usage events.
 
-## Tracking Usage
+## Tracking usage
 
 Use the `track()` method to increment usage.
 
@@ -37,7 +37,7 @@ The system automatically:
 
 When defining a metered feature in a Plan, you can configure:
 
-### Reset Interval
+### Reset interval
 
 How often the usage counter resets.
 
@@ -53,12 +53,12 @@ Allow unused usage to carry over to the next period.
 - **Rollover Enabled**: Unused balance is added to the next period's limit.
 - **Max Rollover**: Cap the amount that can be rolled over (e.g., "Max 2x monthly limit").
 
-### Usage Model
+### Usage model
 
 - `included`: Usage up to the limit is included in the plan base price.
 - `overage`: (Coming Soon) Usage beyond the limit is charged extra.
 
-## Lazy Configuration
+## Lazy configuration
 
-Owostack uses a "Lazy Configuration" pattern. You don't need to manually provision meters for every user.
-When you first call `track()` for a user, the system automatically initializes their meter based on their current Plan configuration.
+Owostack uses a "lazy configuration" pattern. You don't need to manually provision meters for every user.
+When you first call `track()` for a user, the system automatically initializes their meter based on their current plan configuration.

@@ -14,6 +14,12 @@
   let featureId = $state("api-calls");
   let trackAmount = $state(1);
 
+  // Add-on Credits State
+  let packSlug = $state("");
+  let packQuantity = $state(1);
+  let addonResult = $state<any>(null);
+  let addonBalanceResult = $state<any>(null);
+
   // Billing State
   let unbilledUsage = $state<any>(null);
   let invoiceResult = $state<any>(null);
@@ -91,6 +97,81 @@
       log("Unbilled Usage:", data);
     } catch (e: any) {
       log("Fetch Failed:", e.message);
+    }
+  }
+
+  async function handleBuyAddon() {
+    if (!customerId || !packSlug) return alert("Customer & Pack slug required");
+    log(`Buying ${packQuantity}x '${packSlug}' for ${customerId}...`);
+
+    try {
+      const res = await fetch(`${apiUrl}/addon`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${secretKey}`,
+        },
+        body: JSON.stringify({
+          customer: customerId,
+          pack: packSlug,
+          quantity: packQuantity,
+        }),
+      });
+      const data = await res.json();
+      addonResult = data;
+      log(data.success ? "Addon Purchase Success:" : "Addon Purchase Failed:", data);
+    } catch (e: any) {
+      log("Addon Purchase Error:", e.message);
+    }
+  }
+
+  async function handleCheckAddonBalance() {
+    if (!customerId || !featureId) return alert("Customer & Feature required");
+    log(`Checking addon balance via /check (sendEvent=false) for ${featureId}...`);
+
+    try {
+      const res = await owo.check({
+        customer: customerId,
+        feature: featureId,
+        customerData: { email: customerId },
+      });
+      addonBalanceResult = res;
+      log("Check w/ Addon Info:", {
+        allowed: res.allowed,
+        code: res.code,
+        planCredits: (res as any).planCredits,
+        addonCredits: (res as any).addonCredits,
+        balance: (res as any).balance,
+      });
+    } catch (e: any) {
+      log("Check Failed:", e.message);
+    }
+  }
+
+  async function handleExhaustAndFallback() {
+    if (!customerId || !featureId) return alert("Customer & Feature required");
+    log(`--- Exhaust Test: sending check(sendEvent=true) repeatedly for '${featureId}' ---`);
+
+    for (let i = 0; i < 5; i++) {
+      try {
+        const res = await owo.check({
+          customer: customerId,
+          feature: featureId,
+          value: 1,
+          sendEvent: true,
+          customerData: { email: customerId },
+        } as any);
+        const code = (res as any).code;
+        const addon = (res as any).addonCredits;
+        log(`  Round ${i + 1}: ${res.allowed ? "✓" : "✗"} code=${code}${addon !== undefined ? ` addon=${addon}` : ""}`);
+        if (!res.allowed) {
+          log("  → Blocked. Test complete.");
+          break;
+        }
+      } catch (e: any) {
+        log(`  Round ${i + 1} error: ${e.message}`);
+        break;
+      }
     }
   }
 
@@ -270,7 +351,111 @@
         class="space-y-4 bg-zinc-800/50 p-6 rounded-xl border border-zinc-700"
       >
         <h2 class="text-sm font-bold text-zinc-400 uppercase tracking-wider">
-          4. Billing (Usage-Based)
+          4. Add-on Credits
+        </h2>
+
+        <div class="space-y-2">
+          <label class="block text-xs font-semibold text-zinc-500"
+            >Credit Pack Slug</label
+          >
+          <div class="flex gap-2">
+            <input
+              type="text"
+              bind:value={packSlug}
+              placeholder="e.g. 50-credits"
+              class="flex-1 bg-zinc-900 border border-zinc-700 rounded p-2 text-white focus:border-emerald-500 outline-none transition-colors"
+            />
+            <div
+              class="flex items-center gap-1 bg-zinc-900 rounded border border-zinc-700 px-1"
+            >
+              <button
+                class="px-2 text-zinc-400 hover:text-white"
+                onclick={() => { if (packQuantity > 1) packQuantity-- }}>-</button
+              >
+              <span class="text-xs w-6 text-center">{packQuantity}x</span>
+              <button
+                class="px-2 text-zinc-400 hover:text-white"
+                onclick={() => packQuantity++}>+</button
+              >
+            </div>
+            <button
+              onclick={handleBuyAddon}
+              disabled={!secretKey || !packSlug}
+              class="bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Buy
+            </button>
+          </div>
+        </div>
+
+        {#if addonResult}
+          <div
+            class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs font-mono break-all"
+          >
+            {#if addonResult.checkoutUrl}
+              <a
+                href={addonResult.checkoutUrl}
+                target="_blank"
+                class="text-purple-400 underline"
+              >
+                Complete Checkout &rarr;
+              </a>
+            {/if}
+            {#if addonResult.balance !== undefined}
+              <div class="text-purple-300 font-bold mb-1">
+                Balance: {addonResult.balance} credits (system: {addonResult.creditSystemId || "n/a"})
+              </div>
+            {/if}
+            <pre class="text-zinc-500 mt-1">{JSON.stringify(addonResult, null, 2)}</pre>
+          </div>
+        {/if}
+
+        <div class="flex gap-2">
+          <button
+            onclick={handleCheckAddonBalance}
+            disabled={!secretKey || !featureId}
+            class="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold px-3 py-2 rounded transition-colors disabled:opacity-50 text-xs"
+          >
+            Check Balance
+          </button>
+          <button
+            onclick={handleExhaustAndFallback}
+            disabled={!secretKey || !featureId}
+            class="flex-1 bg-red-900/50 hover:bg-red-900 text-red-400 border border-red-800 font-bold px-3 py-2 rounded transition-colors disabled:opacity-50 text-xs"
+          >
+            Exhaust &amp; Fallback Test
+          </button>
+        </div>
+
+        {#if addonBalanceResult}
+          <div class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs">
+            <div class="flex justify-between items-center">
+              <span class="text-zinc-400">Allowed</span>
+              <span class:text-emerald-400={addonBalanceResult.allowed} class:text-red-400={!addonBalanceResult.allowed} class="font-bold">
+                {addonBalanceResult.allowed ? "Yes" : "No"} ({addonBalanceResult.code})
+              </span>
+            </div>
+            {#if addonBalanceResult.planCredits}
+              <div class="flex justify-between items-center mt-1 border-t border-zinc-800 pt-1">
+                <span class="text-zinc-500">Plan Credits</span>
+                <span class="text-zinc-300">{addonBalanceResult.planCredits.used}/{addonBalanceResult.planCredits.limit}</span>
+              </div>
+            {/if}
+            {#if addonBalanceResult.addonCredits !== undefined}
+              <div class="flex justify-between items-center mt-1 border-t border-zinc-800 pt-1">
+                <span class="text-zinc-500">Add-on Credits</span>
+                <span class="text-purple-400 font-bold">{addonBalanceResult.addonCredits}</span>
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <div
+        class="space-y-4 bg-zinc-800/50 p-6 rounded-xl border border-zinc-700"
+      >
+        <h2 class="text-sm font-bold text-zinc-400 uppercase tracking-wider">
+          5. Billing (Usage-Based)
         </h2>
 
         <div class="flex gap-2">

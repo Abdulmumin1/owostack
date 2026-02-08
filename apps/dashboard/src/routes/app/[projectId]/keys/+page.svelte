@@ -6,6 +6,8 @@
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
   
+  import { getActiveEnvironment } from "$lib/env";
+  
   // Note: projectId in URL is actually the organization ID from Better Auth
   const organizationId = $derived(page.params.projectId);
   let keys = $state<any[]>([]);
@@ -80,9 +82,11 @@
 
 <div class="max-w-4xl">
   <div class="flex items-center justify-between mb-8">
-    <div>
-      <h1 class="text-xl font-bold text-white mb-2">API Keys</h1>
-      <p class="text-zinc-500 text-xs uppercase tracking-widest font-semibold">Manage access to your project</p>
+    <div class="flex items-center gap-4">
+      <h1 class="text-xl font-bold text-white">API Keys</h1>
+      <span class="text-[10px] px-2 py-0.5 border {getActiveEnvironment() === 'live' ? 'border-emerald-500/50 text-emerald-500 bg-emerald-500/5' : 'border-amber-500/50 text-amber-500 bg-amber-500/5'} uppercase tracking-widest font-bold">
+        {getActiveEnvironment()}
+      </span>
     </div>
     
     {#if keys.length > 0}
@@ -138,8 +142,8 @@
           <div class="flex-1">
             <div class="flex items-center gap-3 mb-1">
               <h3 class="font-bold text-white text-sm">{key.name}</h3>
-              <span class="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 uppercase tracking-wider">
-                Live
+              <span class="text-[10px] px-1.5 py-0.5 border {getActiveEnvironment() === 'live' ? 'border-emerald-500/50 text-emerald-500' : 'border-amber-500/50 text-amber-500'} uppercase tracking-wider font-bold">
+                {getActiveEnvironment()}
               </span>
             </div>
             <div class="flex items-center gap-2 text-xs text-zinc-500 font-mono">

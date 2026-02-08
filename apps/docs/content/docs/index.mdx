@@ -1,85 +1,37 @@
 ---
 title: Introduction
-description: Billing infrastructure for Nigerian apps using Paystack
+description: Provider-agnostic billing infrastructure for modern SaaS
 icon: Rocket
 ---
 
 # Owostack
 
-**Make Paystack billing as easy as Stripe Billing** - metered usage, entitlements, and subscriptions without the complexity.
+Owostack is a provider-agnostic billing layer for subscriptions, usage, and entitlements. You connect a payment provider, model plans and features, and use three API primitives to enforce access and track usage: `attach`, `check`, and `track`.
 
-## What is Owostack?
+## What you build with Owostack
 
-Owostack is billing infrastructure for Nigerian apps.
+- **Subscription lifecycle** without bespoke webhook code
+- **Entitlements** that gate features by plan
+- **Usage metering** for API calls, credits, or quotas
+- **Plan switching** with upgrades, downgrades, and add-ons
 
-You connect your provider account (Paystack today), model plans and features in a dashboard, and then use a tiny SDK to enforce access and track usage.
-
-## How it works
-
-Model your pricing in Owostack
-
-Handle payments
-
-```ts
-checkout
-```
-
-Check permissions and limits
-
-```ts
-check
-```
-
-Track usage
-
-```ts
-track
-```
-
-## Why use Owostack?
-
-- Syncing subscription state (active, overdue payments, canceling) across many webhook edge cases
-- Plan switching (upgrades, scheduled downgrades, add-ons)
-- Usage limits (monthly recurring limits, one-time limits, credits)
-- A simple, consistent interface (`attach`, `check`, `track`) regardless of provider details
-
-## What Owostack is not
-
-- A payment provider: you bring your own provider account and are never locked in to Owostack
-- A full invoicing suite: Owostack focuses on subscription state, entitlements, and usage
-
-## The Problem
-
-Building billing with Paystack requires you to:
-
-- Manage webhook endpoints and signature verification
-- Track subscription states and handle edge cases
-- Build usage metering and entitlement logic from scratch
-- Handle failed payments, trials, and plan changes
-
-## The Solution
-
-Owostack handles all of this. You:
-
-1. Link your Paystack account
-2. Use our 3-method SDK
-3. We manage everything else
+## Core primitives
 
 ```ts
 import { Owostack } from "@owostack/core";
 
-const owo = new Owostack({ apiKey: "owo_sk_..." });
+const owo = new Owostack({ apiKey: process.env.OWOSTACK_API_KEY });
 
-// Subscribe a customer to a plan
-await owo.attach({ customer: "user@example.com", plan: "pro" });
+await owo.attach({
+  customer: "user@example.com",
+  plan: "pro-monthly",
+});
 
-// Check what features they have access to
-const { allowed, remaining } = await owo.check({
+const access = await owo.check({
   customer: "user@example.com",
   feature: "api_calls",
 });
 
-// Track usage
 await owo.track({
   customer: "user@example.com",
   feature: "api_calls",
@@ -87,36 +39,32 @@ await owo.track({
 });
 ```
 
+## How it works
+
+```
+Provider Checkout -> Provider Webhooks -> Owostack
+                                   |
+                                   v
+                         Entitlements + Meters
+                                   |
+                                   v
+                          Your app (SDK)
+```
+
+Owostack receives provider webhooks, normalizes events, and keeps subscription state, entitlements, and usage meters in sync. Your app just checks and tracks.
+
 <Cards>
   <Card title="Quickstart" href="/docs/quickstart" icon="Zap" />
-  <Card title="Installation" href="/docs/installation" icon="Code" />
-  <Card title="Dashboard" href="/docs/dashboard/organizations" icon="Layout" />
+  <Card title="Webhook Setup" href="/docs/webhook-setup" icon="Webhook" />
+  <Card title="How It Works" href="/docs/concepts/how-it-works" icon="Workflow" />
 </Cards>
 
-## How It Works
-
-```
-┌─────────────┐                    ┌─────────────────────┐
-│  Paystack   │ ──── webhooks ───► │   Owostack API      │
-│  (your acc) │                    │  (handles events)   │
-└─────────────┘                    └──────────┬──────────┘
-                                              │
-                                              ▼
-                                   ┌─────────────────────┐
-                                   │   Your App + SDK    │
-                                   │  attach / check /   │
-                                   │       track         │
-                                   └─────────────────────┘
-```
-
-You point Paystack webhooks to us → we keep your data in sync → you query our API.
-
-## Supported Billing Models
+## Supported billing models
 
 | Model                   | Status       |
 | ----------------------- | ------------ |
 | Flat-rate subscriptions | ✅ Supported |
 | Usage-based (metered)   | ✅ Supported |
 | Credits / prepaid       | ✅ Supported |
-| Per-seat pricing        | 🔜 Coming    |
-| Trials & freemium       | 🔜 Coming    |
+| Trials & freemium       | ✅ Supported |
+| Per-seat pricing        | 🔜 Planned   |

@@ -5,6 +5,8 @@ import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { errorToResponse, ValidationError } from "../../lib/errors";
+import { syncPlansToProvider } from "../../lib/plan-sync";
+import { getProviderRegistry } from "../../lib/providers";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -75,6 +77,18 @@ app.get("/accounts", async (c) => {
   return c.json({ success: true, data: sanitized });
 });
 
+// Helper: parse enabled providers from env
+function getEnabledProviders(env: any): string[] {
+  const raw = env.ENABLED_PROVIDERS || "paystack";
+  return raw.split(",").map((s: string) => s.trim().toLowerCase()).filter(Boolean);
+}
+
+// List enabled providers (so the dashboard knows what to show)
+app.get("/enabled", async (c) => {
+  const enabled = getEnabledProviders(c.env);
+  return c.json({ success: true, data: enabled });
+});
+
 app.post("/accounts", async (c) => {
   const body = await c.req.json();
   const parsed = providerAccountSchema.safeParse(body);
@@ -91,7 +105,32 @@ app.post("/accounts", async (c) => {
     credentials,
     metadata,
   } = parsed.data;
+
+  // Reject non-enabled providers
+  const enabled = getEnabledProviders(c.env);
+  if (!enabled.includes(providerId)) {
+    return c.json(
+      { success: false, error: `Provider "${providerId}" is not enabled. Enabled providers: ${enabled.join(", ")}` },
+      400,
+    );
+  }
+
   const db = c.get("db");
+
+  // Guard: reject duplicate (same org + provider + environment)
+  const existing = await db.query.providerAccounts.findFirst({
+    where: and(
+      eq(schema.providerAccounts.organizationId, organizationId),
+      eq(schema.providerAccounts.providerId, providerId),
+      eq(schema.providerAccounts.environment, environment),
+    ),
+  });
+  if (existing) {
+    return c.json(
+      { success: false, error: `A ${providerId} account for ${environment} environment already exists. Update it instead.` },
+      409,
+    );
+  }
 
   const secretKey = credentials.secretKey;
   let storedCredentials: Record<string, unknown> = credentials;
@@ -109,22 +148,58 @@ app.post("/accounts", async (c) => {
     };
   }
 
-  const [account] = await db
-    .insert(schema.providerAccounts)
-    .values({
-      id: crypto.randomUUID(),
+  let account;
+  try {
+    [account] = await db
+      .insert(schema.providerAccounts)
+      .values({
+        id: crypto.randomUUID(),
+        organizationId,
+        providerId,
+        environment,
+        displayName: displayName || null,
+        credentials: storedCredentials,
+        metadata: metadata || null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+      .returning();
+  } catch (e: any) {
+    // Unique constraint safety net (race between two concurrent requests)
+    if (e.message?.includes("UNIQUE constraint")) {
+      return c.json(
+        { success: false, error: `A ${providerId} account for ${environment} environment already exists.` },
+        409,
+      );
+    }
+    throw e;
+  }
+
+  // Eager plan sync — run in background so the response is instant
+  const registry = getProviderRegistry();
+  const adapter = registry.get(providerId);
+  if (adapter) {
+    const decryptedCreds = { ...credentials };
+    if (typeof secretKey === "string" && secretKey.length > 0) {
+      decryptedCreds.secretKey = secretKey;
+    }
+    const providerAccount = {
+      id: account.id,
       organizationId,
       providerId,
       environment,
-      displayName: displayName || null,
-      credentials: storedCredentials,
-      metadata: metadata || null,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    })
-    .returning();
+      credentials: decryptedCreds,
+      createdAt: account.createdAt,
+      updatedAt: account.updatedAt,
+    };
+    c.executionCtx.waitUntil(
+      syncPlansToProvider(db, organizationId, adapter, providerAccount)
+        .then((r) => console.log(`[providers] Plan sync on connect: ${r.synced.length} synced, ${r.failed.length} failed`))
+        .catch((e) => console.warn("[providers] Plan sync on connect failed:", e)),
+    );
+  }
 
-  return c.json({ success: true, data: account });
+  return c.json({ success: true, data: account, planSyncStarted: !!adapter });
 });
 
 app.get("/rules", async (c) => {
@@ -400,6 +475,68 @@ app.post("/accounts/decrypt", async (c) => {
   }
 
   return c.json({ success: true, data: { ...account, credentials } });
+});
+
+// =============================================================================
+// Sync plans to a provider (manual trigger from dashboard)
+// =============================================================================
+
+app.post("/sync-plans", async (c) => {
+  const body = await c.req.json();
+  const { organizationId, accountId } = body;
+
+  if (!organizationId || !accountId) {
+    return c.json({ success: false, error: "organizationId and accountId required" }, 400);
+  }
+
+  const db = c.get("db");
+
+  const account = await db.query.providerAccounts.findFirst({
+    where: and(
+      eq(schema.providerAccounts.id, accountId),
+      eq(schema.providerAccounts.organizationId, organizationId),
+    ),
+  });
+
+  if (!account) {
+    return c.json({ success: false, error: "Provider account not found" }, 404);
+  }
+
+  const registry = getProviderRegistry();
+  const adapter = registry.get(account.providerId);
+  if (!adapter) {
+    return c.json({ success: false, error: `No adapter for provider: ${account.providerId}` }, 400);
+  }
+
+  // Decrypt credentials
+  const credentials = { ...(account.credentials || {}) } as Record<string, any>;
+  if (typeof credentials.secretKey === "string" && credentials.secretKey.length > 0) {
+    if (!c.env.ENCRYPTION_KEY) {
+      return c.json({ success: false, error: "Encryption not configured" }, 500);
+    }
+    try {
+      credentials.secretKey = await decrypt(credentials.secretKey, c.env.ENCRYPTION_KEY);
+    } catch {
+      return c.json({ success: false, error: "Failed to decrypt provider credentials" }, 500);
+    }
+  }
+
+  const providerAccount = {
+    id: account.id,
+    organizationId: account.organizationId,
+    providerId: account.providerId,
+    environment: account.environment,
+    credentials,
+    createdAt: account.createdAt,
+    updatedAt: account.updatedAt,
+  };
+
+  const result = await syncPlansToProvider(db, organizationId, adapter, providerAccount);
+
+  return c.json({
+    success: true,
+    data: result,
+  });
 });
 
 export default app;

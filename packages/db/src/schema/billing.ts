@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { organizations } from "./organizations";
 
 /**
@@ -222,7 +222,8 @@ export const providerAccounts = sqliteTable(
   },
   (table) => [
     index("provider_accounts_org_idx").on(table.organizationId),
-    index("provider_accounts_provider_idx").on(
+    uniqueIndex("provider_accounts_org_provider_env_uniq").on(
+      table.organizationId,
       table.providerId,
       table.environment,
     ),
@@ -348,6 +349,93 @@ export const credits = sqliteTable(
       .$defaultFn(() => Date.now()),
   },
   (table) => [index("credits_customer_idx").on(table.customerId)],
+);
+
+// =============================================================================
+// Add-on Credit Packs
+// =============================================================================
+
+export const creditPacks = sqliteTable(
+  "credit_packs",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description"),
+    credits: integer("credits").notNull(), // Number of credits in this pack
+    price: integer("price").notNull(), // Price in smallest currency unit (kobo/cents)
+    currency: text("currency").notNull().default("NGN"),
+    creditSystemId: text("credit_system_id")
+      .references(() => creditSystems.id, { onDelete: "set null" }), // null = global pool, set = scoped to this credit system
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    providerProductId: text("provider_product_id"), // e.g. Stripe prod_xxx
+    providerPriceId: text("provider_price_id"),     // e.g. Stripe price_xxx
+    providerId: text("provider_id"),                 // Which provider the product is synced to
+    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("credit_packs_org_idx").on(table.organizationId),
+    index("credit_packs_slug_idx").on(table.slug),
+  ],
+);
+
+export const creditPurchases = sqliteTable(
+  "credit_purchases",
+  {
+    id: text("id").primaryKey(),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    creditPackId: text("credit_pack_id")
+      .references(() => creditPacks.id),
+    creditSystemId: text("credit_system_id")
+      .references(() => creditSystems.id, { onDelete: "set null" }), // null = global, set = scoped
+    credits: integer("credits").notNull(), // Total credits added (pack.credits * quantity)
+    quantity: integer("quantity").notNull().default(1), // Number of packs purchased
+    price: integer("price").notNull().default(0), // Total amount paid (pack.price * quantity)
+    currency: text("currency").notNull().default("NGN"),
+    paymentReference: text("payment_reference"),
+    providerId: text("provider_id"),
+    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("credit_purchases_customer_idx").on(table.customerId),
+    index("credit_purchases_pack_idx").on(table.creditPackId),
+  ],
+);
+
+// Per-credit-system addon balances (scoped pools)
+export const creditSystemBalances = sqliteTable(
+  "credit_system_balances",
+  {
+    id: text("id").primaryKey(),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    creditSystemId: text("credit_system_id")
+      .notNull()
+      .references(() => creditSystems.id, { onDelete: "cascade" }),
+    balance: integer("balance").notNull().default(0),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("csb_customer_idx").on(table.customerId),
+    uniqueIndex("csb_customer_system_idx").on(table.customerId, table.creditSystemId),
+  ],
 );
 
 export const creditSystems = sqliteTable(

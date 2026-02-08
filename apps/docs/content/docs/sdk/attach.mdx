@@ -6,7 +6,7 @@ icon: Link
 
 # attach()
 
-Subscribe a customer to a subscription plan. This initiates the checkout flow with Paystack.
+Subscribe a customer to a subscription plan. If payment is required, Owostack returns a provider checkout URL.
 
 ## Signature
 
@@ -37,7 +37,7 @@ interface AttachResult {
     plan: string;
     currentPeriodEnd: string;
   };
-  checkoutUrl?: string; // Paystack checkout URL (for new subscriptions)
+  checkoutUrl?: string; // Provider checkout URL (for new subscriptions)
   error?: string;
 }
 ```
@@ -110,4 +110,4 @@ app.post("/api/subscribe", async (req, res) => {
 
 - If the customer already has an active subscription to this plan, no new checkout is created
 - Plan changes (upgrades/downgrades) are handled automatically
-- Paystack handles the payment UI - you just redirect the customer
+- The provider handles the payment UI - you just redirect the customer

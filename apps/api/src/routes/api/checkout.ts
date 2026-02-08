@@ -2,18 +2,17 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
+import { resolveOrCreateCustomer } from "../../lib/customers";
 import { decrypt } from "../../lib/encryption";
 import { verifyApiKey } from "../../lib/api-keys";
 import { getPaystackEnvironment, selectPaystackKey } from "../../lib/environment";
-import { executeSwitch } from "../../lib/plan-switch";
+import { executeSwitch, provisionEntitlements } from "../../lib/plan-switch";
 import type { ProviderContext } from "../../lib/plan-switch";
-import {
-  createProviderRegistry,
-  paystackAdapter,
-  resolveProvider,
-} from "@owostack/adapters";
+import { ensurePlanSynced } from "../../lib/plan-sync";
+import { resolveProvider } from "@owostack/adapters";
 import type { ProviderAccount } from "@owostack/adapters";
 import {
+  getProviderRegistry,
   buildProviderContext,
   deriveProviderEnvironment,
   loadProviderAccounts,
@@ -134,8 +133,7 @@ app.post("/attach", async (c) => {
     );
   }
 
-  const registry = createProviderRegistry();
-  registry.register(paystackAdapter);
+  const registry = getProviderRegistry();
 
   const providerContext = buildProviderContext({
     region,
@@ -155,131 +153,138 @@ app.post("/attach", async (c) => {
     project.activeEnvironment,
   );
 
+  // ---------- Provider Resolution ----------
+  // Free plans don't need a provider — executeSwitch handles them entirely in the DB.
+  // For paid plans we must resolve a provider account.
+  const isFree = plan.type === "free" || plan.price === 0;
+
   const explicitProvider = provider || null;
-  let selectedProviderId = explicitProvider;
+  let selectedProviderId: string | null = explicitProvider;
+  let selectedAccount: ProviderAccount | undefined;
 
-  if (!selectedProviderId && providerRules.length === 0 && providerAccounts.length === 0) {
-    selectedProviderId = "paystack";
-  }
-
-  let selectedAccount = providerAccounts.find(
-    (account) =>
-      account.providerId === selectedProviderId &&
-      account.environment === providerEnv,
-  );
-
-  if (explicitProvider && !selectedAccount) {
-    return c.json(
-      { success: false, error: `Provider '${explicitProvider}' not configured` },
-      400,
-    );
-  }
-
-  if (!selectedAccount) {
-    const selectionResult = resolveProvider(registry, {
-      organizationId: keyRecord.organizationId,
-      environment: providerEnv,
-      context: providerContext,
-      rules: providerRules,
-      accounts: providerAccounts,
-    });
-
-    if (selectionResult.isOk()) {
-      selectedProviderId = selectionResult.value.adapter.id;
-      selectedAccount = selectionResult.value.account;
-    } else if (!selectedProviderId) {
-      return c.json(
-        { success: false, error: selectionResult.error.message },
-        400,
+  if (!isFree) {
+    // 1. Explicit provider requested
+    if (selectedProviderId) {
+      selectedAccount = providerAccounts.find(
+        (a) => a.providerId === selectedProviderId && a.environment === providerEnv,
       );
-    }
-  }
-
-  // Build the provider account — either from providerAccounts table or legacy project keys
-  if (!selectedAccount && selectedProviderId === "paystack") {
-    let secretKey: string | null = null;
-
-    const encryptedKey = selectPaystackKey(
-      activeEnv,
-      project.testSecretKey,
-      project.liveSecretKey,
-    );
-
-    if (encryptedKey) {
-      try {
-        secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-      } catch (e) {
+      if (!selectedAccount) {
         return c.json(
-          { success: false, error: "Failed to decrypt Paystack key" },
-          500,
+          { success: false, error: `Provider '${selectedProviderId}' not configured` },
+          400,
         );
       }
     }
 
-    if (!secretKey) {
+    // 2. Try rules-based resolution
+    if (!selectedAccount && providerRules.length > 0) {
+      const selectionResult = resolveProvider(registry, {
+        organizationId: keyRecord.organizationId,
+        environment: providerEnv,
+        context: providerContext,
+        rules: providerRules,
+        accounts: providerAccounts,
+      });
+      if (selectionResult.isOk()) {
+        selectedProviderId = selectionResult.value.adapter.id;
+        selectedAccount = selectionResult.value.account;
+      }
+    }
+
+    // 3. Default fallback: first account matching the current environment
+    if (!selectedAccount && providerAccounts.length > 0) {
+      const defaultAccount = providerAccounts.find(
+        (a) => a.environment === providerEnv,
+      );
+      if (defaultAccount) {
+        selectedProviderId = defaultAccount.providerId;
+        selectedAccount = defaultAccount;
+      }
+    }
+
+    // 4. Legacy fallback: synthetic account from project Paystack keys
+    if (!selectedAccount) {
+      selectedProviderId = selectedProviderId || "paystack";
+
+      if (selectedProviderId === "paystack") {
+        let secretKey: string | null = null;
+
+        const encryptedKey = selectPaystackKey(
+          activeEnv,
+          project.testSecretKey,
+          project.liveSecretKey,
+        );
+
+        if (encryptedKey) {
+          try {
+            secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
+          } catch (e) {
+            return c.json(
+              { success: false, error: "Failed to decrypt Paystack key" },
+              500,
+            );
+          }
+        }
+
+        if (!secretKey) {
+          return c.json(
+            { success: false, error: `Paystack ${activeEnv} mode not configured` },
+            400,
+          );
+        }
+
+        selectedAccount = {
+          id: `legacy-${project.id}`,
+          organizationId: keyRecord.organizationId,
+          providerId: "paystack",
+          environment: providerEnv,
+          credentials: { secretKey },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        } as ProviderAccount;
+      }
+    }
+
+    if (!selectedAccount || !selectedProviderId) {
       return c.json(
-        { success: false, error: `Paystack ${activeEnv} mode not configured` },
+        { success: false, error: "No payment provider configured" },
         400,
       );
     }
+  }
 
-    // Build a synthetic ProviderAccount from legacy project keys
-    selectedAccount = {
-      id: `legacy-${project.id}`,
-      organizationId: keyRecord.organizationId,
-      providerId: "paystack",
-      environment: providerEnv,
-      credentials: { secretKey },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+  // Build ProviderContext (null for free plans — no provider API calls needed)
+  let providerCtx: ProviderContext | null = null;
+  if (selectedAccount && selectedProviderId) {
+    const resolvedAdapter = registry.get(selectedProviderId);
+    if (!resolvedAdapter) {
+      return c.json(
+        { success: false, error: `Provider '${selectedProviderId}' not registered` },
+        400,
+      );
+    }
+    providerCtx = {
+      adapter: resolvedAdapter,
+      account: selectedAccount as ProviderAccount,
     };
   }
 
-  if (!selectedAccount || !selectedProviderId) {
-    return c.json(
-      { success: false, error: "No payment provider configured" },
-      400,
-    );
-  }
-
-  const resolvedAdapter = registry.get(selectedProviderId);
-  if (!resolvedAdapter) {
-    return c.json(
-      { success: false, error: `Provider '${selectedProviderId}' not registered` },
-      400,
-    );
-  }
-
-  const providerCtx: ProviderContext = {
-    adapter: resolvedAdapter,
-    account: selectedAccount as ProviderAccount,
-  };
-
-  // 2. Resolve Customer - customer param is always treated as email (normalized to lowercase)
+  // 2. Resolve or create customer
   const email = customer.toLowerCase();
-
-  // 3. Find or create customer record
-  let customerRecord = await db.query.customers.findFirst({
-    where: and(
-      eq(schema.customers.organizationId, keyRecord.organizationId),
-      eq(schema.customers.email, email),
-    ),
+  let customerRecord = await resolveOrCreateCustomer({
+    db,
+    organizationId: keyRecord.organizationId,
+    customerId: customer,
+    customerData: { email, metadata },
+    providerId: selectedProviderId || undefined,
+    waitUntil: (p) => c.executionCtx.waitUntil(p),
   });
 
   if (!customerRecord) {
-    // Create customer record
-    const [newCustomer] = await db
-      .insert(schema.customers)
-      .values({
-        id: crypto.randomUUID(),
-        organizationId: keyRecord.organizationId,
-        providerId: selectedProviderId,
-        email,
-        name: email.split("@")[0], // Default name from email
-        metadata: metadata || {},
-      })
-      .returning();
-    customerRecord = newCustomer;
+    return c.json(
+      { success: false, error: "Could not resolve or create customer" },
+      400,
+    );
   }
 
   // 4. Handle TRIAL plans (trialDays > 0, no card required) — separate path
@@ -335,6 +340,9 @@ app.post("/attach", async (c) => {
         console.error(`[TRIAL] Failed to dispatch trial end workflow for subscription=${subscription.id}:`, wfErr);
       }
 
+      // Provision entitlements so trial users can access features
+      await provisionEntitlements(db, customerRecord.id, plan.id);
+
       console.log(`[TRIAL] No-card trial activated: subscription=${subscription.id}, trialEnds=${new Date(trialEndMs).toISOString()}`);
       return c.json({
         success: true,
@@ -354,6 +362,12 @@ app.post("/attach", async (c) => {
 
   // 5. Handle trial with card required — checkout for card capture
   if (trialDays > 0 && trialCardRequired) {
+    if (!providerCtx) {
+      return c.json(
+        { success: false, error: "Trial with card requires a payment provider. Please connect a provider first." },
+        400,
+      );
+    }
     console.log(`[TRIAL] Initiating card-required trial checkout: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}`);
     const trialMetadata = {
       ...metadata,
@@ -367,6 +381,8 @@ app.post("/attach", async (c) => {
       trial_days: trialDays,
       trial_unit: trialUnit,
       is_trial: true,
+      amount: plan.price,
+      currency: plan.currency,
     };
 
     try {
@@ -394,7 +410,7 @@ app.post("/attach", async (c) => {
         success: true,
         trial: true,
         trial_days: trialDays,
-        url: result.value.url,
+        checkoutUrl: result.value.url,
         reference: result.value.reference,
         accessCode: result.value.accessCode,
       });
@@ -403,7 +419,20 @@ app.post("/attach", async (c) => {
     }
   }
 
-  // 6. Plan switching (handles free, upgrade, downgrade, lateral, new)
+  // 6. Lazy plan sync — ensure the plan exists on the provider before checkout
+  if (providerCtx && !plan.providerPlanId && plan.type === "paid" && plan.billingType === "recurring") {
+    try {
+      const syncedId = await ensurePlanSynced(db, plan, providerCtx.adapter, providerCtx.account);
+      if (syncedId) {
+        (plan as any).providerPlanId = syncedId;
+        if (providerCtx.adapter.id === "paystack") (plan as any).paystackPlanId = syncedId;
+      }
+    } catch (e) {
+      console.warn(`[checkout] Lazy plan sync failed for ${plan.id}:`, e);
+    }
+  }
+
+  // 7. Plan switching (handles free, upgrade, downgrade, lateral, new)
   //    Uses the unified executeSwitch logic which:
   //    - Detects if customer has an active sub in the same planGroup
   //    - Upgrades: prorates and charges immediately (or returns checkout URL)

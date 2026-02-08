@@ -1,5 +1,9 @@
 import { eq } from "drizzle-orm";
 import { schema, createDb } from "@owostack/db";
+import {
+  createProviderRegistry,
+  paystackAdapter,
+} from "@owostack/adapters";
 import type {
   AttachRequestContext,
   ProviderAccount,
@@ -9,6 +13,18 @@ import type {
 import { decrypt } from "./encryption";
 
 export type DB = ReturnType<typeof createDb>;
+
+/**
+ * Single source of truth for supported payment providers.
+ * To add a new provider: import its adapter and register it here.
+ */
+export function getProviderRegistry() {
+  const registry = createProviderRegistry();
+  registry.register(paystackAdapter);
+  // registry.register(stripeAdapter);
+  // registry.register(dodoAdapter);
+  return registry;
+}
 
 export async function loadProviderAccounts(
   db: DB,
@@ -95,13 +111,10 @@ export function deriveProviderEnvironment(
   return activeEnvironment === "live" ? "live" : "test";
 }
 
-function providerCredentialsNeedingDecrypt(providerId: string): string[] {
-  switch (providerId) {
-    case "paystack":
-      return ["secretKey"];
-    default:
-      return [];
-  }
+function providerCredentialsNeedingDecrypt(_providerId: string): string[] {
+  // All providers use "secretKey" as their encrypted credential field.
+  // Provider-agnostic: no per-provider switch needed.
+  return ["secretKey"];
 }
 
 async function decryptProviderCredentials(

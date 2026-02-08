@@ -10,22 +10,23 @@ Owostack supports switching between plans in the same plan group.
 
 ## Switch types
 
-- Upgrade
+- **Upgrade**
   - Immediate switch
   - Prorated charge when applicable
-- Downgrade
+- **Downgrade**
   - Scheduled for the end of the current billing period
-- Lateral
+- **Lateral**
   - Immediate feature switch (no price change)
 
 ## Add-ons
 
-Add-ons stack and typically do not trigger a switch.
+Add-ons stack and do not replace the base plan. They typically do not trigger a switch.
 
 ## What changes during a switch
 
 - Subscription state may be updated at the provider
 - Entitlements are re-provisioned so the customer’s features match the new plan
+- Scheduled downgrades are stored until the period ends
 
 ## Recommended UX
 

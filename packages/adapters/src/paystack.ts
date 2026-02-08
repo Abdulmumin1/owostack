@@ -158,6 +158,7 @@ class PaystackClient {
     customer: string;
     plan: string;
     authorization?: string;
+    start_date?: string;
   }): Promise<ProviderResult<PaystackSubscriptionResponse>> {
     return this.request("POST", "/subscription", params);
   }
@@ -291,6 +292,7 @@ export const paystackAdapter: ProviderAdapter = {
       customer: params.customer.id,
       plan: params.plan.id,
       authorization: params.authorizationCode || undefined,
+      start_date: params.startDate || undefined,
     });
 
     if (response.isErr()) return response;
@@ -546,6 +548,35 @@ export const paystackAdapter: ProviderAdapter = {
             : undefined,
         });
       }
+
+      case "refund.processed":
+        return Result.ok({
+          ...base,
+          type: "refund.success",
+          refund: {
+            amount: data.amount || 0,
+            currency: data.currency || "NGN",
+            reference: data.transaction_reference || data.reference || "",
+            reason: data.customer_note || data.merchant_note || undefined,
+          },
+          payment: {
+            amount: data.amount || 0,
+            currency: data.currency || "NGN",
+            reference: data.transaction_reference || data.reference || "",
+          },
+        });
+
+      case "refund.failed":
+        return Result.ok({
+          ...base,
+          type: "refund.failed",
+          refund: {
+            amount: data.amount || 0,
+            currency: data.currency || "NGN",
+            reference: data.transaction_reference || data.reference || "",
+            reason: data.customer_note || data.merchant_note || undefined,
+          },
+        });
 
       case "customeridentification.success":
         return Result.ok({
