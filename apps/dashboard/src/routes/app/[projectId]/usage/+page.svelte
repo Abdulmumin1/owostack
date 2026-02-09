@@ -2,6 +2,7 @@
   import { BarChart3, Users, DollarSign, Activity, Layers, ArrowUpRight, ArrowDownRight, Loader2, ChevronDown } from "lucide-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
+  import { formatCurrency } from "$lib/utils/currency";
   import { onMount } from "svelte";
   import StatCard from "$lib/components/ui/StatCard.svelte";
   import BarChart from "$lib/components/ui/BarChart.svelte";
@@ -71,10 +72,6 @@
     loadUsage();
   });
 
-  function formatCurrency(amount: number, currency: string = "NGN") {
-    const major = amount / 100;
-    return new Intl.NumberFormat("en-NG", { style: "currency", currency, minimumFractionDigits: 0 }).format(major);
-  }
 
   function formatNumber(n: number) {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;

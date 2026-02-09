@@ -3,6 +3,8 @@
   import { apiFetch } from "$lib/auth-client";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import { Loader2, Check } from "lucide-svelte";
+  import { defaultCurrency } from "$lib/stores/currency";
+  import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
 
   let { 
     isOpen = $bindable(false), 
@@ -20,7 +22,7 @@
   let description = $state("");
   let credits = $state(100);
   let price = $state(500);
-  let currency = $state("NGN");
+  let currency = $state($defaultCurrency);
   let creditSystemId = $state("");
   let creditSystems = $state<any[]>([]);
   let loadingSystems = $state(false);
@@ -49,18 +51,17 @@
     description = "";
     credits = 100;
     price = 500;
-    currency = "NGN";
+    currency = $defaultCurrency;
     creditSystemId = "";
     error = "";
     onclose?.();
   }
 
   function formatPreview(amount: number, curr: string) {
-    const major = amount / 100;
     try {
-      return new Intl.NumberFormat("en-NG", { style: "currency", currency: curr }).format(major);
+      return formatCurrency(amount, curr);
     } catch {
-      return `${major} ${curr}`;
+      return `${amount / 100} ${curr}`;
     }
   }
 
@@ -214,16 +215,15 @@
             >
               Currency
             </label>
-            <div class="input-icon-wrapper">
-              <input
-                type="text"
-                id="pack-currency"
-                bind:value={currency}
-                maxlength="3"
-                class="input uppercase"
-                placeholder="NGN"
-              />
-            </div>
+            <select
+              id="pack-currency"
+              bind:value={currency}
+              class="input"
+            >
+              {#each COMMON_CURRENCIES as c}
+                <option value={c.code}>{c.code}</option>
+              {/each}
+            </select>
           </div>
         </div>
 

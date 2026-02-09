@@ -3,6 +3,7 @@
   import { page } from "$app/state";
   import { fade, fly } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
+  import { formatCurrency } from "$lib/utils/currency";
   import CreatePlanModal from "$lib/components/plans/CreatePlanModal.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
@@ -63,10 +64,7 @@
 
   function formatMoney(amount: number, currency: string) {
     if (amount === 0) return "Free";
-    return new Intl.NumberFormat("en-NG", {
-      style: "currency",
-      currency: currency,
-    }).format(amount / 100);
+    return formatCurrency(amount, currency);
   }
 </script>
 

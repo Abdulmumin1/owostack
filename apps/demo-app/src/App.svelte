@@ -89,14 +89,11 @@
     log(`Fetching unbilled usage for ${customerId}...`);
 
     try {
-      const res = await fetch(`${apiUrl}/billing/usage?customer=${encodeURIComponent(customerId)}`, {
-        headers: { Authorization: `Bearer ${secretKey}` },
-      });
-      const data = await res.json();
-      unbilledUsage = data;
-      log("Unbilled Usage:", data);
+      const res = await owo.billing.usage({ customer: customerId });
+      unbilledUsage = res;
+      log("Unbilled Usage:", res);
     } catch (e: any) {
-      log("Fetch Failed:", e.message);
+      log("Usage Failed:", e.message);
     }
   }
 
@@ -105,21 +102,13 @@
     log(`Buying ${packQuantity}x '${packSlug}' for ${customerId}...`);
 
     try {
-      const res = await fetch(`${apiUrl}/addon`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${secretKey}`,
-        },
-        body: JSON.stringify({
-          customer: customerId,
-          pack: packSlug,
-          quantity: packQuantity,
-        }),
+      const res = await owo.addon({
+        customer: customerId,
+        pack: packSlug,
+        quantity: packQuantity,
       });
-      const data = await res.json();
-      addonResult = data;
-      log(data.success ? "Addon Purchase Success:" : "Addon Purchase Failed:", data);
+      addonResult = res;
+      log(res.success ? "Addon Purchase Success:" : "Addon Purchase Failed:", res);
     } catch (e: any) {
       log("Addon Purchase Error:", e.message);
     }
@@ -180,19 +169,23 @@
     log(`Generating invoice for ${customerId}...`);
 
     try {
-      const res = await fetch(`${apiUrl}/billing/invoice`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${secretKey}`,
-        },
-        body: JSON.stringify({ customer: customerId }),
-      });
-      const data = await res.json();
-      invoiceResult = data;
-      log("Invoice Generated:", data);
+      const res = await owo.billing.invoice({ customer: customerId });
+      invoiceResult = res;
+      log("Invoice Generated:", res);
     } catch (e: any) {
       log("Invoice Failed:", e.message);
+    }
+  }
+
+  async function handleListInvoices() {
+    if (!customerId) return alert("Customer required");
+    log(`Listing invoices for ${customerId}...`);
+
+    try {
+      const res = await owo.billing.invoices({ customer: customerId });
+      log("Invoices:", res);
+    } catch (e: any) {
+      log("Invoices Failed:", e.message);
     }
   }
 </script>
@@ -462,16 +455,23 @@
           <button
             onclick={handleGetUnbilledUsage}
             disabled={!secretKey}
-            class="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold px-4 py-2 rounded transition-colors disabled:opacity-50"
+            class="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold px-3 py-2 rounded transition-colors disabled:opacity-50 text-xs"
           >
             View Unbilled
           </button>
           <button
             onclick={handleGenerateInvoice}
             disabled={!secretKey}
-            class="flex-1 bg-amber-900/50 hover:bg-amber-900 text-amber-400 border border-amber-800 font-bold px-4 py-2 rounded transition-colors disabled:opacity-50"
+            class="flex-1 bg-amber-900/50 hover:bg-amber-900 text-amber-400 border border-amber-800 font-bold px-3 py-2 rounded transition-colors disabled:opacity-50 text-xs"
           >
             Generate Invoice
+          </button>
+          <button
+            onclick={handleListInvoices}
+            disabled={!secretKey}
+            class="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold px-3 py-2 rounded transition-colors disabled:opacity-50 text-xs"
+          >
+            List Invoices
           </button>
         </div>
 

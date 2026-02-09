@@ -26,6 +26,8 @@ import {
   invoices,
   invoiceItems,
   paymentAttempts,
+  overageSettings,
+  customerOverageLimits,
 } from "./billing";
 
 /**
@@ -369,5 +371,23 @@ export const paymentAttemptsRelations = relations(paymentAttempts, ({ one }) => 
   invoice: one(invoices, {
     fields: [paymentAttempts.invoiceId],
     references: [invoices.id],
+  }),
+}));
+
+export const overageSettingsRelations = relations(overageSettings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [overageSettings.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+export const customerOverageLimitsRelations = relations(customerOverageLimits, ({ one }) => ({
+  customer: one(customers, {
+    fields: [customerOverageLimits.customerId],
+    references: [customers.id],
+  }),
+  organization: one(organizations, {
+    fields: [customerOverageLimits.organizationId],
+    references: [organizations.id],
   }),
 }));

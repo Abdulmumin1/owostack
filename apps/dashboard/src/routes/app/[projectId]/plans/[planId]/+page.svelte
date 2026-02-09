@@ -23,6 +23,8 @@
   import { apiFetch } from "$lib/auth-client";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import { defaultCurrency } from "$lib/stores/currency";
+  import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
 
   const projectId = $derived(page.params.projectId);
   const planId = $derived(page.params.planId);
@@ -46,6 +48,7 @@
   let configPricePerUnit = $state<string>("");
   let configBillingUnits = $state<string>("1");
   let configOverage = $state<"block" | "charge">("block");
+  let configMaxOverageUnits = $state<string>("");
 
   let featureSearchQuery = $state<string>("");
 
@@ -62,6 +65,7 @@
       configPricePerUnit = editingPlanFeature.pricePerUnit ? String(editingPlanFeature.pricePerUnit / 100) : "";
       configBillingUnits = String(editingPlanFeature.billingUnits || 1);
       configOverage = editingPlanFeature.overage || "block";
+      configMaxOverageUnits = editingPlanFeature.maxOverageUnits ? String(editingPlanFeature.maxOverageUnits) : "";
     }
   });
 
@@ -70,7 +74,7 @@
   let editType = $state<"free" | "paid">("paid");
   let editBillingType = $state<"recurring" | "one_time">("recurring");
   let editInterval = $state<string>("monthly");
-  let editCurrency = $state<string>("NGN");
+  let editCurrency = $state<string>($defaultCurrency);
   let editPrice = $state<string>("");
   let editTrialDays = $state<string>("0");
   let editTrialUnit = $state<string>("days");
@@ -82,7 +86,7 @@
       editType = plan.type || "paid";
       editBillingType = plan.billingType || "recurring";
       editInterval = plan.interval || "monthly";
-      editCurrency = plan.currency || "NGN";
+      editCurrency = plan.currency || $defaultCurrency;
       editPrice = typeof plan.price === "number" ? String(plan.price / 100) : "";
       editTrialDays = String(plan.trialDays || 0);
       editTrialUnit = (plan.metadata as any)?.trialUnit === "minutes" ? "minutes" : "days";
@@ -202,10 +206,7 @@
   }
 
   function formatMoney(amount: number, currency: string) {
-    return new Intl.NumberFormat("en-NG", {
-      style: "currency",
-      currency: currency,
-    }).format(amount / 100);
+    return formatCurrency(amount, currency);
   }
 </script>
 
@@ -656,6 +657,7 @@
           pricePerUnit: String(configPricePerUnit).trim() === '' ? null : Math.round(Number(configPricePerUnit) * 100),
           billingUnits: Number(configBillingUnits) || 1,
           overage: configOverage,
+          maxOverageUnits: String(configMaxOverageUnits).trim() === '' ? null : Number(configMaxOverageUnits),
         };
         handleUpdateFeatureConfig(data);
       }}
@@ -835,6 +837,17 @@
                     bind:value={configBillingUnits}
                   />
                 </div>
+                <div class="space-y-2 col-span-2">
+                  <label for="maxOverageUnits" class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Max Overage Units</label>
+                  <input 
+                    id="maxOverageUnits"
+                    type="number"
+                    placeholder="Leave empty for unlimited"
+                    class="input font-bold"
+                    bind:value={configMaxOverageUnits}
+                  />
+                  <p class="text-[9px] text-zinc-600">Hard cap on how many overage units a customer can use per period. Empty = no cap.</p>
+                </div>
               </div>
             {/if}
           </div>
@@ -933,7 +946,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-3 gap-4">
           <div>
             <label for="editPrice" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Price</label>
             <div class="input-icon-wrapper">
@@ -947,6 +960,15 @@
                 disabled={editType === 'free'}
               />
             </div>
+          </div>
+
+          <div>
+            <label for="editCurrency" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Currency</label>
+            <select id="editCurrency" class="input font-bold" bind:value={editCurrency} disabled={editType === 'free'}>
+              {#each COMMON_CURRENCIES as c}
+                <option value={c.code}>{c.code}</option>
+              {/each}
+            </select>
           </div>
 
           <div>

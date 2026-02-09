@@ -58,8 +58,21 @@
       "name": "plan-upgrade-workflow",
       "binding": "PLAN_UPGRADE_WORKFLOW",
       "class_name": "PlanUpgradeWorkflow"
+    },
+    {
+      "name": "overage-billing-workflow",
+      "binding": "OVERAGE_BILLING_WORKFLOW",
+      "class_name": "OverageBillingWorkflow"
     }
   ],
+
+  // Cron triggers for periodic overage billing
+  "triggers": {
+    "crons": [
+      "0 0 * * *",
+      "0 0 * * 1"
+    ]
+  },
 
   // Migrations for Durable Objects
   "migrations": [

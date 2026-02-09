@@ -12,7 +12,7 @@ const createPackSchema = z.object({
   description: z.string().optional(),
   credits: z.number().int().min(1),
   price: z.number().int().min(0),
-  currency: z.string().min(3).default("NGN"),
+  currency: z.string().min(3).default("USD"),
   creditSystemId: z.string().min(1, "Credit system is required"),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });

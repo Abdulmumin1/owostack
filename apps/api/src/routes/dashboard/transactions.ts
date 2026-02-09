@@ -97,7 +97,7 @@ app.get("/", async (c) => {
           : null,
         providerId: sub.providerId || null,
         amount: sub.plan?.price || 0,
-        currency: sub.plan?.currency || "NGN",
+        currency: sub.plan?.currency || "USD",
         currentPeriodStart: sub.currentPeriodStart,
         currentPeriodEnd: sub.currentPeriodEnd,
         createdAt: sub.createdAt,

@@ -80,6 +80,7 @@ export const plans = sqliteTable(
 
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     version: integer("version").notNull().default(1), // For versioning
+    source: text("source").notNull().default("dashboard"), // "sdk" or "dashboard" — tracks who owns this resource
     metadata: text("metadata", { mode: "json" }).$type<
       Record<string, unknown>
     >(),
@@ -109,6 +110,7 @@ export const features = sqliteTable(
     type: text("type").notNull().default("metered"), // metered, boolean, static
     meterType: text("meter_type").default("consumable"), // consumable (uses up), non_consumable (persistent)
     unit: text("unit"), // "call", "message", "GB"
+    source: text("source").notNull().default("dashboard"), // "sdk" or "dashboard" — tracks who owns this resource
     createdAt: integer("created_at")
       .notNull()
       .$defaultFn(() => Date.now()),
@@ -154,6 +156,7 @@ export const planFeatures = sqliteTable(
     // Overage handling
     overage: text("overage").notNull().default("block"), // block, charge
     overagePrice: integer("overage_price"), // In cents
+    maxOverageUnits: integer("max_overage_units"), // Hard cap on overage units per period
   },
   (table) => [index("plan_features_plan_idx").on(table.planId)],
 );
@@ -726,5 +729,64 @@ export const paymentAttempts = sqliteTable(
   (table) => [
     index("payment_attempts_invoice_idx").on(table.invoiceId),
     index("payment_attempts_status_idx").on(table.status),
+  ],
+);
+
+// =============================================================================
+// Overage Billing Settings
+// =============================================================================
+
+export const overageSettings = sqliteTable(
+  "overage_settings",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+
+    // Billing interval: when to generate overage invoices
+    billingInterval: text("billing_interval").notNull().default("end_of_period"), // end_of_period, daily, weekly, monthly, threshold
+    thresholdAmount: integer("threshold_amount"), // Minor units — triggers invoice when unbilled hits this
+    autoCollect: integer("auto_collect", { mode: "boolean" }).notNull().default(false), // Charge card automatically
+    gracePeriodHours: integer("grace_period_hours").notNull().default(0), // Wait before collecting
+
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("overage_settings_org_idx").on(table.organizationId),
+  ],
+);
+
+export const customerOverageLimits = sqliteTable(
+  "customer_overage_limits",
+  {
+    id: text("id").primaryKey(),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+
+    // Customer's spending cap per billing period (minor units)
+    maxOverageAmount: integer("max_overage_amount"),
+    // What happens when cap is hit
+    onLimitReached: text("on_limit_reached").notNull().default("block"), // block, notify
+
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("col_customer_idx").on(table.customerId),
+    index("col_org_idx").on(table.organizationId),
   ],
 );

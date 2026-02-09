@@ -15,6 +15,8 @@
   import { Result } from "better-result";
   import { onMount } from "svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
+  import { defaultCurrency } from "$lib/stores/currency";
+  import { COMMON_CURRENCIES } from "$lib/utils/currency";
 
   let {
     organizationId,
@@ -83,7 +85,7 @@
 
   // Paid Config
   let price = $state("");
-  let currency = $state("NGN");
+  let currency = $state($defaultCurrency);
   let interval = $state("monthly");
 
   // Trial Config
@@ -258,7 +260,7 @@
               'free'
                 ? 'border-accent bg-accent/5'
                 : 'border-border bg-bg-secondary hover:border-zinc-600'}"
-              onclick={() => (planType = "free")}
+              onclick={() => { planType = "free"; hasTrial = false; }}
             >
               <div
                 class="mb-3 w-8 h-8 rounded-full bg-bg-card border border-border flex items-center justify-center"
@@ -399,10 +401,10 @@
                 </button>
               </div>
 
-              <!-- Price Input -->
+              <!-- Price + Currency -->
               {#if billingModel === "base"}
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
+                <div class="grid grid-cols-3 gap-4">
+                  <div class="col-span-2">
                     <label
                       class="block text-xs font-medium text-zinc-400 mb-1.5"
                       for="priceInput">Price</label
@@ -423,28 +425,43 @@
                       </div>
                     </div>
                   </div>
-
-                  {#if billingType === "recurring"}
-                    <div>
-                      <label
-                        class="block text-xs font-medium text-zinc-400 mb-1.5"
-                        for="intervalSelect">Billing Interval</label
-                      >
-                      <div class="input-icon-wrapper">
-                        <select
-                          id="intervalSelect"
-                          bind:value={interval}
-                          class="input appearance-none"
-                        >
-                          <option value="monthly">per month</option>
-                          <option value="yearly">per year</option>
-                          <option value="quarterly">per quarter</option>
-                          <option value="weekly">per week</option>
-                        </select>
-                      </div>
-                    </div>
-                  {/if}
+                  <div>
+                    <label
+                      class="block text-xs font-medium text-zinc-400 mb-1.5"
+                      for="currencySelect">Currency</label
+                    >
+                    <select
+                      id="currencySelect"
+                      bind:value={currency}
+                      class="input appearance-none"
+                    >
+                      {#each COMMON_CURRENCIES as c}
+                        <option value={c.code}>{c.code}</option>
+                      {/each}
+                    </select>
+                  </div>
                 </div>
+
+                {#if billingType === "recurring"}
+                  <div>
+                    <label
+                      class="block text-xs font-medium text-zinc-400 mb-1.5"
+                      for="intervalSelect">Billing Interval</label
+                    >
+                    <div class="input-icon-wrapper">
+                      <select
+                        id="intervalSelect"
+                        bind:value={interval}
+                        class="input appearance-none"
+                      >
+                        <option value="monthly">per month</option>
+                        <option value="yearly">per year</option>
+                        <option value="quarterly">per quarter</option>
+                        <option value="weekly">per week</option>
+                      </select>
+                    </div>
+                  </div>
+                {/if}
               {/if}
             </div>
           </div>
@@ -452,7 +469,8 @@
 
         <!-- Options -->
         <div class="space-y-3 pt-2">
-          <!-- Free Trial -->
+          <!-- Free Trial (only for paid plans) -->
+          {#if planType === "paid"}
           <div>
             <label
               class="flex items-center gap-2 cursor-pointer group select-none"
@@ -524,6 +542,7 @@
               </div>
             {/if}
           </div>
+          {/if}
 
           <!-- Add-on -->
           <div>

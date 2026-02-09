@@ -91,7 +91,7 @@ export class BillingService {
             customerId,
             features: [],
             totalEstimated: 0,
-            currency: "NGN",
+            currency: "USD",
           };
         }
 
@@ -164,7 +164,7 @@ export class BillingService {
           customerId,
           features,
           totalEstimated,
-          currency: subscription.plan.currency || "NGN",
+          currency: subscription.plan.currency || "USD",
         };
       },
       catch: (e) => {

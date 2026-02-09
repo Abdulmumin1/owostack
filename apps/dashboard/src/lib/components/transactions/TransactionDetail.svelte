@@ -4,6 +4,7 @@
     Mail, Hash, Shield, CheckCircle, XCircle, Gift, ShoppingBag,
   } from "lucide-svelte";
   import { apiFetch } from "$lib/auth-client";
+  import { formatCurrency } from "$lib/utils/currency";
   import Timeline from "$lib/components/ui/Timeline.svelte";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
@@ -49,12 +50,6 @@
       month: "short", day: "numeric", year: "numeric",
       hour: "2-digit", minute: "2-digit",
     });
-  }
-
-  function formatCurrency(amount: number, currency: string = "NGN") {
-    return new Intl.NumberFormat("en-NG", {
-      style: "currency", currency, minimumFractionDigits: 0,
-    }).format(amount / 100);
   }
 
   function typeColor(type: string) {

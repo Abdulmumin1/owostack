@@ -19,38 +19,7 @@
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import { goto } from "$app/navigation";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
-
-  const SUPPORTED_PROVIDERS = [
-    {
-      id: "paystack",
-      name: "Paystack",
-      description: "Accept payments across Africa",
-      docsUrl: "https://dashboard.paystack.com/#/settings/developers",
-      fields: [
-        { key: "secretKey", label: "Secret Key", placeholder: "sk_test_xxxxxxxxxxxxxxx", secret: true },
-        { key: "publicKey", label: "Public Key", placeholder: "pk_test_xxxxxxxxxxxxxxx", secret: false, optional: true },
-      ],
-    },
-    {
-      id: "stripe",
-      name: "Stripe",
-      description: "Global payment infrastructure",
-      docsUrl: "https://dashboard.stripe.com/apikeys",
-      fields: [
-        { key: "secretKey", label: "Secret Key", placeholder: "sk_test_xxxxxxxxxxxxxxx", secret: true },
-        { key: "publishableKey", label: "Publishable Key", placeholder: "pk_test_xxxxxxxxxxxxxxx", secret: false, optional: true },
-      ],
-    },
-    {
-      id: "dodopayments",
-      name: "Dodo Payments",
-      description: "Simple payment processing",
-      docsUrl: "https://dodopayments.com/docs",
-      fields: [
-        { key: "secretKey", label: "API Key", placeholder: "dodo_sk_xxxxxxxxxxxxxxx", secret: true },
-      ],
-    },
-  ];
+  import { SUPPORTED_PROVIDERS } from "$lib/providers";
 
   let orgs = $state<any[]>([]);
   let isLoading = $state(true);

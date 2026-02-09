@@ -145,7 +145,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
             customer: { id: customerId, email: email! },
             authorizationCode: authorizationCode!,
             amount: amount!,
-            currency: currency || "NGN",
+            currency: currency || "USD",
             metadata: {
               subscription_id: subscriptionId,
               plan_id: planId,

@@ -1,0 +1,26 @@
+{
+  "name": "@owostack/cli",
+  "version": "0.1.0",
+  "description": "CLI for Owostack - sync catalog, manage billing infrastructure",
+  "type": "module",
+  "bin": {
+    "owostack": "./dist/index.js",
+    "owo": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean",
+    "dev": "tsup src/index.ts --format esm --watch"
+  },
+  "dependencies": {
+    "@owostack/core": "workspace:*",
+    "@owostack/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

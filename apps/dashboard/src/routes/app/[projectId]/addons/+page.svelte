@@ -14,6 +14,8 @@
     Package,
   } from "lucide-svelte";
   import CreateCreditPackModal from "$lib/components/addons/CreateCreditPackModal.svelte";
+  import { defaultCurrency } from "$lib/stores/currency";
+  import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
 
   let packs = $state<any[]>([]);
   let isLoading = $state(true);
@@ -25,7 +27,7 @@
 
   // Edit form
   let editingId = $state<string | null>(null);
-  let editForm = $state({ name: "", description: "", credits: 0, price: 0, currency: "NGN" });
+  let editForm = $state({ name: "", description: "", credits: 0, price: 0, currency: $defaultCurrency });
   let isUpdating = $state(false);
 
   const organizationId = $derived(page.params.projectId ?? "");
@@ -111,8 +113,7 @@
   }
 
   function formatPrice(amount: number, currency: string) {
-    const major = amount / 100;
-    return new Intl.NumberFormat("en-NG", { style: "currency", currency }).format(major);
+    return formatCurrency(amount, currency);
   }
 
   onMount(() => {
@@ -218,12 +219,22 @@
               </td>
               <td class="px-6 py-4">
                 {#if editingId === pack.id}
-                  <input
-                    type="number"
-                    bind:value={editForm.price}
-                    min="0"
-                    class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-white w-24 focus:border-accent focus:outline-none"
-                  />
+                  <div class="flex items-center gap-1">
+                    <input
+                      type="number"
+                      bind:value={editForm.price}
+                      min="0"
+                      class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-white w-20 focus:border-accent focus:outline-none"
+                    />
+                    <select
+                      bind:value={editForm.currency}
+                      class="bg-bg-primary border border-border rounded px-1 py-1 text-[10px] text-white focus:border-accent focus:outline-none"
+                    >
+                      {#each COMMON_CURRENCIES as c}
+                        <option value={c.code}>{c.code}</option>
+                      {/each}
+                    </select>
+                  </div>
                 {:else}
                   <div class="text-sm text-zinc-300">{formatPrice(pack.price, pack.currency)}</div>
                 {/if}

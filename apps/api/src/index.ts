@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createDb, schema } from "@owostack/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { type User } from "better-auth";
 import { auth } from "./lib/auth";
 import { WebhookHandler } from "./lib/webhooks";
@@ -17,6 +17,7 @@ const providerRegistry = getProviderRegistry();
 import dashboardPlans from "./routes/dashboard/plans";
 import dashboardKeys from "./routes/dashboard/keys";
 import dashboardConfig from "./routes/dashboard/config";
+import dashboardCatalog from "./routes/dashboard/catalog";
 import dashboardFeatures from "./routes/dashboard/features";
 import dashboardCustomers from "./routes/dashboard/customers";
 import dashboardSubscriptions from "./routes/dashboard/subscriptions";
@@ -26,10 +27,12 @@ import dashboardCredits from "./routes/dashboard/credits";
 import dashboardTransactions from "./routes/dashboard/transactions";
 import dashboardProviders from "./routes/dashboard/providers";
 import dashboardCreditPacks from "./routes/dashboard/credit-packs";
+import dashboardOverageSettings from "./routes/dashboard/overage-settings";
 import apiCheckout from "./routes/api/checkout";
 import apiEntitlements from "./routes/api/entitlements";
 import apiBilling from "./routes/api/billing";
 import apiAddon from "./routes/api/addon";
+import apiSync from "./routes/api/sync";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
@@ -39,7 +42,8 @@ export { UsageMeterDO };
 import { TrialEndWorkflow } from "./lib/workflows/trial-end";
 import { DowngradeWorkflow } from "./lib/workflows/downgrade";
 import { PlanUpgradeWorkflow } from "./lib/workflows/plan-upgrade";
-export { TrialEndWorkflow, DowngradeWorkflow, PlanUpgradeWorkflow };
+import { OverageBillingWorkflow } from "./lib/workflows/overage-billing";
+export { TrialEndWorkflow, DowngradeWorkflow, PlanUpgradeWorkflow, OverageBillingWorkflow };
 
 export type Env = {
   DB: D1Database;           // Per-environment business data (customers, plans, subs, etc.)
@@ -49,6 +53,7 @@ export type Env = {
   TRIAL_END_WORKFLOW: Workflow;
   DOWNGRADE_WORKFLOW: Workflow;
   PLAN_UPGRADE_WORKFLOW: Workflow;
+  OVERAGE_BILLING_WORKFLOW: Workflow;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   ENCRYPTION_KEY: string;
@@ -209,7 +214,9 @@ dashboardRoutes.route("/credits", dashboardCredits);
 dashboardRoutes.route("/transactions", dashboardTransactions);
 dashboardRoutes.route("/providers", dashboardProviders);
 dashboardRoutes.route("/credit-packs", dashboardCreditPacks);
-dashboardRoutes.route("/", dashboardConfig); // Config module has paths like /paystack-config
+dashboardRoutes.route("/overage-settings", dashboardOverageSettings);
+dashboardRoutes.route("/catalog", dashboardCatalog);
+dashboardRoutes.route("/", dashboardConfig);
 
 app.route("/api/dashboard", dashboardRoutes);
 
@@ -227,6 +234,7 @@ v1Routes.route("/", apiCheckout);
 v1Routes.route("/", apiEntitlements);
 v1Routes.route("/", apiAddon);
 v1Routes.route("/billing", apiBilling);
+v1Routes.route("/sync", apiSync);
 
 apiRoutes.route("/v1", v1Routes);
 
@@ -395,4 +403,73 @@ app.post("/webhooks/:organizationId/:provider", async (c) => {
   return handleWebhookRequest(c, c.req.param("organizationId"), c.req.param("provider"));
 });
 
-export default app;
+// =============================================================================
+// Scheduled (Cron) — Periodic Overage Billing
+// Runs on a cron trigger, finds orgs with matching billing intervals,
+// and kicks off OverageBillingWorkflow for each customer with active subs.
+// =============================================================================
+
+export default {
+  fetch: app.fetch,
+
+  async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+    console.log(`[CRON] Triggered at ${new Date(event.scheduledTime).toISOString()}, cron=${event.cron}`);
+
+    const db = createDb(env.DB);
+
+    // Determine which billing intervals this cron matches
+    // Daily cron  → process "daily"
+    // Weekly cron → process "weekly"
+    // Monthly is handled by end_of_period via subscription renewal webhooks
+    let targetInterval: string;
+    if (event.cron === "0 0 * * 1") {
+      targetInterval = "weekly";
+    } else {
+      // Daily cron or any other → process "daily"
+      targetInterval = "daily";
+    }
+
+    try {
+      // Find all orgs with this billing interval
+      const orgs = await db
+        .select()
+        .from((schema as any).overageSettings)
+        .where(eq((schema as any).overageSettings.billingInterval, targetInterval));
+
+      console.log(`[CRON] Found ${orgs.length} orgs with interval=${targetInterval}`);
+
+      for (const org of orgs) {
+        // Find all customers with active subscriptions in this org
+        const customers = await db
+          .select({ id: schema.customers.id })
+          .from(schema.customers)
+          .innerJoin(
+            schema.subscriptions,
+            and(
+              eq(schema.subscriptions.customerId, schema.customers.id),
+              eq(schema.subscriptions.status, "active"),
+            ),
+          )
+          .where(eq(schema.customers.organizationId, (org as any).organizationId));
+
+        for (const customer of customers) {
+          try {
+            await env.OVERAGE_BILLING_WORKFLOW.create({
+              id: `overage-cron-${customer.id}-${event.scheduledTime}`,
+              params: {
+                organizationId: (org as any).organizationId,
+                customerId: customer.id,
+                trigger: "cron",
+              },
+            });
+          } catch (e) {
+            // Duplicate workflow ID is fine (idempotent)
+            console.warn(`[CRON] Failed to create workflow for customer=${customer.id}:`, e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[CRON] Overage billing cron failed:", e);
+    }
+  },
+};

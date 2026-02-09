@@ -2,6 +2,7 @@
   import { Search, Filter, RefreshCw, ArrowRight, CreditCard, Loader2, CheckCircle, AlertCircle, Clock } from "lucide-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
+  import { formatCurrency } from "$lib/utils/currency";
   import { onMount } from "svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import SubscriptionDetail from "$lib/components/subscriptions/SubscriptionDetail.svelte";
@@ -13,7 +14,7 @@
   let isLoading = $state(true);
   let searchQuery = $state("");
   let selectedSubId = $state<string | null>(null);
-
+ 
   const selectedSub = $derived(
     subscriptions.find(s => s.id === selectedSubId)
   );
@@ -57,10 +58,7 @@
   }
 
   function formatMoney(amount: number, currency: string) {
-    return new Intl.NumberFormat("en-NG", {
-      style: "currency",
-      currency: currency,
-    }).format(amount / 100);
+    return formatCurrency(amount, currency);
   }
 </script>
 

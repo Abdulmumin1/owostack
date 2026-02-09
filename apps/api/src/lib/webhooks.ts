@@ -419,7 +419,7 @@ export class WebhookHandler {
                 authorizationCode: event.authorization?.code,
                 email: event.customer.email,
                 amount: Number(metadata.amount) || 0,
-                currency: (metadata.currency as string) || event.payment?.currency || "NGN",
+                currency: (metadata.currency as string) || event.payment?.currency || "USD",
                 planSlug: metadata.plan_slug as string,
               },
             });
@@ -475,7 +475,7 @@ export class WebhookHandler {
               oldProviderSubscriptionCode: oldProviderSubCode,
               paidAt: event.payment?.paidAt,
               amount: event.payment?.amount,
-              currency: event.payment?.currency || "NGN",
+              currency: event.payment?.currency || "USD",
             },
           });
           console.log(`[WEBHOOK] Plan upgrade workflow dispatched: customer=${dbCustomer.id}, newPlan=${newPlanId}`);
@@ -538,7 +538,7 @@ export class WebhookHandler {
         credits: creditsAmount,
         quantity: resolvedQuantity,
         price: event.payment?.amount || 0,
-        currency: event.payment?.currency || "NGN",
+        currency: event.payment?.currency || "USD",
         paymentReference: reference || null,
         providerId: event.provider,
         metadata: event.raw,

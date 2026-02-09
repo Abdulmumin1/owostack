@@ -9,6 +9,7 @@ import type { Env, Variables } from "../../index";
 import { getResetPeriod } from "../../lib/reset-period";
 import { zodErrorToResponse } from "../../lib/validation";
 import { getScopedBalance, deductScopedBalance } from "../../lib/addon-credits";
+import { checkOverageAllowed, getOrgOverageSettings, getUnbilledOverageAmount } from "../../lib/overage-guards";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -192,6 +193,11 @@ app.post("/check", async (c) => {
     return c.json({
       allowed: false,
       code: "customer_not_found",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
       details: { message: `Customer '${customerId}' not found in this organization.` },
     });
   }
@@ -218,7 +224,16 @@ app.post("/check", async (c) => {
   }
 
   if (!feature) {
-    return c.json({ allowed: false, code: "feature_not_found", details: { message: `Feature '${featureId}' not found.` } });
+    return c.json({
+      allowed: false,
+      code: "feature_not_found",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
+      details: { message: `Feature '${featureId}' not found.` },
+    });
   }
 
   // 3. Check Subscription & Plans (cache-first, then DB)
@@ -289,6 +304,11 @@ app.post("/check", async (c) => {
     return c.json({
       allowed: false,
       code: "no_active_subscription",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
       details: { message: "No active or trialing subscription found for this customer." },
     });
   }
@@ -343,6 +363,11 @@ app.post("/check", async (c) => {
     return c.json({
       allowed: false,
       code: "feature_not_in_plan",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
       details: { message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.` },
     });
   }
@@ -384,6 +409,11 @@ app.post("/check", async (c) => {
     return c.json({
       allowed: true,
       code: "access_granted",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
       details: buildDetails(
         isTrial
           ? `Feature '${feature.slug || feature.id}' enabled on ${planName} via free trial (ends ${trialEndsAt}).`
@@ -460,28 +490,38 @@ app.post("/check", async (c) => {
       if (!doResult.allowed) {
         const overageSetting = planFeature.overage || "block";
         
-        // If overage is "charge", allow but indicate overage
+        // If overage is "charge", check guards before allowing
         if (overageSetting === "charge") {
-          return c.json({
-            allowed: true,
-            code: "overage_allowed",
-            usage: doResult.usage,
-            limit: doResult.limit,
-            balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
-            resetsAt,
-            resetInterval: planFeature.resetInterval,
-            details: buildDetails(
-              `Usage exceeds limit (${doResult.usage}/${doResult.limit}), overage will be billed.`,
-              {
-                overage: {
-                  type: overageSetting,
-                  willBeBilled: true,
-                  pricePerUnit: planFeature.pricePerUnit,
-                  billingUnits: planFeature.billingUnits,
+          const overageGuard = await checkOverageAllowed(
+            db, customer.id, effectiveFeatureId,
+            resetPeriod.periodStart, resetPeriod.periodEnd,
+            planFeature.limitValue, planFeature.maxOverageUnits,
+            effectiveValue,
+          );
+
+          if (overageGuard.allowed) {
+            return c.json({
+              allowed: true,
+              code: "overage_allowed",
+              usage: doResult.usage,
+              limit: doResult.limit,
+              balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
+              resetsAt,
+              resetInterval: planFeature.resetInterval,
+              details: buildDetails(
+                `Usage exceeds limit (${doResult.usage}/${doResult.limit}), overage will be billed.`,
+                {
+                  overage: {
+                    type: overageSetting,
+                    willBeBilled: true,
+                    pricePerUnit: planFeature.overagePrice || planFeature.pricePerUnit,
+                    billingUnits: planFeature.billingUnits,
+                  },
                 },
-              },
-            ),
-          });
+              ),
+            });
+          }
+          // Guard failed — fall through to addon credits or block
         }
         
         // Add-on credit fallback (scoped to credit system)
@@ -508,11 +548,11 @@ app.post("/check", async (c) => {
               code: "addon_credits_used",
               usage: doResult.usage,
               limit: doResult.limit,
-              planCredits: { used: doResult.usage, limit: doResult.limit, resetsAt },
-              addonCredits: remaining,
-              balance: remaining,
+              balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
               resetsAt,
               resetInterval: planFeature.resetInterval,
+              addonCredits: remaining,
+              planCredits: { used: doResult.usage, limit: doResult.limit, resetsAt },
               details: buildDetails(
                 `Plan credits exhausted. ${effectiveValue} add-on credits ${sendEvent ? "deducted" : "will be deducted"}.`,
                 { addonCreditsUsed: effectiveValue, addonCreditsRemaining: remaining },
@@ -522,28 +562,18 @@ app.post("/check", async (c) => {
         }
 
         // Otherwise block
-        if (creditMapping) {
-          const addonBalance = await getAddonBalance(db, customer.id, creditMapping.creditSystemId);
-          return c.json({
-            allowed: false,
-            code: doResult.code,
-            usage: doResult.usage,
-            limit: doResult.limit,
-            balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
-            addonCredits: addonBalance,
-            resetsAt,
-            resetInterval: planFeature.resetInterval,
-            details: buildDetails(`Usage limit reached (${doResult.usage}/${doResult.limit}). Resets at ${resetsAt}.`),
-          });
-        }
+        const blockAddonCredits = creditMapping
+          ? await getAddonBalance(db, customer.id, creditMapping.creditSystemId)
+          : undefined;
         return c.json({
           allowed: false,
-          code: doResult.code,
+          code: "limit_exceeded",
           usage: doResult.usage,
           limit: doResult.limit,
           balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
           resetsAt,
           resetInterval: planFeature.resetInterval,
+          ...(blockAddonCredits !== undefined ? { addonCredits: blockAddonCredits } : {}),
           details: buildDetails(`Usage limit reached (${doResult.usage}/${doResult.limit}). Resets at ${resetsAt}.`),
         });
       }
@@ -570,10 +600,13 @@ app.post("/check", async (c) => {
               return c.json({
                 allowed: true,
                 code: "addon_credits_used",
-                balance: deductResult.remaining,
-                addonCredits: deductResult.remaining,
+                usage: trackResult.balance !== undefined ? (doResult.limit !== null ? doResult.limit - trackResult.balance : null) : doResult.usage,
+                limit: doResult.limit,
+                balance: doResult.limit === null ? null : trackResult.balance ?? (doResult.limit - doResult.usage),
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
+                addonCredits: deductResult.remaining,
+                planCredits: { used: doResult.usage, limit: doResult.limit, resetsAt },
                 details: buildDetails(
                   `Plan credits exhausted. ${effectiveValue} add-on credits deducted.`,
                   { addonCreditsUsed: effectiveValue, addonCreditsRemaining: deductResult.remaining },
@@ -583,8 +616,10 @@ app.post("/check", async (c) => {
           }
           return c.json({
             allowed: false,
-            code: trackResult.code,
-            balance: trackResult.balance,
+            code: "limit_exceeded",
+            usage: trackResult.balance !== undefined ? (doResult.limit !== null ? doResult.limit - trackResult.balance : null) : doResult.usage,
+            limit: doResult.limit,
+            balance: doResult.limit === null ? null : trackResult.balance ?? (doResult.limit - doResult.usage),
             resetsAt,
             resetInterval: planFeature.resetInterval,
             details: buildDetails(`Usage tracking denied — insufficient balance (${trackResult.balance} remaining). Resets at ${resetsAt}.`),
@@ -619,7 +654,7 @@ app.post("/check", async (c) => {
       // Include add-on credit balance in response for credit system features
       const addonCreditsBalance = creditMapping
         ? await getAddonBalance(db, customer.id, creditMapping.creditSystemId)
-        : 0;
+        : undefined;
 
       return c.json({
         allowed: true,
@@ -627,15 +662,12 @@ app.post("/check", async (c) => {
         usage: doResult.usage,
         limit: doResult.limit,
         balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
-        unlimited: doResult.limit === null,
-        ...(creditMapping && doResult.limit !== null
-          ? {
-              planCredits: { used: doResult.usage, limit: doResult.limit, resetsAt },
-              addonCredits: addonCreditsBalance,
-            }
-          : {}),
         resetsAt,
         resetInterval: planFeature.resetInterval,
+        ...(addonCreditsBalance !== undefined ? { addonCredits: addonCreditsBalance } : {}),
+        ...(creditMapping && doResult.limit !== null
+          ? { planCredits: { used: doResult.usage, limit: doResult.limit, resetsAt } }
+          : {}),
         details: buildDetails(
           doResult.limit === null
             ? `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`
@@ -649,7 +681,11 @@ app.post("/check", async (c) => {
       return c.json({
         allowed: true,
         code: "access_granted",
-        unlimited: true,
+        usage: null,
+        limit: null,
+        balance: null,
+        resetsAt,
+        resetInterval: planFeature.resetInterval,
         details: buildDetails(`Unlimited access to '${feature.slug || feature.id}' on ${planName}.`),
       });
     }
@@ -685,28 +721,38 @@ app.post("/check", async (c) => {
     if (currentUsage + effectiveValue > planFeature.limitValue) {
       const overageSetting = planFeature.overage || "block";
       
-      // If overage is "charge" or "notify", allow but indicate overage
-      if (overageSetting === "charge" || overageSetting === "notify") {
-        return c.json({
-          allowed: true,
-          code: "overage_allowed",
-          usage: currentUsage,
-          limit: planFeature.limitValue,
-          balance: planFeature.limitValue - currentUsage,
-          resetsAt,
-          resetInterval: planFeature.resetInterval,
-          details: buildDetails(
-            `Usage exceeds limit (${currentUsage}/${planFeature.limitValue}), overage will be ${overageSetting === "charge" ? "billed" : "notified"}.`,
-            {
-              overage: {
-                type: overageSetting,
-                willBeBilled: overageSetting === "charge",
-                pricePerUnit: planFeature.pricePerUnit,
-                billingUnits: planFeature.billingUnits,
+      // If overage is "charge", check guards before allowing
+      if (overageSetting === "charge") {
+        const overageGuard = await checkOverageAllowed(
+          db, customer.id, effectiveFeatureId,
+          currentPeriodStart, currentPeriodEnd,
+          planFeature.limitValue, planFeature.maxOverageUnits,
+          effectiveValue,
+        );
+
+        if (overageGuard.allowed) {
+          return c.json({
+            allowed: true,
+            code: "overage_allowed",
+            usage: currentUsage,
+            limit: planFeature.limitValue,
+            balance: planFeature.limitValue - currentUsage,
+            resetsAt,
+            resetInterval: planFeature.resetInterval,
+            details: buildDetails(
+              `Usage exceeds limit (${currentUsage}/${planFeature.limitValue}), overage will be billed.`,
+              {
+                overage: {
+                  type: overageSetting,
+                  willBeBilled: true,
+                  pricePerUnit: planFeature.overagePrice || planFeature.pricePerUnit,
+                  billingUnits: planFeature.billingUnits,
+                },
               },
-            },
-          ),
-        });
+            ),
+          });
+        }
+        // Guard failed — fall through to addon credits or block
       }
       
       // Add-on credit fallback (DB path, scoped to credit system)
@@ -718,11 +764,11 @@ app.post("/check", async (c) => {
             code: "addon_credits_used",
             usage: currentUsage,
             limit: planFeature.limitValue,
-            planCredits: { used: currentUsage, limit: planFeature.limitValue, resetsAt },
-            addonCredits: addonBalance,
-            balance: addonBalance,
+            balance: planFeature.limitValue - currentUsage,
             resetsAt,
             resetInterval: planFeature.resetInterval,
+            addonCredits: addonBalance,
+            planCredits: { used: currentUsage, limit: planFeature.limitValue, resetsAt },
             details: buildDetails(
               `Plan credits exhausted. ${effectiveValue} add-on credits will be deducted.`,
               { addonCreditsUsed: effectiveValue, addonCreditsRemaining: addonBalance },
@@ -731,20 +777,10 @@ app.post("/check", async (c) => {
         }
       }
 
-      if (creditMapping) {
-        const addonBalance = await getAddonBalance(db, customer.id, creditMapping.creditSystemId);
-        return c.json({
-          allowed: false,
-          code: "limit_exceeded",
-          usage: currentUsage,
-          limit: planFeature.limitValue,
-          balance: planFeature.limitValue - currentUsage,
-          addonCredits: addonBalance,
-          resetsAt,
-          resetInterval: planFeature.resetInterval,
-          details: buildDetails(`Usage limit exceeded (${currentUsage}/${planFeature.limitValue}). Resets at ${resetsAt}.`),
-        });
-      }
+      // Block — unified path
+      const dbBlockAddonCredits = creditMapping
+        ? await getAddonBalance(db, customer.id, creditMapping.creditSystemId)
+        : undefined;
       return c.json({
         allowed: false,
         code: "limit_exceeded",
@@ -753,6 +789,7 @@ app.post("/check", async (c) => {
         balance: planFeature.limitValue - currentUsage,
         resetsAt,
         resetInterval: planFeature.resetInterval,
+        ...(dbBlockAddonCredits !== undefined ? { addonCredits: dbBlockAddonCredits } : {}),
         details: buildDetails(`Usage limit exceeded (${currentUsage}/${planFeature.limitValue}). Resets at ${resetsAt}.`),
       });
     }
@@ -771,8 +808,11 @@ app.post("/check", async (c) => {
         return c.json({
           allowed: false,
           code: "insufficient_credits",
-          balance: creditBalance,
-          limit: cost,
+          usage: currentUsage,
+          limit: planFeature.limitValue,
+          balance: planFeature.limitValue - currentUsage,
+          resetsAt,
+          resetInterval: planFeature.resetInterval,
           details: buildDetails(`Insufficient credits — balance: ${creditBalance}, required: ${cost}.`),
         });
       }
@@ -818,6 +858,11 @@ app.post("/check", async (c) => {
   return c.json({
     allowed: false,
     code: "unknown_feature_type",
+    usage: null,
+    limit: null,
+    balance: null,
+    resetsAt: null,
+    resetInterval: null,
     details: { message: `Unrecognized feature type '${feature.type}'.` },
   });
 });
@@ -850,7 +895,17 @@ app.post("/track", async (c) => {
   });
 
   if (!customer) {
-    return c.json({ success: false, allowed: false, code: "customer_not_found", details: { message: `Customer '${customerId}' not found in this organization.` } }, 404);
+    return c.json({
+      success: false,
+      allowed: false,
+      code: "customer_not_found",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
+      details: { message: `Customer '${customerId}' not found in this organization.` },
+    }, 404);
   }
 
   // 2. Resolve Feature (cache-first, then DB)
@@ -875,7 +930,17 @@ app.post("/track", async (c) => {
   }
 
   if (!feature) {
-    return c.json({ success: false, allowed: false, code: "feature_not_found", details: { message: `Feature '${featureId}' not found.` } }, 404);
+    return c.json({
+      success: false,
+      allowed: false,
+      code: "feature_not_found",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
+      details: { message: `Feature '${featureId}' not found.` },
+    }, 404);
   }
 
   // 3. Find active/trialing subscriptions (cache-first, then DB)
@@ -936,10 +1001,17 @@ app.post("/track", async (c) => {
   }
 
   if (subscriptions.length === 0) {
-    return c.json(
-      { success: false, allowed: false, code: "no_active_subscription", details: { message: "No active or trialing subscription found for this customer." } },
-      400,
-    );
+    return c.json({
+      success: false,
+      allowed: false,
+      code: "no_active_subscription",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
+      details: { message: "No active or trialing subscription found for this customer." },
+    }, 400);
   }
 
   // 4. Find planFeatures (cache-first, then batch DB query)
@@ -991,10 +1063,17 @@ app.post("/track", async (c) => {
   const planFeature = accessGrantingPlanFeature;
 
   if (!subscription || !planFeature) {
-    return c.json(
-      { success: false, allowed: false, code: "feature_not_in_plan", details: { message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.` } },
-      400,
-    );
+    return c.json({
+      success: false,
+      allowed: false,
+      code: "feature_not_in_plan",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
+      details: { message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.` },
+    }, 400);
   }
 
   // Credit system effective values
@@ -1008,9 +1087,12 @@ app.post("/track", async (c) => {
     ? new Date(subscription.currentPeriodEnd).toISOString()
     : null;
 
+  const trackPlanName = (subscription as any).plan?.name || "current plan";
+
   function buildTrackDetails(message: string, extra?: Record<string, unknown>) {
     return {
       message,
+      planName: trackPlanName,
       ...(isTrial ? { trial: true, trialEndsAt } : {}),
       ...(trackCreditMapping ? { creditSystem: trackCreditMapping.creditSystemSlug, creditCostPerUnit: trackCreditMapping.costPerUnit } : {}),
       ...extra,
@@ -1090,8 +1172,66 @@ app.post("/track", async (c) => {
       if (doResult && !doResult.allowed) {
         const overageSetting = planFeature.overage || "block";
         
-        // If overage is "block", try add-on credit fallback (scoped to credit system)
-        if (overageSetting === "block") {
+        // If overage is "charge", check guards before allowing
+        if (overageSetting === "charge") {
+          const overageGuard = await checkOverageAllowed(
+            db, customer.id, trackEffectiveFeatureId,
+            periodStart, periodEnd,
+            planFeature.limitValue, planFeature.maxOverageUnits,
+            trackEffectiveValue,
+          );
+
+          if (!overageGuard.allowed) {
+            // Guard failed — try addon credit fallback, then block
+            if (trackCreditMapping) {
+              const deductResult = await tryDeductAddonCredits(db, customer.id, trackEffectiveValue, trackCreditMapping.creditSystemId);
+              if (deductResult.deducted) {
+                c.executionCtx.waitUntil(
+                  db.insert(schema.usageRecords).values({
+                    id: crypto.randomUUID(),
+                    customerId: customer.id,
+                    featureId: trackEffectiveFeatureId,
+                    entityId: entity || null,
+                    amount: trackEffectiveValue,
+                    periodStart,
+                    periodEnd,
+                  }),
+                );
+                const doUsage = planFeature.limitValue !== null ? planFeature.limitValue - doResult.balance : null;
+                return c.json({
+                  success: true,
+                  allowed: true,
+                  code: "addon_credits_used",
+                  usage: doUsage,
+                  limit: planFeature.limitValue,
+                  balance: doResult.balance,
+                  resetsAt: new Date(periodEnd).toISOString(),
+                  resetInterval: planFeature.resetInterval,
+                  addonCredits: deductResult.remaining,
+                  planCredits: { used: doUsage ?? 0, limit: planFeature.limitValue, resetsAt: new Date(periodEnd).toISOString() },
+                  details: buildTrackDetails(
+                    `Overage guard blocked (${overageGuard.reason}). ${trackEffectiveValue} add-on credits deducted instead.`,
+                    { addonCreditsUsed: trackEffectiveValue, addonCreditsRemaining: deductResult.remaining },
+                  ),
+                });
+              }
+            }
+            const guardUsage = planFeature.limitValue !== null ? planFeature.limitValue - doResult.balance : null;
+            return c.json({
+              success: false,
+              allowed: false,
+              code: "limit_exceeded",
+              usage: guardUsage,
+              limit: planFeature.limitValue,
+              balance: doResult.balance,
+              resetsAt: new Date(periodEnd).toISOString(),
+              resetInterval: planFeature.resetInterval,
+              details: buildTrackDetails(overageGuard.reason || `Overage not allowed. ${doResult.balance} remaining.`),
+            });
+          }
+          // Guard passed — continue to persist overage usage record below
+        } else {
+          // overage is "block" — try add-on credit fallback
           if (trackCreditMapping) {
             const deductResult = await tryDeductAddonCredits(db, customer.id, trackEffectiveValue, trackCreditMapping.creditSystemId);
             if (deductResult.deducted) {
@@ -1106,14 +1246,18 @@ app.post("/track", async (c) => {
                   periodEnd,
                 }),
               );
+              const blockDoUsage = planFeature.limitValue !== null ? planFeature.limitValue - doResult.balance : null;
               return c.json({
                 success: true,
                 allowed: true,
                 code: "addon_credits_used",
-                balance: deductResult.remaining,
-                addonCredits: deductResult.remaining,
+                usage: blockDoUsage,
+                limit: planFeature.limitValue,
+                balance: doResult.balance,
                 resetsAt: new Date(periodEnd).toISOString(),
                 resetInterval: planFeature.resetInterval,
+                addonCredits: deductResult.remaining,
+                planCredits: { used: blockDoUsage ?? 0, limit: planFeature.limitValue, resetsAt: new Date(periodEnd).toISOString() },
                 details: buildTrackDetails(
                   `Plan credits exhausted. ${trackEffectiveValue} add-on credits deducted.`,
                   { addonCreditsUsed: trackEffectiveValue, addonCreditsRemaining: deductResult.remaining },
@@ -1121,23 +1265,23 @@ app.post("/track", async (c) => {
               });
             }
           }
-          const trackAddonBalance = trackCreditMapping
+          const blockUsage = planFeature.limitValue !== null ? planFeature.limitValue - doResult.balance : null;
+          const trackBlockAddonCredits = trackCreditMapping
             ? await getAddonBalance(db, customer.id, trackCreditMapping.creditSystemId)
-            : 0;
+            : undefined;
           return c.json({
             success: false,
             allowed: false,
-            code: doResult.code,
+            code: "limit_exceeded",
+            usage: blockUsage,
+            limit: planFeature.limitValue,
             balance: doResult.balance,
-            addonCredits: trackAddonBalance || undefined,
             resetsAt: new Date(periodEnd).toISOString(),
             resetInterval: planFeature.resetInterval,
+            ...(trackBlockAddonCredits !== undefined ? { addonCredits: trackBlockAddonCredits } : {}),
             details: buildTrackDetails(`Usage tracking denied — limit reached (${doResult.balance} remaining). Resets at ${new Date(periodEnd).toISOString()}.`),
           });
         }
-        
-        // If overage is "charge", allow the usage (will be billed later)
-        // Continue to persist the usage record
       }
     }
 
@@ -1175,11 +1319,42 @@ app.post("/track", async (c) => {
 
     // Determine if this was an overage usage
     const isOverage = doResult && !doResult.allowed && planFeature.overage === "charge";
-    
+
+    // Threshold trigger: if this was overage, check if unbilled amount crosses org threshold
+    if (isOverage && organizationId) {
+      c.executionCtx.waitUntil((async () => {
+        try {
+          const orgSettings = await getOrgOverageSettings(db, organizationId);
+          if (orgSettings?.billingInterval === "threshold" && orgSettings.thresholdAmount) {
+            const unbilledAmount = await getUnbilledOverageAmount(db, customer.id);
+            if (unbilledAmount >= orgSettings.thresholdAmount) {
+              const hourBucket = Math.floor(Date.now() / (3600 * 1000));
+              await c.env.OVERAGE_BILLING_WORKFLOW.create({
+                id: `overage-threshold-${customer.id}-${hourBucket}`,
+                params: {
+                  organizationId,
+                  customerId: customer.id,
+                  trigger: "threshold",
+                },
+              });
+            }
+          }
+        } catch (e) {
+          console.error("[track] Threshold check failed:", e);
+        }
+      })());
+    }
+
+    const successUsage = doResult && planFeature.limitValue !== null
+      ? planFeature.limitValue - (doResult.balance ?? 0)
+      : null;
+
     return c.json({
       success: true,
       allowed: true,
       code: isOverage ? "tracked_overage" : "tracked",
+      usage: successUsage,
+      limit: planFeature.limitValue,
       balance: doResult?.balance ?? null,
       resetsAt: new Date(periodEnd).toISOString(),
       resetInterval: planFeature.resetInterval,
@@ -1192,7 +1367,17 @@ app.post("/track", async (c) => {
     });
   } catch (e: any) {
     console.error("Track failed:", e);
-    return c.json({ success: false, allowed: false, code: "internal_error", details: { message: "An internal error occurred while tracking usage." } }, 500);
+    return c.json({
+      success: false,
+      allowed: false,
+      code: "internal_error",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
+      details: { message: "An internal error occurred while tracking usage." },
+    }, 500);
   }
 });
 

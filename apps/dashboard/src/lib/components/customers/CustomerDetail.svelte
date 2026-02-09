@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Activity, Calendar, CreditCard, Clock, Package, Zap, User, Loader2, Mail, Hash } from "lucide-svelte";
   import { apiFetch } from "$lib/auth-client";
+  import { formatCurrency } from "$lib/utils/currency";
   import ProgressBar from "$lib/components/ui/ProgressBar.svelte";
   import Timeline from "$lib/components/ui/Timeline.svelte";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
@@ -52,10 +53,6 @@
     return `${Math.floor(diff / 86400000)}d ago`;
   }
 
-  function formatCurrency(amount: number, currency: string = "NGN") {
-    const major = amount / 100;
-    return new Intl.NumberFormat("en-NG", { style: "currency", currency, minimumFractionDigits: 0 }).format(major);
-  }
 
   function formatNumber(n: number) {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;

@@ -17,6 +17,15 @@
     ChartNoAxesColumn,
     Receipt,
     Coins,
+    Eye,
+    EyeOff,
+    Lock,
+    Save,
+    Loader2,
+    Check,
+    ArrowRight,
+    X,
+    Copy,
   } from "lucide-svelte";
   import { page } from "$app/state";
   import {
@@ -25,8 +34,10 @@
     authClient,
     apiFetch,
   } from "$lib/auth-client";
-  import { setActiveEnvironment } from "$lib/env";
+  import { setActiveEnvironment, setProjectId, loadActiveEnvironment, getApiUrlForEnv } from "$lib/env";
   import Logo from "$lib/components/ui/Logo.svelte";
+  import { getProviderConfig } from "$lib/providers";
+  import { defaultCurrency } from "$lib/stores/currency";
 
   let { children } = $props();
 
@@ -38,6 +49,208 @@
   let testConnected = $state(false);
   let liveConnected = $state(false);
   let isSwitching = $state(false);
+
+  // Deploy to Production modal state
+  let showDeployModal = $state(false);
+  let deployCredentials = $state<Record<string, Record<string, string>>>({});
+  let deployShowSecrets = $state<Record<string, boolean>>({});
+  let deploySavingProvider = $state<string | null>(null);
+  let deployError = $state<string | null>(null);
+
+  // Per-provider status: which test providers exist and which have live counterparts
+  let testProviderIds = $state<string[]>([]);
+  let liveProviderIds = $state<Set<string>>(new Set());
+
+  // Step completion state
+  let step1Done = $derived(liveProviderIds.size > 0);
+  let allTestProvidersLive = $derived(
+    testProviderIds.length > 0 && testProviderIds.every((id) => liveProviderIds.has(id))
+  );
+  let step2Done = $state(false);
+  let step2Loading = $state(false);
+  let step2Result = $state<string | null>(null);
+  let step3Done = $state(false);
+  let step3Loading = $state(false);
+  let generatedApiKey = $state<string | null>(null);
+  let apiKeyCopied = $state(false);
+
+  async function openDeployModal() {
+    deployCredentials = {};
+    deployShowSecrets = {};
+    deploySavingProvider = null;
+    deployError = null;
+    step2Done = false;
+    step2Result = null;
+    step3Done = false;
+    generatedApiKey = null;
+    apiKeyCopied = false;
+    showDeployModal = true;
+
+    // Load actual provider accounts to determine which test providers need live counterparts
+    try {
+      const res = await apiFetch(`/api/dashboard/providers/accounts?organizationId=${projectId}`);
+      if (res.data?.data) {
+        const accounts = res.data.data as any[];
+        testProviderIds = [...new Set(accounts.filter((a: any) => a.environment === "test").map((a: any) => a.providerId))];
+        liveProviderIds = new Set(accounts.filter((a: any) => a.environment === "live").map((a: any) => a.providerId));
+      }
+    } catch (e) {
+      console.error("Failed to load provider accounts", e);
+    }
+  }
+
+  function closeDeployModal() {
+    showDeployModal = false;
+    deployCredentials = {};
+    deployError = null;
+  }
+
+  async function connectLiveProvider(providerId: string) {
+    deploySavingProvider = providerId;
+    deployError = null;
+    try {
+      const config = getProviderConfig(providerId);
+      if (!config) throw new Error(`Unknown provider: ${providerId}`);
+
+      const credentials: Record<string, unknown> = {};
+      const providerCreds = deployCredentials[providerId] || {};
+      for (const field of config.fields) {
+        const val = providerCreds[field.key];
+        if (val && val.trim().length > 0) {
+          credentials[field.key] = val.trim();
+        }
+      }
+      if (Object.keys(credentials).length === 0) {
+        throw new Error("Enter at least one credential");
+      }
+
+      const res = await apiFetch("/api/dashboard/providers/accounts", {
+        method: "POST",
+        body: JSON.stringify({
+          organizationId: projectId,
+          providerId,
+          environment: "live",
+          credentials,
+        }),
+      });
+      if (res.error) throw new Error(res.error.message);
+
+      // Update per-provider status
+      liveProviderIds = new Set([...liveProviderIds, providerId]);
+      await loadEnvironmentStatus();
+    } catch (e: any) {
+      deployError = e.message || "Failed to connect provider";
+    } finally {
+      deploySavingProvider = null;
+    }
+  }
+
+  async function copyCatalogToProduction() {
+    step2Loading = true;
+    deployError = null;
+    try {
+      // 1. Export from test (current) API
+      const testApiUrl = getApiUrlForEnv("test");
+      const exportRes = await fetch(
+        `${testApiUrl}/api/dashboard/catalog/export?organizationId=${projectId}`,
+        { credentials: "include" },
+      );
+      const exportData = await exportRes.json();
+      if (!exportRes.ok || !exportData.success) {
+        throw new Error(exportData.error || "Failed to export catalog");
+      }
+
+      // 2. Import to live API
+      const liveApiUrl = getApiUrlForEnv("live");
+      const importRes = await fetch(
+        `${liveApiUrl}/api/dashboard/catalog/import`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            organizationId: projectId,
+            catalog: exportData.data,
+          }),
+        },
+      );
+      const importData = await importRes.json();
+      if (!importRes.ok || !importData.success) {
+        throw new Error(importData.error || "Failed to import catalog");
+      }
+
+      const r = importData.data;
+      const created =
+        r.features.created + r.plans.created + r.planFeatures.created +
+        r.creditSystems.created + r.creditSystemFeatures.created +
+        r.creditPacks.created + r.overageSettings.created;
+      const skipped =
+        r.features.skipped + r.plans.skipped + r.planFeatures.skipped +
+        r.creditSystems.skipped + r.creditSystemFeatures.skipped +
+        r.creditPacks.skipped + r.overageSettings.skipped;
+
+      step2Done = true;
+      step2Result = created > 0
+        ? `Copied ${created} items (${skipped} already existed)`
+        : `All ${skipped} items already exist in production`;
+    } catch (e: any) {
+      deployError = e.message || "Failed to copy catalog";
+    } finally {
+      step2Loading = false;
+    }
+  }
+
+  async function generateProductionApiKey() {
+    step3Loading = true;
+    deployError = null;
+    try {
+      const liveApiUrl = getApiUrlForEnv("live");
+      const res = await fetch(
+        `${liveApiUrl}/api/dashboard/keys`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            organizationId: projectId,
+            name: "Production Key",
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to generate key");
+      }
+
+      generatedApiKey = data.data.secretKey;
+      step3Done = true;
+    } catch (e: any) {
+      deployError = e.message || "Failed to generate API key";
+    } finally {
+      step3Loading = false;
+    }
+  }
+
+  function copyApiKey() {
+    if (generatedApiKey) {
+      navigator.clipboard.writeText(generatedApiKey);
+      apiKeyCopied = true;
+      setTimeout(() => (apiKeyCopied = false), 2000);
+    }
+  }
+
+  async function goToProduction() {
+    isSwitching = true;
+    try {
+      await setActiveEnvironment("live");
+      activeEnvironment = "live";
+      closeDeployModal();
+    } catch (e) {
+      console.error("Failed to switch to production", e);
+    } finally {
+      isSwitching = false;
+    }
+  }
 
   // Fetch user's organizations
   $effect(() => {
@@ -62,25 +275,30 @@
   // Load environment status when project changes
   $effect(() => {
     if (projectId) {
+      setProjectId(projectId);
       loadEnvironmentStatus();
     }
   });
 
   async function loadEnvironmentStatus() {
     try {
-      const res = await apiFetch(
-        `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-      );
-      if (res.data?.data) {
-        const accounts = res.data.data as any[];
+      const [accountsRes, env, currencyRes] = await Promise.all([
+        apiFetch(`/api/dashboard/providers/accounts?organizationId=${projectId}`),
+        loadActiveEnvironment(),
+        apiFetch(`/api/dashboard/config/default-currency?organizationId=${projectId}`),
+      ]);
+
+      if (accountsRes.data?.data) {
+        const accounts = accountsRes.data.data as any[];
         testConnected = accounts.some((a: any) => a.environment === "test");
         liveConnected = accounts.some((a: any) => a.environment === "live");
-        // Default to test; if only live accounts exist, use live
-        if (!testConnected && liveConnected) {
-          activeEnvironment = "live";
-        }
-        setActiveEnvironment(activeEnvironment);
       }
+
+      if (currencyRes.data?.data?.defaultCurrency) {
+        defaultCurrency.set(currencyRes.data.data.defaultCurrency);
+      }
+
+      activeEnvironment = env;
     } catch (e) {
       console.error("Failed to load environment", e);
     }
@@ -100,12 +318,8 @@
 
     isSwitching = true;
     try {
-      await apiFetch("/api/dashboard/switch-environment", {
-        method: "POST",
-        body: JSON.stringify({ organizationId: projectId, environment: env }),
-      });
+      await setActiveEnvironment(env);
       activeEnvironment = env;
-      setActiveEnvironment(env);
     } catch (e) {
       console.error("Failed to switch environment", e);
     } finally {
@@ -183,7 +397,7 @@
             onclick={() => (showProjectDropdown = !showProjectDropdown)}
           >
             <span class="font-medium truncate">{currentProject.name}</span>
-            <ChevronDown size={14} class="text-zinc-500 flex-shrink-0" />
+            <ChevronDown size={14} class="text-zinc-500 shrink-0" />
           </button>
 
           {#if showProjectDropdown}
@@ -295,20 +509,13 @@
             <FlaskConical size={14} class="inline mr-1" />
             You're in <span class="font-bold">sandbox</span>
           </span>
-          {#if liveConnected}
-            <button
-              onclick={() => switchEnvironment("live")}
-              disabled={isSwitching}
-              class="flex items-center gap-1 px-3 py-1 bg-accent text-black text-xs font-bold hover:bg-accent-hover transition-colors disabled:opacity-50"
-            >
-              <Rocket size={12} />
-              Deploy to Production →
-            </button>
-          {:else}
-            <span class="text-zinc-500">
-              Add live keys in Settings to deploy
-            </span>
-          {/if}
+          <button
+            onclick={openDeployModal}
+            class="flex items-center gap-1 px-3 py-1 bg-accent text-black text-xs font-bold hover:bg-accent-hover transition-colors"
+          >
+            <Rocket size={12} />
+            Deploy to Production
+          </button>
         {:else}
           <span class="text-red-400 font-bold">
             <Rocket size={14} class="inline mr-1" />
@@ -329,4 +536,240 @@
       {@render children()}
     </div>
   </main>
+
+  <!-- Deploy to Production Modal -->
+  {#if showDeployModal}
+    <div class="fixed inset-0 z-50 flex items-center justify-center">
+      <!-- Backdrop -->
+      <div
+        class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onclick={closeDeployModal}
+        role="presentation"
+      ></div>
+
+      <!-- Modal -->
+      <div class="relative bg-bg-secondary border border-border shadow-2xl w-full max-w-lg mx-4">
+        <!-- Header -->
+        <div class="flex items-center justify-between p-6 border-b border-border">
+          <div>
+            <h2 class="text-lg font-bold text-white">Deploy to Production</h2>
+            <p class="text-xs text-zinc-500 mt-1">Follow the steps below to go live.</p>
+          </div>
+          <button
+            class="text-zinc-500 hover:text-white transition-colors"
+            onclick={closeDeployModal}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <!-- Error -->
+        {#if deployError}
+          <div class="mx-6 mt-4 p-3 bg-red-900/20 border border-red-500/50 text-red-400 text-xs">
+            {deployError}
+          </div>
+        {/if}
+
+        <!-- Steps -->
+        <div class="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+
+          <!-- Step 1: Connect Providers -->
+          <div class="flex items-start gap-4">
+            <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {allTestProvidersLive ? 'bg-accent text-black' : step1Done ? 'bg-accent/60 text-black' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}">
+              {#if allTestProvidersLive}
+                <Check size={14} />
+              {:else}
+                1
+              {/if}
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-sm font-bold text-white">Connect your provider accounts</h3>
+              <p class="text-xs text-zinc-500 mt-0.5">
+                Add live credentials for each payment provider you use.
+              </p>
+
+              {#if testProviderIds.length === 0}
+                <p class="text-xs text-zinc-600 mt-2 italic">No test providers configured yet. Add one in Settings first.</p>
+              {/if}
+
+              <div class="mt-3 space-y-4">
+                {#each testProviderIds as providerId}
+                  {@const config = getProviderConfig(providerId)}
+                  {@const isLive = liveProviderIds.has(providerId)}
+                  {@const isSaving = deploySavingProvider === providerId}
+                  <div class="border border-border bg-bg-card p-3 space-y-2">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-bold text-white">{config?.name || providerId}</span>
+                      {#if isLive}
+                        <span class="text-[10px] text-accent font-medium flex items-center gap-1">
+                          <Check size={12} /> Live connected
+                        </span>
+                      {:else}
+                        <span class="text-[10px] text-zinc-500">Needs live keys</span>
+                      {/if}
+                    </div>
+                    {#if !isLive && config}
+                      {#each config.fields as field}
+                        {@const secretKey = `${providerId}.${field.key}`}
+                        <div class="relative">
+                          <Lock size={12} class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
+                          <input
+                            type={field.secret && !deployShowSecrets[secretKey] ? "password" : "text"}
+                            value={deployCredentials[providerId]?.[field.key] || ""}
+                            oninput={(e) => {
+                              if (!deployCredentials[providerId]) deployCredentials[providerId] = {};
+                              deployCredentials[providerId][field.key] = (e.target as HTMLInputElement).value;
+                              deployCredentials = deployCredentials;
+                            }}
+                            placeholder={field.placeholder}
+                            class="input pl-9 pr-10 font-mono text-xs w-full"
+                          />
+                          {#if field.secret}
+                            <button
+                              type="button"
+                              class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors"
+                              onclick={() => { deployShowSecrets[secretKey] = !deployShowSecrets[secretKey]; deployShowSecrets = deployShowSecrets; }}
+                            >
+                              {#if deployShowSecrets[secretKey]}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
+                            </button>
+                          {/if}
+                        </div>
+                      {/each}
+                      <button
+                        class="btn btn-primary text-xs px-4 py-1.5"
+                        onclick={() => connectLiveProvider(providerId)}
+                        disabled={isSaving}
+                      >
+                        {#if isSaving}
+                          <Loader2 size={14} class="animate-spin" /> Connecting...
+                        {:else}
+                          Connect {config.name}
+                        {/if}
+                      </button>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+
+              {#if step1Done && !allTestProvidersLive}
+                <p class="text-[10px] text-yellow-500 mt-2">
+                  Some test providers don't have live keys yet. You can still go live, but features using those providers won't work in production.
+                </p>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Step 2: Copy Catalog -->
+          <div class="flex items-start gap-4">
+            <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {step2Done ? 'bg-accent text-black' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}">
+              {#if step2Done}
+                <Check size={14} />
+              {:else}
+                2
+              {/if}
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-sm font-bold text-white">Copy your plans to production</h3>
+              <p class="text-xs text-zinc-500 mt-0.5">
+                Sync all configured plans, features, and credit packs from sandbox to production.
+              </p>
+              {#if step2Result}
+                <p class="text-xs text-accent mt-1">{step2Result}</p>
+              {/if}
+            </div>
+            <div class="shrink-0">
+              {#if step2Done}
+                <span class="text-xs text-accent font-medium flex items-center gap-1">
+                  <Check size={14} /> Copied
+                </span>
+              {:else}
+                <button
+                  class="btn btn-secondary text-xs px-4 py-1.5 whitespace-nowrap"
+                  onclick={copyCatalogToProduction}
+                  disabled={step2Loading}
+                >
+                  {#if step2Loading}
+                    <Loader2 size={14} class="animate-spin" /> Copying...
+                  {:else}
+                    Copy Plans
+                  {/if}
+                </button>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Step 3: Generate API Key -->
+          <div class="flex items-start gap-4">
+            <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {step3Done ? 'bg-accent text-black' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}">
+              {#if step3Done}
+                <Check size={14} />
+              {:else}
+                3
+              {/if}
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-sm font-bold text-white">Create a production secret key</h3>
+              <p class="text-xs text-zinc-500 mt-0.5">
+                Generate a live API key for use in your production environment.
+              </p>
+              {#if generatedApiKey}
+                <div class="mt-2 flex items-center gap-2">
+                  <code class="text-xs font-mono bg-bg-card border border-border px-2 py-1 text-accent truncate max-w-[260px]">
+                    {generatedApiKey}
+                  </code>
+                  <button
+                    class="text-zinc-400 hover:text-white transition-colors shrink-0"
+                    onclick={copyApiKey}
+                    title="Copy key"
+                  >
+                    {#if apiKeyCopied}
+                      <Check size={14} class="text-accent" />
+                    {:else}
+                      <Copy size={14} />
+                    {/if}
+                  </button>
+                </div>
+                <p class="text-[10px] text-zinc-600 mt-1">Save this key — it won't be shown again.</p>
+              {/if}
+            </div>
+            <div class="shrink-0">
+              {#if step3Done}
+                <span class="text-xs text-accent font-medium flex items-center gap-1">
+                  <Check size={14} /> Generated
+                </span>
+              {:else}
+                <button
+                  class="btn btn-secondary text-xs px-4 py-1.5 whitespace-nowrap"
+                  onclick={generateProductionApiKey}
+                  disabled={step3Loading}
+                >
+                  {#if step3Loading}
+                    <Loader2 size={14} class="animate-spin" /> Generating...
+                  {:else}
+                    Generate API Key
+                  {/if}
+                </button>
+              {/if}
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="p-6 border-t border-border flex justify-end">
+          <button
+            class="btn btn-primary px-6 flex items-center gap-2"
+            onclick={goToProduction}
+            disabled={!step1Done || isSwitching}
+          >
+            {#if isSwitching}
+              <Loader2 size={16} class="animate-spin" /> Switching...
+            {:else}
+              <ArrowRight size={16} />
+              Go to Production
+            {/if}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>

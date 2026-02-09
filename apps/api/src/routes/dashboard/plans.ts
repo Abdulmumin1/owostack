@@ -49,7 +49,7 @@ const createPlanSchema = z.object({
   interval: z
     .enum(["monthly", "yearly", "quarterly", "weekly", "annually"])
     .default("monthly"),
-  currency: z.string().default("NGN"),
+  currency: z.string().default("USD"),
   description: z.string().optional(),
   type: z.enum(["free", "paid"]).default("paid"),
   billingModel: z.enum(["base", "per_unit", "variable"]).default("base"),
@@ -448,6 +448,7 @@ const addFeatureSchema = z.object({
   // Overage
   overage: z.enum(["block", "charge"]).default("block"),
   overagePrice: z.number().optional().nullable(),
+  maxOverageUnits: z.number().optional().nullable(),
 });
 
 app.post("/:planId/features", async (c) => {
@@ -473,6 +474,7 @@ app.post("/:planId/features", async (c) => {
     creditCost,
     overage,
     overagePrice,
+    maxOverageUnits,
   } = parsed.data;
   const db = c.get("db");
 
@@ -495,6 +497,7 @@ app.post("/:planId/features", async (c) => {
         creditCost,
         overage,
         overagePrice,
+        maxOverageUnits,
       })
       .returning();
 

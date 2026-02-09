@@ -32,14 +32,22 @@
 
 :root,
 .dark {
-  --fd-background: #161715;
-  --fd-foreground: #ffffff;
-  --fd-primary: #65a30d;
-  --fd-secondary: #10120f;
-  --fd-border: #262626;
-
-  /* Sidebar color must match code blocks */
-  --fd-sidebar-background: #10120f;
+  --color-fd-background: #161715;
+  --color-fd-foreground: #ffffff;
+  --color-fd-primary: #65a30d;
+  --color-fd-primary-foreground: #161715;
+  --color-fd-secondary: #10120f;
+  --color-fd-secondary-foreground: #e5e5e5;
+  --color-fd-border: #262626;
+  --color-fd-muted: #1a1c19;
+  --color-fd-muted-foreground: #a3a3a3;
+  --color-fd-card: #10120f;
+  --color-fd-card-foreground: #ffffff;
+  --color-fd-popover: #10120f;
+  --color-fd-popover-foreground: #e5e5e5;
+  --color-fd-accent: rgba(101, 163, 13, 0.15);
+  --color-fd-accent-foreground: #65a30d;
+  --color-fd-ring: #65a30d;
 }
 
 /* =============================================================================
@@ -91,15 +99,7 @@ article,
    Component Overrides
 ============================================================================= */
 
-/* Sidebar Items */
-.fd-sidebar-item[data-active="true"] {
-  background-color: #65a30d !important;
-  color: #161715 !important;
-}
-
-.fd-sidebar-item:hover:not([data-active="true"]) {
-  background-color: #1a1a1a !important;
-}
+/* Sidebar Items — accent handled by --color-fd-primary */
 
 /* TOC */
 .fd-toc {
@@ -110,13 +110,33 @@ article,
   color: #65a30d !important;
 }
 
-/* Code Blocks - Color must match Sidebar exactly */
+/* Code Blocks */
 pre,
-.fd-codeblock,
-.shiki {
-  background-color: #10120f !important;
+code {
+  font-family: var(--font-mono) !important;
+}
+
+pre {
   border: 1px solid #262626 !important;
-  padding: 1rem !important;
+}
+
+.fd-codeblock {
+  /* border: 1px solid #262626 !important; */
+}
+
+/* Let Shiki control token + background colors */
+pre.shiki,
+.fd-codeblock pre {
+  /* padding: 1rem !important; */
+}
+
+/* Inline code */
+:not(pre) > code {
+  background-color: #1a1c19 !important;
+  border: 1px solid #262626 !important;
+  padding: 0.15rem 0.35rem !important;
+  font-size: 0.875em !important;
+  /* color: #a3e635 !important; */
 }
 
 /* Tables */

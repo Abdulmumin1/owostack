@@ -412,7 +412,7 @@ async function handleUpgrade(
       customer: { id: customerRef, email: customer.email },
       authorizationCode: authCode,
       amount: proratedAmount,
-      currency: newPlan.currency || "NGN",
+      currency: newPlan.currency || "USD",
       metadata: {
         type: "plan_upgrade_proration",
         old_plan_id: existingSub.plan.id,
@@ -518,7 +518,7 @@ async function createUpgradeCheckout(
     customer: { id: customerRef, email: customer.email },
     plan: null,
     amount: Math.max(proratedAmount, 100),
-    currency: newPlan.currency || "NGN",
+    currency: newPlan.currency || "USD",
     callbackUrl: options.callbackUrl,
     metadata: {
       type: "plan_upgrade",
@@ -705,7 +705,7 @@ async function handleOneTimePurchase(
       customer: { id: customerRef, email: customer.email },
       authorizationCode: authCode,
       amount: plan.price,
-      currency: plan.currency || "NGN",
+      currency: plan.currency || "USD",
       metadata: {
         type: "one_time_purchase",
         plan_id: plan.id,
@@ -766,7 +766,7 @@ async function handleOneTimePurchase(
     customer: { id: customerRef, email: customer.email },
     plan: null,
     amount: plan.price,
-    currency: plan.currency || "NGN",
+    currency: plan.currency || "USD",
     callbackUrl: options.callbackUrl,
     metadata: {
       type: "one_time_purchase",
@@ -867,7 +867,7 @@ async function handleNewSubscription(
     customer: { id: customerRef, email: customer.email },
     plan: planRef ? { id: planRef } : null,
     amount: newPlan.price,
-    currency: newPlan.currency || "NGN",
+    currency: newPlan.currency || "USD",
     callbackUrl: options.callbackUrl,
     metadata: {
       type: "new_subscription",

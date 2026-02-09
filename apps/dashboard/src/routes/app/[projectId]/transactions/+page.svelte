@@ -2,6 +2,7 @@
   import { Search, RefreshCw, ArrowRight, Receipt, Loader2, Clock, CreditCard, Gift, ShoppingBag, CheckCircle } from "lucide-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
+  import { formatCurrency } from "$lib/utils/currency";
   import { onMount } from "svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import TransactionDetail from "$lib/components/transactions/TransactionDetail.svelte";
@@ -79,10 +80,7 @@
 
   function formatMoney(amount: number, currency: string) {
     if (!amount) return "Free";
-    return new Intl.NumberFormat("en-NG", {
-      style: "currency",
-      currency: currency || "NGN",
-    }).format(amount / 100);
+    return formatCurrency(amount, currency);
   }
 
   function formatDate(ts: number) {

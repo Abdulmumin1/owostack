@@ -6,6 +6,7 @@
   } from "lucide-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
+  import { formatCurrency } from "$lib/utils/currency";
   import Timeline from "$lib/components/ui/Timeline.svelte";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
@@ -144,11 +145,6 @@
     return `${Math.floor(diff / 86400000)}d ago`;
   }
 
-  function formatCurrency(amount: number, currency: string = "NGN") {
-    return new Intl.NumberFormat("en-NG", {
-      style: "currency", currency, minimumFractionDigits: 0,
-    }).format(amount / 100);
-  }
 
   function statusColor(status: string) {
     switch (status) {

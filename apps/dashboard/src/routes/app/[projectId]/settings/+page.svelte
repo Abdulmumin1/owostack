@@ -16,10 +16,14 @@
     Trash2,
     Pencil,
     X,
+    Receipt,
   } from "lucide-svelte";
   import { page } from "$app/state";
   import { organization, apiFetch } from "$lib/auth-client";
   import { getActiveEnvironment } from "$lib/env";
+  import { SUPPORTED_PROVIDERS } from "$lib/providers";
+  import { defaultCurrency } from "$lib/stores/currency";
+  import { COMMON_CURRENCIES } from "$lib/utils/currency";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
@@ -40,44 +44,7 @@
     updatedAt: number;
   }
 
-  // =========================================================================
-  // Supported providers — add new ones here
-  // =========================================================================
-
-  const SUPPORTED_PROVIDERS = [
-    {
-      id: "paystack",
-      name: "Paystack",
-      description: "Accept payments across Africa",
-      color: "teal",
-      docsUrl: "https://dashboard.paystack.com/#/settings/developers",
-      fields: [
-        { key: "secretKey", label: "Secret Key", placeholder: "sk_test_xxxxxxxxxxxxxxx", secret: true },
-        { key: "publicKey", label: "Public Key", placeholder: "pk_test_xxxxxxxxxxxxxxx", secret: false },
-      ],
-    },
-    {
-      id: "stripe",
-      name: "Stripe",
-      description: "Global payment infrastructure",
-      color: "indigo",
-      docsUrl: "https://dashboard.stripe.com/apikeys",
-      fields: [
-        { key: "secretKey", label: "Secret Key", placeholder: "sk_test_xxxxxxxxxxxxxxx", secret: true },
-        { key: "publishableKey", label: "Publishable Key", placeholder: "pk_test_xxxxxxxxxxxxxxx", secret: false },
-      ],
-    },
-    {
-      id: "dodopayments",
-      name: "Dodo Payments",
-      description: "Simple payment processing",
-      color: "violet",
-      docsUrl: "https://dodopayments.com/docs",
-      fields: [
-        { key: "secretKey", label: "API Key", placeholder: "dodo_sk_xxxxxxxxxxxxxxx", secret: true },
-      ],
-    },
-  ];
+  // Provider config imported from $lib/providers.ts (single source of truth)
 
   // =========================================================================
   // State
@@ -118,6 +85,19 @@
   // General settings
   let isSaving = $state(false);
   let isLoading = $state(true);
+  let orgCurrency = $state("USD");
+  let isSavingCurrency = $state(false);
+  let currencySuccess = $state<string | null>(null);
+
+  // Overage billing settings
+  let overageBillingInterval = $state("end_of_period");
+  let overageThresholdAmount = $state<number | null>(null);
+  let overageAutoCollect = $state(false);
+  let overageGracePeriodHours = $state(0);
+  let isLoadingOverage = $state(false);
+  let isSavingOverage = $state(false);
+  let overageSuccess = $state<string | null>(null);
+  let overageError = $state<string | null>(null);
 
   // Webhook
   let copiedUrl = $state<string | null>(null);
@@ -152,6 +132,8 @@
       loadOrganization();
       loadProviderAccounts();
       loadEnabledProviders();
+      loadOverageSettings();
+      loadDefaultCurrency();
     }
   });
 
@@ -184,6 +166,89 @@
       console.error("Failed to load provider accounts", e);
     } finally {
       isLoadingProviders = false;
+    }
+  }
+
+  async function loadOverageSettings() {
+    isLoadingOverage = true;
+    try {
+      const res = await apiFetch(
+        `/api/dashboard/overage-settings?organizationId=${projectId}`,
+      );
+      if (res.data?.data) {
+        overageBillingInterval = res.data.data.billingInterval || "end_of_period";
+        overageThresholdAmount = res.data.data.thresholdAmount;
+        overageAutoCollect = !!res.data.data.autoCollect;
+        overageGracePeriodHours = res.data.data.gracePeriodHours || 0;
+      }
+    } catch (e) {
+      console.error("Failed to load overage settings", e);
+    } finally {
+      isLoadingOverage = false;
+    }
+  }
+
+  async function saveOverageSettings() {
+    isSavingOverage = true;
+    overageSuccess = null;
+    overageError = null;
+    try {
+      const res = await apiFetch(`/api/dashboard/overage-settings`, {
+        method: "PUT",
+        body: JSON.stringify({
+          organizationId: projectId,
+          billingInterval: overageBillingInterval,
+          thresholdAmount: overageBillingInterval === "threshold" ? overageThresholdAmount : null,
+          autoCollect: overageAutoCollect,
+          gracePeriodHours: overageGracePeriodHours,
+        }),
+      });
+      if (res.data?.success) {
+        overageSuccess = "Overage billing settings saved.";
+        setTimeout(() => (overageSuccess = null), 3000);
+      } else {
+        overageError = res.data?.error || "Failed to save settings.";
+      }
+    } catch (e: any) {
+      overageError = e.message || "Failed to save settings.";
+    } finally {
+      isSavingOverage = false;
+    }
+  }
+
+  async function loadDefaultCurrency() {
+    try {
+      const res = await apiFetch(
+        `/api/dashboard/config/default-currency?organizationId=${projectId}`,
+      );
+      if (res.data?.data?.defaultCurrency) {
+        orgCurrency = res.data.data.defaultCurrency;
+      }
+    } catch (e) {
+      console.error("Failed to load default currency", e);
+    }
+  }
+
+  async function saveDefaultCurrency() {
+    isSavingCurrency = true;
+    currencySuccess = null;
+    try {
+      const res = await apiFetch(`/api/dashboard/config/default-currency`, {
+        method: "PUT",
+        body: JSON.stringify({
+          organizationId: projectId,
+          defaultCurrency: orgCurrency,
+        }),
+      });
+      if (res.data?.success) {
+        defaultCurrency.set(orgCurrency);
+        currencySuccess = "Default currency updated.";
+        setTimeout(() => (currencySuccess = null), 3000);
+      }
+    } catch (e: any) {
+      console.error("Failed to save default currency", e);
+    } finally {
+      isSavingCurrency = false;
     }
   }
 
@@ -397,6 +462,15 @@
         Webhooks
       </div>
     </button>
+    <button
+      onclick={() => (activeTab = "overage")}
+      class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 {activeTab === 'overage' ? 'border-accent text-white bg-accent/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'}"
+    >
+      <div class="flex items-center gap-2">
+        <Receipt size={14} />
+        Overage Billing
+      </div>
+    </button>
   </div>
 
   <div class="min-h-[400px]">
@@ -460,6 +534,41 @@
             {/if}
           </button>
         </div>
+      </div>
+
+      <!-- Default Currency -->
+      <div class="bg-bg-card border border-border p-8 shadow-md mt-6">
+        <div class="mb-8">
+          <h3 class="text-xs font-bold text-white mb-1 uppercase tracking-wider">
+            Default Currency
+          </h3>
+          <p class="text-[10px] text-zinc-500 uppercase tracking-widest">Used as the default when creating new plans and credit packs</p>
+        </div>
+
+        <div class="flex items-end gap-4">
+          <div class="flex-1">
+            <label for="orgCurrency" class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Currency</label>
+            <select id="orgCurrency" bind:value={orgCurrency} class="input w-full">
+              {#each COMMON_CURRENCIES as c}
+                <option value={c.code}>{c.symbol} {c.code} — {c.name}</option>
+              {/each}
+            </select>
+          </div>
+          <button class="btn btn-primary px-6 shrink-0" onclick={saveDefaultCurrency} disabled={isSavingCurrency}>
+            {#if isSavingCurrency}
+              <Loader2 size={16} class="animate-spin" /> Saving...
+            {:else}
+              <Save size={16} /> Save
+            {/if}
+          </button>
+        </div>
+
+        {#if currencySuccess}
+          <div class="mt-4 flex items-center gap-2 text-emerald-400 text-xs">
+            <CheckCircle size={14} />
+            {currencySuccess}
+          </div>
+        {/if}
       </div>
 
     <!-- ================================================================= -->
@@ -827,6 +936,138 @@
               </p>
             </div>
           </div>
+        </div>
+      </div>
+    <!-- ================================================================= -->
+    <!-- OVERAGE BILLING TAB                                               -->
+    <!-- ================================================================= -->
+    {:else if activeTab === "overage"}
+      <div class="bg-bg-card border border-border p-8 shadow-md">
+        <div class="flex items-center gap-4 mb-10">
+          <div class="w-12 h-12 bg-accent/10 flex items-center justify-center">
+            <Receipt size={24} class="text-accent" />
+          </div>
+          <div>
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider">Overage Billing</h3>
+            <p class="text-[10px] text-zinc-500 uppercase tracking-widest">Configure how overage charges are collected</p>
+          </div>
+        </div>
+
+        {#if overageSuccess}
+          <div class="p-4 bg-emerald-900/20 border border-emerald-500/50 text-emerald-400 text-xs mb-6 flex items-center gap-2">
+            <CheckCircle size={14} />
+            {overageSuccess}
+          </div>
+        {/if}
+        {#if overageError}
+          <div class="p-4 bg-red-900/20 border border-red-500/50 text-red-400 text-xs mb-6 flex items-center gap-2">
+            <AlertCircle size={14} />
+            {overageError}
+          </div>
+        {/if}
+
+        <div class="space-y-8">
+          <!-- Billing Interval -->
+          <div>
+            <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2">Billing Interval</label>
+            <p class="text-[10px] text-zinc-600 mb-3">How often to generate invoices for overage usage</p>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {#each [
+                { value: "end_of_period", label: "End of Period", desc: "Bill when subscription renews" },
+                { value: "daily", label: "Daily", desc: "Bill every 24 hours" },
+                { value: "weekly", label: "Weekly", desc: "Bill every Monday" },
+                { value: "monthly", label: "Monthly", desc: "Bill on the 1st" },
+                { value: "threshold", label: "Threshold", desc: "Bill when amount is reached" },
+              ] as option}
+                <button
+                  onclick={() => (overageBillingInterval = option.value)}
+                  class="p-4 border text-left transition-all {overageBillingInterval === option.value ? 'border-accent bg-accent/5 text-white' : 'border-border text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'}"
+                >
+                  <div class="text-[10px] font-bold uppercase tracking-widest mb-1">{option.label}</div>
+                  <div class="text-[9px] opacity-60">{option.desc}</div>
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Threshold Amount (only when interval=threshold) -->
+          {#if overageBillingInterval === "threshold"}
+            <div>
+              <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2">Threshold Amount</label>
+              <p class="text-[10px] text-zinc-600 mb-3">Generate an invoice when unbilled overages reach this amount (in minor units, e.g. kobo/cents)</p>
+              <input
+                type="number"
+                bind:value={overageThresholdAmount}
+                placeholder="e.g. 50000 (500.00)"
+                class="input w-full max-w-xs"
+              />
+            </div>
+          {/if}
+
+          <!-- Auto-Collect -->
+          <div>
+            <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2">Auto-Collect Payments</label>
+            <p class="text-[10px] text-zinc-600 mb-3">Automatically charge the customer's card when an overage invoice is generated</p>
+            <div class="flex gap-3">
+              <button
+                onclick={() => (overageAutoCollect = false)}
+                class="px-6 py-3 border text-[10px] font-bold uppercase tracking-widest transition-all {!overageAutoCollect ? 'border-accent bg-accent/5 text-white' : 'border-border text-zinc-500 hover:border-zinc-600'}"
+              >
+                Manual
+              </button>
+              <button
+                onclick={() => (overageAutoCollect = true)}
+                class="px-6 py-3 border text-[10px] font-bold uppercase tracking-widest transition-all {overageAutoCollect ? 'border-accent bg-accent/5 text-white' : 'border-border text-zinc-500 hover:border-zinc-600'}"
+              >
+                Automatic
+              </button>
+            </div>
+          </div>
+
+          <!-- Grace Period -->
+          {#if overageAutoCollect}
+            <div>
+              <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2">Grace Period (Hours)</label>
+              <p class="text-[10px] text-zinc-600 mb-3">Wait this many hours after generating an invoice before charging the card</p>
+              <input
+                type="number"
+                bind:value={overageGracePeriodHours}
+                min="0"
+                placeholder="0"
+                class="input w-full max-w-xs"
+              />
+            </div>
+          {/if}
+
+          <!-- Info Box -->
+          <div class="flex items-start gap-4 bg-blue-900/10 border border-blue-900/30 p-5 shadow-sm">
+            <AlertCircle size={18} class="flex-shrink-0 text-blue-400 mt-0.5" />
+            <div class="space-y-2">
+              <h4 class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">How overage billing works</h4>
+              <p class="text-xs text-blue-400/80 leading-relaxed">
+                When a customer exceeds their plan's included usage and the feature is set to "Charge",
+                Owostack tracks the overage and generates invoices based on your billing interval.
+                Customers must have a payment method on file — without one, overage is blocked.
+                You can also set per-feature caps (Max Overage Units) and per-customer spending limits.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Save Button -->
+        <div class="flex justify-end mt-10 pt-6 border-t border-border">
+          <button
+            onclick={saveOverageSettings}
+            disabled={isSavingOverage}
+            class="flex items-center gap-2 px-8 py-3 bg-accent text-black text-[10px] font-bold uppercase tracking-widest hover:bg-accent/90 transition-colors disabled:opacity-50"
+          >
+            {#if isSavingOverage}
+              <Loader2 size={14} class="animate-spin" />
+            {:else}
+              <Save size={14} />
+            {/if}
+            Save Settings
+          </button>
         </div>
       </div>
     {/if}

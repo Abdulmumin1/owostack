@@ -48,7 +48,7 @@ export const attachParamsSchema = z.object({
   product: z.string().min(1, "Product slug is required"),
   metadata: z.record(z.string(), z.unknown()).optional(),
   channels: z.array(paymentChannelSchema).optional(),
-  currency: z.enum(["NGN", "GHS", "ZAR", "KES", "USD"]).optional(),
+  currency: z.string().length(3).toUpperCase().optional(),
   callbackUrl: z.string().url().optional(),
 });
 

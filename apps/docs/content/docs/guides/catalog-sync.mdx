@@ -1,0 +1,135 @@
+---
+title: Define Plans in Code
+description: Use the SDK catalog to define features and plans as code, then sync to the dashboard
+icon: Code
+---
+
+# Define Plans in Code
+
+Define your features and plans in TypeScript and push them to Owostack with a single command. No dashboard clicks required.
+
+## Prerequisites
+
+- An Owostack organization with an API key
+- `@owostack/core` installed in your project
+
+## 1. Define your features
+
+Create a file (e.g. `src/billing/features.ts`) and define your features using `metered()` and `boolean()`:
+
+```ts
+import { metered, boolean } from "@owostack/core";
+
+export const apiCalls = metered("api-calls", { name: "API Calls" });
+export const analytics = boolean("analytics", { name: "Analytics Dashboard" });
+export const seats = metered("seats", { name: "Team Seats" });
+```
+
+## 2. Define your plans
+
+Create a config file (e.g. `owo.config.ts`) that assembles features into plans:
+
+```ts
+import { Owostack, plan } from "@owostack/core";
+import { apiCalls, analytics, seats } from "./src/billing/features";
+
+export default new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  catalog: [
+    plan("starter", {
+      name: "Starter",
+      price: 0,
+      currency: "NGN",
+      interval: "monthly",
+      features: [
+        apiCalls.limit(1000),
+        analytics.off(),
+        seats.limit(3, { reset: "never" }),
+      ],
+    }),
+    plan("pro", {
+      name: "Pro",
+      price: 500000,
+      currency: "NGN",
+      interval: "monthly",
+      features: [
+        apiCalls.limit(50000, { overage: "charge", overagePrice: 100 }),
+        analytics.on(),
+        seats.limit(20, { reset: "never" }),
+      ],
+    }),
+    plan("enterprise", {
+      name: "Enterprise",
+      price: 2000000,
+      currency: "NGN",
+      interval: "monthly",
+      features: [
+        apiCalls.unlimited(),
+        analytics.on(),
+        seats.unlimited(),
+      ],
+    }),
+  ],
+});
+```
+
+## 3. Sync to the API
+
+### Using the CLI
+
+```bash
+npx owostack sync --config ./owo.config.ts
+```
+
+### Using `owo.sync()` in a script
+
+```ts
+import owo from "./owo.config";
+
+const result = await owo.sync();
+console.log(result);
+// { features: { created: [...], updated: [...] }, plans: { ... } }
+```
+
+### As a deploy step
+
+```json
+{
+  "scripts": {
+    "sync": "npx owostack sync",
+    "deploy": "pnpm sync && pnpm build && pnpm start"
+  }
+}
+```
+
+## 4. Use feature handles in your app
+
+Once features are defined, use them directly for access checks and usage tracking:
+
+```ts
+import { apiCalls, analytics } from "./billing/features";
+
+// Check access
+const access = await apiCalls.check("user@example.com");
+if (!access.allowed) {
+  return res.status(403).json({ error: access.code });
+}
+
+// Track usage
+await apiCalls.track("user@example.com", 1);
+
+// Boolean features — no .track()
+const { allowed } = await analytics.check("user@example.com");
+```
+
+## What sync does
+
+- **Creates** features and plans that don't exist yet
+- **Updates** features and plans that have changed in code
+- **Never deletes** — removing from code doesn't remove from the API
+- **Tags resources** with `source: "sdk"` so the dashboard knows they're code-managed
+- **Idempotent** — running sync multiple times with the same config is safe
+
+<Callout type="info">
+  Resources created in the dashboard remain untouched by sync. Code-managed and dashboard-managed resources coexist safely.
+</Callout>

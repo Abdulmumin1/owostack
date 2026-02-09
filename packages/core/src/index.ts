@@ -5,8 +5,19 @@ import type {
   CheckResult,
   TrackParams,
   TrackResult,
+  AddonParams,
+  AddonResult,
+  BillingUsageParams,
+  BillingUsageResult,
+  InvoiceParams,
+  InvoiceResult,
+  InvoicesParams,
+  InvoicesResult,
   OwostackConfig,
+  SyncResult,
 } from "@owostack/types";
+
+import { bindFeatureHandles, buildSyncPayload } from "./catalog.js";
 
 /**
  * Owostack - Billing infrastructure for Africa
@@ -19,12 +30,67 @@ import type {
  * Customers are auto-created when you pass customerData to any endpoint.
  */
 export class Owostack {
-  private config: OwostackConfig;
+  /** @internal — exposed for CLI tooling */
+  readonly _config: OwostackConfig;
   private apiUrl: string;
 
+  /** Billing: unbilled usage, invoices, and invoice generation */
+  readonly billing: BillingNamespace;
+
   constructor(config: OwostackConfig) {
-    this.config = config;
+    this._config = config;
     this.apiUrl = config.apiUrl || "https://api.owostack.dev";
+    this.billing = new BillingNamespace(this);
+
+    // Bind all registered feature handles to this client
+    if (config.catalog && config.catalog.length > 0) {
+      bindFeatureHandles(this, config.catalog);
+    }
+  }
+
+  /**
+   * Override the API key at runtime (used by CLI).
+   * @internal
+   */
+  setSecretKey(key: string) {
+    this._config.secretKey = key;
+  }
+
+  /**
+   * Override the API URL at runtime (used by CLI).
+   * @internal
+   */
+  setApiUrl(url: string) {
+    this._config.apiUrl = url;
+    this.apiUrl = url;
+  }
+
+  /**
+   * sync() - Push catalog to the API
+   *
+   * Reconciles features and plans defined in the catalog with the server.
+   * Idempotent — safe to call multiple times with the same config.
+   * Only creates/updates; never deletes.
+   *
+   * @example
+   * ```ts
+   * const result = await owo.sync();
+   * console.log(`Created ${result.features.created.length} features`);
+   * ```
+   */
+  async sync(): Promise<SyncResult> {
+    if (!this._config.catalog || this._config.catalog.length === 0) {
+      return {
+        success: true,
+        features: { created: [], updated: [], unchanged: [] },
+        plans: { created: [], updated: [], unchanged: [] },
+        warnings: ["No catalog entries to sync."],
+      };
+    }
+
+    const payload = buildSyncPayload(this._config.catalog);
+    const response = await this.post("/sync", payload);
+    return response as SyncResult;
   }
 
   /**
@@ -46,7 +112,7 @@ export class Owostack {
    * ```
    */
   async attach(params: AttachParams): Promise<AttachResult> {
-    const response = await this.request("/attach", params);
+    const response = await this.post("/attach", params);
     return response as AttachResult;
   }
 
@@ -72,7 +138,7 @@ export class Owostack {
    * ```
    */
   async check(params: CheckParams): Promise<CheckResult> {
-    const response = await this.request("/check", params);
+    const response = await this.post("/check", params);
     return response as CheckResult;
   }
 
@@ -93,19 +159,47 @@ export class Owostack {
    * ```
    */
   async track(params: TrackParams): Promise<TrackResult> {
-    const response = await this.request("/track", params);
+    const response = await this.post("/track", params);
     return response as TrackResult;
   }
 
   /**
-   * Internal request handler
+   * addon() - Purchase Add-on Credit Pack
+   *
+   * Buy additional credits scoped to a credit system.
+   * If the customer has a card on file, charges immediately.
+   * Otherwise returns a checkout URL.
+   *
+   * @example
+   * ```ts
+   * const result = await owo.addon({
+   *   customer: 'user_123',
+   *   pack: '250-credits',
+   *   quantity: 2,
+   * });
+   *
+   * if (result.requiresCheckout) {
+   *   window.location.href = result.checkoutUrl!;
+   * } else {
+   *   console.log(`Balance: ${result.balance} credits`);
+   * }
+   * ```
    */
-  private async request(endpoint: string, body: unknown): Promise<unknown> {
+  async addon(params: AddonParams): Promise<AddonResult> {
+    const response = await this.post("/addon", params);
+    return response as AddonResult;
+  }
+
+  /**
+   * Internal POST request handler
+   * @internal
+   */
+  async post(endpoint: string, body: unknown): Promise<unknown> {
     const response = await fetch(`${this.apiUrl}${endpoint}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.secretKey}`,
+        Authorization: `Bearer ${this._config.secretKey}`,
       },
       body: JSON.stringify(body),
     });
@@ -116,6 +210,93 @@ export class Owostack {
     }
 
     return response.json();
+  }
+
+  /**
+   * Internal GET request handler
+   * @internal
+   */
+  async get(endpoint: string, query?: Record<string, string>): Promise<unknown> {
+    const url = new URL(`${this.apiUrl}${endpoint}`);
+    if (query) {
+      for (const [key, value] of Object.entries(query)) {
+        if (value !== undefined && value !== "") url.searchParams.set(key, value);
+      }
+    }
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this._config.secretKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new OwostackError(error.code || "unknown_error", error.message || error.error || "Request failed");
+    }
+
+    return response.json();
+  }
+}
+
+/**
+ * Billing namespace — unbilled usage, invoice generation, invoice history
+ */
+class BillingNamespace {
+  constructor(private client: Owostack) {}
+
+  /**
+   * usage() - Get Unbilled Overage Usage
+   *
+   * Returns a breakdown of all billable usage that hasn't been invoiced yet.
+   *
+   * @example
+   * ```ts
+   * const usage = await owo.billing.usage({ customer: 'user_123' });
+   * console.log(`Owes: ${usage.currency} ${usage.totalEstimated / 100}`);
+   * ```
+   */
+  async usage(params: BillingUsageParams): Promise<BillingUsageResult> {
+    const response = await this.client.get("/billing/usage", {
+      customer: params.customer,
+    });
+    return response as BillingUsageResult;
+  }
+
+  /**
+   * invoice() - Generate an Invoice
+   *
+   * Creates an invoice for the customer's unbilled overage usage.
+   * Fails if there's no unbilled usage to invoice.
+   *
+   * @example
+   * ```ts
+   * const result = await owo.billing.invoice({ customer: 'user_123' });
+   * console.log(`Invoice ${result.invoice.number}: ${result.invoice.total}`);
+   * ```
+   */
+  async invoice(params: InvoiceParams): Promise<InvoiceResult> {
+    const response = await this.client.post("/billing/invoice", params);
+    return response as InvoiceResult;
+  }
+
+  /**
+   * invoices() - List Past Invoices
+   *
+   * Returns all invoices for a customer.
+   *
+   * @example
+   * ```ts
+   * const result = await owo.billing.invoices({ customer: 'user_123' });
+   * result.invoices.forEach(inv => console.log(inv.number, inv.status));
+   * ```
+   */
+  async invoices(params: InvoicesParams): Promise<InvoicesResult> {
+    const response = await this.client.get("/billing/invoices", {
+      customer: params.customer,
+    });
+    return response as InvoicesResult;
   }
 }
 
@@ -132,6 +313,10 @@ export class OwostackError extends Error {
   }
 }
 
+// Re-export catalog builder functions
+export { metered, boolean, plan, buildSyncPayload } from "./catalog.js";
+export { MeteredHandle, BooleanHandle } from "./catalog.js";
+
 // Re-export types for convenience
 export type {
   AttachParams,
@@ -142,8 +327,28 @@ export type {
   TrackParams,
   TrackResult,
   TrackCode,
+  AddonParams,
+  AddonResult,
+  BillingUsageParams,
+  BillingUsageResult,
+  BillingFeatureUsage,
+  InvoiceParams,
+  InvoiceResult,
+  InvoicesParams,
+  InvoicesResult,
+  Invoice,
+  InvoiceLineItem,
   OwostackConfig,
   CustomerData,
   ResponseDetails,
   OverageDetails,
+  PlanCredits,
+  CatalogEntry,
+  PlanDefinition,
+  PlanFeatureEntry,
+  MeteredFeatureConfig,
+  BooleanFeatureConfig,
+  SyncPayload,
+  SyncResult,
+  SyncChanges,
 } from "@owostack/types";

@@ -1,0 +1,235 @@
+---
+title: Catalog Builders
+description: "Reference: metered(), boolean(), plan() — define features and plans as code"
+icon: Blocks
+---
+
+# Catalog Builders
+
+Builder functions for defining features and plans declaratively. Features become handles you can use directly for `.check()` and `.track()`.
+
+## `metered(slug, opts?)`
+
+Create a metered feature handle. Metered features have numeric limits that reset on a schedule.
+
+```ts
+import { metered } from "@owostack/core";
+
+const apiCalls = metered("api-calls", { name: "API Calls" });
+```
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `slug` | `string` | Yes | Unique feature identifier |
+| `opts.name` | `string` | No | Human-readable name (auto-generated from slug if omitted) |
+
+### Methods
+
+#### `.limit(value, config?)`
+
+Create a plan feature entry with a specific limit.
+
+```ts
+apiCalls.limit(1000)
+apiCalls.limit(50000, { reset: "daily" })
+apiCalls.limit(50000, { overage: "charge", overagePrice: 100, maxOverageUnits: 100000 })
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `value` | `number` | — | Usage limit per period |
+| `config.reset` | `ResetInterval` | `"monthly"` | Reset schedule |
+| `config.overage` | `"block" \| "charge"` | `"block"` | What happens when limit is exceeded |
+| `config.overagePrice` | `number` | — | Price per overage unit (minor currency) |
+| `config.maxOverageUnits` | `number` | — | Hard cap on overage units per period |
+| `config.billingUnits` | `number` | `1` | Package size for billing |
+| `config.creditCost` | `number` | — | Cost in credits per unit |
+
+#### `.unlimited()`
+
+Create a plan feature entry with no limit.
+
+```ts
+apiCalls.unlimited()
+```
+
+#### `.config(opts)`
+
+Create a plan feature entry with full config object.
+
+```ts
+apiCalls.config({ limit: 50000, reset: "monthly", overage: "charge", overagePrice: 100 })
+```
+
+#### `.check(customer, opts?)`
+
+Check if a customer has access to this feature.
+
+```ts
+const result = await apiCalls.check("user@example.com");
+const result = await apiCalls.check("user@example.com", { value: 5 });
+const result = await apiCalls.check("user@example.com", { sendEvent: true });
+```
+
+Returns `Promise<CheckResult>`.
+
+#### `.track(customer, value?, opts?)`
+
+Track usage for this feature.
+
+```ts
+await apiCalls.track("user@example.com");
+await apiCalls.track("user@example.com", 5);
+await apiCalls.track("user@example.com", 1, { entity: "workspace_123" });
+```
+
+Returns `Promise<TrackResult>`.
+
+---
+
+## `boolean(slug, opts?)`
+
+Create a boolean feature handle. Boolean features are either enabled or disabled per plan — no usage tracking.
+
+```ts
+import { boolean } from "@owostack/core";
+
+const analytics = boolean("analytics", { name: "Analytics Dashboard" });
+```
+
+### Parameters
+
+Same as `metered()`.
+
+### Methods
+
+#### `.on()`
+
+Feature is included in this plan.
+
+```ts
+analytics.on()
+```
+
+#### `.off()`
+
+Feature is NOT included in this plan.
+
+```ts
+analytics.off()
+```
+
+#### `.check(customer, opts?)`
+
+Check if a customer has access to this feature.
+
+```ts
+const { allowed } = await analytics.check("user@example.com");
+```
+
+Returns `Promise<CheckResult>`.
+
+<Callout type="info">
+  Boolean features have no `.track()` method — the type system enforces this.
+</Callout>
+
+---
+
+## `plan(slug, config)`
+
+Create a plan definition for the catalog.
+
+```ts
+import { plan } from "@owostack/core";
+
+plan("pro", {
+  name: "Pro",
+  price: 500000,
+  currency: "NGN",
+  interval: "monthly",
+  features: [
+    apiCalls.limit(50000, { overage: "charge", overagePrice: 100 }),
+    analytics.on(),
+    seats.limit(20, { reset: "never" }),
+  ],
+})
+```
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `slug` | `string` | Yes | Unique plan identifier |
+| `config.name` | `string` | Yes | Human-readable plan name |
+| `config.price` | `number` | Yes | Price in minor currency units (e.g. kobo) |
+| `config.currency` | `Currency` | Yes | Currency code (`"NGN"`, `"GHS"`, `"ZAR"`, `"KES"`, `"USD"`) |
+| `config.interval` | `PlanInterval` | Yes | Billing interval (`"monthly"`, `"yearly"`, etc.) |
+| `config.features` | `PlanFeatureEntry[]` | Yes | Array of feature entries from `.limit()`, `.on()`, etc. |
+| `config.description` | `string` | No | Plan description |
+| `config.planGroup` | `string` | No | Group for upgrade/downgrade logic |
+| `config.trialDays` | `number` | No | Trial period in days |
+| `config.metadata` | `Record<string, unknown>` | No | Custom metadata |
+
+---
+
+## `owo.sync()`
+
+Push the catalog to the API. Creates and updates features and plans.
+
+```ts
+const result = await owo.sync();
+```
+
+### Returns `Promise<SyncResult>`
+
+```ts
+interface SyncResult {
+  success: boolean;
+  features: { created: string[]; updated: string[]; unchanged: string[] };
+  plans: { created: string[]; updated: string[]; unchanged: string[] };
+  warnings: string[];
+}
+```
+
+---
+
+## CLI: `owostack sync`
+
+Push a catalog from the command line.
+
+```bash
+npx owostack sync [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--config <path>` | Path to config file (default: `./owo.config.ts`) |
+| `--dry-run` | Show what would change without applying |
+| `--key <api-key>` | API secret key (or set `OWOSTACK_SECRET_KEY` env var) |
+| `--url <api-url>` | API URL override |
+
+### Example config file
+
+```ts
+// owo.config.ts
+import { Owostack, metered, boolean, plan } from "@owostack/core";
+
+const apiCalls = metered("api-calls");
+const analytics = boolean("analytics");
+
+export default new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  catalog: [
+    plan("starter", {
+      name: "Starter", price: 0, currency: "NGN", interval: "monthly",
+      features: [apiCalls.limit(1000), analytics.off()],
+    }),
+    plan("pro", {
+      name: "Pro", price: 500000, currency: "NGN", interval: "monthly",
+      features: [apiCalls.limit(50000), analytics.on()],
+    }),
+  ],
+});
+```
