@@ -91,7 +91,9 @@ app.use(
         "http://localhost:5174",
         "http://localhost:3000",
         "http://localhost:4173",
-        "https://dashboard.owostack.com",
+        "https://dash.owostack.com",
+        "https://app.owostack.com",
+        "https://owostack.com",
       ];
       if (origin ) {
         return origin;
@@ -132,12 +134,14 @@ dashboardRoutes.use(
   cors({
     origin: (origin) => {
       // Allow requests from localhost during development
-      const allowedOrigins = [
+       const allowedOrigins = [
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:3000",
         "http://localhost:4173",
-        "https://dashboard.owostack.com",
+        "https://dash.owostack.com",
+        "https://app.owostack.com",
+        "https://owostack.com",
       ];
       if (origin && allowedOrigins.includes(origin)) {
         return origin;

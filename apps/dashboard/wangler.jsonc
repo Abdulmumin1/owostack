@@ -1,18 +1,16 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "owostack-dashboard",
+	"name": "owostack-dasbhoard",
 	"main": ".svelte-kit/cloudflare/_worker.js",
-	"compatibility_date": "2026-01-31",
+	"compatibility_date": "2026-02-01",
 	"compatibility_flags": ["nodejs_als"],
 	"assets": {
 		"binding": "ASSETS",
 		"directory": ".svelte-kit/cloudflare"
 	},
-
-	
 	"routes": [
 		{
-			"pattern": "owostack.com",
+			"pattern": "app.owostack.com",
 			"custom_domain": true
 		}
 	],

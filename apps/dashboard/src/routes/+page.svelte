@@ -1,6 +1,44 @@
 <script lang="ts">
-  import { Github, ArrowRight } from "lucide-svelte";
+  import {  ArrowRight, CreditCard, Users, Zap,  Coins, LockIcon } from "lucide-svelte";
   import Logo from "$lib/components/ui/Logo.svelte";
+  import { onMount, tick } from "svelte";
+
+  const phrases: { text: string; icons: typeof CreditCard[] }[] = [
+    { text: "subscriptions", icons: [CreditCard] },
+    { text: "feature gating", icons: [LockIcon] },
+    { text: "usage metering", icons: [Coins] },
+    { text: "team seats", icons: [Users] },
+    { text: "subscriptions + feature gating", icons: [CreditCard, LockIcon] },
+    { text: "usage metering + team seats", icons: [Coins, Users] },
+    { text: "subscriptions + metering + overage", icons: [CreditCard, Coins, Zap] },
+  ];
+
+  let currentIndex = 0;
+  let visible = true;
+  let containerWidth = 0;
+  let innerEl: HTMLSpanElement;
+  let interval: ReturnType<typeof setInterval>;
+
+  async function measureCurrent() {
+    await tick();
+    requestAnimationFrame(() => {
+      if (innerEl) containerWidth = innerEl.scrollWidth;
+    });
+  }
+
+  onMount(() => {
+    measureCurrent();
+    interval = setInterval(async () => {
+      visible = false;
+      const nextIndex = (currentIndex + 1) % phrases.length;
+      setTimeout(async () => {
+        currentIndex = nextIndex;
+        await measureCurrent();
+        visible = true;
+      }, 400);
+    }, 2400);
+    return () => clearInterval(interval);
+  });
 </script>
 
 <svelte:head>
@@ -37,9 +75,30 @@ Not backed by Y Combinator</div>
         Three API calls.<br />
         <span class="text-text-secondary">That's your entire billing layer.</span>
       </h1>
-      <p class="text-base md:text-lg text-text-secondary max-w-lg leading-relaxed mb-10">
-        Add subscriptions, feature gating, usage metering, and team seats to your app. Provider-agnostic (paystack/stripe/dodo/...) 
-      </p>
+      <div class="text-base md:text-lg text-text-secondary max-w-150 leading-relaxed mb-10">
+        <span>Add </span>
+        <span
+          class="inline-flex overflow-hidden align-bottom transition-[width] duration-300 ease-in-out"
+          style="width: {containerWidth}px; height: 1.6em;"
+        >
+          <span
+            bind:this={innerEl}
+            class="inline-flex items-center gap-1.5 transition-all duration-300 ease-in-out text-text-primary font-medium whitespace-nowrap"
+            class:translate-y-0={visible}
+            class:opacity-100={visible}
+            class:translate-y-3={!visible}
+            class:opacity-0={!visible}
+          >
+            {#each phrases[currentIndex].icons as Icon}
+              <svelte:component this={Icon} size={18} class="text-accent shrink-0" />
+            {/each}
+            {phrases[currentIndex].text}
+          </span>
+        </span>
+        <span> to your app.</span>
+        <br />
+        <span>Provider-agnostic.</span>
+      </div>
       <div class="flex flex-wrap items-center gap-5">
         <a href="/signup" class="btn btn-primary py-2.5 px-6 text-xs">Get Started</a>
         <a href="/docs" class="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors group">
@@ -93,7 +152,8 @@ Not backed by Y Combinator</div>
           </div>
           <div class="p-6 font-mono text-[11px] md:text-xs leading-[1.9] overflow-x-auto text-text-secondary max-h-[600px] overflow-y-auto">
 <pre><span class="text-text-secondary italic">// Subscribe a customer</span>
-<span class="text-red-400/60">const</span> txn = <span class="text-red-400/60">await</span> paystack.transaction.initialize(&#123;
+<span class="text-red-400/60">const</span> txn = <span class="text-red-400/60">await</span> paystack.transaction
+  .initialize(&#123;
   email: customer.email,
   amount: plan.price * 100,
   plan: plan.paystackPlanCode,
@@ -107,19 +167,26 @@ Not backed by Y Combinator</div>
 <span class="text-red-400/60">const</span> prorated = newPlan.price - credit;
 
 <span class="text-text-secondary italic">// Gate a feature</span>
-<span class="text-red-400/60">const</span> sub = <span class="text-red-400/60">await</span> db.subscriptions.findFirst(&#123;
-  where: &#123; customerId, status: <span class="text-amber-400/50">"active"</span> &#125;
+<span class="text-red-400/60">const</span> sub = <span class="text-red-400/60">await</span> db.subscriptions
+  .findFirst(&#123;
+  where: &#123; 
+    customerId, 
+    status: <span class="text-amber-400/50">"active"</span> 
+  &#125;
 &#125;);
-<span class="text-red-400/60">const</span> plan = <span class="text-red-400/60">await</span> db.plans.findFirst(&#123;
+<span class="text-red-400/60">const</span> plan = <span class="text-red-400/60">await</span> db.plans
+  .findFirst(&#123;
   where: &#123; id: sub.planId &#125;,
   include: &#123; features: true &#125;,
 &#125;);
-<span class="text-red-400/60">const</span> allowed = plan.features.some(
+<span class="text-red-400/60">const</span> allowed = plan.features
+  .some(
   f => f.slug === <span class="text-amber-400/50">"gpu-inference"</span>
 );
 
 <span class="text-text-secondary italic">// Track usage</span>
-<span class="text-red-400/60">const</span> usage = <span class="text-red-400/60">await</span> db.usageRecords.findFirst(&#123;
+<span class="text-red-400/60">const</span> usage = <span class="text-red-400/60">await</span> db.usageRecords
+  .findFirst(&#123;
   where: &#123; customerId, featureId, period &#125;
 &#125;);
 <span class="text-red-400/60">if</span> (usage.consumed >= usage.limit) &#123;
@@ -127,7 +194,9 @@ Not backed by Y Combinator</div>
 &#125;
 <span class="text-red-400/60">await</span> db.usageRecords.update(&#123;
   where: &#123; id: usage.id &#125;,
-  data: &#123; consumed: usage.consumed + 1 &#125;,
+  data: &#123; 
+    consumed: usage.consumed + 1 
+  &#125;,
 &#125;);
 
 <span class="text-text-secondary italic">// ─── webhooks.ts ───────────────────────</span>
@@ -137,7 +206,9 @@ Not backed by Y Combinator</div>
   .createHmac(<span class="text-amber-400/50">"sha512"</span>, secret)
   .update(JSON.stringify(req.body))
   .digest(<span class="text-amber-400/50">"hex"</span>);
-<span class="text-red-400/60">if</span> (hash !== req.headers[<span class="text-amber-400/50">"x-paystack-signature"</span>]) &#123;
+<span class="text-red-400/60">if</span> (hash !== req.headers[
+  <span class="text-amber-400/50">"x-paystack-signature"</span>
+]) &#123;
   <span class="text-red-400/60">throw new</span> Error(<span class="text-amber-400/50">"Invalid signature"</span>);
 &#125;
 
@@ -145,38 +216,57 @@ Not backed by Y Combinator</div>
 <span class="text-red-400/60">const</span> event = req.body;
 <span class="text-red-400/60">switch</span> (event.event) &#123;
   <span class="text-red-400/60">case</span> <span class="text-amber-400/50">"subscription.create"</span>:
-    <span class="text-red-400/60">const</span> customer = <span class="text-red-400/60">await</span> db.customers.upsert(&#123;
+    <span class="text-red-400/60">const</span> customer = <span class="text-red-400/60">await</span> db.customers
+      .upsert(&#123;
       where: &#123; email: event.data.customer.email &#125;,
       create: &#123;
         email: event.data.customer.email,
         paystackCustomerId: event.data.customer.id,
-        paystackAuthCode: event.data.authorization.authorization_code,
+        paystackAuthCode: 
+          event.data.authorization
+            .authorization_code,
       &#125;,
       update: &#123;
-        paystackAuthCode: event.data.authorization.authorization_code,
+        paystackAuthCode: 
+          event.data.authorization
+            .authorization_code,
       &#125;,
     &#125;);
-    <span class="text-red-400/60">const</span> plan = <span class="text-red-400/60">await</span> db.plans.findFirst(&#123;
-      where: &#123; paystackPlanCode: event.data.plan.plan_code &#125;,
+    <span class="text-red-400/60">const</span> plan = <span class="text-red-400/60">await</span> db.plans
+      .findFirst(&#123;
+      where: &#123; 
+        paystackPlanCode: 
+          event.data.plan.plan_code 
+      &#125;,
     &#125;);
     <span class="text-red-400/60">await</span> db.subscriptions.create(&#123;
       data: &#123;
         customerId: customer.id,
         planId: plan.id,
         status: <span class="text-amber-400/50">"active"</span>,
-        paystackSubCode: event.data.subscription_code,
+        paystackSubCode: 
+          event.data.subscription_code,
         currentPeriodStart: <span class="text-red-400/60">new</span> Date(),
-        currentPeriodEnd: <span class="text-red-400/60">new</span> Date(event.data.next_payment_date),
+        currentPeriodEnd: 
+          <span class="text-red-400/60">new</span> Date(
+            event.data.next_payment_date
+          ),
       &#125;,
     &#125;);
     <span class="text-red-400/60">break</span>;
 
   <span class="text-red-400/60">case</span> <span class="text-amber-400/50">"subscription.not_renew"</span>:
     <span class="text-red-400/60">await</span> db.subscriptions.update(&#123;
-      where: &#123; paystackSubCode: event.data.subscription_code &#125;,
+      where: &#123; 
+        paystackSubCode: 
+          event.data.subscription_code 
+      &#125;,
       data: &#123;
         status: <span class="text-amber-400/50">"pending_cancel"</span>,
-        cancelAt: <span class="text-red-400/60">new</span> Date(event.data.next_payment_date),
+        cancelAt: 
+          <span class="text-red-400/60">new</span> Date(
+            event.data.next_payment_date
+          ),
       &#125;,
     &#125;);
     <span class="text-red-400/60">break</span>;
@@ -187,7 +277,8 @@ Not backed by Y Combinator</div>
       <span class="text-red-400/60">const</span> credits = parseInt(meta.credits);
       <span class="text-red-400/60">await</span> db.$executeRaw`
         UPDATE customers
-        SET credit_balance = credit_balance + $&#123;credits&#125;
+        SET credit_balance = 
+          credit_balance + $&#123;credits&#125;
         WHERE id = $&#123;meta.customerId&#125;
       `;
     &#125; <span class="text-red-400/60">else</span> &#123;
@@ -204,7 +295,10 @@ Not backed by Y Combinator</div>
 
   <span class="text-red-400/60">case</span> <span class="text-amber-400/50">"invoice.payment_failed"</span>:
     <span class="text-red-400/60">await</span> db.subscriptions.update(&#123;
-      where: &#123; paystackSubCode: event.data.subscription.subscription_code &#125;,
+      where: &#123; 
+        paystackSubCode: 
+          event.data.subscription_code 
+      &#125;,
       data: &#123; status: <span class="text-amber-400/50">"past_due"</span> &#125;,
     &#125;);
     <span class="text-red-400/60">await</span> sendEmail(&#123;
@@ -214,14 +308,15 @@ Not backed by Y Combinator</div>
     <span class="text-red-400/60">break</span>;
 &#125;
 
-<span class="text-text-secondary italic">// Don't forget to handle: trial expiry, plan switches,</span>
-<span class="text-text-secondary italic">// refunds, disputes, card updates, idempotency,</span>
+<span class="text-text-secondary italic">// Don't forget to handle: trial expiry, </span>
+<span class="text-text-secondary italic">// plan switches, refunds, disputes, </span>
+<span class="text-text-secondary italic">// card updates, idempotency, </span>
 <span class="text-text-secondary italic">// cache invalidation, race conditions...</span></pre>
           </div>
         </div>
 
         <!-- After -->
-        <div class="bg-bg-secondary/40">
+        <div class="bg-bg-secondary/40 hidden md:block">
           <div class="px-5 py-3 border-b border-border/30">
             <span class="text-[11px] font-mono text-accent">billing.ts — with owostack</span>
           </div>

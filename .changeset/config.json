@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.2/schema.json",
+  "changelog": [
+    "@changesets/changelog-github",
+    { "repo": "Abdulmumin1/owostack" }
+  ],
+  "commit": false,
+  "fixed": [],
+  "linked": [["@owostack/types", "@owostack/core", "@owostack/cli"]],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [
+    "owostack-api",
+    "owostack-dashboard",
+    "docs",
+    "demo-app",
+    "@owostack/db",
+    "@owostack/adapters"
+  ]
+}

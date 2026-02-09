@@ -2,7 +2,14 @@
   "name": "@owostack/cli",
   "version": "0.1.0",
   "description": "CLI for Owostack - sync catalog, manage billing infrastructure",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Abdulmumin1/owostack.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
+  "files": ["dist"],
   "bin": {
     "owostack": "./dist/index.js",
     "owo": "./dist/index.js"
