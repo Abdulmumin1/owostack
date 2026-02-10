@@ -64,6 +64,13 @@
       "when": 1770581389026,
       "tag": "0008_fine_hex",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1770751739118,
+      "tag": "0009_glamorous_monster_badoon",
+      "breakpoints": true
     }
   ]
 }

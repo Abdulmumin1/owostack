@@ -33,6 +33,7 @@ import apiEntitlements from "./routes/api/entitlements";
 import apiBilling from "./routes/api/billing";
 import apiAddon from "./routes/api/addon";
 import apiSync from "./routes/api/sync";
+import apiWallet from "./routes/api/wallet";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
@@ -239,6 +240,7 @@ v1Routes.route("/", apiEntitlements);
 v1Routes.route("/", apiAddon);
 v1Routes.route("/billing", apiBilling);
 v1Routes.route("/sync", apiSync);
+v1Routes.route("/", apiWallet);
 
 apiRoutes.route("/v1", v1Routes);
 
@@ -397,8 +399,7 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   console.log(`[WEBHOOK-ROUTE] Event: ${normalizedEvent.type}, provider=${normalizedEvent.provider}, ref=${normalizedEvent.payment?.reference || "n/a"}`);
 
   // 7. Build provider account for API calls (cancel sub, etc.)
-  // Prefer a real provider account from the DB (already loaded above for webhookSecret).
-  // Fall back to a synthetic account from project-level keys (Paystack legacy).
+  // Provider accounts are loaded from the DB — no legacy fallback.
   let providerAccount: ProviderAccount | undefined;
   if (providerAccounts.length > 0) {
     const pa = providerAccounts[0] as any;
@@ -422,23 +423,6 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
       createdAt: pa.createdAt,
       updatedAt: pa.updatedAt,
     };
-  } else {
-    // Legacy fallback: build synthetic account from project-level keys
-    const encKey = workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
-    if (encKey) {
-      try {
-        const apiSecretKey = await decrypt(encKey, c.env.ENCRYPTION_KEY);
-        providerAccount = {
-          id: `webhook-${organizationId}`,
-          organizationId,
-          providerId,
-          environment: workerEnv,
-          credentials: { secretKey: apiSecretKey },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-      } catch { /* already logged above */ }
-    }
   }
 
   // 8. Handle via provider-agnostic WebhookHandler

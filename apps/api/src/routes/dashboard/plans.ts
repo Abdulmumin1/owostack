@@ -1,8 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
-import { PaystackClient } from "../../lib/paystack";
-import { decrypt } from "../../lib/encryption";
 import { resolveProvider } from "@owostack/adapters";
 import {
   getProviderRegistry,
@@ -228,33 +226,6 @@ app.post("/", async (c) => {
           );
         }
 
-        // Legacy fallback: create on Paystack using project-level keys
-        if (!providerPlanId && project) {
-          const activeEnv = project.activeEnvironment || "test";
-          const encryptedKey =
-            activeEnv === "live" ? project.liveSecretKey : project.testSecretKey;
-
-          if (encryptedKey) {
-            const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-            const paystack = new PaystackClient({ secretKey });
-
-            const result = await paystack.createPlan({
-              name,
-              amount: price,
-              interval: interval as any,
-              description: description || undefined,
-              currency,
-            });
-
-            if (result.isOk()) {
-              paystackPlanId = result.value.plan_code;
-              providerPlanId = result.value.plan_code;
-              if (!providerId) providerId = "paystack";
-            } else {
-              console.warn("Legacy Paystack plan creation failed:", result.error);
-            }
-          }
-        }
       }
     } catch (e) {
       console.warn("Provider sync error:", e);

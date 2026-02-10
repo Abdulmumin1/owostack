@@ -3,10 +3,9 @@ import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { resolveOrCreateCustomer } from "../../lib/customers";
-import { decrypt } from "../../lib/encryption";
 import { verifyApiKey } from "../../lib/api-keys";
-import { getPaystackEnvironment, selectPaystackKey } from "../../lib/environment";
 import { executeSwitch, provisionEntitlements } from "../../lib/plan-switch";
+import { hasPaymentMethod } from "../../lib/overage-guards";
 import type { ProviderContext } from "../../lib/plan-switch";
 import { ensurePlanSynced } from "../../lib/plan-sync";
 import { resolveProvider } from "@owostack/adapters";
@@ -93,12 +92,6 @@ app.post("/attach", async (c) => {
       500,
     );
   }
-
-  // Determine environment from worker's ENVIRONMENT var or project config
-  const activeEnv = getPaystackEnvironment(
-    c.env.ENVIRONMENT,
-    project.activeEnvironment,
-  );
 
   // Parse Body
   const body = await c.req.json();
@@ -212,49 +205,6 @@ app.post("/attach", async (c) => {
       }
     }
 
-    // 4. Legacy fallback: synthetic account from project Paystack keys
-    if (!selectedAccount) {
-      selectedProviderId = selectedProviderId || "paystack";
-
-      if (selectedProviderId === "paystack") {
-        let secretKey: string | null = null;
-
-        const encryptedKey = selectPaystackKey(
-          activeEnv,
-          project.testSecretKey,
-          project.liveSecretKey,
-        );
-
-        if (encryptedKey) {
-          try {
-            secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-          } catch (e) {
-            return c.json(
-              { success: false, error: "Failed to decrypt Paystack key" },
-              500,
-            );
-          }
-        }
-
-        if (!secretKey) {
-          return c.json(
-            { success: false, error: `Paystack ${activeEnv} mode not configured` },
-            400,
-          );
-        }
-
-        selectedAccount = {
-          id: `legacy-${project.id}`,
-          organizationId: keyRecord.organizationId,
-          providerId: "paystack",
-          environment: providerEnv,
-          credentials: { secretKey },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        } as ProviderAccount;
-      }
-    }
-
     if (!selectedAccount || !selectedProviderId) {
       return c.json(
         { success: false, error: "No payment provider configured" },
@@ -337,7 +287,7 @@ app.post("/attach", async (c) => {
             planId: plan.id,
             organizationId: keyRecord.organizationId,
             providerId: selectedProviderId,
-            environment: activeEnv,
+            environment: providerEnv,
             trialEndMs,
             email,
             amount: plan.price,
@@ -391,6 +341,77 @@ app.post("/attach", async (c) => {
         400,
       );
     }
+
+    // If the customer already has a valid payment method (e.g. from wallet.setup()
+    // or a previous purchase), skip the card capture checkout entirely — just create
+    // the trialing subscription directly. This is the elegant composition:
+    // wallet.setup() + attach() work together without redundant charges.
+    const alreadyHasCard = await hasPaymentMethod(db, customerRecord.id);
+    if (alreadyHasCard) {
+      console.log(`[TRIAL] Customer ${customerRecord.id} already has card — skipping auth capture, creating trial directly`);
+      try {
+        const now = Date.now();
+        const trialEndMs = trialUnit === "minutes"
+          ? now + trialDays * 60 * 1000
+          : now + trialDays * 24 * 60 * 60 * 1000;
+
+        const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
+        const [subscription] = await db
+          .insert(schema.subscriptions)
+          .values({
+            id: crypto.randomUUID(),
+            customerId: customerRecord.id,
+            planId: plan.id,
+            providerId: selectedProviderId,
+            providerSubscriptionId: trialCode,
+            providerSubscriptionCode: trialCode,
+            paystackSubscriptionCode: selectedProviderId === "paystack" ? trialCode : null,
+            status: "trialing",
+            currentPeriodStart: now,
+            currentPeriodEnd: trialEndMs,
+            metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
+          })
+          .returning();
+
+        try {
+          await c.env.TRIAL_END_WORKFLOW.create({
+            params: {
+              subscriptionId: subscription.id,
+              customerId: customerRecord.id,
+              planId: plan.id,
+              organizationId: keyRecord.organizationId,
+              providerId: selectedProviderId,
+              environment: providerEnv,
+              trialEndMs,
+              email,
+              amount: plan.price,
+              currency: plan.currency,
+              planSlug: plan.slug,
+            },
+          });
+        } catch (wfErr) {
+          console.error(`[TRIAL] Failed to dispatch trial end workflow:`, wfErr);
+        }
+
+        await provisionEntitlements(db, customerRecord.id, plan.id);
+
+        return c.json({
+          success: true,
+          trial: true,
+          trial_days: trialDays,
+          message: trialUnit === "minutes" ? `${trialDays}-minute trial activated` : `${trialDays}-day trial activated`,
+          subscription_id: subscription.id,
+          customer_id: customerRecord.id,
+          trial_ends_at: new Date(trialEndMs).toISOString(),
+        });
+      } catch (e: any) {
+        return c.json(
+          { success: false, error: e.message || "Failed to create trial subscription" },
+          500,
+        );
+      }
+    }
+
     console.log(`[TRIAL] Initiating card-required trial checkout: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}`);
     // Providers like Dodo handle trials natively via subscription_data.trial_period_days.
     // Mark these so the trial-end workflow skips the charge (provider handles billing).
@@ -403,7 +424,7 @@ app.post("/attach", async (c) => {
       plan_id: plan.id,
       plan_slug: plan.slug,
       customer_id: customerRecord.id,
-      environment: activeEnv,
+      environment: providerEnv,
       provider_id: selectedProviderId,
       trial_days: trialDays,
       trial_unit: trialUnit,
@@ -475,12 +496,12 @@ app.post("/attach", async (c) => {
         ...metadata,
         organization_id: keyRecord.organizationId,
         project_id: project.id,
-        environment: activeEnv,
+        environment: providerEnv,
         provider_id: selectedProviderId,
       },
       downgradeWorkflow: c.env.DOWNGRADE_WORKFLOW,
       organizationId: keyRecord.organizationId,
-      environment: activeEnv,
+      environment: providerEnv,
     });
 
     if (!result.success) {

@@ -3,9 +3,7 @@ import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { resolveOrCreateCustomer } from "../../lib/customers";
-import { decrypt } from "../../lib/encryption";
 import { verifyApiKey } from "../../lib/api-keys";
-import { getPaystackEnvironment, selectPaystackKey, type PaystackEnvironment } from "../../lib/environment";
 import { resolveProvider } from "@owostack/adapters";
 import type { ProviderAccount } from "@owostack/adapters";
 import {
@@ -87,11 +85,6 @@ app.post("/addon", async (c) => {
       500,
     );
   }
-
-  const activeEnv = getPaystackEnvironment(
-    c.env.ENVIRONMENT,
-    project.activeEnvironment,
-  );
 
   // Parse Body
   const body = await c.req.json();
@@ -179,7 +172,7 @@ app.post("/addon", async (c) => {
     );
   }
 
-  return handleAddonPurchase(c, db, keyRecord, project, activeEnv, creditPack, {
+  return handleAddonPurchase(c, db, keyRecord, project, creditPack, {
     customer, quantity, currency, metadata, callbackUrl, provider, region,
   });
 });
@@ -189,7 +182,6 @@ async function handleAddonPurchase(
   db: any,
   keyRecord: any,
   project: any,
-  activeEnv: PaystackEnvironment,
   creditPack: any,
   opts: {
     customer: string;
@@ -225,7 +217,8 @@ async function handleAddonPurchase(
   );
 
   // ---------- Provider Resolution ----------
-  const explicitProvider = provider || null;
+  // Prefer: explicit request param > pack's stored provider > rules/fallback
+  const explicitProvider = provider || creditPack.providerId || null;
   let selectedProviderId: string | null = explicitProvider;
   let selectedAccount: ProviderAccount | undefined;
 
@@ -265,48 +258,6 @@ async function handleAddonPurchase(
     if (defaultAccount) {
       selectedProviderId = defaultAccount.providerId;
       selectedAccount = defaultAccount;
-    }
-  }
-
-  // 4. Legacy fallback: synthetic Paystack account
-  if (!selectedAccount) {
-    selectedProviderId = selectedProviderId || "paystack";
-
-    if (selectedProviderId === "paystack") {
-      let secretKey: string | null = null;
-      const encryptedKey = selectPaystackKey(
-        activeEnv,
-        project.testSecretKey,
-        project.liveSecretKey,
-      );
-
-      if (encryptedKey) {
-        try {
-          secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-        } catch (e) {
-          return c.json(
-            { success: false, error: "Failed to decrypt provider key" },
-            500,
-          );
-        }
-      }
-
-      if (!secretKey) {
-        return c.json(
-          { success: false, error: `Payment provider ${activeEnv} mode not configured` },
-          400,
-        );
-      }
-
-      selectedAccount = {
-        id: `legacy-${project.id}`,
-        organizationId: keyRecord.organizationId,
-        providerId: "paystack",
-        environment: providerEnv,
-        credentials: { secretKey },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      } as ProviderAccount;
     }
   }
 

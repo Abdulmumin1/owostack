@@ -1,6 +1,7 @@
 import { schema } from "@owostack/db";
 import { eq, and, or } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
+import { upsertPaymentMethod } from "../../payment-methods";
 import type { WebhookContext } from "../types";
 import { safeParseDate } from "../types";
 
@@ -169,6 +170,22 @@ export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<vo
 
   // Provision entitlements for the new subscription
   await provisionEntitlements(db, dbCustomer.id, dbPlan.id);
+
+  // For providers without card auth codes (e.g. Dodo), the subscription ID
+  // itself is the chargeable token. Store it as a provider_managed payment method.
+  if (providerCode && event.provider !== "paystack") {
+    try {
+      await upsertPaymentMethod(db, {
+        customerId: dbCustomer.id,
+        organizationId,
+        providerId: event.provider,
+        token: providerCode,
+        type: "provider_managed",
+      });
+    } catch (pmErr) {
+      console.warn(`[WEBHOOK] Failed to upsert provider_managed payment method: ${pmErr}`);
+    }
+  }
 
   // Invalidate cache so /check sees the new subscription immediately
   if (ctx.cache) {

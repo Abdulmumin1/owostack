@@ -5,6 +5,7 @@
   import { Loader2, Check } from "lucide-svelte";
   import { defaultCurrency } from "$lib/stores/currency";
   import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
+  import { SUPPORTED_PROVIDERS } from "$lib/providers";
 
   let { 
     isOpen = $bindable(false), 
@@ -24,23 +25,57 @@
   let price = $state(500);
   let currency = $state($defaultCurrency);
   let creditSystemId = $state("");
+  let selectedProviderId = $state("");
   let creditSystems = $state<any[]>([]);
+  let connectedProviders = $state<any[]>([]);
   let loadingSystems = $state(false);
   let isCreating = $state(false);
   let error = $state("");
 
-  // Load credit systems when panel opens
+  let uniqueProviderIds = $derived([...new Set(connectedProviders.map((p: any) => p.providerId))]);
+
+  let selectedProviderConfig = $derived(
+    SUPPORTED_PROVIDERS.find((p) => p.id === selectedProviderId),
+  );
+
+  let availableCurrencies = $derived(
+    selectedProviderConfig?.supportedCurrencies
+      ? COMMON_CURRENCIES.filter((c) =>
+          selectedProviderConfig!.supportedCurrencies!.includes(c.code),
+        )
+      : COMMON_CURRENCIES,
+  );
+
+  // Reset currency when provider changes if current currency isn't supported
   $effect(() => {
-    if (isOpen && organizationId) {
-      loadCreditSystems();
+    if (selectedProviderConfig?.supportedCurrencies) {
+      if (!selectedProviderConfig.supportedCurrencies.includes(currency)) {
+        currency = selectedProviderConfig.supportedCurrencies[0] || "USD";
+      }
     }
   });
 
-  async function loadCreditSystems() {
+  // Load credit systems + providers when panel opens
+  $effect(() => {
+    if (isOpen && organizationId) {
+      loadData();
+    }
+  });
+
+  async function loadData() {
     loadingSystems = true;
     try {
-      const res = await apiFetch(`/api/dashboard/credits?organizationId=${organizationId}`);
-      if (res.data?.success) creditSystems = res.data.data || [];
+      const [credRes, provRes] = await Promise.all([
+        apiFetch(`/api/dashboard/credits?organizationId=${organizationId}`),
+        apiFetch(`/api/dashboard/providers/accounts?organizationId=${organizationId}`),
+      ]);
+      if (credRes.data?.success) creditSystems = credRes.data.data || [];
+      if (Array.isArray(provRes.data?.data)) {
+        connectedProviders = provRes.data.data;
+        if (!selectedProviderId && connectedProviders.length > 0) {
+          selectedProviderId = connectedProviders[0].providerId;
+        }
+      }
     } catch { /* ignore */ }
     loadingSystems = false;
   }
@@ -53,6 +88,7 @@
     price = 500;
     currency = $defaultCurrency;
     creditSystemId = "";
+    selectedProviderId = connectedProviders.length > 0 ? connectedProviders[0].providerId : "";
     error = "";
     onclose?.();
   }
@@ -78,6 +114,10 @@
       error = "Credit system is required — every add-on pack must be attached to a credit system";
       return;
     }
+    if (!selectedProviderId) {
+      error = "Payment provider is required";
+      return;
+    }
 
     isCreating = true;
     error = "";
@@ -93,6 +133,7 @@
           price,
           currency,
           creditSystemId,
+          providerId: selectedProviderId,
         }),
       });
 
@@ -129,6 +170,37 @@
       {/if}
 
       <div class="space-y-5">
+        <!-- Provider Selection -->
+        {#if uniqueProviderIds.length > 1}
+          <div>
+            <div class="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">
+              Payment Provider <span class="normal-case text-red-400">*</span>
+            </div>
+            <div class="grid grid-cols-{Math.min(uniqueProviderIds.length, 3)} gap-2">
+              {#each uniqueProviderIds as pid}
+                {@const provConfig = SUPPORTED_PROVIDERS.find((p) => p.id === pid)}
+                {#if provConfig}
+                  <button
+                    type="button"
+                    class="relative border rounded-lg p-3 text-left transition-all {selectedProviderId === pid
+                      ? 'border-accent bg-accent/5'
+                      : 'border-border bg-bg-primary hover:border-zinc-600'}"
+                    onclick={() => (selectedProviderId = pid)}
+                  >
+                    <div class="text-xs font-bold text-white">{provConfig.name}</div>
+                    <div class="text-[10px] text-zinc-500 mt-0.5 truncate">{provConfig.description}</div>
+                    {#if selectedProviderId === pid}
+                      <div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent"></div>
+                    {/if}
+                  </button>
+                {/if}
+              {/each}
+            </div>
+          </div>
+        {:else if uniqueProviderIds.length === 1}
+          <input type="hidden" value={uniqueProviderIds[0]} />
+        {/if}
+
         <!-- Name -->
         <div>
           <label
@@ -220,7 +292,7 @@
               bind:value={currency}
               class="input"
             >
-              {#each COMMON_CURRENCIES as c}
+              {#each availableCurrencies as c}
                 <option value={c.code}>{c.code}</option>
               {/each}
             </select>
@@ -285,7 +357,7 @@
       <button
         class="px-6 py-2 bg-accent hover:bg-accent-hover text-black text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
         onclick={handleSubmit}
-        disabled={!name || credits < 1 || !creditSystemId || isCreating}
+        disabled={!name || credits < 1 || !creditSystemId || !selectedProviderId || isCreating}
       >
         {#if isCreating}
           <Loader2 size={14} class="animate-spin" />

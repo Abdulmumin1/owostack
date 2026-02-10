@@ -2,6 +2,7 @@ import { schema } from "@owostack/db";
 import { eq, and, or, sql } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
 import { topUpScopedBalance } from "../../addon-credits";
+import { upsertPaymentMethod } from "../../payment-methods";
 import type { WebhookContext } from "../types";
 import { safeParseDate, intervalToMs } from "../types";
 
@@ -59,10 +60,56 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
       .where(eq(schema.customers.id, dbCustomer.id));
   }
 
-  // 2. Handle TRIAL subscriptions (is_trial in metadata)
-  // Providers may stringify metadata values, so coerce to handle both boolean and string
+  // 1b. Upsert payment method if we have a chargeable token
+  if (event.authorization?.reusable && event.authorization.code) {
+    try {
+      await upsertPaymentMethod(db, {
+        customerId: dbCustomer.id,
+        organizationId,
+        providerId: event.provider,
+        token: event.authorization.code,
+        type: "card",
+        cardLast4: event.authorization.last4,
+        cardBrand: event.authorization.cardType,
+        cardExpMonth: event.authorization.expMonth,
+        cardExpYear: event.authorization.expYear,
+      });
+    } catch (pmErr) {
+      console.warn(`[WEBHOOK] Failed to upsert payment method: ${pmErr}`);
+    }
+  }
+
+  // Parse trial flags once — reused by both auto-refund (1c) and trial handling (2).
+  const isCardSetup = metadata.type === "card_setup";
   const isTrial = metadata.is_trial === true || metadata.is_trial === "true";
   const isNativeTrial = metadata.native_trial === true || metadata.native_trial === "true";
+  const isAuthCaptureTrial = isTrial && !isNativeTrial;
+
+  // 1c. Auto-refund auth capture charges (card_setup or non-native trial).
+  // These are small verification charges — refund them so the customer isn't billed.
+  // Fire-and-forget: refund failure should never block the main flow.
+  const refundFn = ctx.adapter?.refundCharge?.bind(ctx.adapter);
+  if ((isCardSetup || isAuthCaptureTrial) && reference && refundFn && ctx.providerAccount) {
+    // Truly fire-and-forget — don't block the webhook response for a non-critical refund.
+    const account = ctx.providerAccount;
+    const refundType = isCardSetup ? "card_setup" : "trial";
+    refundFn({
+      reference,
+      reason: isCardSetup ? "Card setup verification refund" : "Trial card verification refund",
+      environment: account.environment as "test" | "live",
+      account,
+    }).then((result) => {
+      if (result.isErr()) {
+        console.warn(`[WEBHOOK] Auto-refund failed for ref=${reference}: ${result.error.message}`);
+      } else {
+        console.log(`[WEBHOOK] Auto-refunded auth capture: ref=${reference}, type=${refundType}`);
+      }
+    }).catch((err) => {
+      console.warn(`[WEBHOOK] Auto-refund error for ref=${reference}: ${err}`);
+    });
+  }
+
+  // 2. Handle TRIAL subscriptions (is_trial in metadata)
   const trialDays = Number(metadata.trial_days) || 0;
   const trialUnitMeta = metadata.trial_unit as string | undefined;
 
@@ -134,8 +181,8 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
 
   // 7. Handle Credits (if applicable)
   // metadata.credits may be a number (Paystack) or string (Dodo/others)
-  const legacyCredits = Number(metadata.credits);
-  if (metadata.credits != null && !isNaN(legacyCredits) && legacyCredits > 0) {
+  const creditsAmount = Number(metadata.credits);
+  if (metadata.credits != null && !isNaN(creditsAmount) && creditsAmount > 0) {
     const existingCredits = await db.query.credits.findFirst({
       where: eq(schema.credits.customerId, dbCustomer.id),
     });
@@ -145,7 +192,7 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
       await db
         .update(schema.credits)
         .set({
-          balance: sql`${schema.credits.balance} + ${legacyCredits}`,
+          balance: sql`${schema.credits.balance} + ${creditsAmount}`,
           updatedAt: Date.now(),
         })
         .where(eq(schema.credits.id, existingCredits.id));
@@ -153,7 +200,7 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
       await db.insert(schema.credits).values({
         id: crypto.randomUUID(),
         customerId: dbCustomer.id,
-        balance: legacyCredits,
+        balance: creditsAmount,
       });
     }
   }

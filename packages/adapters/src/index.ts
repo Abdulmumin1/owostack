@@ -169,6 +169,9 @@ export interface ProviderAdapter {
    */
   supportsNativeTrials?: boolean;
 
+  /** Primary/default currency code for this provider (e.g. "NGN" for Paystack, "USD" for Dodo). */
+  defaultCurrency?: string;
+
   createCheckoutSession(params: {
     customer: ProviderCustomerRef;
     plan?: ProviderPlanRef | null;
@@ -179,6 +182,7 @@ export interface ProviderAdapter {
     channels?: string[];
     lineItems?: CheckoutLineItem[];
     trialDays?: number;
+    onDemand?: { mandateOnly: boolean };
     environment: ProviderEnvironment;
     account: ProviderAccount;
   }): Promise<ProviderResult<CheckoutSession>>;
@@ -250,6 +254,15 @@ export interface ProviderAdapter {
     environment: ProviderEnvironment;
     account: ProviderAccount;
   }): Promise<ProviderResult<{ changed: boolean }>>;
+
+  refundCharge?(params: {
+    reference: string;
+    amount?: number;
+    currency?: string;
+    reason?: string;
+    environment: ProviderEnvironment;
+    account: ProviderAccount;
+  }): Promise<ProviderResult<{ refunded: boolean; reference: string }>>;
 
   fetchSubscription(params: {
     subscriptionId: string;

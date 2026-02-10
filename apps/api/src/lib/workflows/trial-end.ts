@@ -103,18 +103,19 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
       return;
     }
 
-    // Step 3: Re-fetch latest authorization code from DB (customer may have
-    // updated their card since trial started — the original code could be stale).
+    // Step 3: Re-fetch latest auth from payment_methods table.
+    // The customer may have updated their card since the trial started.
     const latestAuth = await step.do("fetch-latest-auth", async () => {
+      const pm = await this.env.DB.prepare(
+        "SELECT token, provider_id FROM payment_methods WHERE customer_id = ? AND is_valid = 1 AND is_default = 1 LIMIT 1",
+      ).bind(customerId).first<{ token: string; provider_id: string }>();
+
       const customer = await this.env.DB.prepare(
-        "SELECT provider_authorization_code, paystack_authorization_code, email FROM customers WHERE id = ? LIMIT 1",
-      ).bind(customerId).first<{
-        provider_authorization_code: string | null;
-        paystack_authorization_code: string | null;
-        email: string | null;
-      }>();
+        "SELECT email FROM customers WHERE id = ? LIMIT 1",
+      ).bind(customerId).first<{ email: string | null }>();
+
       return {
-        authCode: customer?.provider_authorization_code || customer?.paystack_authorization_code || authorizationCode || null,
+        authCode: pm?.token || authorizationCode || null,
         email: customer?.email || email || null,
       };
     });
@@ -281,7 +282,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
       const trialAdapter = getAdapter(providerId);
       const skipProviderSub = trialAdapter?.supportsNativeTrials === true;
 
-      if (isRecurring && providerPlanCode && customerCode && authorizationCode && !skipProviderSub) {
+      if (isRecurring && providerPlanCode && customerCode && resolvedAuthCode && !skipProviderSub) {
         try {
           const subResult = await step.do("create-provider-subscription", async () => {
             const adapter = getAdapter(providerId);
@@ -292,7 +293,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
             const result = await adapter.createSubscription({
               customer: { id: customerCode!, email: email || customer!.email },
               plan: { id: providerPlanCode! },
-              authorizationCode,
+              authorizationCode: resolvedAuthCode,
               startDate: startDate.toISOString(),
               environment: accountData.environment as "test" | "live",
               account: accountData as unknown as ProviderAccount,

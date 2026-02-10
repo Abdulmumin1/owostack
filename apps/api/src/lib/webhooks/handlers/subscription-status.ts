@@ -1,6 +1,7 @@
 import { schema } from "@owostack/db";
 import { eq, and, or } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
+import { upsertPaymentMethod } from "../../payment-methods";
 import type { WebhookContext } from "../types";
 import { handleSubscriptionCreated } from "./subscription-created";
 
@@ -9,6 +10,29 @@ export function handleSubscriptionStatus(status: string) {
     const { db, organizationId, event, cache } = ctx;
     const subscriptionCode = event.subscription?.providerCode;
     if (!subscriptionCode) return;
+
+    // -----------------------------------------------------------------------
+    // Card setup via on-demand subscription (e.g. Dodo mandate authorization).
+    // The subscription ID becomes the payment method token for future charges.
+    // -----------------------------------------------------------------------
+    if (status === "active" && event.metadata?.type === "card_setup") {
+      const customerId = event.metadata.customer_id as string;
+      if (customerId) {
+        try {
+          await upsertPaymentMethod(db, {
+            customerId,
+            organizationId,
+            providerId: event.provider,
+            token: subscriptionCode,
+            type: "provider_managed",
+          });
+          console.log(`[WEBHOOK] Card setup complete: stored on-demand sub ${subscriptionCode} as payment method for customer=${customerId}`);
+        } catch (pmErr) {
+          console.warn(`[WEBHOOK] Failed to store card_setup payment method: ${pmErr}`);
+        }
+      }
+      return;
+    }
 
     // Fetch sub once — needed for cancelAt (pending_cancel) and cache invalidation
     const sub = await db.query.subscriptions.findFirst({

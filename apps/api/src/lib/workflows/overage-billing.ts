@@ -240,22 +240,25 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Over
       return;
     }
 
-    // Step 5a: Load customer's payment info
+    // Step 5a: Load customer's payment info from payment_methods table
     const customerPayment = await step.do("load-customer-payment", async () => {
-      const row = await this.env.DB.prepare(
-        "SELECT id, email, provider_id, provider_authorization_code, paystack_authorization_code FROM customers WHERE id = ? LIMIT 1",
-      ).bind(customerId).first<{
-        id: string;
-        email: string;
-        provider_id: string | null;
-        provider_authorization_code: string | null;
-        paystack_authorization_code: string | null;
-      }>();
-      return row;
+      const pm = await this.env.DB.prepare(
+        "SELECT token, provider_id FROM payment_methods WHERE customer_id = ? AND is_valid = 1 AND is_default = 1 LIMIT 1",
+      ).bind(customerId).first<{ token: string; provider_id: string }>();
+
+      const customer = await this.env.DB.prepare(
+        "SELECT email FROM customers WHERE id = ? LIMIT 1",
+      ).bind(customerId).first<{ email: string | null }>();
+
+      return {
+        email: customer?.email || null,
+        providerId: pm?.provider_id || null,
+        authCode: pm?.token || null,
+      };
     });
 
-    const authCode = customerPayment?.provider_authorization_code || customerPayment?.paystack_authorization_code;
-    const providerId = customerPayment?.provider_id || "paystack";
+    const authCode = customerPayment?.authCode;
+    const providerId = customerPayment?.providerId || "unknown";
 
     if (!authCode || !customerPayment?.email) {
       console.log(`[OverageBilling] No payment method for customer=${customerId}. Invoice stays open.`);
@@ -305,7 +308,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Over
 
         try {
           const chargeResult = await adapter.chargeAuthorization({
-            customer: { id: customerId, email: customerPayment!.email },
+            customer: { id: customerId, email: customerPayment!.email! },
             authorizationCode: authCode!,
             amount: invoice.total,
             currency: invoice.currency,

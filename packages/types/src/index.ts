@@ -688,6 +688,82 @@ export interface PlanDefinition {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * wallet() - Payment Methods
+ */
+
+export interface CardInfo {
+  /** Card ID (payment method ID) */
+  id: string;
+
+  /** Last 4 digits */
+  last4: string;
+
+  /** Card brand (visa, mastercard, verve) */
+  brand: string;
+
+  /** Expiry as "MM/YY" */
+  exp: string;
+
+  /** Provider that captured this card */
+  provider: string;
+}
+
+export interface PaymentMethodInfo {
+  /** Payment method ID */
+  id: string;
+
+  /** Type: card (Paystack/Stripe) or provider_managed (Dodo) */
+  type: "card" | "provider_managed";
+
+  /** Provider ID */
+  provider: string;
+
+  /** Whether this is the default payment method */
+  isDefault: boolean;
+
+  /** Whether the token is still valid for charging */
+  isValid: boolean;
+
+  /** Card details (null for provider_managed) */
+  card: CardInfo | null;
+}
+
+export interface WalletResult {
+  /** Whether the customer has a chargeable payment method */
+  hasCard: boolean;
+
+  /** Default card details (shortcut for the default method's card) */
+  card: CardInfo | null;
+
+  /** All stored payment methods */
+  methods: PaymentMethodInfo[];
+}
+
+export interface WalletSetupParams {
+  /** Customer ID or email */
+  customer: string;
+
+  /** Optional: Redirect URL after card setup */
+  callbackUrl?: string;
+
+  /** Optional: Override provider */
+  provider?: string;
+}
+
+export interface WalletSetupResult {
+  /** Checkout URL to redirect user for card capture */
+  url: string;
+
+  /** Payment reference */
+  reference: string;
+}
+
+export interface WalletRemoveResult {
+  /** Whether the removal succeeded */
+  success: boolean;
+}
+
 /** Serialized catalog sent to POST /api/sync */
 export interface SyncPayload {
   features: Array<{

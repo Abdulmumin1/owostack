@@ -194,6 +194,15 @@ class PaystackClient {
       amount: String(params.amount),
     });
   }
+
+  createRefund(params: {
+    transaction: string;
+    amount?: number;
+    currency?: string;
+    merchant_note?: string;
+  }): Promise<ProviderResult<{ status: string; transaction: number; id: number }>> {
+    return this.request("POST", "/refund", params);
+  }
 }
 
 function getSecretKey(account: ProviderAccount): string | null {
@@ -220,6 +229,7 @@ export const paystackAdapter: ProviderAdapter = {
   displayName: "Paystack",
   signatureHeaderName: "x-paystack-signature",
   supportsNativeTrials: false,
+  defaultCurrency: "NGN",
 
   async createCheckoutSession(params): Promise<ProviderResult<CheckoutSession>> {
     const clientResult = resolveClient(params.account);
@@ -344,6 +354,21 @@ export const paystackAdapter: ProviderAdapter = {
     if (response.isErr()) return response;
 
     return Result.ok({ reference: response.value.reference });
+  },
+
+  async refundCharge(params): Promise<ProviderResult<{ refunded: boolean; reference: string }>> {
+    const clientResult = resolveClient(params.account);
+    if (clientResult.isErr()) return clientResult;
+
+    const response = await clientResult.value.createRefund({
+      transaction: params.reference,
+      amount: params.amount,
+      currency: params.currency,
+      merchant_note: params.reason,
+    });
+
+    if (response.isErr()) return response;
+    return Result.ok({ refunded: true, reference: params.reference });
   },
 
   async fetchSubscription(

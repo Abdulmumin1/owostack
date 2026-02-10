@@ -15,6 +15,9 @@ import type {
   InvoicesResult,
   OwostackConfig,
   SyncResult,
+  WalletResult,
+  WalletSetupResult,
+  WalletRemoveResult,
 } from "@owostack/types";
 
 import { bindFeatureHandles, buildSyncPayload } from "./catalog.js";
@@ -37,10 +40,14 @@ export class Owostack {
   /** Billing: unbilled usage, invoices, and invoice generation */
   readonly billing: BillingNamespace;
 
+  /** Wallet: payment methods — callable + namespace */
+  readonly wallet: WalletFn;
+
   constructor(config: OwostackConfig) {
     this._config = config;
     this.apiUrl = config.apiUrl || "https://api.owostack.dev";
     this.billing = new BillingNamespace(this);
+    this.wallet = buildWalletFn(this);
 
     // Bind all registered feature handles to this client
     if (config.catalog && config.catalog.length > 0) {
@@ -240,6 +247,38 @@ export class Owostack {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Wallet — callable + namespace
+//
+// owo.wallet("user@email.com")           → WalletResult
+// owo.wallet.setup("user@email.com", {}) → WalletSetupResult
+// owo.wallet.list("user@email.com")      → { methods: PaymentMethodInfo[] }
+// owo.wallet.remove("user@email.com", id)→ WalletRemoveResult
+// ---------------------------------------------------------------------------
+
+type WalletFn = {
+  (customer: string): Promise<WalletResult>;
+  setup(customer: string, opts?: { callbackUrl?: string; provider?: string }): Promise<WalletSetupResult>;
+  list(customer: string): Promise<WalletResult>;
+  remove(customer: string, id: string): Promise<WalletRemoveResult>;
+};
+
+function buildWalletFn(client: Owostack): WalletFn {
+  const fn = ((customer: string) =>
+    client.get("/wallet", { customer })) as WalletFn;
+
+  fn.setup = (customer: string, opts?: { callbackUrl?: string; provider?: string }) =>
+    client.post("/wallet/setup", { customer, ...opts }) as Promise<WalletSetupResult>;
+
+  fn.list = (customer: string) =>
+    client.get("/wallet", { customer }) as Promise<WalletResult>;
+
+  fn.remove = (customer: string, id: string) =>
+    client.post("/wallet/remove", { customer, id }) as Promise<WalletRemoveResult>;
+
+  return fn;
+}
+
 /**
  * Billing namespace — unbilled usage, invoice generation, invoice history
  */
@@ -351,4 +390,9 @@ export type {
   SyncPayload,
   SyncResult,
   SyncChanges,
+  CardInfo,
+  PaymentMethodInfo,
+  WalletResult,
+  WalletSetupResult,
+  WalletRemoveResult,
 } from "@owostack/types";

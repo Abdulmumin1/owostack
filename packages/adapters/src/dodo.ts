@@ -240,6 +240,14 @@ class DodoClient {
     if (result.isErr()) return result as ProviderResult<{ changed: boolean }>;
     return Result.ok({ changed: true });
   }
+
+  createRefund(params: {
+    payment_id: string;
+    amount?: number;
+    reason?: string;
+  }): Promise<ProviderResult<{ refund_id: string }>> {
+    return this.request("POST", "/refunds", params);
+  }
 }
 
 // =============================================================================
@@ -376,6 +384,7 @@ export const dodoAdapter: ProviderAdapter = {
   displayName: "Dodo Payments",
   signatureHeaderName: "webhook-signature",
   supportsNativeTrials: true,
+  defaultCurrency: "USD",
 
   // ---------------------------------------------------------------------------
   // createCheckoutSession
@@ -403,6 +412,18 @@ export const dodoAdapter: ProviderAdapter = {
     const custId = params.customer?.id;
     const isRealCustomerId = custId && !custId.includes("@");
 
+    // Build subscription_data based on trial or on-demand flags
+    let subscriptionData: Record<string, unknown> | undefined;
+    if (params.onDemand) {
+      subscriptionData = {
+        on_demand: {
+          mandate_only: params.onDemand.mandateOnly,
+        },
+      };
+    } else if (params.trialDays && params.trialDays > 0) {
+      subscriptionData = { trial_period_days: params.trialDays };
+    }
+
     const response = await clientResult.value.createCheckoutSession({
       product_cart: [{ product_id: productId, quantity }],
       customer: params.customer
@@ -413,10 +434,7 @@ export const dodoAdapter: ProviderAdapter = {
         : undefined,
       return_url: params.callbackUrl,
       metadata: coerceMetadata(params.metadata),
-      // Dodo supports trial periods natively via subscription_data
-      ...(params.trialDays && params.trialDays > 0
-        ? { subscription_data: { trial_period_days: params.trialDays } }
-        : {}),
+      ...(subscriptionData ? { subscription_data: subscriptionData } : {}),
     });
 
     if (response.isErr()) return response;
@@ -625,6 +643,24 @@ export const dodoAdapter: ProviderAdapter = {
       metadata: coerceMetadata(params.metadata) || null,
       on_payment_failure: "prevent_change",
     });
+  },
+
+  // ---------------------------------------------------------------------------
+  // refundCharge
+  // Dodo supports refunds via POST /refunds with the payment_id.
+  // ---------------------------------------------------------------------------
+  async refundCharge(params): Promise<ProviderResult<{ refunded: boolean; reference: string }>> {
+    const clientResult = resolveClient(params.account, params.environment);
+    if (clientResult.isErr()) return clientResult;
+
+    const response = await clientResult.value.createRefund({
+      payment_id: params.reference,
+      amount: params.amount,
+      reason: params.reason || "Card capture refund",
+    });
+    if (response.isErr()) return response;
+
+    return Result.ok({ refunded: true, reference: params.reference });
   },
 
   // ---------------------------------------------------------------------------

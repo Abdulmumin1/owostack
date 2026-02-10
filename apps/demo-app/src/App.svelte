@@ -20,6 +20,11 @@
   let addonResult = $state<any>(null);
   let addonBalanceResult = $state<any>(null);
 
+  // Wallet State
+  let walletResult = $state<any>(null);
+  let walletSetupResult = $state<any>(null);
+  let walletProvider = $state("");
+
   // Billing State
   let unbilledUsage = $state<any>(null);
   let invoiceResult = $state<any>(null);
@@ -49,6 +54,49 @@
       log("Attach Success:", res);
     } catch (e: any) {
       log("Attach Failed:", e.message);
+    }
+  }
+
+  async function handleGetWallet() {
+    if (!customerId) return alert("Customer required");
+    log(`Fetching wallet for ${customerId}...`);
+
+    try {
+      const res = await owo.wallet(customerId);
+      walletResult = res;
+      log("Wallet:", res);
+    } catch (e: any) {
+      log("Wallet Failed:", e.message);
+    }
+  }
+
+  async function handleSetupCard() {
+    if (!customerId) return alert("Customer required");
+    log(`Setting up payment method for ${customerId}...`);
+    walletSetupResult = null;
+
+    try {
+      const res = await owo.wallet.setup(customerId, {
+        callbackUrl: window.location.href,
+        ...(walletProvider ? { provider: walletProvider } : {}),
+      });
+      walletSetupResult = res;
+      log("Wallet Setup:", res);
+    } catch (e: any) {
+      log("Wallet Setup Failed:", e.message);
+    }
+  }
+
+  async function handleRemoveCard(methodId: string) {
+    if (!customerId) return alert("Customer required");
+    log(`Removing payment method ${methodId}...`);
+
+    try {
+      const res = await owo.wallet.remove(customerId, methodId);
+      log("Removed:", res);
+      await handleGetWallet();
+    } catch (e: any) {
+      log("Remove Failed:", e.message);
     }
   }
 
@@ -292,7 +340,90 @@
         class="space-y-4 bg-zinc-800/50 p-6 rounded-xl border border-zinc-700"
       >
         <h2 class="text-sm font-bold text-zinc-400 uppercase tracking-wider">
-          3. Entitlements
+          3. Wallet / Payment Method
+        </h2>
+
+        <div class="space-y-2">
+          <label class="block text-xs font-semibold text-zinc-500"
+            >Provider (optional)</label
+          >
+          <input
+            type="text"
+            bind:value={walletProvider}
+            placeholder="e.g. dodopayments, paystack"
+            class="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-white focus:border-emerald-500 outline-none transition-colors"
+          />
+        </div>
+
+        <div class="flex gap-2">
+          <button
+            onclick={handleGetWallet}
+            disabled={!secretKey}
+            class="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold px-3 py-2 rounded transition-colors disabled:opacity-50 text-xs"
+          >
+            View Wallet
+          </button>
+          <button
+            onclick={handleSetupCard}
+            disabled={!secretKey}
+            class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 py-2 rounded transition-colors disabled:opacity-50 text-xs"
+          >
+            Add Card
+          </button>
+        </div>
+
+        {#if walletSetupResult}
+          <div class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs font-mono break-all">
+            {#if walletSetupResult.checkoutUrl}
+              <a
+                href={walletSetupResult.checkoutUrl}
+                target="_blank"
+                class="text-blue-400 underline"
+              >
+                Complete Card Setup &rarr;
+              </a>
+            {/if}
+            <pre class="mt-2 text-zinc-500">{JSON.stringify(walletSetupResult, null, 2)}</pre>
+          </div>
+        {/if}
+
+        {#if walletResult}
+          <div class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs">
+            {#if walletResult.methods && walletResult.methods.length > 0}
+              {#each walletResult.methods as method}
+                <div class="flex items-center justify-between py-2 border-b border-zinc-800 last:border-0">
+                  <div>
+                    <span class="text-zinc-300 font-bold">
+                      {method.cardBrand || method.type || 'Card'}
+                    </span>
+                    {#if method.cardLast4}
+                      <span class="text-zinc-500 ml-1">**** {method.cardLast4}</span>
+                    {/if}
+                    {#if method.cardExpMonth && method.cardExpYear}
+                      <span class="text-zinc-600 ml-2 text-[10px]">{method.cardExpMonth}/{method.cardExpYear}</span>
+                    {/if}
+                    <span class="text-zinc-600 ml-2 text-[10px] uppercase">{method.providerId}</span>
+                  </div>
+                  <button
+                    onclick={() => handleRemoveCard(method.id)}
+                    class="text-red-500 hover:text-red-400 text-[10px] font-bold uppercase"
+                  >
+                    Remove
+                  </button>
+                </div>
+              {/each}
+            {:else}
+              <div class="text-zinc-600 italic text-center py-3">No payment methods on file</div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <div
+        class="space-y-4 bg-zinc-800/50 p-6 rounded-xl border border-zinc-700"
+      >
+        <h2 class="text-sm font-bold text-zinc-400 uppercase tracking-wider">
+          4. Entitlements
         </h2>
 
         <div class="space-y-2">
@@ -344,7 +475,7 @@
         class="space-y-4 bg-zinc-800/50 p-6 rounded-xl border border-zinc-700"
       >
         <h2 class="text-sm font-bold text-zinc-400 uppercase tracking-wider">
-          4. Add-on Credits
+          5. Add-on Credits
         </h2>
 
         <div class="space-y-2">
@@ -448,7 +579,7 @@
         class="space-y-4 bg-zinc-800/50 p-6 rounded-xl border border-zinc-700"
       >
         <h2 class="text-sm font-bold text-zinc-400 uppercase tracking-wider">
-          5. Billing (Usage-Based)
+          6. Billing (Usage-Based)
         </h2>
 
         <div class="flex gap-2">

@@ -15,20 +15,19 @@ export interface OverageGuardResult {
 }
 
 /**
- * Check if a customer has a stored payment method (card on file).
- * No card = no overage. Period.
+ * Check if a customer has a stored payment method (card on file or provider-managed).
+ * Queries the payment_methods table — works for all providers.
  */
 export async function hasPaymentMethod(
   db: any,
   customerId: string,
 ): Promise<boolean> {
   const result = await (db as any).run(
-    sql`SELECT provider_authorization_code, paystack_authorization_code
-        FROM customers WHERE id = ${customerId} LIMIT 1`,
+    sql`SELECT 1 FROM payment_methods
+        WHERE customer_id = ${customerId} AND is_valid = 1
+        LIMIT 1`,
   );
-  const row = result?.results?.[0];
-  if (!row) return false;
-  return !!(row.provider_authorization_code || row.paystack_authorization_code);
+  return !!result?.results?.[0];
 }
 
 /**

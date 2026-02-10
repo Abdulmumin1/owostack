@@ -822,7 +822,7 @@
                       bind:value={configPricePerUnit}
                     />
                     <div class="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-bold text-text-dim uppercase">
-                      ₦
+                      {COMMON_CURRENCIES.find(c => c.code === (plan?.currency || $defaultCurrency))?.symbol || plan?.currency || '₦'}
                     </div>
                   </div>
                 </div>
