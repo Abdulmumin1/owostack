@@ -3,6 +3,7 @@ import { schema, createDb } from "@owostack/db";
 import {
   createProviderRegistry,
   paystackAdapter,
+  dodoAdapter,
 } from "@owostack/adapters";
 import type {
   AttachRequestContext,
@@ -21,8 +22,8 @@ export type DB = ReturnType<typeof createDb>;
 export function getProviderRegistry() {
   const registry = createProviderRegistry();
   registry.register(paystackAdapter);
+  registry.register(dodoAdapter);
   // registry.register(stripeAdapter);
-  // registry.register(dodoAdapter);
   return registry;
 }
 
@@ -113,8 +114,8 @@ export function deriveProviderEnvironment(
 
 function providerCredentialsNeedingDecrypt(_providerId: string): string[] {
   // All providers use "secretKey" as their encrypted credential field.
-  // Provider-agnostic: no per-provider switch needed.
-  return ["secretKey"];
+  // Some providers (e.g. Dodo Payments) also have a separate "webhookSecret".
+  return ["secretKey", "webhookSecret"];
 }
 
 async function decryptProviderCredentials(

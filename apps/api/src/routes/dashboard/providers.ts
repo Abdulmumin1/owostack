@@ -70,6 +70,7 @@ app.get("/accounts", async (c) => {
       credentials: {
         ...account.credentials,
         secretKey: account.credentials.secretKey ? "****" : null,
+        webhookSecret: account.credentials.webhookSecret ? "****" : null,
       },
     };
   });
@@ -79,7 +80,7 @@ app.get("/accounts", async (c) => {
 
 // Helper: parse enabled providers from env
 function getEnabledProviders(env: any): string[] {
-  const raw = env.ENABLED_PROVIDERS || "paystack";
+  const raw = env.ENABLED_PROVIDERS || "paystack,dodopayments";
   return raw.split(",").map((s: string) => s.trim().toLowerCase()).filter(Boolean);
 }
 
@@ -133,18 +134,27 @@ app.post("/accounts", async (c) => {
   }
 
   const secretKey = credentials.secretKey;
+  const webhookSecret = credentials.webhookSecret;
   let storedCredentials: Record<string, unknown> = credentials;
 
+  if (!c.env.ENCRYPTION_KEY && (secretKey || webhookSecret)) {
+    return c.json(
+      { success: false, error: "Encryption not configured" },
+      500,
+    );
+  }
+
   if (typeof secretKey === "string" && secretKey.length > 0) {
-    if (!c.env.ENCRYPTION_KEY) {
-      return c.json(
-        { success: false, error: "Encryption not configured" },
-        500,
-      );
-    }
     storedCredentials = {
-      ...credentials,
+      ...storedCredentials,
       secretKey: await encrypt(secretKey, c.env.ENCRYPTION_KEY),
+    };
+  }
+
+  if (typeof webhookSecret === "string" && webhookSecret.length > 0) {
+    storedCredentials = {
+      ...storedCredentials,
+      webhookSecret: await encrypt(webhookSecret, c.env.ENCRYPTION_KEY),
     };
   }
 
@@ -292,17 +302,26 @@ app.patch("/accounts/:id", async (c) => {
   if (credentials) {
     let storedCredentials = credentials;
     const secretKey = credentials.secretKey;
+    const webhookSecret = credentials.webhookSecret;
+
+    if ((secretKey || webhookSecret) && !c.env.ENCRYPTION_KEY) {
+      return c.json(
+        { success: false, error: "Encryption not configured" },
+        500,
+      );
+    }
 
     if (typeof secretKey === "string" && secretKey.length > 0) {
-      if (!c.env.ENCRYPTION_KEY) {
-        return c.json(
-          { success: false, error: "Encryption not configured" },
-          500,
-        );
-      }
       storedCredentials = {
-        ...credentials,
+        ...storedCredentials,
         secretKey: await encrypt(secretKey, c.env.ENCRYPTION_KEY),
+      };
+    }
+
+    if (typeof webhookSecret === "string" && webhookSecret.length > 0) {
+      storedCredentials = {
+        ...storedCredentials,
+        webhookSecret: await encrypt(webhookSecret, c.env.ENCRYPTION_KEY),
       };
     }
 

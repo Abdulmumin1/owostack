@@ -289,21 +289,21 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Over
       return;
     }
 
-    // Step 5c: Charge the card (with retries)
+    // Step 5c: Charge the card (manual retries — never throw from step.do
+    // to avoid Cloudflare Workflows treating exhausted retries as terminal failure).
+    const MAX_CHARGE_ATTEMPTS = 3;
     let chargeSucceeded = false;
     let chargeRef: string | null = null;
+    let lastError = "";
 
-    try {
-      const result = await step.do(
-        "charge-card",
-        {
-          retries: { limit: 3, delay: "30 seconds", backoff: "exponential" },
-          timeout: "30 seconds",
-        },
-        async () => {
-          const adapter = getAdapter(providerId);
-          if (!adapter) throw new Error(`No adapter for provider: ${providerId}`);
+    for (let attempt = 0; attempt < MAX_CHARGE_ATTEMPTS; attempt++) {
+      const result = await step.do(`charge-card-attempt-${attempt}`, async () => {
+        const adapter = getAdapter(providerId);
+        if (!adapter) {
+          return { success: false as const, error: `No adapter for provider: ${providerId}`, retryable: false, reference: null };
+        }
 
+        try {
           const chargeResult = await adapter.chargeAuthorization({
             customer: { id: customerId, email: customerPayment!.email },
             authorizationCode: authCode!,
@@ -321,17 +321,37 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Over
           });
 
           if (chargeResult.isErr()) {
-            throw new Error(`Charge failed: ${chargeResult.error.message}`);
+            const errMsg = chargeResult.error.message || JSON.stringify(chargeResult.error);
+            const permanent = /invalid_authorization|validation_error|invalid_request|authorization.*(invalid|expired|not found)/i.test(errMsg);
+            console.error(`[OverageBilling] Charge attempt ${attempt} failed: ${errMsg} (permanent=${permanent})`);
+            return { success: false as const, error: errMsg, retryable: !permanent, reference: null };
           }
 
           console.log(`[OverageBilling] Charge succeeded: ref=${chargeResult.value.reference}`);
-          return { reference: chargeResult.value.reference };
-        },
-      );
-      chargeSucceeded = true;
-      chargeRef = result.reference;
-    } catch (err) {
-      console.error(`[OverageBilling] Charge exhausted retries for invoice=${invoice.invoiceNumber}`, err);
+          return { success: true as const, error: "", retryable: false, reference: chargeResult.value.reference };
+        } catch (networkErr: any) {
+          console.error(`[OverageBilling] Charge attempt ${attempt} threw: ${networkErr.message}`);
+          return { success: false as const, error: networkErr.message, retryable: true, reference: null };
+        }
+      });
+
+      if (result.success) {
+        chargeSucceeded = true;
+        chargeRef = result.reference;
+        break;
+      }
+
+      lastError = result.error;
+      if (!result.retryable) break;
+
+      if (attempt < MAX_CHARGE_ATTEMPTS - 1) {
+        const delayMs = 30_000 * Math.pow(2, attempt);
+        await step.sleep(`charge-retry-wait-${attempt}`, delayMs);
+      }
+    }
+
+    if (!chargeSucceeded) {
+      console.error(`[OverageBilling] All charge attempts failed for invoice=${invoice.invoiceNumber}: ${lastError}`);
     }
 
     // Step 5d: Record payment attempt + update invoice status

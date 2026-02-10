@@ -219,6 +219,7 @@ export const paystackAdapter: ProviderAdapter = {
   id: "paystack",
   displayName: "Paystack",
   signatureHeaderName: "x-paystack-signature",
+  supportsNativeTrials: false,
 
   async createCheckoutSession(params): Promise<ProviderResult<CheckoutSession>> {
     const clientResult = resolveClient(params.account);

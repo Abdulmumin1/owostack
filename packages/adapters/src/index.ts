@@ -162,6 +162,13 @@ export interface ProviderAdapter {
   displayName: string;
   signatureHeaderName?: string;
 
+  /**
+   * Whether the provider supports native trial periods on subscriptions.
+   * - true  → pass plan + trialDays to checkout; provider defers first charge.
+   * - false → checkout is a small auth-capture charge; our workflow handles billing at trial end.
+   */
+  supportsNativeTrials?: boolean;
+
   createCheckoutSession(params: {
     customer: ProviderCustomerRef;
     plan?: ProviderPlanRef | null;
@@ -171,6 +178,7 @@ export interface ProviderAdapter {
     metadata?: Record<string, unknown>;
     channels?: string[];
     lineItems?: CheckoutLineItem[];
+    trialDays?: number;
     environment: ProviderEnvironment;
     account: ProviderAccount;
   }): Promise<ProviderResult<CheckoutSession>>;
@@ -231,6 +239,18 @@ export interface ProviderAdapter {
     account: ProviderAccount;
   }): Promise<ProviderResult<{ reference: string }>>;
 
+  // Optional: change an existing subscription to a different plan with provider-managed proration.
+  // Providers like Dodo handle proration natively; Paystack doesn't support this.
+  changePlan?(params: {
+    subscriptionId: string;
+    newPlanId: string;
+    prorationMode?: "prorated_immediately" | "full_immediately" | "difference_immediately";
+    quantity?: number;
+    metadata?: Record<string, unknown>;
+    environment: ProviderEnvironment;
+    account: ProviderAccount;
+  }): Promise<ProviderResult<{ changed: boolean }>>;
+
   fetchSubscription(params: {
     subscriptionId: string;
     environment: ProviderEnvironment;
@@ -241,6 +261,7 @@ export interface ProviderAdapter {
     signature: string;
     payload: string;
     secret: string;
+    headers?: Record<string, string>;
   }): Promise<ProviderResult<boolean>>;
 
   parseWebhookEvent(params: {
@@ -278,6 +299,7 @@ export function createProviderRegistry(): ProviderRegistry {
 }
 
 export { paystackAdapter } from "./paystack";
+export { dodoAdapter } from "./dodo";
 export { selectProvider } from "./selector";
 export { resolveProvider } from "./provider-factory";
 

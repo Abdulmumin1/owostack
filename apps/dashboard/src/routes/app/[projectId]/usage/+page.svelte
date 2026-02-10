@@ -230,7 +230,17 @@
       </StatCard>
 
       <StatCard label="Active Subs" value={formatNumber(usage.activeSubscriptions)} subtitle="Currently active" icon={Activity} iconColor="text-accent bg-accent/10" />
-      <StatCard label="MRR" value={formatCurrency(usage.mrr)} subtitle="Monthly recurring" icon={DollarSign} iconColor="text-emerald-500 bg-emerald-500/10" />
+      <StatCard
+        label="MRR"
+        value={usage.mrrTotal ? formatCurrency(usage.mrrTotal.amount, usage.mrrTotal.currency) : formatCurrency(0)}
+        subtitle={usage.mrr?.length > 1 ? usage.mrr.map((m: any) => formatCurrency(m.amount, m.currency)).join(' + ') : 'Monthly recurring'}
+        icon={DollarSign}
+        iconColor="text-emerald-500 bg-emerald-500/10"
+      >
+        {#if usage.mrrTotal?.approximate}
+          <span class="text-[9px] text-zinc-600 mt-0.5 block">≈ converted rate</span>
+        {/if}
+      </StatCard>
       <StatCard label="Plans" value={usage.customersPerPlan?.length || 0} subtitle="With active customers" icon={Layers} iconColor="text-purple-500 bg-purple-500/10" />
     </div>
 

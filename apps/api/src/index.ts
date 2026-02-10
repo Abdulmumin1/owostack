@@ -303,9 +303,35 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   }
 
   const workerEnv = c.env.ENVIRONMENT === "live" ? "live" : "test";
-  let secret: string | null = project.webhookSecret;
+  let secret: string | null = null;
 
-  // Fallback: provider uses the API secret key for webhook signatures
+  // 4a. Check provider account credentials for a webhook-specific secret
+  // (e.g. Dodo Payments uses a separate webhookSecret, not the API key)
+  const providerAccounts = await db.query.providerAccounts.findMany({
+    where: and(
+      eq(schema.providerAccounts.organizationId, organizationId),
+      eq(schema.providerAccounts.providerId, providerId),
+    ),
+  });
+  for (const pa of providerAccounts) {
+    const creds = (pa as any).credentials || {};
+    if (typeof creds.webhookSecret === "string" && creds.webhookSecret.length > 0) {
+      try {
+        secret = await decrypt(creds.webhookSecret, c.env.ENCRYPTION_KEY);
+        console.log(`[WEBHOOK-ROUTE] Using provider account webhookSecret for org=${organizationId}, provider=${providerId}`);
+      } catch (e) {
+        console.warn(`[WEBHOOK-ROUTE] Failed to decrypt provider webhookSecret:`, e);
+      }
+      break;
+    }
+  }
+
+  // 4b. Fallback: project-level webhookSecret
+  if (!secret) {
+    secret = project.webhookSecret;
+  }
+
+  // 4c. Fallback: provider API secret key (e.g. Paystack uses this for HMAC)
   if (!secret) {
     const encryptedKey =
       workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
@@ -326,10 +352,18 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   }
 
   // 5. Verify signature via adapter
+  // Pass all request headers so providers using Standard Webhooks (e.g. Dodo)
+  // can access webhook-id, webhook-timestamp, etc.
+  const reqHeaders: Record<string, string> = {};
+  c.req.raw.headers.forEach((value: string, key: string) => {
+    reqHeaders[key] = value;
+  });
+
   const verifyResult = await adapter.verifyWebhook({
     signature,
     payload: rawBody,
     secret,
+    headers: reqHeaders,
   });
 
   if (verifyResult.isErr() || !verifyResult.value) {
@@ -363,21 +397,48 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   console.log(`[WEBHOOK-ROUTE] Event: ${normalizedEvent.type}, provider=${normalizedEvent.provider}, ref=${normalizedEvent.payment?.reference || "n/a"}`);
 
   // 7. Build provider account for API calls (cancel sub, etc.)
+  // Prefer a real provider account from the DB (already loaded above for webhookSecret).
+  // Fall back to a synthetic account from project-level keys (Paystack legacy).
   let providerAccount: ProviderAccount | undefined;
-  const encKey = workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
-  if (encKey) {
-    try {
-      const apiSecretKey = await decrypt(encKey, c.env.ENCRYPTION_KEY);
-      providerAccount = {
-        id: `webhook-${organizationId}`,
-        organizationId,
-        providerId,
-        environment: workerEnv,
-        credentials: { secretKey: apiSecretKey },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-    } catch { /* already logged above */ }
+  if (providerAccounts.length > 0) {
+    const pa = providerAccounts[0] as any;
+    const creds = { ...(pa.credentials || {}) };
+    // Decrypt the secretKey for API calls
+    if (typeof creds.secretKey === "string" && creds.secretKey.length > 0) {
+      try {
+        creds.secretKey = await decrypt(creds.secretKey, c.env.ENCRYPTION_KEY);
+      } catch (e) {
+        console.warn(`[WEBHOOK-ROUTE] Failed to decrypt provider secretKey:`, e);
+      }
+    }
+    providerAccount = {
+      id: pa.id,
+      organizationId: pa.organizationId,
+      providerId: pa.providerId,
+      environment: pa.environment || workerEnv,
+      displayName: pa.displayName,
+      credentials: creds,
+      metadata: pa.metadata,
+      createdAt: pa.createdAt,
+      updatedAt: pa.updatedAt,
+    };
+  } else {
+    // Legacy fallback: build synthetic account from project-level keys
+    const encKey = workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
+    if (encKey) {
+      try {
+        const apiSecretKey = await decrypt(encKey, c.env.ENCRYPTION_KEY);
+        providerAccount = {
+          id: `webhook-${organizationId}`,
+          organizationId,
+          providerId,
+          environment: workerEnv,
+          credentials: { secretKey: apiSecretKey },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+      } catch { /* already logged above */ }
+    }
   }
 
   // 8. Handle via provider-agnostic WebhookHandler

@@ -17,6 +17,8 @@
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import { defaultCurrency } from "$lib/stores/currency";
   import { COMMON_CURRENCIES } from "$lib/utils/currency";
+  import { SUPPORTED_PROVIDERS, type ProviderConfig } from "$lib/providers";
+  import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
 
   let {
     organizationId,
@@ -30,12 +32,16 @@
   let features = $state<any[]>([]);
   let creditSystems = $state<any[]>([]);
   let selectedFeatures = $state<any[]>([]);
+  let connectedProviders = $state<any[]>([]);
+  let selectedProviderId = $state("");
+  let uniqueProviderIds = $derived([...new Set(connectedProviders.map((p: any) => p.providerId))]);
 
   async function loadData() {
     try {
-      const [featRes, credRes] = await Promise.all([
+      const [featRes, credRes, provRes] = await Promise.all([
         apiFetch(`/api/dashboard/features?organizationId=${organizationId}`),
         apiFetch(`/api/dashboard/credits?organizationId=${organizationId}`),
+        apiFetch(`/api/dashboard/providers/accounts?organizationId=${organizationId}`),
       ]);
 
       if (credRes.data?.success) {
@@ -46,6 +52,16 @@
         // Filter out features that are actually credit systems
         const csIds = new Set(creditSystems.map((cs) => cs.id));
         features = featRes.data.data.filter((f: any) => !csIds.has(f.id));
+      }
+
+      // console.log(provRes.data.data)
+      if (Array.isArray(provRes.data.data)) {
+        connectedProviders = provRes.data.data;
+        console.log({connectedProviders})
+        // Auto-select the first connected provider if none selected
+        if (!selectedProviderId && connectedProviders.length > 0) {
+          selectedProviderId = connectedProviders[0].providerId;
+        }
       }
     } catch (e) {
       console.error("Failed to load data", e);
@@ -98,6 +114,29 @@
   let isAddon = $state(false);
   let autoEnable = $state(false);
   let planGroup = $state("");
+
+  // Derive the selected provider's config
+  let selectedProviderConfig = $derived(
+    SUPPORTED_PROVIDERS.find((p) => p.id === selectedProviderId),
+  );
+
+  // Derive available currencies based on selected provider
+  let availableCurrencies = $derived(
+    selectedProviderConfig?.supportedCurrencies
+      ? COMMON_CURRENCIES.filter((c) =>
+          selectedProviderConfig!.supportedCurrencies!.includes(c.code),
+        )
+      : COMMON_CURRENCIES,
+  );
+
+  // Reset currency when provider changes if current currency isn't supported
+  $effect(() => {
+    if (selectedProviderConfig?.supportedCurrencies) {
+      if (!selectedProviderConfig.supportedCurrencies.includes(currency)) {
+        currency = selectedProviderConfig.supportedCurrencies[0] || "USD";
+      }
+    }
+  });
 
   // Auto-generate ID preview
   let planId = $derived(
@@ -156,6 +195,7 @@
           isAddon,
           autoEnable,
           planGroup: planGroup || undefined,
+          providerId: selectedProviderId || undefined,
         }),
       });
 
@@ -248,6 +288,35 @@
             </div>
           </div>
         </div>
+
+        <!-- Provider Selection (only show when multiple providers are connected) -->
+         <!-- {JSON.stringify(uniqueProviderIds)} -->
+        {#if uniqueProviderIds.length > 1}
+          <div>
+            <div class="text-xs font-medium text-zinc-400 mb-2">
+              Payment Provider
+            </div>
+            <div class="grid grid-cols-{Math.min(uniqueProviderIds.length, 3)} gap-2">
+              {#each uniqueProviderIds as pid}
+                {@const provConfig = SUPPORTED_PROVIDERS.find((p) => p.id === pid)}
+                {#if provConfig}
+                  <button
+                    class="relative border rounded-lg p-3 text-left transition-all {selectedProviderId === pid
+                      ? 'border-accent bg-accent/5'
+                      : 'border-border bg-bg-secondary hover:border-zinc-600'}"
+                    onclick={() => (selectedProviderId = pid)}
+                  >
+                    <div class="text-xs font-bold text-white">{provConfig.name}</div>
+                    <div class="text-[10px] text-zinc-500 mt-0.5 truncate">{provConfig.description}</div>
+                    {#if selectedProviderId === pid}
+                      <div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent"></div>
+                    {/if}
+                  </button>
+                {/if}
+              {/each}
+            </div>
+          </div>
+        {/if}
 
         <!-- Plan Type -->
         <div>
@@ -349,7 +418,7 @@
                   </div>
                 </label>
 
-                <label class="flex items-center gap-2 cursor-pointer group">
+                <!-- <label class="flex items-center gap-2 cursor-pointer group">
                   <div
                     class="w-4 h-4 rounded-full border flex items-center justify-center {billingModel ===
                     'per_unit'
@@ -372,7 +441,7 @@
                       >Plan price is based entirely on usage or units purchased.</span
                     >
                   </div>
-                </label>
+                </label> -->
               </div>
 
               <!-- Recurring vs One-off segment -->
@@ -435,7 +504,7 @@
                       bind:value={currency}
                       class="input appearance-none"
                     >
-                      {#each COMMON_CURRENCIES as c}
+                      {#each availableCurrencies as c}
                         <option value={c.code}>{c.code}</option>
                       {/each}
                     </select>
@@ -545,7 +614,7 @@
           {/if}
 
           <!-- Add-on -->
-          <div>
+          <!-- <div>
             <label
               class="flex items-center gap-2 cursor-pointer group select-none"
             >
@@ -564,10 +633,10 @@
             <p class="text-[10px] text-zinc-500 pl-6">
               Stack this plan on top of a base plan
             </p>
-          </div>
+          </div> -->
 
           <!-- Auto-enable -->
-          <div>
+          <!-- <div>
             <label
               class="flex items-center gap-2 cursor-pointer group select-none"
             >
@@ -586,7 +655,7 @@
             <p class="text-[10px] text-zinc-500 pl-6">
               Automatically assign this plan to new customers
             </p>
-          </div>
+          </div> -->
 
           <!-- Plan Group -->
           <div>
