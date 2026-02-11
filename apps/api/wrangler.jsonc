@@ -66,6 +66,24 @@
     }
   ],
 
+  // Queue for dispatching overage billing workflows at scale
+  "queues": {
+    "producers": [
+      {
+        "binding": "OVERAGE_BILLING_QUEUE",
+        "queue": "overage-billing"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "overage-billing",
+        "max_batch_size": 10,
+        "max_retries": 3,
+        "dead_letter_queue": "overage-billing-dlq"
+      }
+    ]
+  },
+
   // Cron triggers for periodic overage billing
   "triggers": {
     "crons": [
@@ -117,7 +135,11 @@
       "kv_namespaces": [
         { "binding": "API_KEYS", "id": "8b5d2500402943889b9f6817038fa2e1" },
         { "binding": "CACHE", "id": "8b5d2500402943889b9f6817038fa2e1" }
-      ]
+      ],
+      "queues": {
+        "producers": [{ "binding": "OVERAGE_BILLING_QUEUE", "queue": "overage-billing-test" }],
+        "consumers": [{ "queue": "overage-billing-test", "max_batch_size": 10, "max_retries": 3, "dead_letter_queue": "overage-billing-test-dlq" }]
+      }
     },
     "live": {
       "name": "owostack-api-live",
@@ -142,7 +164,11 @@
       "kv_namespaces": [
         { "binding": "API_KEYS", "id": "dac98089fb1a48ceacd78e2380a5022f" },
         { "binding": "CACHE", "id": "dac98089fb1a48ceacd78e2380a5022f" }
-      ]
+      ],
+      "queues": {
+        "producers": [{ "binding": "OVERAGE_BILLING_QUEUE", "queue": "overage-billing-live" }],
+        "consumers": [{ "queue": "overage-billing-live", "max_batch_size": 10, "max_retries": 3, "dead_letter_queue": "overage-billing-live-dlq" }]
+      }
     }
   }
 

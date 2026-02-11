@@ -154,6 +154,16 @@ class PaystackClient {
     return this.request("POST", "/plan", params);
   }
 
+  updatePlan(planCode: string, params: {
+    name?: string;
+    amount?: number;
+    interval?: string;
+    description?: string;
+    currency?: string;
+  }): Promise<ProviderResult<Record<string, unknown>>> {
+    return this.request("PUT", `/plan/${encodeURIComponent(planCode)}`, params);
+  }
+
   createSubscription(params: {
     customer: string;
     plan: string;
@@ -291,6 +301,23 @@ export const paystackAdapter: ProviderAdapter = {
       id: response.value.plan_code,
       metadata: {},
     });
+  },
+
+  async updatePlan(params): Promise<ProviderResult<{ updated: boolean }>> {
+    const clientResult = resolveClient(params.account);
+    if (clientResult.isErr()) return clientResult;
+
+    const updateBody: Record<string, unknown> = {};
+    if (params.name !== undefined) updateBody.name = params.name;
+    if (params.amount !== undefined) updateBody.amount = params.amount;
+    if (params.interval !== undefined) updateBody.interval = params.interval;
+    if (params.currency !== undefined) updateBody.currency = params.currency;
+    if (params.description !== undefined) updateBody.description = params.description;
+
+    const response = await clientResult.value.updatePlan(params.planId, updateBody);
+    if (response.isErr()) return response;
+
+    return Result.ok({ updated: true });
   },
 
   async createSubscription(

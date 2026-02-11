@@ -349,6 +349,57 @@ app.patch("/:id", async (c) => {
       return c.json({ error: "Plan not found" }, 404);
     }
 
+    // =========================================================================
+    // Sync plan update with payment provider
+    // =========================================================================
+    const providerFields = ["name", "price", "interval", "currency", "description"] as const;
+    const hasProviderChange = providerFields.some((f) => parsed.data[f] !== undefined);
+
+    if (hasProviderChange && updated.providerPlanId && updated.providerId) {
+      try {
+        const authDb = c.get("authDb");
+        const project = await authDb.query.projects.findFirst({
+          where: eq(schema.projects.organizationId, updated.organizationId),
+        });
+
+        const registry = getProviderRegistry();
+        const adapter = registry.get(updated.providerId);
+        const providerEnv = deriveProviderEnvironment(
+          c.env.ENVIRONMENT,
+          project?.activeEnvironment,
+        );
+        const providerAccounts = await loadProviderAccounts(
+          db,
+          updated.organizationId,
+          c.env.ENCRYPTION_KEY,
+        );
+        const account = providerAccounts.find(
+          (a) => a.providerId === updated.providerId,
+        );
+
+        if (adapter?.updatePlan && account) {
+          const result = await adapter.updatePlan({
+            planId: updated.providerPlanId,
+            name: updated.name,
+            amount: updated.price,
+            interval: updated.interval,
+            currency: updated.currency,
+            description: updated.description,
+            environment: providerEnv,
+            account,
+          });
+
+          if (result.isOk()) {
+            console.log(`[plans] Updated plan on ${updated.providerId}: ${updated.providerPlanId}`);
+          } else {
+            console.warn(`[plans] Failed to update plan on ${updated.providerId}:`, result.error);
+          }
+        }
+      } catch (e) {
+        console.warn("[plans] Provider sync error during update:", e);
+      }
+    }
+
     return c.json({ success: true, data: updated });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);

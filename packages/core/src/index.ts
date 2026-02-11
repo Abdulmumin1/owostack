@@ -13,6 +13,8 @@ import type {
   InvoiceResult,
   InvoicesParams,
   InvoicesResult,
+  PayInvoiceParams,
+  PayInvoiceResult,
   OwostackConfig,
   SyncResult,
   WalletResult,
@@ -337,6 +339,29 @@ class BillingNamespace {
     });
     return response as InvoicesResult;
   }
+
+  /**
+   * pay() - Pay an Invoice
+   *
+   * Attempts to auto-charge the customer's saved payment method.
+   * If no card on file or charge fails, returns a checkout URL instead.
+   *
+   * @example
+   * ```ts
+   * const result = await owo.billing.pay({ invoiceId: 'inv_xxx' });
+   * if (!result.paid) {
+   *   // Redirect customer to checkout
+   *   window.location.href = result.checkoutUrl!;
+   * }
+   * ```
+   */
+  async pay(params: PayInvoiceParams): Promise<PayInvoiceResult> {
+    const response = await this.client.post(
+      `/billing/invoice/${encodeURIComponent(params.invoiceId)}/pay`,
+      { callbackUrl: params.callbackUrl },
+    );
+    return response as PayInvoiceResult;
+  }
 }
 
 /**
@@ -377,6 +402,8 @@ export type {
   InvoicesResult,
   Invoice,
   InvoiceLineItem,
+  PayInvoiceParams,
+  PayInvoiceResult,
   OwostackConfig,
   CustomerData,
   ResponseDetails,

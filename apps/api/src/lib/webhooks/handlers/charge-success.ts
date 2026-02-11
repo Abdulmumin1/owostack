@@ -60,8 +60,11 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
       .where(eq(schema.customers.id, dbCustomer.id));
   }
 
-  // 1b. Upsert payment method if we have a chargeable token
-  if (event.authorization?.reusable && event.authorization.code) {
+  // 1b. Upsert payment method if we have a chargeable token.
+  // Only save as "card" when actual card details (last4) are present (Paystack).
+  // For Dodo the authorization code is a subscription_id — those are stored as
+  // "provider_managed" by the subscription.created handler instead.
+  if (event.authorization?.reusable && event.authorization.code && event.authorization.last4) {
     try {
       await upsertPaymentMethod(db, {
         customerId: dbCustomer.id,
@@ -146,6 +149,27 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
   const isTrialConversion = metadata.trial_conversion === true || metadata.trial_conversion === "true";
   if (isTrialConversion) {
     console.log(`[WEBHOOK] Trial conversion charge for customer=${dbCustomer.id}, plan=${metadata.plan_id} — workflow handles activation`);
+    return;
+  }
+
+  // 2c. Handle INVOICE PAYMENT (from billing.pay() checkout or auto-charge webhook)
+  if (metadata.type === "invoice_payment" && metadata.invoice_id) {
+    const invoiceId = String(metadata.invoice_id);
+    console.log(`[WEBHOOK] Invoice payment received: invoice=${invoiceId}, ref=${reference}`);
+    try {
+      await db
+        .update(schema.invoices)
+        .set({
+          status: "paid",
+          amountPaid: event.payment?.amount || 0,
+          amountDue: 0,
+          paidAt: Date.now(),
+          updatedAt: Date.now(),
+        })
+        .where(eq(schema.invoices.id, invoiceId));
+    } catch (e) {
+      console.warn(`[WEBHOOK] Failed to mark invoice ${invoiceId} as paid:`, e);
+    }
     return;
   }
 

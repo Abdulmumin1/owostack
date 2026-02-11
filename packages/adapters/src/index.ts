@@ -216,6 +216,17 @@ export interface ProviderAdapter {
     account: ProviderAccount;
   }): Promise<ProviderResult<ProviderPlanRef>>;
 
+  updatePlan?(params: {
+    planId: string;
+    name?: string;
+    amount?: number;
+    interval?: string;
+    currency?: string;
+    description?: string | null;
+    environment: ProviderEnvironment;
+    account: ProviderAccount;
+  }): Promise<ProviderResult<{ updated: boolean }>>;
+
   createSubscription(params: {
     customer: ProviderCustomerRef;
     plan: ProviderPlanRef;

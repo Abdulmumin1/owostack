@@ -80,7 +80,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Over
       const subscription = await db.query.subscriptions.findFirst({
         where: and(
           eq(schema.subscriptions.customerId, customerId),
-          inArray(schema.subscriptions.status, ["active", "canceled", "pending_cancel"]),
+          inArray(schema.subscriptions.status, ["active", "canceled", "pending_cancel", "trialing"]),
         ),
         with: {
           plan: {
@@ -180,47 +180,74 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Over
 
     console.log(`[OverageBilling] Unbilled: ${unbilled.currency} ${unbilled.totalEstimated} across ${unbilled.features.length} features`);
 
-    // Step 4: Generate invoice
+    // Step 4: Generate invoice (idempotent — safe to retry)
     const invoice = await step.do("generate-invoice", async () => {
       const now = Date.now();
-
-      // Get invoice count for numbering
-      const countResult = await this.env.DB.prepare(
-        "SELECT COUNT(*) as count FROM invoices WHERE organization_id = ?",
-      ).bind(organizationId).first<{ count: number }>();
-      const seq = String((countResult?.count || 0) + 1).padStart(5, "0");
-      const suffix = crypto.randomUUID().slice(0, 4).toUpperCase();
-      const invoiceNumber = `INV-${seq}-${suffix}`;
-
       const periodStart = Math.min(...unbilled.features.map(f => f.periodStart));
       const periodEnd = Math.max(...unbilled.features.map(f => f.periodEnd));
-      const invoiceId = crypto.randomUUID();
 
-      // Create invoice
-      await this.env.DB.prepare(
-        `INSERT INTO invoices (id, organization_id, customer_id, number, status, currency, subtotal, tax, total, amount_paid, amount_due, period_start, period_end, usage_cutoff_at, due_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'open', ?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        invoiceId, organizationId, customerId, invoiceNumber, unbilled.currency,
-        unbilled.totalEstimated, unbilled.totalEstimated, unbilled.totalEstimated,
-        periodStart, periodEnd, now,
-        now + 7 * 24 * 60 * 60 * 1000, // due in 7 days
-        now, now,
-      ).run();
+      // Idempotency: check if an invoice already exists for this customer/period
+      // This prevents duplicate invoices if the workflow retries after a crash.
+      const existing = await this.env.DB.prepare(
+        `SELECT id, number, total, currency FROM invoices
+         WHERE customer_id = ? AND organization_id = ? AND period_start = ? AND period_end = ?
+           AND status IN ('open', 'paid')
+         LIMIT 1`,
+      ).bind(customerId, organizationId, periodStart, periodEnd)
+        .first<{ id: string; number: string; total: number; currency: string }>();
 
-      // Create line items + stamp usage records
-      for (const f of unbilled.features) {
-        const itemId = crypto.randomUUID();
-        const description = `${f.featureName}: ${f.billableQuantity} ${f.billingUnits > 1 ? `units (${f.billingUnits} per package)` : "units"}`;
+      let invoiceId: string;
+      let invoiceNumber: string;
 
+      if (existing) {
+        console.log(`[OverageBilling] Existing invoice found: ${existing.number} — completing any missing line items`);
+        invoiceId = existing.id;
+        invoiceNumber = existing.number;
+      } else {
+        // Get invoice count for numbering
+        const countResult = await this.env.DB.prepare(
+          "SELECT COUNT(*) as count FROM invoices WHERE organization_id = ?",
+        ).bind(organizationId).first<{ count: number }>();
+        const seq = String((countResult?.count || 0) + 1).padStart(5, "0");
+        const suffix = crypto.randomUUID().slice(0, 4).toUpperCase();
+        invoiceNumber = `INV-${seq}-${suffix}`;
+
+        invoiceId = crypto.randomUUID();
+
+        // Create invoice
         await this.env.DB.prepare(
-          `INSERT INTO invoice_items (id, invoice_id, feature_id, description, quantity, unit_price, amount, period_start, period_end, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO invoices (id, organization_id, customer_id, number, status, currency, subtotal, tax, total, amount_paid, amount_due, period_start, period_end, usage_cutoff_at, due_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'open', ?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
         ).bind(
-          itemId, invoiceId, f.featureId, description,
-          f.billableQuantity, Math.round(f.pricePerUnit / f.billingUnits),
-          f.estimatedAmount, f.periodStart, f.periodEnd, now,
+          invoiceId, organizationId, customerId, invoiceNumber, unbilled.currency,
+          unbilled.totalEstimated, unbilled.totalEstimated, unbilled.totalEstimated,
+          periodStart, periodEnd, now,
+          now + 7 * 24 * 60 * 60 * 1000, // due in 7 days
+          now, now,
         ).run();
+      }
+
+      // Create line items + stamp usage records (idempotent on retry)
+      // On retry after crash, some line items may already exist. Check each before inserting.
+      // Usage stamping is naturally idempotent (WHERE invoice_id IS NULL).
+      for (const f of unbilled.features) {
+        const existingItem = await this.env.DB.prepare(
+          "SELECT id FROM invoice_items WHERE invoice_id = ? AND feature_id = ? LIMIT 1",
+        ).bind(invoiceId, f.featureId).first();
+
+        if (!existingItem) {
+          const itemId = crypto.randomUUID();
+          const description = `${f.featureName}: ${f.billableQuantity} ${f.billingUnits > 1 ? `units (${f.billingUnits} per package)` : "units"}`;
+
+          await this.env.DB.prepare(
+            `INSERT INTO invoice_items (id, invoice_id, feature_id, description, quantity, unit_price, amount, period_start, period_end, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(
+            itemId, invoiceId, f.featureId, description,
+            f.billableQuantity, Math.round(f.pricePerUnit / f.billingUnits),
+            f.estimatedAmount, f.periodStart, f.periodEnd, now,
+          ).run();
+        }
 
         // Stamp usage records as invoiced
         await this.env.DB.prepare(
@@ -292,14 +319,30 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Over
       return;
     }
 
-    // Step 5c: Charge the card (manual retries — never throw from step.do
+    // Step 5c: Re-check invoice status before charging (guards against concurrent
+    // workflows — e.g. cron + threshold — both trying to charge the same invoice).
+    const invoiceStillOpen = await step.do("pre-charge-status-check", async () => {
+      const row = await this.env.DB.prepare(
+        "SELECT status FROM invoices WHERE id = ? LIMIT 1",
+      ).bind(invoice.invoiceId).first<{ status: string }>();
+      return row?.status === "open";
+    });
+
+    if (!invoiceStillOpen) {
+      console.log(`[OverageBilling] Invoice ${invoice.invoiceNumber} already paid/void. Skipping charge.`);
+      return;
+    }
+
+    // Charge the card (manual retries — never throw from step.do
     // to avoid Cloudflare Workflows treating exhausted retries as terminal failure).
     const MAX_CHARGE_ATTEMPTS = 3;
     let chargeSucceeded = false;
     let chargeRef: string | null = null;
     let lastError = "";
+    let attemptsMade = 0;
 
     for (let attempt = 0; attempt < MAX_CHARGE_ATTEMPTS; attempt++) {
+      attemptsMade = attempt + 1;
       const result = await step.do(`charge-card-attempt-${attempt}`, async () => {
         const adapter = getAdapter(providerId);
         if (!adapter) {
@@ -363,7 +406,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Over
 
       await this.env.DB.prepare(
         `INSERT INTO payment_attempts (id, invoice_id, amount, currency, status, provider, provider_reference, attempt_number, last_error, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         crypto.randomUUID(),
         invoice.invoiceId,
@@ -372,6 +415,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Over
         chargeSucceeded ? "succeeded" : "failed",
         providerId,
         chargeRef,
+        attemptsMade,
         chargeSucceeded ? null : "Charge failed after retries",
         now,
       ).run();

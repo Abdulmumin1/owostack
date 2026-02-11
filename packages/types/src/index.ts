@@ -383,6 +383,32 @@ export interface InvoiceResult {
 }
 
 /**
+ * billing.pay() - Pay an Invoice
+ */
+
+export interface PayInvoiceParams {
+  /** Invoice ID */
+  invoiceId: string;
+
+  /** URL to redirect to after checkout payment (used when auto-charge fails) */
+  callbackUrl?: string;
+}
+
+export interface PayInvoiceResult {
+  /** Whether the request succeeded */
+  success: boolean;
+
+  /** Whether the invoice was auto-charged (true) or needs manual checkout (false) */
+  paid: boolean;
+
+  /** Checkout URL — present when paid=false (customer must pay manually) */
+  checkoutUrl?: string;
+
+  /** The invoice */
+  invoice: Invoice;
+}
+
+/**
  * billing.invoices() - List Invoices
  */
 

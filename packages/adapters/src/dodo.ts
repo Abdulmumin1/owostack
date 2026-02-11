@@ -168,6 +168,25 @@ class DodoClient {
     return this.request("POST", "/products", params);
   }
 
+  updateProduct(productId: string, params: {
+    name?: string;
+    description?: string | null;
+    price?: {
+      currency: string;
+      price: number;
+      discount?: number;
+      purchasing_power_parity?: boolean;
+      type: "one_time_price" | "recurring_price";
+      payment_frequency_count?: number;
+      payment_frequency_interval?: string;
+      subscription_period_count?: number;
+      subscription_period_interval?: string;
+    };
+    tax_category?: string;
+  }): Promise<ProviderResult<Record<string, unknown>>> {
+    return this.request("PATCH", `/products/${encodeURIComponent(productId)}`, params);
+  }
+
   // -------------------------------------------------------------------------
   // Customers
   // -------------------------------------------------------------------------
@@ -529,6 +548,40 @@ export const dodoAdapter: ProviderAdapter = {
       id: response.value.product_id,
       metadata: {},
     });
+  },
+
+  // ---------------------------------------------------------------------------
+  // updatePlan → updates a Dodo Product (recurring subscription product)
+  // ---------------------------------------------------------------------------
+  async updatePlan(params): Promise<ProviderResult<{ updated: boolean }>> {
+    const clientResult = resolveClient(params.account, params.environment);
+    if (clientResult.isErr()) return clientResult;
+
+    const updateBody: Record<string, unknown> = {};
+    if (params.name !== undefined) updateBody.name = params.name;
+    if (params.description !== undefined) updateBody.description = params.description;
+
+    // Rebuild the full price object — Dodo requires complete price data on update
+    if (params.amount !== undefined && params.currency !== undefined && params.interval !== undefined) {
+      const { intervalType, count } = mapInterval(params.interval);
+
+      updateBody.price = {
+        type: "recurring_price",
+        currency: params.currency,
+        price: params.amount,
+        discount: 0,
+        purchasing_power_parity: false,
+        payment_frequency_interval: intervalType,
+        payment_frequency_count: count,
+        subscription_period_interval: intervalType,
+        subscription_period_count: count,
+      };
+    }
+
+    const response = await clientResult.value.updateProduct(params.planId, updateBody);
+    if (response.isErr()) return response;
+
+    return Result.ok({ updated: true });
   },
 
   // ---------------------------------------------------------------------------

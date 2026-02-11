@@ -55,6 +55,7 @@ export type Env = {
   DOWNGRADE_WORKFLOW: Workflow;
   PLAN_UPGRADE_WORKFLOW: Workflow;
   OVERAGE_BILLING_WORKFLOW: Workflow;
+  OVERAGE_BILLING_QUEUE: Queue;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   ENCRYPTION_KEY: string;
@@ -458,9 +459,19 @@ app.post("/webhooks/:organizationId/:provider", async (c) => {
 // and kicks off OverageBillingWorkflow for each customer with active subs.
 // =============================================================================
 
+// Queue message shape for overage billing dispatch
+interface OverageBillingQueueMessage {
+  organizationId: string;
+  targetInterval: string;
+  scheduledTime: number;
+}
+
 export default {
   fetch: app.fetch,
 
+  // -------------------------------------------------------------------------
+  // Cron → enqueue org-level messages (lightweight, stays well within 30s)
+  // -------------------------------------------------------------------------
   async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
     console.log(`[CRON] Triggered at ${new Date(event.scheduledTime).toISOString()}, cron=${event.cron}`);
 
@@ -474,21 +485,48 @@ export default {
     if (event.cron === "0 0 * * 1") {
       targetInterval = "weekly";
     } else {
-      // Daily cron or any other → process "daily"
       targetInterval = "daily";
     }
 
     try {
-      // Find all orgs with this billing interval
       const orgs = await db
         .select()
         .from((schema as any).overageSettings)
         .where(eq((schema as any).overageSettings.billingInterval, targetInterval));
 
-      console.log(`[CRON] Found ${orgs.length} orgs with interval=${targetInterval}`);
+      console.log(`[CRON] Found ${orgs.length} orgs with interval=${targetInterval}, enqueuing...`);
 
-      for (const org of orgs) {
-        // Find all customers with active subscriptions in this org
+      // Enqueue one message per org — the queue consumer handles the heavy lifting
+      const messages: { body: OverageBillingQueueMessage }[] = orgs.map((org: any) => ({
+        body: {
+          organizationId: org.organizationId,
+          targetInterval,
+          scheduledTime: event.scheduledTime,
+        },
+      }));
+
+      // Queue.sendBatch accepts up to 100 messages per call
+      const QUEUE_BATCH_LIMIT = 100;
+      for (let i = 0; i < messages.length; i += QUEUE_BATCH_LIMIT) {
+        await env.OVERAGE_BILLING_QUEUE.sendBatch(messages.slice(i, i + QUEUE_BATCH_LIMIT));
+      }
+
+      console.log(`[CRON] Enqueued ${messages.length} org messages to queue`);
+    } catch (e) {
+      console.error("[CRON] Overage billing cron failed:", e);
+    }
+  },
+
+  // -------------------------------------------------------------------------
+  // Queue consumer — each message = one org. Query customers, dispatch workflows.
+  // Each consumer invocation gets its own 30s CPU budget.
+  // -------------------------------------------------------------------------
+  async queue(batch: MessageBatch<OverageBillingQueueMessage>, env: Env, _ctx: ExecutionContext) {
+    const db = createDb(env.DB);
+
+    for (const msg of batch.messages) {
+      const { organizationId, scheduledTime } = msg.body;
+      try {
         const customers = await db
           .select({ id: schema.customers.id })
           .from(schema.customers)
@@ -499,26 +537,37 @@ export default {
               eq(schema.subscriptions.status, "active"),
             ),
           )
-          .where(eq(schema.customers.organizationId, (org as any).organizationId));
+          .where(eq(schema.customers.organizationId, organizationId));
 
-        for (const customer of customers) {
-          try {
-            await env.OVERAGE_BILLING_WORKFLOW.create({
-              id: `overage-cron-${customer.id}-${event.scheduledTime}`,
-              params: {
-                organizationId: (org as any).organizationId,
-                customerId: customer.id,
-                trigger: "cron",
-              },
-            });
-          } catch (e) {
-            // Duplicate workflow ID is fine (idempotent)
-            console.warn(`[CRON] Failed to create workflow for customer=${customer.id}:`, e);
-          }
+        // Deduplicate — a customer with multiple active subs appears multiple times
+        const uniqueIds = [...new Set(customers.map((c: { id: string }) => c.id))];
+        console.log(`[QUEUE] Org ${organizationId}: dispatching ${uniqueIds.length} workflows`);
+
+        // Dispatch in parallel batches
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+          const chunk = uniqueIds.slice(i, i + BATCH_SIZE);
+          await Promise.allSettled(
+            chunk.map(customerId =>
+              env.OVERAGE_BILLING_WORKFLOW.create({
+                id: `overage-cron-${customerId}-${scheduledTime}`,
+                params: {
+                  organizationId,
+                  customerId,
+                  trigger: "cron" as const,
+                },
+              }).catch(e => {
+                console.warn(`[QUEUE] Failed to create workflow for customer=${customerId}:`, e);
+              }),
+            ),
+          );
         }
+
+        msg.ack();
+      } catch (e) {
+        console.error(`[QUEUE] Failed to process org=${organizationId}:`, e);
+        msg.retry();
       }
-    } catch (e) {
-      console.error("[CRON] Overage billing cron failed:", e);
     }
   },
 };

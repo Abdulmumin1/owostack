@@ -28,6 +28,7 @@
   // Billing State
   let unbilledUsage = $state<any>(null);
   let invoiceResult = $state<any>(null);
+  let invoicesList = $state<any[]>([]);
 
   // Initialize SDK
   // In a real app, this would happen server-side or with a public key
@@ -231,9 +232,34 @@
 
     try {
       const res = await owo.billing.invoices({ customer: customerId });
+      invoicesList = res.invoices || [];
       log("Invoices:", res);
     } catch (e: any) {
       log("Invoices Failed:", e.message);
+    }
+  }
+
+  async function handlePayInvoice(id?: string) {
+    const invoiceId = id || invoiceResult?.invoice?.id;
+    if (!invoiceId) return alert("Generate an invoice first");
+    log(`Paying invoice ${invoiceId}...`);
+
+    try {
+      const res = await owo.billing.pay({ invoiceId });
+      if (res.paid) {
+        log("Invoice paid (auto-charged):", res);
+        if (invoiceResult?.invoice?.id === invoiceId) {
+          invoiceResult = { ...invoiceResult, invoice: { ...invoiceResult.invoice, status: "paid" } };
+        }
+        invoicesList = invoicesList.map((inv: any) =>
+          inv.id === invoiceId ? { ...inv, status: "paid" } : inv
+        );
+      } else {
+        log("Checkout URL:", res.checkoutUrl);
+        window.open(res.checkoutUrl, "_blank");
+      }
+    } catch (e: any) {
+      log("Pay Failed:", e.message);
     }
   }
 </script>
@@ -640,6 +666,45 @@
             <div class="text-zinc-600 text-xs mt-1">
               Status: {invoiceResult.invoice.status}
             </div>
+            {#if invoiceResult.invoice.status !== "paid"}
+              <button
+                onclick={() => handlePayInvoice()}
+                disabled={!secretKey}
+                class="mt-2 w-full bg-emerald-900/50 hover:bg-emerald-900 text-emerald-400 border border-emerald-800 font-bold px-3 py-2 rounded transition-colors disabled:opacity-50 text-xs"
+              >
+                Pay Invoice
+              </button>
+            {/if}
+          </div>
+        {/if}
+
+        {#if invoicesList.length > 0}
+          <div class="space-y-2">
+            {#each invoicesList as inv}
+              <div class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs flex items-center justify-between">
+                <div>
+                  <span class="text-zinc-300 font-bold">{inv.number || inv.id.slice(0, 8)}</span>
+                  <span class="text-zinc-500 ml-2">{inv.currency} {((inv.total || 0) / 100).toFixed(2)}</span>
+                  <span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                    class:bg-emerald-900={inv.status === "paid"}
+                    class:text-emerald-400={inv.status === "paid"}
+                    class:bg-amber-900={inv.status === "open"}
+                    class:text-amber-400={inv.status === "open"}
+                    class:bg-zinc-700={inv.status !== "paid" && inv.status !== "open"}
+                    class:text-zinc-400={inv.status !== "paid" && inv.status !== "open"}
+                  >{inv.status}</span>
+                </div>
+                {#if inv.status === "open"}
+                  <button
+                    onclick={() => handlePayInvoice(inv.id)}
+                    disabled={!secretKey}
+                    class="bg-emerald-900/50 hover:bg-emerald-900 text-emerald-400 border border-emerald-800 font-bold px-2 py-1 rounded transition-colors disabled:opacity-50 text-[10px]"
+                  >
+                    Pay
+                  </button>
+                {/if}
+              </div>
+            {/each}
           </div>
         {/if}
       </div>
