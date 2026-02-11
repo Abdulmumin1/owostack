@@ -1,40 +1,85 @@
 ---
 title: Providers & accounts
-description: Provider adapters and provider accounts
+description: How Owostack abstracts payment providers
 icon: Plug
 ---
 
 # Providers & accounts
 
-Owostack is provider-agnostic.
+Owostack is designed to work with multiple payment providers through a single interface. This page explains the abstraction layer and how provider differences are handled.
 
-A **provider adapter** implements the provider-specific details (API calls, webhook verification, event parsing). A **provider account** stores the credentials and configuration for a specific organization.
+## Why provider-agnostic?
 
-## Adapter model
+Different payment providers serve different markets and have different strengths. Paystack dominates in Nigeria and West Africa. Dodo Payments handles global USD billing. Rather than lock you into one provider, Owostack abstracts the differences so your application code stays the same regardless of which provider processes the payment.
 
-Owostack uses a shared adapter interface so core billing logic (checkout, plan switching, cancelation) can be reused across providers.
+Your app calls `attach()`, `check()`, and `track()`. Owostack figures out which provider to use, translates the request into the provider's API format, and normalizes the webhooks back into a common event model.
 
-Conceptually:
+## The adapter model
 
-- `ProviderAdapter`
-  - Verify/parse webhooks
-  - Fetch subscription details
-  - Create subscriptions / charge authorizations (provider-dependent)
-- `ProviderAccount`
-  - The organization’s configured provider credentials
+Each supported provider has an **adapter** — an implementation of a shared interface that handles:
 
-## Multiple providers
+- **Checkout sessions** — creating a payment page for the customer
+- **Subscriptions** — creating, fetching, and canceling recurring billing
+- **Webhook verification** — validating that incoming events are genuine
+- **Event normalization** — translating provider-specific events into Owostack's internal format
+- **Refunds** — reversing charges (e.g. for card setup verification)
+- **Products/plans** — creating the provider-side representation of your plans
 
-An organization can have different projects configured with different providers.
+The adapter interface is designed so that core billing logic (plan switching, trial management, overage billing) works identically across providers. Provider-specific quirks are isolated inside the adapter.
 
-- This is useful if you have multiple apps, regions, or business units.
+## Supported providers
+
+| Provider | ID | Markets | Key differences |
+|----------|----|---------|-----------------|
+| Paystack | `paystack` | Nigeria, Ghana, South Africa, Kenya | Card authorization codes for recurring charges; webhook verification via HMAC-SHA512 |
+| Dodo Payments | `dodopayments` | Global (USD, EUR, GBP) | Product-centric checkout (requires product ID); on-demand subscriptions for card-on-file; Standard Webhooks spec |
+
+## Provider accounts
+
+A **provider account** stores the credentials for a specific provider within your organization:
+
+- **Secret key** — the provider's API key (encrypted at rest)
+- **Webhook secret** — used to verify incoming webhook payloads
+- **Environment** — test or live
+
+Each organization can have multiple provider accounts — for example, a Paystack test account, a Paystack live account, and a Dodo Payments live account.
+
+## How providers are selected
+
+When a customer starts a checkout, Owostack picks a provider using this priority:
+
+1. **Explicit `provider` parameter** — if you pass `provider: "dodopayments"` to `attach()`
+2. **Plan's provider** — the provider selected when the plan was created
+3. **Customer's existing provider** — if they've paid before, use the same provider
+4. **Fallback** — the first configured provider account
+
+This means you can run multiple providers side by side and control routing at the plan level, the request level, or let Owostack pick automatically.
+
+## Provider-specific behavior
+
+Some billing features work differently depending on the provider:
+
+**Trials:**
+- Paystack — small verification charge (auto-refunded), Owostack manages trial billing
+- Dodo — native trial period, provider defers first charge automatically
+
+**Card on file:**
+- Paystack — stores a reusable authorization code from the first charge
+- Dodo — creates an on-demand subscription that can be charged with arbitrary amounts
+
+**Checkout:**
+- Paystack — raw amount checkout, no pre-created product needed
+- Dodo — product-centric, requires a synced product ID for every checkout
+
+These differences are handled internally. Your application code is the same regardless of provider.
 
 ## Adding a new provider
 
-At a high level:
+Owostack's adapter interface is designed to be extended. At a high level:
 
-1. Implement a new adapter in `packages/adapters`
-2. Register it in the adapter registry
-3. Configure an account in the dashboard
+1. Implement `ProviderAdapter` in `packages/adapters`
+2. Register it in the provider registry
+3. Add credential fields to the dashboard
+4. Configure a provider account
 
-Once configured, checkout and plan switching should work through the adapter.
+Once registered, all billing flows (checkout, plan switching, webhooks, overage billing) work through the new adapter automatically.

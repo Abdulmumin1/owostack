@@ -1,0 +1,176 @@
+---
+title: Implement usage-based billing
+description: Track metered usage and enforce limits with check() and track()
+icon: Activity
+---
+
+# How to implement usage-based billing
+
+This guide shows how to meter usage against a quota, enforce limits, and handle overages.
+
+## Define a metered feature
+
+In the dashboard, create a feature with type **Metered**. Then attach it to a plan with a limit and reset interval.
+
+Or define it in code:
+
+```ts
+import { metered, plan } from "@owostack/core";
+
+const apiCalls = metered("api-calls", { name: "API Calls" });
+
+plan("pro", {
+  name: "Pro",
+  price: 2000,
+  currency: "USD",
+  interval: "monthly",
+  features: [
+    apiCalls.limit(10000, { reset: "monthly" }),
+  ],
+});
+```
+
+The counter resets to zero at the start of each billing period.
+
+## Gate requests with check()
+
+Before performing an expensive operation, verify the customer has remaining quota:
+
+```ts
+const access = await owo.check({
+  customer: "user@example.com",
+  feature: "api-calls",
+});
+
+if (!access.allowed) {
+  return res.status(429).json({
+    error: "Quota exceeded",
+    remaining: access.remaining,
+    resetAt: access.resetAt,
+  });
+}
+
+// Proceed with the operation...
+```
+
+## Record usage with track()
+
+After a successful operation, record the usage:
+
+```ts
+const result = await owo.track({
+  customer: "user@example.com",
+  feature: "api-calls",
+  value: 1,
+});
+
+// result.allowed — whether the usage was accepted
+// result.balance — remaining quota after this usage
+```
+
+## Check-then-track pattern
+
+The most common pattern combines both calls:
+
+```ts
+async function handleApiRequest(email: string) {
+  // 1. Check quota
+  const access = await owo.check({
+    customer: email,
+    feature: "api-calls",
+  });
+
+  if (!access.allowed) {
+    throw new Error(`Quota exceeded. Resets at ${access.resetAt}`);
+  }
+
+  // 2. Do the work
+  const result = await doExpensiveWork();
+
+  // 3. Track usage (only after success)
+  await owo.track({
+    customer: email,
+    feature: "api-calls",
+    value: 1,
+  });
+
+  return result;
+}
+```
+
+## Use middleware for automatic tracking
+
+For APIs where every request consumes a unit:
+
+```ts
+const trackUsage = (feature: string) => async (req, res, next) => {
+  const email = req.user?.email;
+  if (!email) return next();
+
+  const access = await owo.check({ customer: email, feature });
+  if (!access.allowed) {
+    return res.status(429).json({ error: "Quota exceeded" });
+  }
+
+  // Track after response completes (non-blocking)
+  res.on("finish", () => {
+    if (res.statusCode < 400) {
+      owo.track({ customer: email, feature, value: 1 }).catch(console.error);
+    }
+  });
+
+  next();
+};
+
+app.use("/api/v1", trackUsage("api-calls"));
+```
+
+## Track variable amounts
+
+Not all operations cost one unit. Pass a custom `value`:
+
+```ts
+// AI token usage — variable cost per request
+await owo.track({
+  customer: email,
+  feature: "ai-tokens",
+  value: response.usage.total_tokens,
+});
+
+// Storage — track in MB
+await owo.track({
+  customer: email,
+  feature: "storage-mb",
+  value: fileSizeInMb,
+});
+```
+
+## Enable overages
+
+To charge customers for usage beyond their limit instead of blocking them, set the overage policy on the feature:
+
+```ts
+apiCalls.limit(10000, {
+  overage: "charge",
+  overagePrice: 50, // price per unit in minor currency
+  maxOverageUnits: 100000, // optional hard cap
+});
+```
+
+With `overage: "charge"`, `track()` continues to accept usage beyond the limit and returns `code: "tracked_overage"`. The overage amount is billed at the end of the period.
+
+## Show usage in your UI
+
+Use `check()` to display a usage bar or remaining count:
+
+```ts
+const usage = await owo.check({
+  customer: email,
+  feature: "api-calls",
+});
+
+// In your UI:
+// Used: (usage.limit - usage.remaining) / usage.limit * 100%
+// Remaining: usage.remaining
+// Resets: usage.resetAt
+```

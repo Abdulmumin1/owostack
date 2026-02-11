@@ -184,28 +184,29 @@ app.post("/wallet/setup", async (c) => {
   let lineItems: any[] | undefined;
   let onDemand: { mandateOnly: boolean } | undefined;
 
-  if (adapter.createProduct) {
-    // Ensure we have a product for the checkout (Dodo requires one)
-    const metaKey = `cardSetupProduct_v3_${selectedProviderId}`;
+  if (adapter.createPlan) {
+    // Dodo on-demand mandate requires a *subscription* product (recurring_price),
+    // not a one-time product. Use createPlan to create a recurring product.
+    const metaKey = `cardSetupSubProduct_v1_${selectedProviderId}`;
     const cachedProductId = (org?.metadata as any)?.[metaKey];
 
     let productId = cachedProductId;
     if (!productId) {
-      const prodResult = await adapter.createProduct({
+      const planResult = await adapter.createPlan({
         name: "Payment Method Authorization",
         description: "Authorize payment method for future charges",
         amount: 100, // Dodo uses major units — $1.00 (not actually charged with mandate_only)
         currency: setupCurrency,
+        interval: "monthly",
         environment: selectedAccount.environment as "test" | "live",
         account: selectedAccount,
-        metadata: { type: "card_setup" },
       });
 
-      if (prodResult.isErr()) {
-        return c.json({ success: false, error: `Failed to create card-setup product: ${prodResult.error.message}` }, 400);
+      if (planResult.isErr()) {
+        return c.json({ success: false, error: `Failed to create card-setup product: ${planResult.error.message}` }, 400);
       }
 
-      productId = prodResult.value.productId;
+      productId = planResult.value.id;
 
       // Cache in org metadata for reuse
       try {

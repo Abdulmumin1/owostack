@@ -66,6 +66,12 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
     }
 
     this.initialized = true;
+
+    // Re-schedule alarm on every wake-up to restore the chain if it was lost
+    // (e.g., after eviction, hibernation, or platform issues)
+    if (this.featureConfigs.size > 0) {
+      await this.scheduleResetAlarm();
+    }
   }
 
   /**
@@ -382,14 +388,17 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
       }
     }
 
-    // Only set alarm if we have a valid reset time
-    if (soonestReset !== Infinity && soonestReset > Date.now()) {
-      const currentAlarm = await this.ctx.storage.getAlarm();
+    if (soonestReset === Infinity) return;
 
-      // Only set if no alarm or this one is sooner
-      if (!currentAlarm || soonestReset < currentAlarm) {
-        await this.ctx.storage.setAlarm(soonestReset);
-      }
+    // If the reset time is in the past, schedule immediately so the alarm
+    // fires ASAP instead of silently dropping it (fixes missed alarm chain)
+    const alarmTime = soonestReset > Date.now() ? soonestReset : Date.now() + 1000;
+
+    const currentAlarm = await this.ctx.storage.getAlarm();
+
+    // Only set if no alarm or this one is sooner
+    if (!currentAlarm || alarmTime < currentAlarm) {
+      await this.ctx.storage.setAlarm(alarmTime);
     }
   }
 

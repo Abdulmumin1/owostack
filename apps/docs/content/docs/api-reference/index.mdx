@@ -131,6 +131,280 @@ Record usage for metered billing.
 
 ---
 
+## POST /v1/addon
+
+Purchase a credit pack add-on.
+
+### Request
+
+```json
+{
+  "customer": "user@example.com",
+  "pack": "500-credits",
+  "quantity": 1
+}
+```
+
+| Field      | Type   | Required | Description                          |
+| ---------- | ------ | -------- | ------------------------------------ |
+| `customer` | string | ✅       | Customer email or ID                 |
+| `pack`     | string | ✅       | Credit pack slug or ID               |
+| `quantity` | number | -        | Number of packs to buy (default: 1) |
+
+### Response
+
+```json
+{
+  "success": true,
+  "requiresCheckout": false,
+  "balance": 1500,
+  "creditsAdded": 500
+}
+```
+
+If the customer has no card on file:
+
+```json
+{
+  "success": true,
+  "requiresCheckout": true,
+  "checkoutUrl": "https://provider.example/checkout"
+}
+```
+
+---
+
+## GET /v1/wallet
+
+List saved payment methods for a customer.
+
+### Query Parameters
+
+| Field      | Type   | Required | Description          |
+| ---------- | ------ | -------- | -------------------- |
+| `customer` | string | ✅       | Customer email or ID |
+
+### Response
+
+```json
+{
+  "hasCard": true,
+  "card": {
+    "last4": "4242",
+    "brand": "visa",
+    "expMonth": "12",
+    "expYear": "2027"
+  },
+  "methods": [
+    {
+      "id": "pm_abc123",
+      "providerId": "paystack",
+      "type": "card",
+      "cardLast4": "4242",
+      "cardBrand": "visa",
+      "isDefault": true,
+      "createdAt": 1707580800000
+    }
+  ]
+}
+```
+
+---
+
+## POST /v1/wallet/setup
+
+Initiate card authorization. Returns a URL for the customer to complete card setup.
+
+### Request
+
+```json
+{
+  "customer": "user@example.com",
+  "callbackUrl": "https://yourapp.com/billing",
+  "provider": "paystack"
+}
+```
+
+| Field         | Type   | Required | Description                    |
+| ------------- | ------ | -------- | ------------------------------ |
+| `customer`    | string | ✅       | Customer email or ID           |
+| `callbackUrl` | string | -        | Redirect URL after setup       |
+| `provider`    | string | -        | Provider ID override           |
+
+### Response
+
+```json
+{
+  "url": "https://provider.example/authorize",
+  "reference": "ref_xyz789"
+}
+```
+
+---
+
+## POST /v1/wallet/remove
+
+Remove a saved payment method.
+
+### Request
+
+```json
+{
+  "customer": "user@example.com",
+  "id": "pm_abc123"
+}
+```
+
+| Field      | Type   | Required | Description            |
+| ---------- | ------ | -------- | ---------------------- |
+| `customer` | string | ✅       | Customer email or ID   |
+| `id`       | string | ✅       | Payment method ID      |
+
+### Response
+
+```json
+{
+  "success": true
+}
+```
+
+---
+
+## GET /v1/billing/usage
+
+Get unbilled overage usage for a customer.
+
+### Query Parameters
+
+| Field      | Type   | Required | Description          |
+| ---------- | ------ | -------- | -------------------- |
+| `customer` | string | ✅       | Customer email or ID |
+
+### Response
+
+```json
+{
+  "customer": "user@example.com",
+  "currency": "USD",
+  "totalEstimated": 2500,
+  "features": [
+    {
+      "featureSlug": "api-calls",
+      "featureName": "API Calls",
+      "overageUnits": 500,
+      "overagePrice": 5,
+      "estimatedCost": 2500
+    }
+  ]
+}
+```
+
+---
+
+## POST /v1/billing/invoice
+
+Generate an invoice for unbilled overage usage.
+
+### Request
+
+```json
+{
+  "customer": "user@example.com"
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "invoice": {
+    "id": "inv_123",
+    "number": "INV-0001",
+    "status": "open",
+    "total": 2500,
+    "lineItems": [
+      {
+        "featureSlug": "api-calls",
+        "quantity": 500,
+        "unitPrice": 5,
+        "amount": 2500
+      }
+    ]
+  }
+}
+```
+
+---
+
+## GET /v1/billing/invoices
+
+List all invoices for a customer.
+
+### Query Parameters
+
+| Field      | Type   | Required | Description          |
+| ---------- | ------ | -------- | -------------------- |
+| `customer` | string | ✅       | Customer email or ID |
+
+### Response
+
+```json
+{
+  "invoices": [
+    {
+      "id": "inv_123",
+      "number": "INV-0001",
+      "status": "paid",
+      "total": 2500,
+      "createdAt": 1707580800000,
+      "paidAt": 1707584400000
+    }
+  ]
+}
+```
+
+---
+
+## POST /v1/sync
+
+Push a catalog of features and plans from code. Used by the CLI and `owo.sync()`.
+
+### Request
+
+```json
+{
+  "features": [
+    { "slug": "api-calls", "name": "API Calls", "type": "metered" }
+  ],
+  "plans": [
+    {
+      "slug": "pro",
+      "name": "Pro",
+      "price": 2000,
+      "currency": "USD",
+      "interval": "monthly",
+      "features": [
+        { "featureSlug": "api-calls", "enabled": true, "limit": 10000, "resetInterval": "monthly" }
+      ]
+    }
+  ]
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "features": { "created": ["api-calls"], "updated": [], "unchanged": [] },
+  "plans": { "created": ["pro"], "updated": [], "unchanged": [] },
+  "warnings": []
+}
+```
+
+---
+
 ## Error Responses
 
 All errors follow this format:

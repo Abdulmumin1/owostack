@@ -73,7 +73,7 @@ export async function getUnbilledOverageAmount(
                pf.limit_value,
                pf.usage_model
         FROM usage_records ur
-        JOIN subscriptions s ON s.customer_id = ur.customer_id AND s.status = 'active'
+        JOIN subscriptions s ON s.customer_id = ur.customer_id AND s.status IN ('active', 'canceled', 'pending_cancel')
         JOIN plan_features pf ON pf.plan_id = s.plan_id AND pf.feature_id = ur.feature_id
         WHERE ur.customer_id = ${customerId}
           AND ur.invoice_id IS NULL

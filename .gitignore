@@ -31,6 +31,7 @@ pnpm-debug.log*
 coverage
 .nyc_output
 provider-agnostic-architecture.md
+CHANGES.md
 
 # Wrangler
 .wrangler

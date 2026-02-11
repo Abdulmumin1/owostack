@@ -8,6 +8,10 @@
     "webhook-setup",
     "guides/checkout",
     "guides/plan-switching",
+    "guides/trials",
+    "guides/usage-billing",
+    "guides/credit-packs",
+    "guides/wallet",
     "guides/webhooks-and-events",
     "guides/catalog-sync",
     "dashboard/organizations",
@@ -24,10 +28,13 @@
     "features/metering",
     "features/credits",
     "---Reference---",
-    "sdk/catalog",
     "sdk/attach",
     "sdk/check",
     "sdk/track",
+    "sdk/addon",
+    "sdk/wallet",
+    "sdk/billing",
+    "sdk/catalog",
     "api-reference/index"
   ]
 }

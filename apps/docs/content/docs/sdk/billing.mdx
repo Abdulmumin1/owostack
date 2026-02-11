@@ -1,0 +1,130 @@
+---
+title: billing
+description: Unbilled usage, invoices, and invoice generation
+icon: Receipt
+---
+
+# billing
+
+The `owo.billing` namespace provides access to unbilled overage usage, invoice generation, and invoice history.
+
+---
+
+## `owo.billing.usage(params)`
+
+Get a breakdown of all billable overage usage that has not yet been invoiced.
+
+```ts
+const usage = await owo.billing.usage({ customer: "user@example.com" });
+
+console.log("Currency:", usage.currency);
+console.log("Total estimated:", usage.totalEstimated);
+
+for (const feature of usage.features) {
+  console.log(feature.featureSlug, feature.overageUnits, "units @", feature.overagePrice);
+}
+```
+
+### Parameters
+
+| Parameter  | Type     | Required | Description                         |
+| ---------- | -------- | -------- | ----------------------------------- |
+| `customer` | `string` | Yes      | Customer email or unique identifier |
+
+### Returns `Promise<BillingUsageResult>`
+
+```ts
+interface BillingUsageResult {
+  customer: string;
+  currency: string;
+  totalEstimated: number;
+  features: BillingFeatureUsage[];
+}
+
+interface BillingFeatureUsage {
+  featureSlug: string;
+  featureName: string;
+  overageUnits: number;
+  overagePrice: number;
+  estimatedCost: number;
+}
+```
+
+---
+
+## `owo.billing.invoice(params)`
+
+Generate an invoice for a customer's unbilled overage usage. Fails if there is no unbilled usage to invoice.
+
+```ts
+const result = await owo.billing.invoice({ customer: "user@example.com" });
+
+console.log("Invoice:", result.invoice.number);
+console.log("Total:", result.invoice.total);
+console.log("Status:", result.invoice.status);
+```
+
+### Parameters
+
+| Parameter  | Type     | Required | Description                         |
+| ---------- | -------- | -------- | ----------------------------------- |
+| `customer` | `string` | Yes      | Customer email or unique identifier |
+
+### Returns `Promise<InvoiceResult>`
+
+```ts
+interface InvoiceResult {
+  success: boolean;
+  invoice: Invoice;
+}
+
+interface Invoice {
+  id: string;
+  number: string;
+  customerId: string;
+  status: "draft" | "open" | "paid" | "void";
+  currency: string;
+  subtotal: number;
+  tax: number;
+  total: number;
+  lineItems: InvoiceLineItem[];
+  createdAt: number;
+  paidAt?: number;
+}
+
+interface InvoiceLineItem {
+  featureSlug: string;
+  featureName: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+}
+```
+
+---
+
+## `owo.billing.invoices(params)`
+
+List all invoices for a customer.
+
+```ts
+const result = await owo.billing.invoices({ customer: "user@example.com" });
+
+for (const inv of result.invoices) {
+  console.log(inv.number, inv.status, inv.total);
+}
+```
+
+### Parameters
+
+| Parameter  | Type     | Required | Description                         |
+| ---------- | -------- | -------- | ----------------------------------- |
+| `customer` | `string` | Yes      | Customer email or unique identifier |
+
+### Returns `Promise<InvoicesResult>`
+
+```ts
+interface InvoicesResult {
+  invoices: Invoice[];
+}
+```

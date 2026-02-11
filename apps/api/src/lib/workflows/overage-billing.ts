@@ -3,7 +3,7 @@ import type { WorkflowEnv } from "./utils";
 import { getAdapter, resolveProviderAccount } from "./utils";
 import type { ProviderAccount } from "@owostack/adapters";
 import { createDb, schema } from "@owostack/db";
-import { eq, and, gte, lte, sql, isNull } from "drizzle-orm";
+import { eq, and, gte, lte, sql, isNull, inArray } from "drizzle-orm";
 import { getResetPeriod } from "../reset-period";
 
 // Serializable snapshot of ProviderAccount
@@ -80,7 +80,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Over
       const subscription = await db.query.subscriptions.findFirst({
         where: and(
           eq(schema.subscriptions.customerId, customerId),
-          eq(schema.subscriptions.status, "active"),
+          inArray(schema.subscriptions.status, ["active", "canceled", "pending_cancel"]),
         ),
         with: {
           plan: {

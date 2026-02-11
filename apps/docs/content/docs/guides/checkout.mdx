@@ -1,42 +1,104 @@
 ---
-title: Checkout
-description: Starting a subscription or purchase flow
+title: Set up checkout
+description: Start a subscription or purchase flow using attach()
 icon: ShoppingCart
 ---
 
-# Checkout
+# How to set up checkout
 
-Owostack’s checkout flow is responsible for:
+This guide shows how to use `attach()` to start a subscription checkout, handle the redirect, and confirm the result.
 
-- Creating (or reusing) a customer
-- Starting a provider checkout session when needed
-- Ensuring provider webhooks can be mapped back to your organization/project/customer
+## Start a checkout session
 
-## Subscriptions
+Call `attach()` with a customer identifier and a plan slug. If payment is required, you get back a `checkoutUrl`.
 
-Use `attach()` to subscribe a customer to a plan. If payment is required, Owostack returns a `checkoutUrl` for the provider.
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+
+const result = await owo.attach({
+  customer: "user@example.com",
+  product: "pro-monthly",
+});
+
+if (result.checkoutUrl) {
+  // Redirect the user to the provider checkout page
+  res.redirect(result.checkoutUrl);
+} else {
+  // Already subscribed — no checkout needed
+  console.log("Subscription active:", result.subscription);
+}
+```
+
+## Auto-create the customer
+
+If the customer does not exist yet, pass `customerData` to create them inline:
+
+```ts
+const result = await owo.attach({
+  customer: "new-user@example.com",
+  product: "starter",
+  customerData: {
+    email: "new-user@example.com",
+    name: "Jane Doe",
+  },
+});
+```
+
+Owostack creates the customer record before initiating the checkout. If the customer already exists, `customerData` is ignored.
+
+## Handle the callback
+
+After the customer completes payment, the provider redirects them back to your app. The webhook fires in the background and Owostack activates the subscription.
+
+A typical Express handler:
+
+```ts
+app.post("/api/subscribe", async (req, res) => {
+  const { email, plan } = req.body;
+
+  const result = await owo.attach({
+    customer: email,
+    product: plan,
+    customerData: { email },
+  });
+
+  if (result.checkoutUrl) {
+    return res.json({ redirect: result.checkoutUrl });
+  }
+
+  res.json({ subscription: result.subscription });
+});
+```
+
+On the frontend, redirect to the `checkoutUrl` and show a success page when the user returns.
+
+## When no checkout is required
+
+`attach()` skips the checkout and returns an active subscription when:
+
+- The customer is already on the requested plan
+- The plan is free (price = 0)
+- A lateral switch within the same plan group has no price difference
+
+
+## Attach metadata
+
+Custom metadata travels through the checkout and arrives in webhook payloads:
 
 ```ts
 const result = await owo.attach({
   customer: "user@example.com",
-  plan: "pro-monthly",
+  product: "pro-monthly",
+  metadata: {
+    referralCode: "FRIEND20",
+    internalUserId: "usr_abc123",
+  },
 });
-
-if (result.checkoutUrl) {
-  // Redirect to provider checkout
-}
 ```
 
-## When checkout is not required
-
-Owostack may return an already-active subscription when:
-
-- The customer is already subscribed to the requested plan
-- The switch is lateral and can be applied immediately without payment
-- The plan is free or trial-only
-
-## Webhooks are required
-
-Checkout only becomes “real” after webhooks confirm payment or subscription changes. Make sure your webhook URL includes the provider ID.
-
-Make sure you’ve completed [Webhook Setup](/docs/webhook-setup).
+<Callout type="warning">
+  Checkout only activates after the provider confirms payment via webhook.
+  Make sure you have completed [Webhook Setup](/docs/webhook-setup).
+</Callout>

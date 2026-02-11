@@ -1,0 +1,100 @@
+---
+title: Manage payment methods
+description: Add, list, and remove cards using the wallet API
+icon: Wallet
+---
+
+# How to manage payment methods
+
+This guide shows how to let customers add a card on file, view their saved payment methods, and remove them. Payment methods are used for overage billing and credit pack purchases without requiring a new checkout.
+
+## List payment methods
+
+Retrieve all saved payment methods for a customer:
+
+```ts
+const wallet = await owo.wallet.list("user@example.com");
+
+for (const method of wallet.methods) {
+  console.log(method.cardBrand, `**** ${method.cardLast4}`, method.providerId);
+}
+```
+
+Or use the shorthand:
+
+```ts
+const wallet = await owo.wallet("user@example.com");
+console.log("Has card:", wallet.hasCard);
+```
+
+## Add a payment method
+
+Initiate card setup. The customer completes authorization on the provider's page.
+
+```ts
+const setup = await owo.wallet.setup("user@example.com", {
+  callbackUrl: "https://yourapp.com/billing?card=added",
+});
+
+if (setup.url) {
+  // Redirect customer to authorize their card
+  res.redirect(setup.url);
+}
+```
+
+After the customer completes the flow, the provider sends a webhook and Owostack stores the payment method automatically.
+
+### Specify a provider
+
+If your organization has multiple providers, specify which one:
+
+```ts
+const setup = await owo.wallet.setup("user@example.com", {
+  callbackUrl: "https://yourapp.com/billing",
+  provider: "paystack",
+});
+```
+
+## Remove a payment method
+
+```ts
+const result = await owo.wallet.remove("user@example.com", methodId);
+console.log(result.success); // true
+```
+
+## Build a billing settings page
+
+A typical Express handler for a billing page:
+
+```ts
+// GET /api/billing/methods — list saved cards
+app.get("/api/billing/methods", async (req, res) => {
+  const wallet = await owo.wallet.list(req.user.email);
+  res.json({ methods: wallet.methods, hasCard: wallet.hasCard });
+});
+
+// POST /api/billing/methods — add a new card
+app.post("/api/billing/methods", async (req, res) => {
+  const setup = await owo.wallet.setup(req.user.email, {
+    callbackUrl: `${req.headers.origin}/billing?card=added`,
+    provider: req.body.provider,
+  });
+  res.json({ redirect: setup.url });
+});
+
+// DELETE /api/billing/methods/:id — remove a card
+app.delete("/api/billing/methods/:id", async (req, res) => {
+  await owo.wallet.remove(req.user.email, req.params.id);
+  res.json({ success: true });
+});
+```
+
+## Why payment methods matter
+
+When a customer has a card on file:
+
+- **Overage billing** charges are applied automatically at period end
+- **Credit pack purchases** via `addon()` charge instantly without a checkout redirect
+- **Trial conversions** bill the card when the trial ends
+
+Without a card on file, these flows fall back to checkout redirects.

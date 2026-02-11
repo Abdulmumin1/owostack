@@ -1,35 +1,92 @@
 ---
-title: Webhooks & events
-description: How Owostack verifies and processes provider webhooks
+title: Understand webhooks & events
+description: How Owostack verifies, normalizes, and processes provider webhooks
 icon: Webhook
 ---
 
-# Webhooks & events
+# How to work with webhooks & events
 
-Webhooks are how Owostack stays in sync with your payment provider.
+This guide explains the webhook pipeline and how to debug common issues.
 
-## Verification
+## The webhook URL
 
-Owostack verifies webhook payloads using your provider’s recommended method. If verification fails, events are rejected.
+Your webhook endpoint is:
 
-## Processing
+```
+POST https://api.owostack.dev/webhooks/{organizationId}/{providerId}
+```
 
-After verification, Owostack:
+For example:
 
-1. Parses the provider event into a normalized internal event.
-2. Updates subscription/customer state.
-3. Provisions entitlements and updates meters/credits when relevant.
+```
+https://api.owostack.dev/webhooks/JvEEHhDCByjX4LK9ymVb732IcuSzjtKu/paystack
+https://api.owostack.dev/webhooks/JvEEHhDCByjX4LK9ymVb732IcuSzjtKu/dodopayments
+```
 
-## Common events
+A legacy backward-compatible URL (defaults to Paystack) is also available:
 
-- Subscription created / enabled / disabled
-- Payment succeeded / failed
-- Refunds (when supported by the provider)
+```
+POST https://api.owostack.dev/webhooks/{organizationId}
+```
 
-## Debugging
+## What happens when a webhook arrives
 
-If something looks off:
+1. **Signature verification** — Owostack reads the provider's signature header and verifies the payload against your stored webhook secret. Invalid signatures are rejected with a 401.
 
-- Confirm your provider webhook secret is correct
-- Confirm you’re sending events to the correct `/webhooks/{orgId}/{providerId}` URL
-- Check the dashboard events/logs for processing errors
+2. **Event normalization** — The provider-specific payload is parsed into a common `NormalizedWebhookEvent` with standard fields: `type`, `customer`, `payment`, `subscription`, `metadata`, `provider`.
+
+3. **Event logging** — The raw event is stored in the events table for audit and debugging.
+
+4. **Handler dispatch** — The normalized event is routed to the appropriate handler by event type.
+
+## Normalized event types
+
+| Normalized Type | Triggered By | What Owostack Does |
+|----------------|-------------|-------------------|
+| `charge.success` | Payment succeeded | Upserts customer, stores payment method, processes trial/upgrade/credit purchases |
+| `charge.failed` | Payment failed | Logs the failure, updates subscription status if recurring |
+| `subscription.created` | New subscription | Creates subscription record, provisions entitlements |
+| `subscription.active` | Subscription activated | Updates status; for card setup, stores payment method |
+| `subscription.canceled` | Subscription canceled | Sets `canceledAt`, revokes entitlements |
+| `subscription.past_due` | Payment overdue | Updates status for grace period handling |
+| `subscription.not_renew` | Customer opted out of renewal | Sets `cancelAt` to period end |
+| `refund.success` | Refund processed | Logs the refund |
+| `customer.identified` | Customer created on provider | Updates provider customer ID |
+
+## Webhook secrets
+
+Each provider account has a webhook secret used for signature verification:
+
+- **Paystack** — HMAC-SHA512 using the secret key. Header: `x-paystack-signature`
+- **Dodo Payments** — Standard Webhooks spec (HMAC-SHA256 with base64 secret). Headers: `webhook-id`, `webhook-signature`, `webhook-timestamp`
+
+Store your webhook secret in **Settings → Payment Providers** for the corresponding account.
+
+## Debugging webhook issues
+
+### Webhooks not arriving
+
+1. Confirm the URL includes both your organization ID **and** the provider ID
+2. Confirm you're sending to the correct environment (test vs live)
+3. Check your provider's webhook delivery logs for errors
+4. Verify the provider account is configured for the matching environment
+
+### Invalid signature errors
+
+1. Confirm the webhook secret in the dashboard matches the one in your provider settings
+2. For Dodo, ensure the secret includes the `whsec_` prefix if applicable
+3. Check for extra whitespace when pasting secrets
+4. Regenerate the secret on the provider side and update it in the dashboard
+
+### Events arriving but not processing
+
+1. Check the **Events** tab in the dashboard for the raw event
+2. Verify that the event type is one Owostack handles (see the table above)
+3. Confirm the customer email in the webhook matches a customer in your organization
+4. Check that plans referenced in the event exist in your dashboard
+
+### Subscription not activating after payment
+
+1. Confirm webhooks are configured — `attach()` creates a pending subscription, but only the webhook confirms it
+2. Check that `charge.success` fired and the metadata includes `type` and `organization_id`
+3. Verify the plan's provider plan ID matches the product ID in the webhook payload

@@ -1,7 +1,7 @@
 import { Result } from "better-result";
 import type { createDb } from "@owostack/db";
 import { schema } from "@owostack/db";
-import { eq, and, gte, lte, sql, isNull, desc } from "drizzle-orm";
+import { eq, and, gte, lte, sql, isNull, desc, inArray } from "drizzle-orm";
 import { DatabaseError, NotFoundError } from "./errors";
 import { getResetPeriod } from "./reset-period";
 
@@ -70,10 +70,13 @@ export class BillingService {
           throw new NotFoundError({ resource: "Customer", id: customerId });
         }
 
+        // Include canceled/pending_cancel so unbilled overage from canceled subs
+        // is still visible and invoiceable. Active subs accrue new overage;
+        // canceled subs may still have uninvoiced usage from before cancellation.
         const subscription = await this.db.query.subscriptions.findFirst({
           where: and(
             eq(schema.subscriptions.customerId, customerId),
-            eq(schema.subscriptions.status, "active"),
+            inArray(schema.subscriptions.status, ["active", "canceled", "pending_cancel"]),
           ),
           with: {
             plan: {

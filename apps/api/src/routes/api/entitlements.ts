@@ -488,7 +488,8 @@ app.post("/check", async (c) => {
       }
 
       if (!doResult.allowed) {
-        const overageSetting = planFeature.overage || "block";
+        // During trials, always block at limit — no overage billing for free trials
+        const overageSetting = isTrial ? "block" : (planFeature.overage || "block");
         
         // If overage is "charge", check guards before allowing
         if (overageSetting === "charge") {
@@ -719,7 +720,8 @@ app.post("/check", async (c) => {
     const currentUsage = usageResult[0]?.total || 0;
 
     if (currentUsage + effectiveValue > planFeature.limitValue) {
-      const overageSetting = planFeature.overage || "block";
+      // During trials, always block at limit — no overage billing for free trials
+      const overageSetting = isTrial ? "block" : (planFeature.overage || "block");
       
       // If overage is "charge", check guards before allowing
       if (overageSetting === "charge") {
@@ -958,6 +960,9 @@ app.post("/track", async (c) => {
         eq(schema.subscriptions.customerId, customer.id),
         inArray(schema.subscriptions.status, ["active", "trialing", "pending_cancel"]),
       ),
+      with: {
+        plan: true,
+      },
     });
 
     if (subscriptions.length > 0 && cache) {
@@ -1170,7 +1175,8 @@ app.post("/track", async (c) => {
 
       // If DO says not allowed, check overage setting
       if (doResult && !doResult.allowed) {
-        const overageSetting = planFeature.overage || "block";
+        // During trials, always block at limit — no overage billing for free trials
+        const overageSetting = isTrial ? "block" : (planFeature.overage || "block");
         
         // If overage is "charge", check guards before allowing
         if (overageSetting === "charge") {

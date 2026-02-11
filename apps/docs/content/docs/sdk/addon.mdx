@@ -1,0 +1,97 @@
+---
+title: addon()
+description: Purchase add-on credit packs
+icon: Plus
+---
+
+# addon()
+
+Purchase a credit pack to top up a customer's prepaid balance. If the customer has a card on file, the charge happens immediately. Otherwise, a checkout URL is returned.
+
+## Signature
+
+```ts
+await owo.addon({
+  customer: string,
+  pack: string,
+  quantity?: number,
+}): Promise<AddonResult>
+```
+
+## Parameters
+
+| Parameter  | Type     | Required | Description                            |
+| ---------- | -------- | -------- | -------------------------------------- |
+| `customer` | `string` | Yes      | Customer email or unique identifier    |
+| `pack`     | `string` | Yes      | Credit pack slug or ID                 |
+| `quantity` | `number` | No       | Number of packs to buy (default: 1)   |
+
+## Response
+
+```ts
+interface AddonResult {
+  success: boolean;
+  requiresCheckout: boolean;
+  checkoutUrl?: string;
+  balance?: number;
+  creditsAdded?: number;
+  error?: string;
+}
+```
+
+## Examples
+
+### Basic purchase
+
+```ts
+const result = await owo.addon({
+  customer: "user@example.com",
+  pack: "500-credits",
+});
+
+if (result.requiresCheckout) {
+  res.redirect(result.checkoutUrl);
+} else {
+  console.log("Credits added:", result.creditsAdded);
+  console.log("New balance:", result.balance);
+}
+```
+
+### Buy multiple packs
+
+```ts
+const result = await owo.addon({
+  customer: "user@example.com",
+  pack: "500-credits",
+  quantity: 3, // 1500 credits
+});
+```
+
+### Express handler
+
+```ts
+app.post("/api/buy-credits", async (req, res) => {
+  const { email, pack, quantity } = req.body;
+
+  const result = await owo.addon({
+    customer: email,
+    pack,
+    quantity: quantity || 1,
+  });
+
+  if (result.requiresCheckout) {
+    return res.json({ redirect: result.checkoutUrl });
+  }
+
+  res.json({
+    creditsAdded: result.creditsAdded,
+    balance: result.balance,
+  });
+});
+```
+
+## Notes
+
+- Credit packs must be tied to a **credit system**. Packs without a credit system are rejected.
+- If the customer has a valid payment method on file, `requiresCheckout` is `false` and credits are added immediately.
+- The provider used for checkout is determined by the credit pack's `providerId`.

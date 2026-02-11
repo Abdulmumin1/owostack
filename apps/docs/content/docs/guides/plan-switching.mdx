@@ -1,26 +1,119 @@
 ---
-title: Plan switching
-description: Upgrades, downgrades, and add-ons
+title: Switch plans
+description: Implement upgrades, downgrades, and lateral moves
 icon: RefreshCw
 ---
 
-# Plan switching
+# How to switch plans
 
-Owostack supports switching between plans in the same plan group.
+This guide shows how to move a customer between plans using `attach()`. Plans must be in the same **plan group** for Owostack to treat the change as a switch rather than a new subscription.
 
-## Switch types
+## Upgrade a customer
 
-- **Upgrade**
-  - Immediate switch
-  - Prorated charge when applicable
-- **Downgrade**
-  - Scheduled for the end of the current billing period
-- **Lateral**
-  - Immediate feature switch (no price change)
+Call `attach()` with the new plan. Owostack detects that the customer already has a subscription in the same plan group and initiates an upgrade.
 
-## Add-ons
+```ts
+const result = await owo.attach({
+  customer: "user@example.com",
+  product: "pro-monthly", // higher-priced plan in the same group
+});
 
-Add-ons stack and do not replace the base plan. They typically do not trigger a switch.
+if (result.checkoutUrl) {
+  // Customer needs to pay the difference
+  res.redirect(result.checkoutUrl);
+} else {
+  // Upgrade applied immediately (e.g. free → paid handled inline)
+  console.log("Upgraded:", result.subscription);
+}
+```
+
+Upgrades take effect immediately. Entitlements are re-provisioned so the customer sees the new plan's features right away.
+
+## Downgrade a customer
+
+Same call, lower-priced plan:
+
+```ts
+const result = await owo.attach({
+  customer: "user@example.com",
+  product: "starter", // lower-priced plan in the same group
+});
+```
+
+Downgrades are **scheduled for the end of the current billing period**. The customer keeps their current plan's features until then. After the period ends, Owostack switches the plan and re-provisions entitlements.
+
+## Lateral moves
+
+If the new plan has the same price as the current one, the switch is applied immediately with no checkout required.
+
+```ts
+const result = await owo.attach({
+  customer: "user@example.com",
+  product: "pro-annual", // same price tier, different interval
+});
+
+// result.subscription.status === "active" — no checkout needed
+```
+
+## Build a plan selection UI
+
+A typical billing page flow:
+
+```ts
+app.post("/api/change-plan", async (req, res) => {
+  const { email, newPlan } = req.body;
+
+  const result = await owo.attach({
+    customer: email,
+    product: newPlan,
+  });
+
+  if (result.checkoutUrl) {
+    return res.json({
+      action: "redirect",
+      url: result.checkoutUrl,
+    });
+  }
+
+  // Check if the switch was scheduled (downgrade) or immediate
+  const sub = result.subscription;
+  if (sub?.status === "pending_cancel") {
+    return res.json({
+      action: "scheduled",
+      message: `Will switch to ${newPlan} at period end`,
+      switchDate: sub.currentPeriodEnd,
+    });
+  }
+
+  res.json({ action: "switched", subscription: sub });
+});
+```
+
+## Plan group requirement
+
+Plans must share a **plan group** for switching to work. If you call `attach()` with a plan in a different group, Owostack creates a second subscription instead of switching.
+
+Set the plan group when creating plans in the dashboard or via `plan()` in code:
+
+```ts
+plan("starter", {
+  name: "Starter",
+  price: 0,
+  currency: "USD",
+  interval: "monthly",
+  planGroup: "main",
+  features: [apiCalls.limit(100)],
+});
+
+plan("pro", {
+  name: "Pro",
+  price: 2000,
+  currency: "USD",
+  interval: "monthly",
+  planGroup: "main", 
+  features: [apiCalls.limit(10000)],
+});
+```
 
 ## What changes during a switch
 

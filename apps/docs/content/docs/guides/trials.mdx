@@ -1,0 +1,105 @@
+---
+title: Set up trials
+description: Offer free trial periods before charging
+icon: Clock
+---
+
+# How to set up trials
+
+This guide shows how to offer a free trial period so customers can try your product before paying.
+
+## Create a plan with a trial
+
+In the dashboard, set the **Trial Days** field when creating or editing a plan. Alternatively, define it in code:
+
+```ts
+import { plan, metered, boolean } from "@owostack/core";
+
+const apiCalls = metered("api-calls");
+const analytics = boolean("analytics");
+
+plan("pro", {
+  name: "Pro",
+  price: 2000,
+  currency: "USD",
+  interval: "monthly",
+  trialDays: 14,
+  features: [apiCalls.limit(10000), analytics.on()],
+});
+```
+
+## Start a trial checkout
+
+Call `attach()` as usual. Owostack detects the trial configuration and adjusts the checkout flow:
+
+```ts
+const result = await owo.attach({
+  customer: "user@example.com",
+  product: "pro",
+  customerData: { email: "user@example.com" },
+});
+
+if (result.checkoutUrl) {
+  // Redirect — the provider collects card details but doesn't charge yet
+  res.redirect(result.checkoutUrl);
+}
+```
+
+What happens depends on the payment provider:
+
+- **Paystack** — A small verification charge (₦100) is made and auto-refunded. Owostack creates a `trialing` subscription and schedules billing at trial end.
+- **Dodo Payments** — The provider handles the trial natively via `trial_period_days`. No charge until the trial ends.
+
+## Check trial status
+
+`check()` works the same during a trial — the customer has full access to the plan's features:
+
+```ts
+const access = await owo.check({
+  customer: "user@example.com",
+  feature: "api-calls",
+});
+
+console.log(access.allowed);   // true
+console.log(access.remaining); // 10000
+```
+
+The subscription status will be `"trialing"` until the trial period ends.
+
+## What happens when the trial ends
+
+Owostack handles trial-to-paid conversion automatically:
+
+1. A billing workflow fires at the trial end date
+2. The customer's card is charged the full plan price
+3. On successful payment, the subscription moves to `"active"`
+4. If payment fails, the subscription moves to `"past_due"`
+
+No code changes are needed on your end.
+
+## Combine with a free plan
+
+A common pattern: offer a free tier and a trial of the paid tier.
+
+```ts
+plan("free", {
+  name: "Free",
+  price: 0,
+  currency: "USD",
+  interval: "monthly",
+  planGroup: "main",
+  features: [apiCalls.limit(100), analytics.off()],
+});
+
+plan("pro", {
+  name: "Pro",
+  price: 2000,
+  currency: "USD",
+  interval: "monthly",
+  planGroup: "main",
+  trialDays: 14,
+  features: [apiCalls.limit(10000), analytics.on()],
+});
+```
+
+When a free-tier customer calls `attach()` with `"pro"`, they enter the 14-day trial. After the trial, they are charged or downgraded based on payment outcome.
