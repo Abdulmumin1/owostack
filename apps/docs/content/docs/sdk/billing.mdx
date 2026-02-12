@@ -15,7 +15,7 @@ The `owo.billing` namespace provides access to unbilled overage usage, invoice g
 Get a breakdown of all billable overage usage that has not yet been invoiced.
 
 ```ts
-const usage = await owo.billing.usage({ customer: "user@example.com" });
+const usage = await owo.billing.usage({ customer: "user_123" });
 
 console.log("Currency:", usage.currency);
 console.log("Total estimated:", usage.totalEstimated);
@@ -29,7 +29,7 @@ for (const feature of usage.features) {
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | Yes      | Customer email or unique identifier |
+| `customer` | `string` | Yes      | User ID or email                    |
 
 ### Returns `Promise<BillingUsageResult>`
 
@@ -57,7 +57,7 @@ interface BillingFeatureUsage {
 Generate an invoice for a customer's unbilled overage usage. Fails if there is no unbilled usage to invoice.
 
 ```ts
-const result = await owo.billing.invoice({ customer: "user@example.com" });
+const result = await owo.billing.invoice({ customer: "user_123" });
 
 console.log("Invoice:", result.invoice.number);
 console.log("Total:", result.invoice.total);
@@ -68,7 +68,7 @@ console.log("Status:", result.invoice.status);
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | Yes      | Customer email or unique identifier |
+| `customer` | `string` | Yes      | User ID or email                    |
 
 ### Returns `Promise<InvoiceResult>`
 
@@ -108,7 +108,7 @@ interface InvoiceLineItem {
 List all invoices for a customer.
 
 ```ts
-const result = await owo.billing.invoices({ customer: "user@example.com" });
+const result = await owo.billing.invoices({ customer: "user_123" });
 
 for (const inv of result.invoices) {
   console.log(inv.number, inv.status, inv.total);
@@ -119,7 +119,7 @@ for (const inv of result.invoices) {
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | Yes      | Customer email or unique identifier |
+| `customer` | `string` | Yes      | User ID or email                    |
 
 ### Returns `Promise<InvoicesResult>`
 

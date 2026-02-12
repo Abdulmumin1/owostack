@@ -66,7 +66,7 @@ export interface AttachParams {
 
 export interface AttachResult {
   /** Checkout URL to redirect user */
-  url: string;
+  checkoutUrl: string;
 
   /** Payment reference for tracking */
   reference: string;
@@ -788,6 +788,104 @@ export interface WalletSetupResult {
 export interface WalletRemoveResult {
   /** Whether the removal succeeded */
   success: boolean;
+}
+
+/**
+ * plans() - List Plans
+ */
+
+export interface PlansParams {
+  /** Optional: Filter by plan group */
+  group?: string;
+
+  /** Optional: Filter by billing interval */
+  interval?: PlanInterval;
+
+  /** Optional: Filter by currency */
+  currency?: string;
+
+  /** Optional: Include inactive plans (default: false) */
+  includeInactive?: boolean;
+}
+
+/** A plan feature as returned by the public API */
+export interface PublicPlanFeature {
+  /** Feature slug */
+  slug: string;
+
+  /** Human-readable feature name */
+  name: string;
+
+  /** Feature type */
+  type: "metered" | "boolean" | "static";
+
+  /** Whether this feature is enabled in this plan */
+  enabled: boolean;
+
+  /** Usage limit (null = unlimited) */
+  limit: number | null;
+
+  /** Reset interval */
+  resetInterval: string | null;
+
+  /** Unit label (e.g. "call", "message", "GB") */
+  unit: string | null;
+
+  /** Overage behavior */
+  overage?: "block" | "charge";
+
+  /** Overage price per unit in minor currency units */
+  overagePrice?: number | null;
+}
+
+/** A plan as returned by the public API — safe for client-side consumption */
+export interface PublicPlan {
+  /** Plan ID */
+  id: string;
+
+  /** URL-safe slug */
+  slug: string;
+
+  /** Human-readable name */
+  name: string;
+
+  /** Description */
+  description: string | null;
+
+  /** Price in minor currency units */
+  price: number;
+
+  /** Currency code */
+  currency: string;
+
+  /** Billing interval */
+  interval: PlanInterval;
+
+  /** "free" or "paid" */
+  type: string;
+
+  /** Whether this is a recurring or one-time plan */
+  billingType: string;
+
+  /** Whether this is an add-on plan */
+  isAddon: boolean;
+
+  /** Plan group (for upgrade/downgrade) */
+  planGroup: string | null;
+
+  /** Trial period in days (0 = no trial) */
+  trialDays: number;
+
+  /** Features included in this plan */
+  features: PublicPlanFeature[];
+}
+
+export interface PlansResult {
+  /** Whether the request succeeded */
+  success: boolean;
+
+  /** List of plans */
+  plans: PublicPlan[];
 }
 
 /** Serialized catalog sent to POST /api/sync */

@@ -23,17 +23,17 @@ import { Owostack } from "@owostack/core";
 const owo = new Owostack({ apiKey: process.env.OWOSTACK_API_KEY });
 
 await owo.attach({
-  customer: "user@example.com",
+  customer: "user_123",
   plan: "pro-monthly",
 });
 
 const access = await owo.check({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api_calls",
 });
 
 await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api_calls",
   amount: 1,
 });

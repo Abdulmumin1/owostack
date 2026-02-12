@@ -12,7 +12,7 @@ Subscribe a customer to a subscription plan. If payment is required, Owostack re
 
 ```ts
 await owo.attach({
-  customer: string,    // Customer identifier (email or ID)
+  customer: string,    // User ID or email
   plan: string,        // Plan slug from your dashboard
   metadata?: object,   // Optional metadata to attach
 }): Promise<AttachResult>
@@ -22,7 +22,7 @@ await owo.attach({
 
 | Parameter  | Type     | Required | Description                               |
 | ---------- | -------- | -------- | ----------------------------------------- |
-| `customer` | `string` | ✅       | Customer email or unique identifier       |
+| `customer` | `string` | ✅       | User ID or email                          |
 | `plan`     | `string` | ✅       | Plan slug as defined in your dashboard    |
 | `metadata` | `object` | -        | Custom data to attach to the subscription |
 
@@ -49,17 +49,18 @@ interface AttachResult {
 ```ts
 import { Owostack } from "@owostack/core";
 
-const owo = new Owostack({ apiKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
 
 // Subscribe a customer to the "pro" plan
 const result = await owo.attach({
-  customer: "user@example.com",
+  customer: "user_123",
   plan: "pro-monthly",
+  customerData: { email: "user@example.com" },
 });
 
 if (result.checkoutUrl) {
   // Redirect customer to complete payment
-  res.redirect(result.checkoutUrl);
+  console.log(result.checkoutUrl);
 } else if (result.subscription?.status === "active") {
   // Already subscribed
   console.log("Subscription active!");
@@ -70,39 +71,13 @@ if (result.checkoutUrl) {
 
 ```ts
 const result = await owo.attach({
-  customer: "user@example.com",
+  customer: "user_123",
   plan: "enterprise",
   metadata: {
     companyName: "Acme Corp",
     seats: 10,
     referralCode: "FRIEND20",
   },
-});
-```
-
-### Express.js Example
-
-```ts
-app.post("/api/subscribe", async (req, res) => {
-  const { email, plan } = req.body;
-
-  try {
-    const result = await owo.attach({
-      customer: email,
-      plan: plan,
-    });
-
-    if (result.checkoutUrl) {
-      res.json({ redirect: result.checkoutUrl });
-    } else {
-      res.json({
-        success: true,
-        subscription: result.subscription,
-      });
-    }
-  } catch (error) {
-    res.status(500).json({ error: "Subscription failed" });
-  }
 });
 ```
 

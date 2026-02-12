@@ -13,7 +13,7 @@ Query, add, and remove payment methods for a customer. Payment methods are used 
 Shorthand for `owo.wallet.list()`. Returns the customer's saved payment methods.
 
 ```ts
-const wallet = await owo.wallet("user@example.com");
+const wallet = await owo.wallet("user_123");
 ```
 
 ### Returns `Promise<WalletResult>`
@@ -52,7 +52,7 @@ interface PaymentMethodInfo {
 List all saved payment methods for a customer.
 
 ```ts
-const result = await owo.wallet.list("user@example.com");
+const result = await owo.wallet.list("user_123");
 
 for (const method of result.methods) {
   console.log(method.cardBrand, `**** ${method.cardLast4}`);
@@ -63,7 +63,7 @@ for (const method of result.methods) {
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | Yes      | Customer email or unique identifier |
+| `customer` | `string` | Yes      | User ID or email                    |
 
 ### Returns `Promise<WalletResult>`
 
@@ -76,14 +76,14 @@ Same shape as `owo.wallet()`.
 Initiate card authorization. Returns a URL where the customer completes the setup flow on the provider's page.
 
 ```ts
-const setup = await owo.wallet.setup("user@example.com", {
+const setup = await owo.wallet.setup("user_123", {
   callbackUrl: "https://yourapp.com/billing",
   provider: "paystack",
 });
 
 if (setup.url) {
   // Redirect customer to authorize their card
-  res.redirect(setup.url);
+  console.log(setup.url);
 }
 ```
 
@@ -91,7 +91,7 @@ if (setup.url) {
 
 | Parameter          | Type     | Required | Description                                    |
 | ------------------ | -------- | -------- | ---------------------------------------------- |
-| `customer`         | `string` | Yes      | Customer email or unique identifier            |
+| `customer`         | `string` | Yes      | User ID or email                               |
 | `opts.callbackUrl` | `string` | No       | URL to redirect customer to after authorization |
 | `opts.provider`    | `string` | No       | Provider ID (e.g. `"paystack"`, `"dodopayments"`) |
 
@@ -117,7 +117,7 @@ interface WalletSetupResult {
 Remove a saved payment method.
 
 ```ts
-const result = await owo.wallet.remove("user@example.com", "pm_abc123");
+const result = await owo.wallet.remove("user_123", "pm_abc123");
 console.log(result.success); // true
 ```
 
@@ -125,7 +125,7 @@ console.log(result.success); // true
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | Yes      | Customer email or unique identifier |
+| `customer` | `string` | Yes      | User ID or email                    |
 | `id`       | `string` | Yes      | Payment method ID to remove         |
 
 ### Returns `Promise<WalletRemoveResult>`

@@ -30,7 +30,7 @@ Subscribe a customer to a plan.
 
 ```json
 {
-  "customer": "user@example.com",
+  "customer": "user_123",
   "product": "pro-monthly",
   "metadata": {},
   "provider": "{provider-id}"
@@ -39,7 +39,7 @@ Subscribe a customer to a plan.
 
 | Field      | Type   | Required | Description                     |
 | ---------- | ------ | -------- | ------------------------------- |
-| `customer` | string | ✅       | Customer email or external ID   |
+| `customer` | string | ✅       | User ID or email                |
 | `product`  | string | ✅       | Plan slug or ID                 |
 | `metadata` | object | -        | Custom metadata                 |
 | `provider` | string | -        | Optional provider override      |
@@ -67,7 +67,7 @@ Check customer entitlements for a feature.
 
 ```json
 {
-  "customer": "user@example.com",
+  "customer": "user_123",
   "feature": "api_calls",
   "value": 1
 }
@@ -75,7 +75,7 @@ Check customer entitlements for a feature.
 
 | Field          | Type   | Required | Description                  |
 | -------------- | ------ | -------- | ---------------------------- |
-| `customer`     | string | ✅       | Customer email or ID         |
+| `customer`     | string | ✅       | User ID or email             |
 | `feature`      | string | ✅       | Feature key                  |
 | `value`        | number | -        | Amount to check (default: 1) |
 | `customerData` | object | -        | Auto-create customer payload |
@@ -102,7 +102,7 @@ Record usage for metered billing.
 
 ```json
 {
-  "customer": "user@example.com",
+  "customer": "user_123",
   "feature": "api_calls",
   "value": 1,
   "metadata": {}
@@ -111,7 +111,7 @@ Record usage for metered billing.
 
 | Field          | Type   | Required | Description               |
 | -------------- | ------ | -------- | ------------------------- |
-| `customer`     | string | ✅       | Customer email or ID      |
+| `customer`     | string | ✅       | User ID or email          |
 | `feature`      | string | ✅       | Feature key               |
 | `value`        | number | -        | Usage amount (default: 1) |
 | `metadata`     | object | -        | Event metadata            |
@@ -139,7 +139,7 @@ Purchase a credit pack add-on.
 
 ```json
 {
-  "customer": "user@example.com",
+  "customer": "user_123",
   "pack": "500-credits",
   "quantity": 1
 }
@@ -147,7 +147,7 @@ Purchase a credit pack add-on.
 
 | Field      | Type   | Required | Description                          |
 | ---------- | ------ | -------- | ------------------------------------ |
-| `customer` | string | ✅       | Customer email or ID                 |
+| `customer` | string | ✅       | User ID or email                     |
 | `pack`     | string | ✅       | Credit pack slug or ID               |
 | `quantity` | number | -        | Number of packs to buy (default: 1) |
 
@@ -182,7 +182,7 @@ List saved payment methods for a customer.
 
 | Field      | Type   | Required | Description          |
 | ---------- | ------ | -------- | -------------------- |
-| `customer` | string | ✅       | Customer email or ID |
+| `customer` | string | ✅       | User ID or email      |
 
 ### Response
 
@@ -219,7 +219,7 @@ Initiate card authorization. Returns a URL for the customer to complete card set
 
 ```json
 {
-  "customer": "user@example.com",
+  "customer": "user_123",
   "callbackUrl": "https://yourapp.com/billing",
   "provider": "paystack"
 }
@@ -227,7 +227,7 @@ Initiate card authorization. Returns a URL for the customer to complete card set
 
 | Field         | Type   | Required | Description                    |
 | ------------- | ------ | -------- | ------------------------------ |
-| `customer`    | string | ✅       | Customer email or ID           |
+| `customer`    | string | ✅       | User ID or email               |
 | `callbackUrl` | string | -        | Redirect URL after setup       |
 | `provider`    | string | -        | Provider ID override           |
 
@@ -250,14 +250,14 @@ Remove a saved payment method.
 
 ```json
 {
-  "customer": "user@example.com",
+  "customer": "user_123",
   "id": "pm_abc123"
 }
 ```
 
 | Field      | Type   | Required | Description            |
 | ---------- | ------ | -------- | ---------------------- |
-| `customer` | string | ✅       | Customer email or ID   |
+| `customer` | string | ✅       | User ID or email       |
 | `id`       | string | ✅       | Payment method ID      |
 
 ### Response
@@ -278,13 +278,13 @@ Get unbilled overage usage for a customer.
 
 | Field      | Type   | Required | Description          |
 | ---------- | ------ | -------- | -------------------- |
-| `customer` | string | ✅       | Customer email or ID |
+| `customer` | string | ✅       | User ID or email      |
 
 ### Response
 
 ```json
 {
-  "customer": "user@example.com",
+  "customer": "user_123",
   "currency": "USD",
   "totalEstimated": 2500,
   "features": [
@@ -309,7 +309,7 @@ Generate an invoice for unbilled overage usage.
 
 ```json
 {
-  "customer": "user@example.com"
+  "customer": "user_123"
 }
 ```
 
@@ -345,7 +345,7 @@ List all invoices for a customer.
 
 | Field      | Type   | Required | Description          |
 | ---------- | ------ | -------- | -------------------- |
-| `customer` | string | ✅       | Customer email or ID |
+| `customer` | string | ✅       | User ID or email      |
 
 ### Response
 

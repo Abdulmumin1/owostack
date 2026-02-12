@@ -22,7 +22,7 @@ await owo.addon({
 
 | Parameter  | Type     | Required | Description                            |
 | ---------- | -------- | -------- | -------------------------------------- |
-| `customer` | `string` | Yes      | Customer email or unique identifier    |
+| `customer` | `string` | Yes      | User ID or email                       |
 | `pack`     | `string` | Yes      | Credit pack slug or ID                 |
 | `quantity` | `number` | No       | Number of packs to buy (default: 1)   |
 
@@ -45,12 +45,12 @@ interface AddonResult {
 
 ```ts
 const result = await owo.addon({
-  customer: "user@example.com",
+  customer: "user_123",
   pack: "500-credits",
 });
 
 if (result.requiresCheckout) {
-  res.redirect(result.checkoutUrl);
+  console.log("Redirect to:", result.checkoutUrl);
 } else {
   console.log("Credits added:", result.creditsAdded);
   console.log("New balance:", result.balance);
@@ -61,32 +61,9 @@ if (result.requiresCheckout) {
 
 ```ts
 const result = await owo.addon({
-  customer: "user@example.com",
+  customer: "user_123",
   pack: "500-credits",
   quantity: 3, // 1500 credits
-});
-```
-
-### Express handler
-
-```ts
-app.post("/api/buy-credits", async (req, res) => {
-  const { email, pack, quantity } = req.body;
-
-  const result = await owo.addon({
-    customer: email,
-    pack,
-    quantity: quantity || 1,
-  });
-
-  if (result.requiresCheckout) {
-    return res.json({ redirect: result.checkoutUrl });
-  }
-
-  res.json({
-    creditsAdded: result.creditsAdded,
-    balance: result.balance,
-  });
 });
 ```
 

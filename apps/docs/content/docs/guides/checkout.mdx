@@ -18,18 +18,49 @@ import { Owostack } from "@owostack/core";
 const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
 
 const result = await owo.attach({
-  customer: "user@example.com",
+  customer: "user_123",
   product: "pro-monthly",
+  customerData: { email: "user@example.com" },
 });
 
 if (result.checkoutUrl) {
   // Redirect the user to the provider checkout page
-  res.redirect(result.checkoutUrl);
+  console.log(result.checkoutUrl);
 } else {
   // Already subscribed — no checkout needed
   console.log("Subscription active:", result.subscription);
 }
 ```
+
+## Customer identifiers
+
+The `customer` field accepts either your internal user ID or the customer's email:
+
+```ts
+// Using your user ID (recommended)
+await owo.attach({ customer: "user_123", product: "pro" });
+
+// Using email (also works)
+await owo.attach({ customer: "jane@example.com", product: "pro" });
+```
+
+Owostack resolves customers in this order:
+
+1. **Customer ID** — Owostack's internal ID
+2. **External ID** — your user ID (set via `customerData`)
+3. **Email** — case-insensitive match
+
+If the customer doesn't exist yet and you're using a non-email identifier, include `customerData.email` so Owostack can create the customer record:
+
+```ts
+await owo.attach({
+  customer: "user_123",
+  product: "pro",
+  customerData: { email: "jane@example.com" },
+});
+```
+
+Once the email is set on a customer, you can use either the user ID or the email in any subsequent SDK call.
 
 ## Auto-create the customer
 
@@ -37,7 +68,7 @@ If the customer does not exist yet, pass `customerData` to create them inline:
 
 ```ts
 const result = await owo.attach({
-  customer: "new-user@example.com",
+  customer: "your_user_id",
   product: "starter",
   customerData: {
     email: "new-user@example.com",
@@ -46,33 +77,13 @@ const result = await owo.attach({
 });
 ```
 
-Owostack creates the customer record before initiating the checkout. If the customer already exists, `customerData` is ignored.
+Owostack creates the customer record before initiating the checkout. If the customer already exists, `customerData` is lazily updated incase it changes.
 
 ## Handle the callback
 
 After the customer completes payment, the provider redirects them back to your app. The webhook fires in the background and Owostack activates the subscription.
 
-A typical Express handler:
-
-```ts
-app.post("/api/subscribe", async (req, res) => {
-  const { email, plan } = req.body;
-
-  const result = await owo.attach({
-    customer: email,
-    product: plan,
-    customerData: { email },
-  });
-
-  if (result.checkoutUrl) {
-    return res.json({ redirect: result.checkoutUrl });
-  }
-
-  res.json({ subscription: result.subscription });
-});
-```
-
-On the frontend, redirect to the `checkoutUrl` and show a success page when the user returns.
+Redirect to the `checkoutUrl` and show a success page when the user returns.
 
 ## When no checkout is required
 
@@ -89,11 +100,10 @@ Custom metadata travels through the checkout and arrives in webhook payloads:
 
 ```ts
 const result = await owo.attach({
-  customer: "user@example.com",
+  customer: "user_123",
   product: "pro-monthly",
   metadata: {
-    referralCode: "FRIEND20",
-    internalUserId: "usr_abc123",
+   ...
   },
 });
 ```

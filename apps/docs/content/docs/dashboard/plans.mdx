@@ -51,7 +51,7 @@ Define what features each plan includes by creating **Entitlements**:
 Simple on/off access to a capability:
 
 ```ts
-await owo.check({ customer: "user@example.com", feature: "premium_features" });
+await owo.check({ customer: "user_123", feature: "premium_features" });
 // Returns: { allowed: true }
 ```
 
@@ -60,7 +60,7 @@ await owo.check({ customer: "user@example.com", feature: "premium_features" });
 Track usage against a limit:
 
 ```ts
-await owo.check({ customer: "user@example.com", feature: "api_calls" });
+await owo.check({ customer: "user_123", feature: "api_calls" });
 // Returns: { allowed: true, remaining: 9500, limit: 10000 }
 ```
 

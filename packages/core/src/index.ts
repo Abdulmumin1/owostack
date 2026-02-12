@@ -20,6 +20,9 @@ import type {
   WalletResult,
   WalletSetupResult,
   WalletRemoveResult,
+  PlansParams,
+  PlansResult,
+  PublicPlan,
 } from "@owostack/types";
 
 import { bindFeatureHandles, buildSyncPayload } from "./catalog.js";
@@ -50,6 +53,7 @@ export class Owostack {
     this.apiUrl = config.apiUrl || "https://api.owostack.dev";
     this.billing = new BillingNamespace(this);
     this.wallet = buildWalletFn(this);
+    this.plans = buildPlansFn(this);
 
     // Bind all registered feature handles to this client
     if (config.catalog && config.catalog.length > 0) {
@@ -200,6 +204,26 @@ export class Owostack {
   }
 
   /**
+   * plans() - List Plans
+   *
+   * Returns all active plans for the organization. Useful for building
+   * pricing pages and plan selection UIs.
+   *
+   * @example
+   * ```ts
+   * const { plans } = await owo.plans();
+   * plans.forEach(p => console.log(p.name, p.price));
+   *
+   * // Filter by group
+   * const { plans: support } = await owo.plans({ group: 'support' });
+   *
+   * // Get a single plan by slug
+   * const plan = await owo.plans.get('pro');
+   * ```
+   */
+  readonly plans: PlansFn;
+
+  /**
    * Internal POST request handler
    * @internal
    */
@@ -247,6 +271,37 @@ export class Owostack {
 
     return response.json();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Plans — callable + .get(slug)
+//
+// owo.plans()                  → PlansResult
+// owo.plans({ group: '...' })  → PlansResult (filtered)
+// owo.plans.get('pro')         → PublicPlan
+// ---------------------------------------------------------------------------
+
+type PlansFn = {
+  (params?: PlansParams): Promise<PlansResult>;
+  get(slug: string): Promise<PublicPlan>;
+};
+
+function buildPlansFn(client: Owostack): PlansFn {
+  const fn = ((params?: PlansParams) => {
+    const query: Record<string, string> = {};
+    if (params?.group) query.group = params.group;
+    if (params?.interval) query.interval = params.interval;
+    if (params?.currency) query.currency = params.currency;
+    if (params?.includeInactive) query.includeInactive = "true";
+    return client.get("/plans", query) as Promise<PlansResult>;
+  }) as PlansFn;
+
+  fn.get = async (slug: string) => {
+    const response = await client.get(`/plans/${encodeURIComponent(slug)}`);
+    return (response as any).plan as PublicPlan;
+  };
+
+  return fn;
 }
 
 // ---------------------------------------------------------------------------
@@ -422,4 +477,8 @@ export type {
   WalletResult,
   WalletSetupResult,
   WalletRemoveResult,
+  PlansParams,
+  PlansResult,
+  PublicPlan,
+  PublicPlanFeature,
 } from "@owostack/types";

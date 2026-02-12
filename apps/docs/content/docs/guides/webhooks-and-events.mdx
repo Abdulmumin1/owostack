@@ -23,12 +23,6 @@ https://api.owostack.dev/webhooks/JvEEHhDCByjX4LK9ymVb732IcuSzjtKu/paystack
 https://api.owostack.dev/webhooks/JvEEHhDCByjX4LK9ymVb732IcuSzjtKu/dodopayments
 ```
 
-A legacy backward-compatible URL (defaults to Paystack) is also available:
-
-```
-POST https://api.owostack.dev/webhooks/{organizationId}
-```
-
 ## What happens when a webhook arrives
 
 1. **Signature verification** — Owostack reads the provider's signature header and verifies the payload against your stored webhook secret. Invalid signatures are rejected with a 401.

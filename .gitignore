@@ -39,3 +39,4 @@ wrangler.toml.local
 plan.md
 task.md
 *.bak
+.windsurf/

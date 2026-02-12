@@ -13,7 +13,7 @@ This guide shows how to let customers add a card on file, view their saved payme
 Retrieve all saved payment methods for a customer:
 
 ```ts
-const wallet = await owo.wallet.list("user@example.com");
+const wallet = await owo.wallet.list("user_123");
 
 for (const method of wallet.methods) {
   console.log(method.cardBrand, `**** ${method.cardLast4}`, method.providerId);
@@ -23,7 +23,7 @@ for (const method of wallet.methods) {
 Or use the shorthand:
 
 ```ts
-const wallet = await owo.wallet("user@example.com");
+const wallet = await owo.wallet("user_123");
 console.log("Has card:", wallet.hasCard);
 ```
 
@@ -32,13 +32,13 @@ console.log("Has card:", wallet.hasCard);
 Initiate card setup. The customer completes authorization on the provider's page.
 
 ```ts
-const setup = await owo.wallet.setup("user@example.com", {
+const setup = await owo.wallet.setup("user_123", {
   callbackUrl: "https://yourapp.com/billing?card=added",
 });
 
 if (setup.url) {
   // Redirect customer to authorize their card
-  res.redirect(setup.url);
+  console.log(setup.url);
 }
 ```
 
@@ -49,7 +49,7 @@ After the customer completes the flow, the provider sends a webhook and Owostack
 If your organization has multiple providers, specify which one:
 
 ```ts
-const setup = await owo.wallet.setup("user@example.com", {
+const setup = await owo.wallet.setup("user_123", {
   callbackUrl: "https://yourapp.com/billing",
   provider: "paystack",
 });
@@ -58,35 +58,8 @@ const setup = await owo.wallet.setup("user@example.com", {
 ## Remove a payment method
 
 ```ts
-const result = await owo.wallet.remove("user@example.com", methodId);
+const result = await owo.wallet.remove("user_123", methodId);
 console.log(result.success); // true
-```
-
-## Build a billing settings page
-
-A typical Express handler for a billing page:
-
-```ts
-// GET /api/billing/methods — list saved cards
-app.get("/api/billing/methods", async (req, res) => {
-  const wallet = await owo.wallet.list(req.user.email);
-  res.json({ methods: wallet.methods, hasCard: wallet.hasCard });
-});
-
-// POST /api/billing/methods — add a new card
-app.post("/api/billing/methods", async (req, res) => {
-  const setup = await owo.wallet.setup(req.user.email, {
-    callbackUrl: `${req.headers.origin}/billing?card=added`,
-    provider: req.body.provider,
-  });
-  res.json({ redirect: setup.url });
-});
-
-// DELETE /api/billing/methods/:id — remove a card
-app.delete("/api/billing/methods/:id", async (req, res) => {
-  await owo.wallet.remove(req.user.email, req.params.id);
-  res.json({ success: true });
-});
 ```
 
 ## Why payment methods matter

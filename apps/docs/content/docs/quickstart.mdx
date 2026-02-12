@@ -96,7 +96,7 @@ const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
 
 // --- Step A: Subscribe a customer ---
 const attach = await owo.attach({
-  customer: "tutorial@example.com",
+  customer: "tutorial_user",
   product: "starter",
 });
 
@@ -124,7 +124,7 @@ After payment, add this below the attach block:
 ```js
 // --- Step B: Check boolean feature ---
 const analyticsAccess = await owo.check({
-  customer: "tutorial@example.com",
+  customer: "tutorial_user",
   feature: "analytics",
 });
 
@@ -133,7 +133,7 @@ console.log("Analytics allowed?", analyticsAccess.allowed);
 
 // --- Step C: Check metered feature ---
 const apiAccess = await owo.check({
-  customer: "tutorial@example.com",
+  customer: "tutorial_user",
   feature: "api-calls",
 });
 
@@ -151,14 +151,14 @@ Add this to consume some quota:
 // --- Step D: Track usage ---
 for (let i = 0; i < 5; i++) {
   await owo.track({
-    customer: "tutorial@example.com",
+    customer: "tutorial_user",
     feature: "api-calls",
     value: 1,
   });
 }
 
 const afterTracking = await owo.check({
-  customer: "tutorial@example.com",
+  customer: "tutorial_user",
   feature: "api-calls",
 });
 
@@ -175,7 +175,7 @@ Replace the loop with a bulk track to exhaust the quota:
 ```js
 // --- Step E: Exhaust quota ---
 const exhaust = await owo.track({
-  customer: "tutorial@example.com",
+  customer: "tutorial_user",
   feature: "api-calls",
   value: 200, // more than the 100 limit
 });

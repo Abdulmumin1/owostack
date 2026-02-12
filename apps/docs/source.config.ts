@@ -8,8 +8,8 @@ export default defineConfig({
   mdxOptions: {
     rehypeCodeOptions: {
       themes: {
-        light: "andromeeda",
-        dark: "andromeeda",
+        light: "gruvbox-dark-soft",
+        dark: "gruvbox-dark-soft",
       },
     },
   },

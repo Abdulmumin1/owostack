@@ -21,7 +21,7 @@ await owo.check({
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | ✅       | Customer email or unique identifier |
+| `customer` | `string` | ✅       | User ID or email                    |
 | `feature`  | `string` | ✅       | Feature key to check access for     |
 
 ## Response
@@ -44,11 +44,11 @@ interface CheckResult {
 ```ts
 import { Owostack } from "@owostack/core";
 
-const owo = new Owostack({ apiKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
 
 // Check if user can access premium features
 const result = await owo.check({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "premium_features",
 });
 
@@ -66,50 +66,15 @@ if (result.allowed) {
 ```ts
 // Check API call quota
 const result = await owo.check({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api_calls",
 });
 
 if (!result.allowed) {
-  return res.status(429).json({
-    error: "API quota exceeded",
-    remaining: result.remaining,
-    resetAt: result.resetAt,
-  });
+  console.log("Quota exceeded", result.remaining, result.resetAt);
 }
 
 // Process the request...
-```
-
-### Express.js Middleware
-
-```ts
-const requiresFeature = (feature: string) => {
-  return async (req, res, next) => {
-    const email = req.user.email;
-
-    const result = await owo.check({
-      customer: email,
-      feature: feature,
-    });
-
-    if (!result.allowed) {
-      return res.status(403).json({
-        error: "Feature not available on your plan",
-        requiredPlan: result.plan || "pro",
-      });
-    }
-
-    // Attach entitlement info to request for downstream use
-    req.entitlement = result;
-    next();
-  };
-};
-
-// Usage
-app.get("/api/export", requiresFeature("data_export"), async (req, res) => {
-  // User has access, proceed with export
-});
 ```
 
 ### Multiple Feature Checks
@@ -117,18 +82,15 @@ app.get("/api/export", requiresFeature("data_export"), async (req, res) => {
 ```ts
 // Check multiple features in parallel
 const [canExport, canAnalyze, canShare] = await Promise.all([
-  owo.check({ customer: email, feature: "export" }),
-  owo.check({ customer: email, feature: "analytics" }),
-  owo.check({ customer: email, feature: "team_sharing" }),
+  owo.check({ customer: "user_123", feature: "export" }),
+  owo.check({ customer: "user_123", feature: "analytics" }),
+  owo.check({ customer: "user_123", feature: "team_sharing" }),
 ]);
 
-// Build UI based on entitlements
-res.json({
-  features: {
-    export: canExport.allowed,
-    analytics: canAnalyze.allowed,
-    sharing: canShare.allowed,
-  },
+console.log({
+  export: canExport.allowed,
+  analytics: canAnalyze.allowed,
+  sharing: canShare.allowed,
 });
 ```
 

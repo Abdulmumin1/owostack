@@ -51,14 +51,14 @@ Use `addon()` to initiate a credit pack purchase:
 
 ```ts
 const result = await owo.addon({
-  customer: "user@example.com",
+  customer: "user_123",
   pack: "500-ai-credits", // credit pack slug
   quantity: 1,
 });
 
 if (result.requiresCheckout) {
   // Redirect to payment
-  res.redirect(result.checkoutUrl);
+  console.log(result.checkoutUrl);
 } else {
   // Credits applied immediately (card on file was charged)
   console.log("New balance:", result.balance);
@@ -73,7 +73,7 @@ Customers can buy multiple packs at once:
 
 ```ts
 const result = await owo.addon({
-  customer: "user@example.com",
+  customer: "user_123",
   pack: "500-ai-credits",
   quantity: 3, // 1500 credits total
 });
@@ -85,7 +85,7 @@ Use `check()` on a feature in the credit system to see the remaining balance:
 
 ```ts
 const access = await owo.check({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "ai-tokens",
 });
 
@@ -98,7 +98,7 @@ console.log("Credits remaining:", access.remaining);
 
 ```ts
 await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "ai-tokens",
   value: 1, // deducts creditCost (1) from balance
 });
@@ -109,29 +109,8 @@ For features with variable cost, multiply:
 ```ts
 // GPT-4 costs 20 credits per call
 await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "gpt-4-calls"
 });
 ```
 
-## Build a top-up UI
-
-A typical flow for a "Buy Credits" button:
-
-```ts
-app.post("/api/buy-credits", async (req, res) => {
-  const { email, packSlug, quantity } = req.body;
-
-  const result = await owo.addon({
-    customer: email,
-    pack: packSlug,
-    quantity: quantity || 1,
-  });
-
-  if (result.requiresCheckout) {
-    return res.json({ redirect: result.checkoutUrl });
-  }
-
-  res.json({ balance: result.balance });
-});
-```

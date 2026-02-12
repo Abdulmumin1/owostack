@@ -68,9 +68,9 @@ apiCalls.config({ limit: 50000, reset: "monthly", overage: "charge", overagePric
 Check if a customer has access to this feature.
 
 ```ts
-const result = await apiCalls.check("user@example.com");
-const result = await apiCalls.check("user@example.com", { value: 5 });
-const result = await apiCalls.check("user@example.com", { sendEvent: true });
+const result = await apiCalls.check("user_123");
+const result = await apiCalls.check("user_123", { value: 5 });
+const result = await apiCalls.check("user_123", { sendEvent: true });
 ```
 
 Returns `Promise<CheckResult>`.
@@ -80,9 +80,9 @@ Returns `Promise<CheckResult>`.
 Track usage for this feature.
 
 ```ts
-await apiCalls.track("user@example.com");
-await apiCalls.track("user@example.com", 5);
-await apiCalls.track("user@example.com", 1, { entity: "workspace_123" });
+await apiCalls.track("user_123");
+await apiCalls.track("user_123", 5);
+await apiCalls.track("user_123", 1, { entity: "workspace_123" });
 ```
 
 Returns `Promise<TrackResult>`.
@@ -126,7 +126,7 @@ analytics.off()
 Check if a customer has access to this feature.
 
 ```ts
-const { allowed } = await analytics.check("user@example.com");
+const { allowed } = await analytics.check("user_123");
 ```
 
 Returns `Promise<CheckResult>`.

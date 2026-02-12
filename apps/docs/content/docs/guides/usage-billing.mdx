@@ -38,16 +38,12 @@ Before performing an expensive operation, verify the customer has remaining quot
 
 ```ts
 const access = await owo.check({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api-calls",
 });
 
 if (!access.allowed) {
-  return res.status(429).json({
-    error: "Quota exceeded",
-    remaining: access.remaining,
-    resetAt: access.resetAt,
-  });
+  console.log("Quota exceeded", access.remaining, access.resetAt);
 }
 
 // Proceed with the operation...
@@ -59,7 +55,7 @@ After a successful operation, record the usage:
 
 ```ts
 const result = await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api-calls",
   value: 1,
 });
@@ -73,10 +69,10 @@ const result = await owo.track({
 The most common pattern combines both calls:
 
 ```ts
-async function handleApiRequest(email: string) {
+async function handleApiRequest(userId: string) {
   // 1. Check quota
   const access = await owo.check({
-    customer: email,
+    customer: userId,
     feature: "api-calls",
   });
 
@@ -89,40 +85,13 @@ async function handleApiRequest(email: string) {
 
   // 3. Track usage (only after success)
   await owo.track({
-    customer: email,
+    customer: userId,
     feature: "api-calls",
     value: 1,
   });
 
   return result;
 }
-```
-
-## Use middleware for automatic tracking
-
-For APIs where every request consumes a unit:
-
-```ts
-const trackUsage = (feature: string) => async (req, res, next) => {
-  const email = req.user?.email;
-  if (!email) return next();
-
-  const access = await owo.check({ customer: email, feature });
-  if (!access.allowed) {
-    return res.status(429).json({ error: "Quota exceeded" });
-  }
-
-  // Track after response completes (non-blocking)
-  res.on("finish", () => {
-    if (res.statusCode < 400) {
-      owo.track({ customer: email, feature, value: 1 }).catch(console.error);
-    }
-  });
-
-  next();
-};
-
-app.use("/api/v1", trackUsage("api-calls"));
 ```
 
 ## Track variable amounts
@@ -132,14 +101,14 @@ Not all operations cost one unit. Pass a custom `value`:
 ```ts
 // AI token usage — variable cost per request
 await owo.track({
-  customer: email,
+  customer: "user_123",
   feature: "ai-tokens",
   value: response.usage.total_tokens,
 });
 
 // Storage — track in MB
 await owo.track({
-  customer: email,
+  customer: "user_123",
   feature: "storage-mb",
   value: fileSizeInMb,
 });
@@ -165,7 +134,7 @@ Use `check()` to display a usage bar or remaining count:
 
 ```ts
 const usage = await owo.check({
-  customer: email,
+  customer: "user_123",
   feature: "api-calls",
 });
 

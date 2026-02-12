@@ -28,7 +28,7 @@ Use `check()` to decide whether to allow an action.
 
 ```ts
 const { allowed, code, remaining } = await owo.check({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api_calls_monthly",
 });
 ```
@@ -43,7 +43,7 @@ If a feature is metered, call `track()` to record usage.
 
 ```ts
 await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api_calls_monthly",
   amount: 1,
 });

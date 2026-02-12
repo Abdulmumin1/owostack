@@ -1,0 +1,115 @@
+---
+title: Build a pricing page
+description: Fetch plans dynamically and render a pricing page
+icon: CreditCard
+---
+
+# How to build a pricing page
+
+This guide shows how to use `owo.plans()` to fetch your plans from Owostack and render a dynamic pricing page. No hardcoded plan data — your pricing page stays in sync with your dashboard automatically.
+
+## Fetch plans from Owostack
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+
+const { plans } = await owo.plans();
+```
+
+This returns all active plans with their features, pricing, and metadata.
+
+## Separate base plans from add-ons
+
+Plans have an `isAddon` flag. Filter them before rendering:
+
+```ts
+const basePlans = plans.filter(p => !p.isAddon);
+const addons = plans.filter(p => p.isAddon);
+```
+
+## Group by billing interval
+
+If you offer both monthly and yearly pricing with a toggle:
+
+```ts
+const monthly = basePlans.filter(p => p.interval === "monthly");
+const yearly = basePlans.filter(p => p.interval === "yearly");
+```
+
+Or use the server-side filter to only fetch what you need:
+
+```ts
+const { plans: monthly } = await owo.plans({ interval: "monthly" });
+const { plans: yearly } = await owo.plans({ interval: "yearly" });
+```
+
+## Format prices for display
+
+Plan prices are in **minor currency units** (kobo, cents, etc.). Divide by 100 for display:
+
+```ts
+function formatPrice(price: number, currency: string): string {
+  return new Intl.NumberFormat("en", {
+    style: "currency",
+    currency,
+  }).format(price / 100);
+}
+
+// formatPrice(500000, "NGN") → "₦5,000.00"
+// formatPrice(2999, "USD")   → "$29.99"
+```
+
+## Render feature comparisons
+
+Each plan includes its features with limits and types:
+
+```ts
+for (const plan of plans) {
+  console.log(`## ${plan.name} — ${formatPrice(plan.price, plan.currency)}`);
+
+  for (const feature of plan.features) {
+    if (feature.type === "boolean") {
+      console.log(`  ✓ ${feature.name}`);
+    } else if (feature.limit === null) {
+      console.log(`  ∞ ${feature.name} (unlimited)`);
+    } else {
+      console.log(`  ${feature.limit} ${feature.unit || ""} ${feature.name}`);
+    }
+  }
+}
+```
+
+## Connect to checkout
+
+Once the customer picks a plan, use `attach()` to start a checkout:
+
+```ts
+const result = await owo.attach({
+  customer: "user_123",
+  product: "pro-monthly",
+  customerData: { email: "user@example.com" },
+});
+
+if (result.checkoutUrl) {
+  // Redirect customer to provider checkout
+  console.log(result.checkoutUrl);
+}
+```
+
+## Show trial badges
+
+Plans with a trial period have `trialDays > 0`:
+
+```ts
+for (const plan of plans) {
+  if (plan.trialDays > 0) {
+    console.log(`${plan.name} — ${plan.trialDays}-day free trial`);
+  }
+}
+```
+
+<Callout type="info">
+  Plans are cached by the API — feel free to call `owo.plans()` on every page load without worrying about performance.
+</Callout>

@@ -23,7 +23,7 @@ await owo.track({
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | ✅       | Customer email or unique identifier |
+| `customer` | `string` | ✅       | User ID or email                    |
 | `feature`  | `string` | ✅       | Feature key to record usage against |
 | `amount`   | `number` | -        | Amount to add (default: 1)          |
 | `metadata` | `object` | -        | Additional event data for auditing  |
@@ -49,11 +49,11 @@ interface TrackResult {
 ```ts
 import { Owostack } from "@owostack/core";
 
-const owo = new Owostack({ apiKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
 
 // Track a single API call
 await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api_calls",
 });
 ```
@@ -63,14 +63,14 @@ await owo.track({
 ```ts
 // Track storage usage (e.g., 1.5 MB uploaded)
 await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "storage_mb",
   amount: 1.5,
 });
 
 // Track multiple items at once
 await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "messages_sent",
   amount: 10,
 });
@@ -80,7 +80,7 @@ await owo.track({
 
 ```ts
 await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api_calls",
   amount: 1,
   metadata: {
@@ -91,43 +91,14 @@ await owo.track({
 });
 ```
 
-### Express.js Middleware
-
-```ts
-// Automatically track all API calls
-const trackUsage = async (req, res, next) => {
-  const email = req.user?.email;
-  if (!email) return next();
-
-  // Track after response (non-blocking)
-  res.on("finish", () => {
-    owo
-      .track({
-        customer: email,
-        feature: "api_calls",
-        metadata: {
-          path: req.path,
-          method: req.method,
-          status: res.statusCode,
-        },
-      })
-      .catch(console.error);
-  });
-
-  next();
-};
-
-app.use(trackUsage);
-```
-
 ### Check Then Track Pattern
 
 ```ts
 // Common pattern: check quota, then track usage
-async function processRequest(email: string) {
+async function processRequest(userId: string) {
   // 1. Check if customer has remaining quota
   const check = await owo.check({
-    customer: email,
+    customer: userId,
     feature: "api_calls",
   });
 
@@ -140,7 +111,7 @@ async function processRequest(email: string) {
 
   // 3. Track usage after successful completion
   await owo.track({
-    customer: email,
+    customer: userId,
     feature: "api_calls",
   });
 
@@ -157,7 +128,7 @@ Track every unit and invoice at the end of the billing period:
 ```ts
 // Track each AI token generated
 await owo.track({
-  customer: email,
+  customer: "user_123",
   feature: "ai_tokens",
   amount: response.usage.total_tokens,
 });
@@ -169,7 +140,7 @@ Track against a fixed monthly limit:
 
 ```ts
 const result = await owo.track({
-  customer: email,
+  customer: "user_123",
   feature: "exports",
 });
 
@@ -182,7 +153,7 @@ Consume from a prepaid credit balance:
 
 ```ts
 await owo.track({
-  customer: email,
+  customer: "user_123",
   feature: "credits",
   amount: operationCost, // e.g., 5 credits for this operation
 });

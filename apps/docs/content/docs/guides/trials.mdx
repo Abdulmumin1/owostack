@@ -34,7 +34,7 @@ Call `attach()` as usual. Owostack detects the trial configuration and adjusts t
 
 ```ts
 const result = await owo.attach({
-  customer: "user@example.com",
+  customer: "user_123",
   product: "pro",
   customerData: { email: "user@example.com" },
 });
@@ -56,7 +56,7 @@ What happens depends on the payment provider:
 
 ```ts
 const access = await owo.check({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api-calls",
 });
 

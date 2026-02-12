@@ -34,6 +34,7 @@ import apiBilling from "./routes/api/billing";
 import apiAddon from "./routes/api/addon";
 import apiSync from "./routes/api/sync";
 import apiWallet from "./routes/api/wallet";
+import apiPlans from "./routes/api/plans";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
@@ -242,6 +243,7 @@ v1Routes.route("/", apiAddon);
 v1Routes.route("/billing", apiBilling);
 v1Routes.route("/sync", apiSync);
 v1Routes.route("/", apiWallet);
+v1Routes.route("/plans", apiPlans);
 
 apiRoutes.route("/v1", v1Routes);
 

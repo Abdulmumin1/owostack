@@ -661,7 +661,7 @@
           <div>
             <label
               class="block text-xs font-medium text-zinc-400 mb-1.5"
-              for="planGroup">Plan Group (optional)</label
+              for="planGroup">Plan Group (optional) <a class="text-accent hover:text-accent-hover underline" target="_blank" href="{import.meta.env.VITE_DOCS_URL}/concepts/plans-and-products#plan-groups-and-mutual-exclusivity">docs</a> </label
             >
                   <div class="input-icon-wrapper">
                     <input
