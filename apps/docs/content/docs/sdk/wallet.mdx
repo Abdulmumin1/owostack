@@ -63,7 +63,7 @@ for (const method of result.methods) {
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | Yes      | User ID or email                    |
+| `customer` | `string` | Yes      | Your internal user ID               |
 
 ### Returns `Promise<WalletResult>`
 
@@ -91,7 +91,7 @@ if (setup.url) {
 
 | Parameter          | Type     | Required | Description                                    |
 | ------------------ | -------- | -------- | ---------------------------------------------- |
-| `customer`         | `string` | Yes      | User ID or email                               |
+| `customer`         | `string` | Yes      | Your internal user ID                          |
 | `opts.callbackUrl` | `string` | No       | URL to redirect customer to after authorization |
 | `opts.provider`    | `string` | No       | Provider ID (e.g. `"paystack"`, `"dodopayments"`) |
 
@@ -125,7 +125,7 @@ console.log(result.success); // true
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | Yes      | User ID or email                    |
+| `customer` | `string` | Yes      | Your internal user ID               |
 | `id`       | `string` | Yes      | Payment method ID to remove         |
 
 ### Returns `Promise<WalletRemoveResult>`

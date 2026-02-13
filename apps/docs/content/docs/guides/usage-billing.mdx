@@ -43,7 +43,7 @@ const access = await owo.check({
 });
 
 if (!access.allowed) {
-  console.log("Quota exceeded", access.remaining, access.resetAt);
+  console.log("Quota exceeded", access.balance, access.resetsAt);
 }
 
 // Proceed with the operation...
@@ -77,7 +77,7 @@ async function handleApiRequest(userId: string) {
   });
 
   if (!access.allowed) {
-    throw new Error(`Quota exceeded. Resets at ${access.resetAt}`);
+    throw new Error(`Quota exceeded. Resets at ${access.resetsAt}`);
   }
 
   // 2. Do the work
@@ -139,7 +139,7 @@ const usage = await owo.check({
 });
 
 // In your UI:
-// Used: (usage.limit - usage.remaining) / usage.limit * 100%
-// Remaining: usage.remaining
-// Resets: usage.resetAt
+// Used: (usage.limit - usage.balance) / usage.limit * 100%
+// Remaining: usage.balance
+// Resets: usage.resetsAt
 ```

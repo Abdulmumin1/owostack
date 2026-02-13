@@ -12,9 +12,15 @@ Record usage events for metered billing. Use this to track API calls, storage, m
 
 ```ts
 await owo.track({
-  customer: string,    // Customer identifier
+  customer: string,    // Your internal user ID
   feature: string,     // Feature key being used
-  amount?: number,     // Amount to track (default: 1)
+  value?: number,      // Amount to track (default: 1)
+  entity?: string,     // Optional entity scope (seat, workspace, org)
+  customerData?: {     // Optional: auto-create customer
+    email: string,
+    name?: string,
+    metadata?: Record<string, unknown>,
+  },
   metadata?: object,   // Optional event metadata
 }): Promise<TrackResult>
 ```
@@ -23,9 +29,11 @@ await owo.track({
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | ✅       | User ID or email                    |
+| `customer` | `string` | ✅       | Your internal user ID               |
 | `feature`  | `string` | ✅       | Feature key to record usage against |
-| `amount`   | `number` | -        | Amount to add (default: 1)          |
+| `value`    | `number` | -        | Amount to add (default: 1)          |
+| `entity`   | `string` | -        | Scope usage to an entity (seat/org) |
+| `customerData` | `object` | -    | Auto-create customer if missing     |
 | `metadata` | `object` | -        | Additional event data for auditing  |
 
 ## Response
@@ -33,12 +41,14 @@ await owo.track({
 ```ts
 interface TrackResult {
   success: boolean;
-  allowed?: boolean; // Whether the usage was accepted
-  code?: string; // tracked, tracked_overage, limit_exceeded, etc.
-  balance?: number | null; // Remaining balance when applicable
-  resetsAt?: string; // Period reset time
-  resetInterval?: string;
-  error?: string;
+  allowed: boolean; // Whether the usage was accepted
+  code: string; // tracked, tracked_overage, limit_exceeded, etc.
+  usage: number | null;
+  limit: number | null;
+  balance: number | null; // Remaining balance when applicable
+  resetsAt: string | null; // Period reset time
+  resetInterval: string | null;
+  details: { message: string; planName?: string; trial?: boolean; trialEndsAt?: string | null };
 }
 ```
 
@@ -65,14 +75,14 @@ await owo.track({
 await owo.track({
   customer: "user_123",
   feature: "storage_mb",
-  amount: 1.5,
+  value: 1.5,
 });
 
 // Track multiple items at once
 await owo.track({
   customer: "user_123",
   feature: "messages_sent",
-  amount: 10,
+  value: 10,
 });
 ```
 
@@ -82,7 +92,7 @@ await owo.track({
 await owo.track({
   customer: "user_123",
   feature: "api_calls",
-  amount: 1,
+  value: 1,
   metadata: {
     endpoint: "/api/generate",
     responseTime: 234,
@@ -103,7 +113,7 @@ async function processRequest(userId: string) {
   });
 
   if (!check.allowed) {
-    throw new Error(`Quota exceeded. Resets at ${check.resetAt}`);
+    throw new Error(`Quota exceeded. Resets at ${check.resetsAt}`);
   }
 
   // 2. Process the request
@@ -130,7 +140,7 @@ Track every unit and invoice at the end of the billing period:
 await owo.track({
   customer: "user_123",
   feature: "ai_tokens",
-  amount: response.usage.total_tokens,
+  value: response.usage.total_tokens,
 });
 ```
 
@@ -144,7 +154,7 @@ const result = await owo.track({
   feature: "exports",
 });
 
-console.log(`${result.usage.remaining} exports remaining this month`);
+console.log(`${result.balance} exports remaining this month`);
 ```
 
 ### Credit-based
@@ -155,7 +165,7 @@ Consume from a prepaid credit balance:
 await owo.track({
   customer: "user_123",
   feature: "credits",
-  amount: operationCost, // e.g., 5 credits for this operation
+  value: operationCost, // e.g., 5 credits for this operation
 });
 ```
 

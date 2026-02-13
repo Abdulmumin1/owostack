@@ -13,6 +13,8 @@ import { checkOverageAllowed, getOrgOverageSettings, getUnbilledOverageAmount } 
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
+
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
   const authHeader = c.req.header("Authorization");
@@ -266,9 +268,16 @@ app.post("/check", async (c) => {
   const expiredTrialIds: string[] = [];
   const expiredCancelIds: string[] = [];
   subscriptions = subscriptions.filter((s: any) => {
-    if (s.status === "trialing" && s.currentPeriodEnd && s.currentPeriodEnd < now) {
-      expiredTrialIds.push(s.id);
-      return false;
+    if (s.status === "trialing") {
+      const trialEnd = s.currentPeriodEnd;
+      const trialEndValid =
+        typeof trialEnd === "number" &&
+        trialEnd > 0 &&
+        trialEnd <= now + MAX_TRIAL_DURATION_MS;
+      if (!trialEndValid || trialEnd < now) {
+        expiredTrialIds.push(s.id);
+        return false;
+      }
     }
     // Scheduled cancellation past effective date — customer should lose access
     if (s.cancelAt && s.cancelAt < now && !s.canceledAt) {
@@ -975,9 +984,16 @@ app.post("/track", async (c) => {
   const trackExpiredTrialIds: string[] = [];
   const trackExpiredCancelIds: string[] = [];
   subscriptions = subscriptions.filter((s: any) => {
-    if (s.status === "trialing" && s.currentPeriodEnd && s.currentPeriodEnd < trackNow) {
-      trackExpiredTrialIds.push(s.id);
-      return false;
+    if (s.status === "trialing") {
+      const trialEnd = s.currentPeriodEnd;
+      const trialEndValid =
+        typeof trialEnd === "number" &&
+        trialEnd > 0 &&
+        trialEnd <= trackNow + MAX_TRIAL_DURATION_MS;
+      if (!trialEndValid || trialEnd < trackNow) {
+        trackExpiredTrialIds.push(s.id);
+        return false;
+      }
     }
     if (s.cancelAt && s.cancelAt < trackNow && !s.canceledAt) {
       trackExpiredCancelIds.push(s.id);

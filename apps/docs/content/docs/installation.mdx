@@ -22,15 +22,15 @@ Initialize the SDK with your API key:
 import { Owostack } from "@owostack/core";
 
 const owo = new Owostack({
-  apiKey: process.env.OWOSTACK_API_KEY,
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
   // Optional: override the API URL (for self-hosted)
-  // baseUrl: "https://api.owostack.dev"
+  // apiUrl: "https://api.owostack.dev"
 });
 ```
 
 in .env
 ```sh
-OWOSTACK_API_KEY=owo_sk_your_api_key_here
+OWOSTACK_SECRET_KEY=owo_sk_your_api_key_here
 ```
 
 ## TypeScript
@@ -45,12 +45,12 @@ import {
   TrackResult,
 } from "@owostack/core";
 
-const owo = new Owostack({ apiKey: "..." });
+const owo = new Owostack({ secretKey: "..." });
 
 // All methods are fully typed
 const result: AttachResult = await owo.attach({
   customer: "user_123",
-  plan: "pro",
+  product: "pro",
 });
 ```
 

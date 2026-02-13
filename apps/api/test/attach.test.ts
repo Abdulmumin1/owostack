@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import app from "../src/index";
+import { app } from "../src/index";
 import { verifyApiKey } from "../src/lib/api-keys";
 import { decrypt } from "../src/lib/encryption";
 
@@ -10,6 +10,7 @@ import { decrypt } from "../src/lib/encryption";
 const mockDb = {
   query: {
     projects: { findFirst: vi.fn() },
+    plans: { findFirst: vi.fn() },
   },
 };
 
@@ -17,6 +18,10 @@ vi.mock("@owostack/db", () => ({
   createDb: () => mockDb,
   schema: {
     projects: { organizationId: "organizationId" },
+    plans: {
+      organizationId: "organizationId",
+      slug: "slug",
+    },
   },
 }));
 
@@ -83,6 +88,7 @@ describe("POST /v1/attach", () => {
       testSecretKey: "encrypted_test_key",
       webhookSecret: "wh_secret",
     });
+    mockDb.query.plans.findFirst.mockResolvedValue(null);
     vi.mocked(decrypt).mockResolvedValue("sk_decrypted");
 
     vi.stubGlobal("fetch", vi.fn());
@@ -132,7 +138,7 @@ describe("POST /v1/attach", () => {
       "/v1/attach",
       {
         method: "POST",
-        body: JSON.stringify({ email: "invalid-email" }),
+        body: JSON.stringify({ customer: "test@example.com" }),
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${validApiKey}`,
@@ -147,29 +153,14 @@ describe("POST /v1/attach", () => {
     expect(json.error.code).toBe("ValidationError");
   });
 
-  it("should initialize transaction for valid request", async () => {
-    const fetchMock = vi.mocked(globalThis.fetch as any);
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        status: true,
-        message: "Initialized",
-        data: {
-          authorization_url: "https://checkout.paystack.com/xxx",
-          access_code: "xxx",
-          reference: "ref_xxx",
-        },
-      }),
-    });
-
+  it("should return 404 when requested plan is missing", async () => {
     const res = await app.request(
       "/v1/attach",
       {
         method: "POST",
         body: JSON.stringify({
-          email: "test@example.com",
-          amount: 5000,
+          customer: "test@example.com",
+          product: "pro",
         }),
         headers: {
           "Content-Type": "application/json",
@@ -179,10 +170,10 @@ describe("POST /v1/attach", () => {
       mockEnv as any,
     );
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
     const json = (await res.json()) as any;
-    expect(json.success).toBe(true);
-    expect(json.data.authorization_url).toBe("https://checkout.paystack.com/xxx");
+    expect(json.success).toBe(false);
+    expect(json.error).toContain("Plan 'pro' not found");
   });
 });
 

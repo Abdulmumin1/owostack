@@ -137,11 +137,11 @@ const apiAccess = await owo.check({
   feature: "api-calls",
 });
 
-console.log("API calls remaining:", apiAccess.remaining, "/", apiAccess.limit);
+console.log("API calls remaining:", apiAccess.balance, "/", apiAccess.limit);
 // → 100 / 100
 ```
 
-Run it again. You should see `allowed: true` and `remaining: 100`.
+Run it again. You should see `allowed: true` and `balance: 100`.
 
 ## 7. Track usage and hit the limit
 
@@ -162,7 +162,7 @@ const afterTracking = await owo.check({
   feature: "api-calls",
 });
 
-console.log("After 5 calls — remaining:", afterTracking.remaining);
+console.log("After 5 calls — remaining:", afterTracking.balance);
 // → 95
 ```
 

@@ -32,28 +32,35 @@ Subscribe a customer to a plan.
 {
   "customer": "user_123",
   "product": "pro-monthly",
+  "customerData": { "email": "user@example.com" },
   "metadata": {},
-  "provider": "{provider-id}"
+  "provider": "{provider-id}",
+  "callbackUrl": "https://yourapp.com/billing"
 }
 ```
 
-| Field      | Type   | Required | Description                     |
-| ---------- | ------ | -------- | ------------------------------- |
-| `customer` | string | ✅       | User ID or email                |
-| `product`  | string | ✅       | Plan slug or ID                 |
-| `metadata` | object | -        | Custom metadata                 |
-| `provider` | string | -        | Optional provider override      |
+| Field          | Type   | Required | Description                         |
+| -------------- | ------ | -------- | ----------------------------------- |
+| `customer`     | string | ✅       | Your internal user ID               |
+| `product`      | string | ✅       | Plan slug or ID                     |
+| `customerData` | object | -        | Auto-create customer payload        |
+| `metadata`     | object | -        | Custom metadata                     |
+| `provider`     | string | -        | Optional provider override          |
+| `callbackUrl`  | string | -        | Redirect URL after payment          |
+| `currency`     | string | -        | Override currency (ISO 4217)        |
+| `channels`     | string[] | -      | Provider payment channels           |
+| `region`       | string | -        | Region selector for provider routing |
 
 ### Response
 
 ```json
 {
   "success": true,
+  "requiresCheckout": true,
   "checkoutUrl": "https://provider.example/checkout",
-  "subscription": {
-    "id": "sub_123",
-    "status": "pending"
-  }
+  "type": "new",
+  "message": "Checkout created for Pro",
+  "subscriptionId": "sub_123"
 }
 ```
 
@@ -69,16 +76,20 @@ Check customer entitlements for a feature.
 {
   "customer": "user_123",
   "feature": "api_calls",
-  "value": 1
+  "value": 1,
+  "entity": "org_acme",
+  "sendEvent": true
 }
 ```
 
-| Field          | Type   | Required | Description                  |
-| -------------- | ------ | -------- | ---------------------------- |
-| `customer`     | string | ✅       | User ID or email             |
-| `feature`      | string | ✅       | Feature key                  |
-| `value`        | number | -        | Amount to check (default: 1) |
-| `customerData` | object | -        | Auto-create customer payload |
+| Field          | Type   | Required | Description                         |
+| -------------- | ------ | -------- | ----------------------------------- |
+| `customer`     | string | ✅       | Your internal user ID               |
+| `feature`      | string | ✅       | Feature key                          |
+| `value`        | number | -        | Amount to check (default: 1)         |
+| `entity`       | string | -        | Scope usage to an entity (seat/org)  |
+| `sendEvent`    | boolean | -       | Atomically track if allowed          |
+| `customerData` | object | -        | Auto-create customer payload         |
 
 ### Response
 
@@ -86,9 +97,12 @@ Check customer entitlements for a feature.
 {
   "allowed": true,
   "code": "access_granted",
-  "remaining": 9500,
+  "usage": 500,
   "limit": 10000,
-  "resetAt": "2024-06-01T00:00:00Z"
+  "balance": 9500,
+  "resetsAt": "2024-06-01T00:00:00Z",
+  "resetInterval": "monthly",
+  "details": { "message": "Access granted — used 500 of 10000." }
 }
 ```
 
@@ -105,17 +119,19 @@ Record usage for metered billing.
   "customer": "user_123",
   "feature": "api_calls",
   "value": 1,
+  "entity": "seat_456",
   "metadata": {}
 }
 ```
 
-| Field          | Type   | Required | Description               |
-| -------------- | ------ | -------- | ------------------------- |
-| `customer`     | string | ✅       | User ID or email          |
-| `feature`      | string | ✅       | Feature key               |
-| `value`        | number | -        | Usage amount (default: 1) |
-| `metadata`     | object | -        | Event metadata            |
-| `customerData` | object | -        | Auto-create customer payload |
+| Field          | Type   | Required | Description                         |
+| -------------- | ------ | -------- | ----------------------------------- |
+| `customer`     | string | ✅       | Your internal user ID               |
+| `feature`      | string | ✅       | Feature key                          |
+| `value`        | number | -        | Usage amount (default: 1)            |
+| `entity`       | string | -        | Scope usage to an entity (seat/org)  |
+| `metadata`     | object | -        | Event metadata                        |
+| `customerData` | object | -        | Auto-create customer payload          |
 
 ### Response
 
@@ -124,8 +140,12 @@ Record usage for metered billing.
   "success": true,
   "allowed": true,
   "code": "tracked",
+  "usage": 501,
+  "limit": 10000,
   "balance": 9499,
-  "resetsAt": "2024-06-01T00:00:00Z"
+  "resetsAt": "2024-06-01T00:00:00Z",
+  "resetInterval": "monthly",
+  "details": { "message": "Usage tracked successfully (9499 remaining)." }
 }
 ```
 

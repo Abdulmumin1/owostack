@@ -101,7 +101,7 @@ Not backed by Y Combinator</div>
       </div>
       <div class="flex flex-wrap items-center gap-5">
         <a href="/signup" class="btn btn-primary py-2.5 px-6 text-xs">Get Started</a>
-        <a href="/docs" class="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors group">
+        <a href="{import.meta.env.VITE_DOCS_URL}" class="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors group">
           Read the docs
           <ArrowRight size={14} class="group-hover:translate-x-0.5 transition-transform" />
         </a>

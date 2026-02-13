@@ -20,11 +20,11 @@ Owostack is a provider-agnostic billing layer for subscriptions, usage, and enti
 ```ts
 import { Owostack } from "@owostack/core";
 
-const owo = new Owostack({ apiKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_SECRET_KEY });
 
 await owo.attach({
   customer: "user_123",
-  plan: "pro-monthly",
+  product: "pro-monthly",
 });
 
 const access = await owo.check({
@@ -35,7 +35,7 @@ const access = await owo.check({
 await owo.track({
   customer: "user_123",
   feature: "api_calls",
-  amount: 1,
+  value: 1,
 });
 ```
 

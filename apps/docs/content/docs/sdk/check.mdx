@@ -12,8 +12,16 @@ Check if a customer has access to a specific feature or entitlement. Use this fo
 
 ```ts
 await owo.check({
-  customer: string,    // Customer identifier
+  customer: string,    // Your internal user ID
   feature: string,     // Feature key to check
+  value?: number,      // Units to check against limit (default: 1)
+  entity?: string,     // Optional entity scope (seat, workspace, org)
+  sendEvent?: boolean, // Atomically track if allowed
+  customerData?: {     // Optional: auto-create customer
+    email: string,
+    name?: string,
+    metadata?: Record<string, unknown>,
+  },
 }): Promise<CheckResult>
 ```
 
@@ -21,19 +29,25 @@ await owo.check({
 
 | Parameter  | Type     | Required | Description                         |
 | ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | ✅       | User ID or email                    |
+| `customer` | `string` | ✅       | Your internal user ID               |
 | `feature`  | `string` | ✅       | Feature key to check access for     |
+| `value`    | `number` | -        | Units to check against limit        |
+| `entity`   | `string` | -        | Scope usage to an entity (seat/org) |
+| `sendEvent`| `boolean`| -        | Atomically track if allowed         |
+| `customerData` | `object` | -    | Auto-create customer if missing     |
 
 ## Response
 
 ```ts
 interface CheckResult {
-  allowed: boolean; // Whether the customer has access
-  code?: string; // Reason code (e.g., access_granted, limit_exceeded)
-  remaining?: number; // For metered features, remaining quota
-  limit?: number; // Total quota for the period
-  resetAt?: string; // When the quota resets (ISO date)
-  plan?: string; // Current plan slug
+  allowed: boolean;
+  code: string; // access_granted, limit_exceeded, overage_allowed, etc.
+  usage: number | null;
+  limit: number | null;
+  balance: number | null;
+  resetsAt: string | null;
+  resetInterval: string | null;
+  details: { message: string; planName?: string; trial?: boolean; trialEndsAt?: string | null };
 }
 ```
 
@@ -71,7 +85,7 @@ const result = await owo.check({
 });
 
 if (!result.allowed) {
-  console.log("Quota exceeded", result.remaining, result.resetAt);
+  console.log("Quota exceeded", result.balance, result.resetsAt);
 }
 
 // Process the request...

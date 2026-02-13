@@ -5,6 +5,8 @@ import { upsertPaymentMethod } from "../../payment-methods";
 import type { WebhookContext } from "../types";
 import { handleSubscriptionCreated } from "./subscription-created";
 
+const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
+
 export function handleSubscriptionStatus(status: string) {
   return async (ctx: WebhookContext): Promise<void> => {
     const { db, organizationId, event, cache } = ctx;
@@ -59,14 +61,17 @@ export function handleSubscriptionStatus(status: string) {
     // Guard: if the subscription is currently trialing and the provider reports
     // "active" (e.g. Dodo sends subscription.active even during trial period),
     // preserve the "trialing" status as long as the trial hasn't ended yet.
-    if (
-      status === "active" &&
-      sub.status === "trialing" &&
-      sub.currentPeriodEnd &&
-      sub.currentPeriodEnd > now
-    ) {
-      console.log(`[WEBHOOK] Preserving trialing status for sub=${sub.id} (trial ends ${new Date(sub.currentPeriodEnd).toISOString()})`);
-      return;
+    if (status === "active" && sub.status === "trialing") {
+      const trialEnd = sub.currentPeriodEnd;
+      const trialEndValid =
+        typeof trialEnd === "number" &&
+        trialEnd > 0 &&
+        trialEnd <= now + MAX_TRIAL_DURATION_MS;
+      if (trialEndValid && trialEnd > now) {
+        console.log(`[WEBHOOK] Preserving trialing status for sub=${sub.id} (trial ends ${new Date(trialEnd).toISOString()})`);
+        return;
+      }
+      console.warn(`[WEBHOOK] Trial end invalid/out of range for sub=${sub.id}; allowing status update to ${status}`);
     }
 
     const updates: Record<string, unknown> = {
