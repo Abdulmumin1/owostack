@@ -10,6 +10,7 @@ export interface ProviderField {
   label: string;
   placeholder: string;
   secret: boolean;
+  optional?: boolean;
 }
 
 export interface ProviderConfig {
@@ -30,10 +31,29 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     color: "teal",
     docsUrl: "https://dashboard.paystack.com/#/settings/developers",
     fields: [
-      { key: "secretKey", label: "Secret Key", placeholder: "sk_test_xxxxxxxxxxxxxxx", secret: true },
-      { key: "publicKey", label: "Public Key", placeholder: "pk_test_xxxxxxxxxxxxxxx", secret: false },
+      {
+        key: "secretKey",
+        label: "Secret Key",
+        placeholder: "sk_test_xxxxxxxxxxxxxxx",
+        secret: true,
+      },
+      {
+        key: "publicKey",
+        label: "Public Key",
+        placeholder: "pk_test_xxxxxxxxxxxxxxx",
+        secret: false,
+      },
     ],
-    supportedCurrencies: ["NGN", "GHS", "ZAR", "USD", "KES", "EGP", "RWF", "XOF"],
+    supportedCurrencies: [
+      "NGN",
+      "GHS",
+      "ZAR",
+      "USD",
+      "KES",
+      "EGP",
+      "RWF",
+      "XOF",
+    ],
   },
   {
     id: "stripe",
@@ -42,8 +62,18 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     color: "indigo",
     docsUrl: "https://dashboard.stripe.com/apikeys",
     fields: [
-      { key: "secretKey", label: "Secret Key", placeholder: "sk_test_xxxxxxxxxxxxxxx", secret: true },
-      { key: "publishableKey", label: "Publishable Key", placeholder: "pk_test_xxxxxxxxxxxxxxx", secret: false },
+      {
+        key: "secretKey",
+        label: "Secret Key",
+        placeholder: "sk_test_xxxxxxxxxxxxxxx",
+        secret: true,
+      },
+      {
+        key: "publishableKey",
+        label: "Publishable Key",
+        placeholder: "pk_test_xxxxxxxxxxxxxxx",
+        secret: false,
+      },
     ],
   },
   {
@@ -53,8 +83,18 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     color: "violet",
     docsUrl: "https://docs.dodopayments.com",
     fields: [
-      { key: "secretKey", label: "API Key", placeholder: "your_dodo_api_key", secret: true },
-      { key: "webhookSecret", label: "Webhook Secret", placeholder: "whsec_xxxxxxxxxxxxxxx", secret: true },
+      {
+        key: "secretKey",
+        label: "API Key",
+        placeholder: "your_dodo_api_key",
+        secret: true,
+      },
+      {
+        key: "webhookSecret",
+        label: "Webhook Secret",
+        placeholder: "whsec_xxxxxxxxxxxxxxx",
+        secret: true,
+      },
     ],
     supportedCurrencies: ["USD", "EUR", "GBP", "INR"],
   },
@@ -64,6 +104,8 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
 export const PROVIDER_MAP = new Map(SUPPORTED_PROVIDERS.map((p) => [p.id, p]));
 
 /** Get a provider config by ID, returns undefined for unknown providers. */
-export function getProviderConfig(providerId: string): ProviderConfig | undefined {
+export function getProviderConfig(
+  providerId: string,
+): ProviderConfig | undefined {
   return PROVIDER_MAP.get(providerId);
 }

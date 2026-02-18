@@ -22,10 +22,19 @@
 
   async function loadFeatures() {
     try {
-      const res = await apiFetch(`/api/dashboard/features?organizationId=${organizationId}`);
-      // Only metered features can be part of a credit system
-      if (res.data?.success) {
-        features = res.data.data.filter((f: any) => f.type === 'metered');
+      const [featRes, credRes] = await Promise.all([
+        apiFetch(`/api/dashboard/features?organizationId=${organizationId}`),
+        apiFetch(`/api/dashboard/credits?organizationId=${organizationId}`),
+      ]);
+
+      if (featRes.data?.success) {
+        const creditSystems = credRes.data?.success ? credRes.data.data : [];
+        const csIds = new Set(creditSystems.map((cs: any) => cs.id));
+
+        // Only metered features that are NOT credit systems can be part of a credit system
+        features = featRes.data.data.filter((f: any) =>
+          f.type === "metered" && !csIds.has(f.id),
+        );
       }
     } catch (e) {
       console.error("Failed to load features", e);
@@ -114,9 +123,9 @@
 
       <div class="space-y-4">
         <div>
-          <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Name</label>
+          <label class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2">Name</label>
           <div class="input-icon-wrapper">
-            <Coins size={14} class="input-icon-left" />
+            <Coins size={14} class="input-icon-left text-text-dim" />
             <input
               type="text"
               bind:value={name}
@@ -127,7 +136,7 @@
         </div>
 
         <div>
-          <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Description</label>
+          <label class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2">Description</label>
           <div class="input-icon-wrapper">
             <textarea
               bind:value={description}
@@ -139,9 +148,9 @@
 
         <div class="pt-4 border-t border-border/50">
           <div class="flex items-center justify-between mb-4">
-            <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Feature Mappings</label>
+            <label class="block text-[10px] font-bold text-text-dim uppercase tracking-widest">Feature Mappings</label>
             <button 
-              class="text-[10px] font-bold text-accent uppercase tracking-widest hover:text-white transition-colors flex items-center gap-1"
+              class="text-[10px] font-bold text-accent uppercase tracking-widest hover:text-text-primary transition-colors flex items-center gap-1"
               onclick={addFeature}
             >
               <Plus size={12} /> Add Feature
@@ -150,10 +159,10 @@
 
           <div class="space-y-3">
             {#each selectedFeatures as item, index}
-              <div class="flex items-center gap-3 bg-[#141414] border border-border/50 p-3 rounded group" transition:fade>
+              <div class="flex items-center gap-3 bg-black/5 dark:bg-white/5 border border-border p-3 rounded group" transition:fade>
                 <select
                   bind:value={item.featureId}
-                  class="flex-1 bg-transparent text-xs text-white outline-none border-none focus:ring-0"
+                  class="flex-1 bg-transparent text-xs text-text-primary outline-none border-none focus:ring-0"
                 >
                   {#each features as f}
                     <option value={f.id} disabled={selectedFeatures.some((sf, i) => sf.featureId === f.id && i !== index)}>
@@ -162,19 +171,19 @@
                   {/each}
                 </select>
                 
-                <div class="flex items-center gap-2 border-l border-border/50 pl-3">
+                <div class="flex items-center gap-2 border-l border-border pl-3">
                   <input
                     type="number"
                     bind:value={item.cost}
                     min="0.01"
                     step="0.01"
-                    class="w-16 bg-transparent text-xs text-white text-right outline-none border-none focus:ring-0"
+                    class="w-16 bg-transparent text-xs text-text-primary text-right outline-none border-none focus:ring-0"
                   />
-                  <span class="text-[9px] font-bold text-zinc-600 uppercase">Credits</span>
+                  <span class="text-[9px] font-bold text-text-dim uppercase">Credits</span>
                 </div>
 
                 <button 
-                  class="text-zinc-600 hover:text-red-400 transition-colors p-1"
+                  class="text-text-dim hover:text-red-500 transition-colors p-1"
                   onclick={() => removeFeature(index)}
                 >
                   <Trash2 size={14} />
@@ -183,8 +192,8 @@
             {/each}
 
             {#if selectedFeatures.length === 0}
-              <div class="text-center py-8 border border-dashed border-border/50 rounded">
-                <p class="text-[11px] text-zinc-600 italic">No features added yet</p>
+              <div class="text-center py-8 border border-dashed border-border rounded">
+                <p class="text-[11px] text-text-dim italic">No features added yet</p>
               </div>
             {/if}
           </div>
@@ -194,11 +203,11 @@
 
     <!-- Footer -->
     <div class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card">
-      <button class="px-4 py-2 text-[11px] font-bold text-zinc-500 hover:text-white uppercase tracking-widest transition-colors" onclick={close}>
+      <button class="px-4 py-2 text-[11px] font-bold text-text-dim hover:text-text-primary uppercase tracking-widest transition-colors" onclick={close}>
         Cancel
       </button>
       <button
-        class="bg-accent hover:bg-accent-hover text-black text-[11px] font-bold px-6 py-2 rounded uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-2"
+        class="bg-accent hover:bg-accent-hover text-accent-contrast text-[11px] font-bold px-6 py-2 rounded uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-2"
         disabled={isCreating}
         onclick={handleSubmit}
       >

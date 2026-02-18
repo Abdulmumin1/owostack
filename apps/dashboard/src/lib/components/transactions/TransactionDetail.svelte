@@ -54,20 +54,20 @@
 
   function typeColor(type: string) {
     switch (type) {
-      case "subscription": return "bg-blue-500/10 text-blue-400 border-blue-500/20";
-      case "one_time": return "bg-purple-500/10 text-purple-400 border-purple-500/20";
-      case "trial": return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20";
-      case "free": return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-      default: return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+      case "subscription": return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20";
+      case "one_time": return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20";
+      case "trial": return "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20";
+      case "free": return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20";
+      default: return "bg-bg-secondary text-text-dim border-border";
     }
   }
 
   function statusColor(status: string) {
     switch (status) {
-      case "active": return "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
-      case "canceled": return "bg-red-400/10 text-red-400 border-red-400/20";
-      case "trialing": return "bg-blue-400/10 text-blue-400 border-blue-400/20";
-      default: return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+      case "active": return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 border-emerald-500/20";
+      case "canceled": return "bg-bg-secondary text-text-dim border-border";
+      case "trialing": return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20";
+      default: return "bg-bg-secondary text-text-dim border-border";
     }
   }
 
@@ -98,10 +98,10 @@
   }
 
   function eventColor(type: string) {
-    if (type.includes("cancel")) return "bg-red-500/10 text-red-400";
-    if (type.includes("charge.success") || type.includes("payment")) return "bg-green-500/10 text-green-400";
-    if (type.includes("charge.failed")) return "bg-red-500/10 text-red-400";
-    return "bg-blue-500/10 text-blue-400";
+    if (type.includes("cancel")) return "bg-red-500/10 text-red-600 dark:text-red-400";
+    if (type.includes("charge.success") || type.includes("payment")) return "bg-green-500/10 text-green-600 dark:text-green-400";
+    if (type.includes("charge.failed")) return "bg-red-500/10 text-red-600 dark:text-red-400";
+    return "bg-blue-500/10 text-blue-600 dark:text-blue-400";
   }
 
   function eventLabel(type: string) {
@@ -159,14 +159,14 @@
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
-          <h3 class="text-sm font-bold text-white truncate">{data.plan.name}</h3>
+          <h3 class="text-sm font-bold text-text-primary truncate">{data.plan.name}</h3>
           <ProviderBadge providerId={data.transaction.providerId} size="xs" />
           <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border {statusColor(data.transaction.status)}">
             {data.transaction.status}
           </span>
         </div>
         <div class="flex flex-col gap-1">
-          <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+          <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
             <CreditCard size={10} />
             {#if data.plan.price === 0}
               Free
@@ -179,11 +179,11 @@
               {/if}
             {/if}
           </span>
-          <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+          <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
             <Mail size={10} />
             {data.customer.email}
           </span>
-          <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+          <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
             <Clock size={10} />
             {formatDateTime(data.transaction.createdAt)}
           </span>
@@ -192,16 +192,16 @@
     </div>
 
     <!-- Type Badge -->
-    <div class="bg-white/5 rounded p-3 flex items-center gap-3">
+    <div class="bg-black/5 dark:bg-white/5 rounded p-3 flex items-center gap-3">
       <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border {typeColor(data.transaction.type)}">
         {data.transaction.typeLabel}
       </span>
       {#if data.transaction.type === 'subscription'}
-        <span class="text-[10px] text-zinc-500">
+        <span class="text-[10px] text-text-dim">
           {formatDate(data.transaction.currentPeriodStart)} – {formatDate(data.transaction.currentPeriodEnd)}
         </span>
       {:else if data.transaction.type === 'trial'}
-        <span class="text-[10px] text-zinc-500">
+        <span class="text-[10px] text-text-dim">
           Trial until {formatDate(data.transaction.currentPeriodEnd)}
         </span>
       {/if}
@@ -209,41 +209,41 @@
 
     <!-- Quick Stats -->
     <div class="grid grid-cols-2 gap-3">
-      <div class="bg-white/5 rounded p-3 text-center">
-        <div class="text-lg font-bold text-white">{data.entitlements?.length || 0}</div>
-        <div class="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Active Entitlements</div>
+      <div class="bg-black/5 dark:bg-white/5 rounded p-3 text-center">
+        <div class="text-lg font-bold text-text-primary">{data.entitlements?.length || 0}</div>
+        <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Active Entitlements</div>
       </div>
-      <div class="bg-white/5 rounded p-3 text-center">
-        <div class="text-lg font-bold text-white">{data.planFeatures?.length || 0}</div>
-        <div class="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Plan Features</div>
+      <div class="bg-black/5 dark:bg-white/5 rounded p-3 text-center">
+        <div class="text-lg font-bold text-text-primary">{data.planFeatures?.length || 0}</div>
+        <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Plan Features</div>
       </div>
     </div>
 
     <!-- Features Granted -->
     {#if data.planFeatures?.length > 0}
       <div>
-        <h4 class="text-[10px] font-bold text-white uppercase tracking-widest mb-3">Features in this Plan</h4>
+        <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-3">Features in this Plan</h4>
         <div class="space-y-2">
           {#each data.planFeatures as pf}
             {@const isGranted = data.entitlements?.some((e: any) => e.featureId === pf.featureId)}
-            <div class="bg-white/5 rounded p-3 flex items-center justify-between {isGranted ? '' : 'opacity-50'}">
+            <div class="bg-black/5 dark:bg-white/5 rounded p-3 flex items-center justify-between {isGranted ? '' : 'opacity-50'}">
               <div class="flex items-center gap-2">
                 {#if isGranted}
-                  <CheckCircle size={12} class="text-emerald-500" />
+                  <CheckCircle size={12} class="text-emerald-600 dark:text-emerald-500" />
                 {:else}
-                  <XCircle size={12} class="text-zinc-600" />
+                  <XCircle size={12} class="text-text-dim" />
                 {/if}
-                <span class="text-xs font-medium text-white">{pf.featureName}</span>
+                <span class="text-xs font-medium text-text-primary">{pf.featureName}</span>
                 {#if pf.unit}
-                  <span class="text-[9px] text-zinc-600">({pf.unit})</span>
+                  <span class="text-[9px] text-text-dim">({pf.unit})</span>
                 {/if}
               </div>
               <div class="text-right">
                 {#if pf.limitValue !== null}
-                  <span class="text-xs font-bold text-white">{pf.limitValue}</span>
-                  <span class="text-[9px] text-zinc-600 ml-1">/ {pf.resetInterval}</span>
+                  <span class="text-xs font-bold text-text-primary">{pf.limitValue}</span>
+                  <span class="text-[9px] text-text-dim ml-1">/ {pf.resetInterval}</span>
                 {:else}
-                  <span class="text-[9px] font-bold text-emerald-400 uppercase">Unlimited</span>
+                  <span class="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Unlimited</span>
                 {/if}
               </div>
             </div>
@@ -255,20 +255,20 @@
     <!-- Active Entitlements -->
     {#if data.entitlements?.length > 0}
       <div>
-        <h4 class="text-[10px] font-bold text-white uppercase tracking-widest mb-3">Active Entitlements</h4>
+        <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-3">Active Entitlements</h4>
         <div class="space-y-2">
           {#each data.entitlements as ent}
-            <div class="bg-white/5 rounded p-3 flex items-center justify-between">
+            <div class="bg-black/5 dark:bg-white/5 rounded p-3 flex items-center justify-between">
               <div class="flex items-center gap-2">
-                <Shield size={12} class="text-zinc-500" />
-                <span class="text-xs font-medium text-white">{ent.featureName}</span>
+                <Shield size={12} class="text-text-dim" />
+                <span class="text-xs font-medium text-text-primary">{ent.featureName}</span>
               </div>
               <div class="text-right">
                 {#if ent.limitValue !== null}
-                  <span class="text-xs font-bold text-white">{ent.limitValue}</span>
-                  <span class="text-[9px] text-zinc-600 ml-1">/ {ent.resetInterval}</span>
+                  <span class="text-xs font-bold text-text-primary">{ent.limitValue}</span>
+                  <span class="text-[9px] text-text-dim ml-1">/ {ent.resetInterval}</span>
                 {:else}
-                  <span class="text-[9px] font-bold text-emerald-400 uppercase">Unlimited</span>
+                  <span class="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Unlimited</span>
                 {/if}
               </div>
             </div>
@@ -280,8 +280,8 @@
     <!-- Activity -->
     {#if timeline.length > 0}
       <div>
-        <h4 class="text-[10px] font-bold text-white uppercase tracking-widest mb-2">Activity</h4>
-        <div class="bg-white/5 rounded overflow-hidden">
+        <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-2">Activity</h4>
+        <div class="bg-black/5 dark:bg-white/5 rounded overflow-hidden">
           <Timeline items={timeline} />
         </div>
       </div>
@@ -289,7 +289,7 @@
   </div>
 {:else}
   <div class="flex flex-col items-center justify-center py-16 text-center px-5">
-    <Package size={24} class="text-zinc-600 mb-3" />
-    <p class="text-xs text-zinc-500">Transaction not found</p>
+    <Package size={24} class="text-text-dim/20 mb-3" />
+    <p class="text-xs text-text-dim">Transaction not found</p>
   </div>
 {/if}

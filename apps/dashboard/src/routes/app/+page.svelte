@@ -167,8 +167,8 @@
   <!-- Header -->
   <div class="mb-10 flex items-center justify-between">
     <div>
-      <h1 class="text-xl font-bold text-white mb-2">Organizations</h1>
-      <p class="text-zinc-500 text-xs uppercase tracking-widest font-semibold">
+      <h1 class="text-xl font-bold text-text-primary mb-2">Organizations</h1>
+      <p class="text-text-dim text-xs uppercase tracking-widest font-semibold">
         Manage your teams and projects
       </p>
     </div>
@@ -207,29 +207,29 @@
       {#each orgs as org (org.id)}
         <a
           href="/app/{org.id}"
-          class="group block bg-bg-card border border-border hover:border-zinc-500 transition-all p-5 shadow-sm"
+          class="group block bg-bg-card border border-border hover:border-text-dim transition-all p-5 shadow-sm"
         >
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-4">
               <div
-                class="w-10 h-10 flex items-center justify-center bg-black/50 text-zinc-400"
+                class="w-10 h-10 flex items-center justify-center bg-black/5 dark:bg-black/50 text-text-dim"
               >
                 <Building2 size={18} />
               </div>
               <div>
-                <h3 class="font-bold text-white text-sm mb-0.5">
+                <h3 class="font-bold text-text-primary text-sm mb-0.5">
                   {org.name}
                 </h3>
-                <p class="text-zinc-500 text-xs font-mono">{org.slug}</p>
+                <p class="text-text-dim text-xs font-mono">{org.slug}</p>
               </div>
             </div>
 
             <div class="flex items-center gap-4">
-              <span class="text-xs text-zinc-600">
+              <span class="text-xs text-text-dim">
                 Created {new Date(org.createdAt).toLocaleDateString()}
               </span>
               <div
-                class="w-8 h-8 flex items-center justify-center border border-border group-hover:border-zinc-500 group-hover:text-white text-zinc-500 transition-colors"
+                class="w-8 h-8 flex items-center justify-center border border-border group-hover:border-text-dim group-hover:text-text-primary text-text-dim transition-colors"
               >
                 <ArrowRight size={14} />
               </div>
@@ -243,11 +243,11 @@
     <div
       class="border border-border border-dashed p-12 flex flex-col items-center justify-center text-center"
     >
-      <div class="w-12 h-12 bg-white/5 flex items-center justify-center mb-4">
-        <Building2 size={24} class="text-zinc-500" />
+      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
+        <Building2 size={24} class="text-text-dim" />
       </div>
-      <h3 class="text-white font-bold mb-2">No organizations yet</h3>
-      <p class="text-zinc-500 text-sm mb-6 max-w-xs">
+      <h3 class="text-text-primary font-bold mb-2">No organizations yet</h3>
+      <p class="text-text-dim text-sm mb-6 max-w-xs">
         Create your first organization and connect a payment provider to get
         started.
       </p>
@@ -270,14 +270,14 @@
           <div
             class="w-6 h-6 flex items-center justify-center text-[10px] font-bold {currentStep >= 1
               ? 'bg-accent text-black'
-              : 'bg-bg-secondary text-zinc-500'}"
+              : 'bg-bg-secondary text-text-dim'}"
           >
             {currentStep > 1 ? "✓" : "1"}
           </div>
           <span
             class="text-[10px] font-bold uppercase tracking-widest {currentStep >= 1
-              ? 'text-white'
-              : 'text-zinc-500'}">Details</span
+              ? 'text-text-primary'
+              : 'text-text-dim'}">Details</span
           >
         </div>
         <div class="flex-1 h-px bg-border"></div>
@@ -285,14 +285,14 @@
           <div
             class="w-6 h-6 flex items-center justify-center text-[10px] font-bold {currentStep >= 2
               ? 'bg-accent text-black'
-              : 'bg-bg-secondary text-zinc-500'}"
+              : 'bg-bg-secondary text-text-dim'}"
           >
             2
           </div>
           <span
             class="text-[10px] font-bold uppercase tracking-widest {currentStep >= 2
-              ? 'text-white'
-              : 'text-zinc-500'}">Provider</span
+              ? 'text-text-primary'
+              : 'text-text-dim'}">Provider</span
           >
         </div>
       </div>
@@ -309,7 +309,7 @@
           <div>
             <label
               for="orgName"
-              class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2"
+              class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2"
               >Organization Name</label
             >
             <div class="input-icon-wrapper">
@@ -327,7 +327,7 @@
           <div>
             <label
               for="orgSlug"
-              class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2"
+              class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2"
               >Slug</label
             >
             <div class="input-icon-wrapper">
@@ -347,7 +347,7 @@
         <div class="space-y-5">
           <!-- Provider Selection -->
           <div>
-            <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
+            <label class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3">
               Select Provider
             </label>
             <div class="space-y-2">
@@ -361,13 +361,13 @@
                     providerCredentials = {};
                   }}
                 >
-                  <Cpu size={16} class="text-zinc-500 shrink-0" />
+                  <Cpu size={16} class="text-text-dim shrink-0" />
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2">
-                      <span class="text-xs font-bold text-white">{provider.name}</span>
+                      <span class="text-xs font-bold text-text-primary">{provider.name}</span>
                       <ProviderBadge providerId={provider.id} size="xs" />
                     </div>
-                    <p class="text-[9px] text-zinc-500 mt-0.5">{provider.description}</p>
+                    <p class="text-[9px] text-text-dim mt-0.5">{provider.description}</p>
                   </div>
                 </button>
               {/each}
@@ -380,11 +380,11 @@
               <div>
                 <label
                   for={field.key}
-                  class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2"
+                  class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2"
                   >{field.label} {#if field.optional}<span class="text-zinc-600 font-normal">(Optional)</span>{:else}<span class="text-red-500">*</span>{/if}</label
                 >
                 <div class="input-icon-wrapper">
-                  <Lock size={14} class="input-icon-left" />
+                  <Lock size={14} class="input-icon-left text-zinc-600" />
                   <input
                     type={field.secret && !showSecretFields[field.key] ? "password" : "text"}
                     id={field.key}
@@ -395,7 +395,7 @@
                   {#if field.secret}
                     <button
                       type="button"
-                      class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors"
+                      class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary dark:hover:text-text-primary transition-colors"
                       onclick={() => (showSecretFields[field.key] = !showSecretFields[field.key])}
                     >
                       {#if showSecretFields[field.key]}
@@ -428,7 +428,7 @@
     <div class="p-5 border-t border-border flex items-center justify-between sticky bottom-0 bg-bg-card">
       {#if currentStep === 1}
         <button
-          class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
+          class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-text-primary dark:hover:text-text-primary transition-colors uppercase tracking-widest"
           onclick={closeModal}
         >
           Cancel
@@ -444,7 +444,7 @@
       {:else}
         <div class="flex items-center gap-2">
           <button
-            class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
+            class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-text-primary dark:hover:text-text-primary transition-colors uppercase tracking-widest"
             onclick={prevStep}
           >
             Back

@@ -3,32 +3,33 @@
 /* =============================================================================
    Owostack Design System
    Style: Primitives, Flat, Sharp, Two-Toned, Shadowed
+   Support: Light & Dark Modes
 ============================================================================= */
 
 @theme {
-  /* 
-     Color Palette: Two-Toned High Contrast
-     Background: Jet Black (#050505) & Dark Grey (#121212)
-     Accent: Electric Violet (#8b5cf6) - Flat, distinct
-  */
+  /* ---------------------------------------------------------------------------
+     Base Values (Light Mode Defaults)
+  --------------------------------------------------------------------------- */
+  --color-bg-primary: #f2f2f0;
+  --color-bg-secondary: #fafaf9;
+  --color-bg-card: #ffffff;
+  --color-bg-card-hover: #f5f5f4;
 
-  --color-bg-primary: #161715;
-  --color-bg-secondary: #10120f;
-  --color-bg-card: #10120f;
-  --color-bg-card-hover: #1a1a1a;
+  --color-border: #d6d6d4;
+  --color-border-light: #e5e5e3;
 
-  --color-border: #262626;
-  --color-border-light: #404040;
+  /* Owostack Lime Green */
+  --color-accent: #589305;
+  --color-accent-hover: #76b715;
+  --color-accent-contrast: #ffffff;
 
-  /* Accent - Lime Green */
-  --color-accent: #65a30d; /* Lime-600 */
-  --color-accent-hover: #84cc16; /* Lime-500 */
-  --color-accent-contrast: #161715;
+  --color-text-primary: #161715;
+  --color-text-secondary: #4a4a48;
+  --color-text-dim: #717170;
 
-  /* Text */
-  --color-text-primary: #ffffff;
-  --color-text-secondary: #a3a3a3; /* Neutral-400 */
-  --color-text-dim: #525252; /* Neutral-600 */
+  /* Code blocks should stay dark */
+  --color-bg-code: #0d1117;
+  --color-text-code: #e6edf3;
 
   /* Overrides for "No Border Radius" */
   --radius-xs: 0px;
@@ -47,6 +48,49 @@
 
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
+}
+
+/* ---------------------------------------------------------------------------
+   Dark Mode Overrides
+--------------------------------------------------------------------------- */
+:root.dark {
+  --color-bg-primary: #161715;
+  --color-bg-secondary: #10120f;
+  --color-bg-card: #10120f;
+  --color-bg-card-hover: #1a1a1a;
+
+  --color-border: #262626;
+  --color-border-light: #404040;
+
+  /* Original Owostack Lime */
+  --color-accent: #65a30d;
+  --color-accent-hover: #84cc16;
+  --color-accent-contrast: #161715;
+
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #a3a3a3;
+  --color-text-dim: #525252;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --color-bg-primary: #161715;
+    --color-bg-secondary: #10120f;
+    --color-bg-card: #10120f;
+    --color-bg-card-hover: #1a1a1a;
+
+    --color-border: #262626;
+    --color-border-light: #404040;
+
+    /* Original Owostack Lime */
+    --color-accent: #65a30d;
+    --color-accent-hover: #84cc16;
+    --color-accent-contrast: #161715;
+
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #a3a3a3;
+    --color-text-dim: #525252;
+  }
 }
 
 /* =============================================================================
@@ -82,17 +126,17 @@ body {
 
 .btn-secondary {
   @apply bg-bg-card border-border text-text-secondary 
-         hover:bg-bg-card-hover hover:text-white hover:border-border-light;
+         hover:bg-bg-card-hover dark:hover:text-white hover:text-text-primary hover:border-border-light;
 }
 
 .btn-ghost {
-  @apply bg-transparent text-text-secondary hover:text-white hover:bg-white/5 shadow-none;
+  @apply bg-transparent text-text-secondary hover:text-text-primary dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 shadow-none;
 }
 
 /* Inputs - Boxy, Dark, High Contrast Border */
 .input {
   @apply w-full bg-bg-secondary border border-border px-4 py-2.5
-         text-white text-sm placeholder:text-text-dim
+         text-text-primary text-sm placeholder:text-text-dim
          focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent
          transition-all duration-150 shadow-sm;
 }

@@ -2,7 +2,7 @@
   import { Result } from "better-result";
   import { apiFetch } from "$lib/auth-client";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
-  import { Loader2, Check } from "lucide-svelte";
+  import { Loader2, Check, Coins, Plus, CheckCircle } from "lucide-svelte";
   import { defaultCurrency } from "$lib/stores/currency";
   import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
   import { SUPPORTED_PROVIDERS } from "$lib/providers";
@@ -88,7 +88,6 @@
     price = 500;
     currency = $defaultCurrency;
     creditSystemId = "";
-    selectedProviderId = connectedProviders.length > 0 ? connectedProviders[0].providerId : "";
     error = "";
     onclose?.();
   }
@@ -165,7 +164,7 @@
     <div class="p-5 space-y-6">
       {#if error}
         <div class="bg-red-500/10 p-4 border border-red-500/20">
-          <p class="text-xs font-medium text-red-500">{error}</p>
+          <p class="text-xs font-medium text-red-600 dark:text-red-500">{error}</p>
         </div>
       {/if}
 
@@ -174,7 +173,7 @@
         {#if uniqueProviderIds.length > 1}
           <div>
             <div class="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">
-              Payment Provider <span class="normal-case text-red-400">*</span>
+              Payment Provider <span class="normal-case text-red-500">*</span>
             </div>
             <div class="grid grid-cols-{Math.min(uniqueProviderIds.length, 3)} gap-2">
               {#each uniqueProviderIds as pid}
@@ -184,11 +183,11 @@
                     type="button"
                     class="relative border rounded-lg p-3 text-left transition-all {selectedProviderId === pid
                       ? 'border-accent bg-accent/5'
-                      : 'border-border bg-bg-primary hover:border-zinc-600'}"
+                      : 'border-border bg-bg-primary hover:border-text-dim'}"
                     onclick={() => (selectedProviderId = pid)}
                   >
-                    <div class="text-xs font-bold text-white">{provConfig.name}</div>
-                    <div class="text-[10px] text-zinc-500 mt-0.5 truncate">{provConfig.description}</div>
+                    <div class="text-xs font-bold text-text-primary">{provConfig.name}</div>
+                    <div class="text-[10px] text-text-dim mt-0.5 truncate">{provConfig.description}</div>
                     {#if selectedProviderId === pid}
                       <div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent"></div>
                     {/if}
@@ -197,8 +196,6 @@
               {/each}
             </div>
           </div>
-        {:else if uniqueProviderIds.length === 1}
-          <input type="hidden" value={uniqueProviderIds[0]} />
         {/if}
 
         <!-- Name -->
@@ -305,19 +302,19 @@
             for="pack-scope"
             class="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2"
           >
-            Credit System <span class="normal-case text-red-400">*</span>
+            Credit System <span class="normal-case text-red-500">*</span>
           </label>
           {#if loadingSystems}
             <div class="text-xs text-text-dim py-2">Loading credit systems…</div>
           {:else if creditSystems.length === 0}
             <div class="bg-amber-500/10 border border-amber-500/20 rounded p-3">
-              <p class="text-[11px] text-amber-400">No credit systems found. Create a credit system first before adding credit packs.</p>
+              <p class="text-[11px] text-amber-600 dark:text-amber-400">No credit systems found. Create a credit system first before adding credit packs.</p>
             </div>
           {:else}
             <select
               id="pack-scope"
               bind:value={creditSystemId}
-              class="w-full bg-bg-primary border border-border rounded px-3 py-2.5 text-sm text-white focus:border-accent focus:outline-none appearance-none"
+              class="w-full bg-bg-primary border border-border rounded px-3 py-2.5 text-sm text-text-primary focus:border-accent focus:outline-none appearance-none"
             >
               <option value="" disabled>Select a credit system…</option>
               {#each creditSystems as cs}
@@ -334,11 +331,11 @@
         {#if name && credits > 0}
           <div class="bg-bg-primary border border-border rounded-lg p-4">
             <p class="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2">Preview</p>
-            <p class="text-sm text-white font-medium">{name}</p>
+            <p class="text-sm text-text-primary font-medium">{name}</p>
             <p class="text-xs text-text-dim mt-1">
               {credits} credits for {formatPreview(price, currency)}
               {#if creditSystemId}
-                <span class="text-amber-400">→ {creditSystems.find(cs => cs.id === creditSystemId)?.name}</span>
+                <span class="text-amber-600 dark:text-amber-400">→ {creditSystems.find(cs => cs.id === creditSystemId)?.name}</span>
               {/if}
             </p>
           </div>
@@ -349,13 +346,13 @@
     <!-- Footer -->
     <div class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-secondary">
       <button
-        class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
+        class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
         onclick={close}
       >
         Cancel
       </button>
       <button
-        class="px-6 py-2 bg-accent hover:bg-accent-hover text-black text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
+        class="px-6 py-2 bg-accent hover:bg-accent-hover text-accent-contrast text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
         onclick={handleSubmit}
         disabled={!name || credits < 1 || !creditSystemId || !selectedProviderId || isCreating}
       >

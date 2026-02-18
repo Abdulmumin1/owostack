@@ -1,27 +1,71 @@
 <script lang="ts">
-  import { Search, Filter, RefreshCw, ArrowRight, Webhook, Loader2, Clock, User, Zap } from "lucide-svelte";
+  import { Search, Filter, RefreshCw, ArrowRight, Webhook, Loader2, Clock, User, Zap, ChevronDown } from "lucide-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import { onMount } from "svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
+  import SidePanel from "$lib/components/ui/SidePanel.svelte";
+  import EventDetail from "$lib/components/events/EventDetail.svelte";
+
+  const PAGE_SIZE = 20;
 
   const organizationId = $derived(page.params.projectId);
   let events = $state<any[]>([]);
   let isLoading = $state(true);
+  let isLoadingMore = $state(false);
   let searchQuery = $state("");
+  let selectedEventId = $state<string | null>(null);
+  let currentOffset = $state(0);
+  let hasMore = $state(true);
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  async function loadEvents() {
-    isLoading = true;
+  async function loadEvents(reset = true) {
+    if (!organizationId) return;
+    if (!reset && (isLoading || isLoadingMore || !hasMore)) return;
+
+    if (reset) {
+      isLoading = true;
+      currentOffset = 0;
+      events = [];
+      hasMore = true;
+    } else {
+      isLoadingMore = true;
+    }
+
     try {
-      const res = await apiFetch(`/api/dashboard/events?organizationId=${organizationId}`);
-      if (res.data) {
-        events = res.data.data;
+      const params = new URLSearchParams();
+      params.set("organizationId", organizationId ?? "");
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", String(reset ? 0 : currentOffset));
+
+      const res = await apiFetch(`/api/dashboard/events?${params}`);
+      if (res.data?.success) {
+        const newEvents = res.data.data;
+        if (reset) {
+          events = newEvents;
+        } else {
+          events = [...events, ...newEvents];
+        }
+
+        hasMore = newEvents.length === PAGE_SIZE;
+        currentOffset = events.length;
       }
     } catch (e) {
       console.error("Failed to load events", e);
     } finally {
       isLoading = false;
+      isLoadingMore = false;
     }
+  }
+
+  function onSearchInput() {
+    // Client-side filtering only works on loaded data if API doesn't support search
+    // Since API doesn't support search yet, we rely on client-side filtering of loaded events?
+    // Wait, infinite scroll + client-side filtering is broken.
+    // If we search, we should probably just filter what we have or implement server search.
+    // For now, let's keep client filtering but acknowledge it's limited to loaded items.
+    // Actually, let's remove search for now or keep it simple.
+    // The previous implementation used client-side filtering.
   }
 
   onMount(() => {
@@ -41,6 +85,7 @@
 
   const filteredEvents = $derived(
     events.filter(e => 
+      !searchQuery || 
       e.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (e.customer?.email && e.customer.email.toLowerCase().includes(searchQuery.toLowerCase()))
     )
@@ -49,9 +94,26 @@
   function getEventIcon(type: string) {
     if (type.startsWith("subscription")) return Clock;
     if (type.startsWith("customer")) return User;
-    if (type.startsWith("payment")) return Zap;
+    if (type.startsWith("payment") || type.startsWith("charge")) return Zap;
     return Webhook;
   }
+
+  // Infinite Scroll Observer
+  let loadMoreTrigger = $state<HTMLElement | null>(null);
+  $effect(() => {
+    if (loadMoreTrigger && hasMore && !isLoading && !isLoadingMore) {
+      const observer = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadEvents(false);
+        }
+      }, {
+        root: loadMoreTrigger.closest("main"),
+        rootMargin: "0px 0px 240px 0px",
+      });
+      observer.observe(loadMoreTrigger);
+      return () => observer.disconnect();
+    }
+  });
 </script>
 
 <svelte:head>
@@ -61,15 +123,15 @@
 <div class="max-w-6xl">
   <div class="flex items-center justify-between mb-8">
     <div>
-      <h1 class="text-xl font-bold text-white mb-2">Events</h1>
-      <p class="text-zinc-500 text-xs uppercase tracking-widest font-semibold">
+      <h1 class="text-xl font-bold text-text-primary mb-2">Events</h1>
+      <p class="text-text-dim text-xs uppercase tracking-widest font-semibold">
         Real-time log of all system activity
       </p>
     </div>
 
     <button
       class="btn btn-secondary gap-2 text-xs uppercase tracking-wider font-bold"
-      onclick={loadEvents}
+      onclick={() => loadEvents(true)}
     >
       <RefreshCw size={14} class={isLoading ? "animate-spin" : ""} />
       Refresh
@@ -77,17 +139,15 @@
   </div>
 
   <!-- Toolbar -->
-  <div
-    class="bg-bg-card border border-border p-4 flex items-center gap-4 mb-6 shadow-sm"
-  >
+  <div class="flex items-center justify-between gap-4 mb-6">
     <div class="input-icon-wrapper max-w-sm">
       <Search
         size={14}
-        class="input-icon-left"
+        class="input-icon-left text-text-dim"
       />
       <input
         type="text"
-        placeholder="Filter by event type, customer, or ID..."
+        placeholder="Filter loaded events..."
         bind:value={searchQuery}
         class="input input-has-icon-left"
       />
@@ -95,79 +155,125 @@
   </div>
 
   {#if isLoading && events.length === 0}
-    <div class="space-y-3">
-      {#each Array(5) as _}
-        <div class="bg-bg-card border border-border p-4 flex items-center justify-between">
-          <div class="flex items-center gap-4">
-            <Skeleton class="w-10 h-10 rounded" />
-            <div class="space-y-2">
-              <div class="flex items-center gap-2">
-                <Skeleton class="h-4 w-32" />
-                <Skeleton class="h-3 w-16" />
-              </div>
-              <Skeleton class="h-3 w-48" />
-            </div>
-          </div>
-          <div class="flex items-center gap-6">
-            <div class="space-y-1 text-right">
-              <Skeleton class="h-3 w-20 ml-auto" />
-              <Skeleton class="h-2 w-16 ml-auto" />
-            </div>
-            <Skeleton class="h-4 w-4" />
-          </div>
-        </div>
-      {/each}
+    <div class="bg-bg-card border border-border overflow-hidden shadow-md rounded-lg">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Type</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Date</th>
+            <th class="px-6 py-4"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border/50">
+          {#each Array(5) as _}
+            <tr>
+              <td class="px-6 py-4">
+                <div class="flex items-center gap-3">
+                  <Skeleton class="w-8 h-8 rounded" />
+                  <Skeleton class="h-4 w-32" />
+                </div>
+              </td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-4 w-48" />
+              </td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-4 w-24" />
+              </td>
+              <td class="px-6 py-4"></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     </div>
   {:else if filteredEvents.length === 0}
-    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
-      <div class="w-12 h-12 bg-white/5 flex items-center justify-center mb-4">
-        <Webhook size={24} class="text-zinc-500" />
+    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md rounded-lg">
+      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
+        <Webhook size={24} class="text-text-dim" />
       </div>
-      <h3 class="text-lg font-bold text-white mb-2">
+      <h3 class="text-lg font-bold text-text-primary mb-2">
         {searchQuery ? "No matching events" : "No events found"}
       </h3>
-      <p class="text-zinc-500 max-w-sm text-sm">
+      <p class="text-text-dim max-w-sm text-sm">
         {searchQuery ? "Try a different filter." : "Events will appear here when your integration starts processing requests."}
       </p>
     </div>
   {:else}
-    <!-- Events List -->
-    <div class="space-y-3">
-      {#each filteredEvents as event}
-        <div class="bg-bg-card border border-border p-4 flex items-center justify-between group hover:border-zinc-500 transition-colors cursor-pointer">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 bg-white/5 border border-border flex items-center justify-center rounded">
-              <svelte:component this={getEventIcon(event.type)} size={20} class="text-zinc-400" />
-            </div>
-            <div>
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-white">{event.type}</span>
-                <span class="text-[10px] bg-white/5 text-zinc-500 px-1.5 py-0.5 font-mono">
-                  {event.id.split('-')[0]}
-                </span>
-              </div>
-              <div class="text-[10px] text-zinc-500">
+    <!-- Events Table -->
+    <div class="bg-bg-card border border-border overflow-hidden shadow-md rounded-lg">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Type</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Date</th>
+            <th class="px-6 py-4"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border/50">
+          {#each filteredEvents as event}
+            <tr
+              class="group hover:bg-black/2 dark:hover:bg-white/2 transition-colors cursor-pointer {selectedEventId === event.id ? 'bg-black/5 dark:bg-white/5' : ''}"
+              onclick={() => selectedEventId = event.id}
+            >
+              <td class="px-6 py-4">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 bg-black/5 dark:bg-white/5 border border-border flex items-center justify-center rounded shrink-0">
+                    <svelte:component this={getEventIcon(event.type)} size={14} class="text-text-dim" />
+                  </div>
+                  <div>
+                    <div class="text-sm font-bold text-text-primary">{event.type}</div>
+                    <div class="text-[10px] font-mono text-text-dim">{event.id.split('-')[0]}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="px-6 py-4">
                 {#if event.customer}
-                  for <span class="text-zinc-300 font-bold">{event.customer.email}</span>
+                  <div class="text-sm font-medium text-text-secondary">{event.customer.email}</div>
+                  {#if event.customer.name}
+                    <div class="text-[10px] text-text-dim">{event.customer.name}</div>
+                  {/if}
                 {:else}
-                  System event
+                  <span class="text-xs text-text-dim italic">System event</span>
                 {/if}
-              </div>
-            </div>
-          </div>
-          <div class="flex items-center gap-6">
-            <div class="text-right">
-              <div class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-                {formatRelativeTime(event.createdAt)}
-              </div>
-              <div class="text-[9px] text-zinc-600 font-mono">
-                {new Date(event.createdAt).toLocaleTimeString()}
-              </div>
-            </div>
-            <ArrowRight size={16} class="text-zinc-800 group-hover:text-zinc-500 transition-colors" />
-          </div>
-        </div>
-      {/each}
+              </td>
+              <td class="px-6 py-4">
+                <div class="text-xs font-bold text-text-secondary uppercase tracking-widest">
+                  {formatRelativeTime(event.createdAt)}
+                </div>
+                <div class="text-[9px] text-text-dim font-mono">
+                  {new Date(event.createdAt).toLocaleString()}
+                </div>
+              </td>
+              <td class="px-6 py-4 text-right">
+                <ArrowRight size={14} class="text-text-dim/20 group-hover:text-text-dim transition-colors ml-auto" />
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     </div>
+
+    <!-- Infinite Scroll Trigger -->
+    {#if hasMore && !isLoadingMore}
+      <div bind:this={loadMoreTrigger} class="h-4 w-full"></div>
+    {/if}
+    
+    {#if isLoadingMore}
+      <div class="flex justify-center py-4">
+        <Loader2 size={20} class="animate-spin text-zinc-500" />
+      </div>
+    {/if}
   {/if}
 </div>
+
+<!-- Event Detail Sidebar -->
+<SidePanel
+  open={!!selectedEventId}
+  title={selectedEventId ? "Event Details" : ""}
+  onclose={() => { selectedEventId = null; }}
+>
+  {#if selectedEventId}
+    <EventDetail eventId={selectedEventId} />
+  {/if}
+</SidePanel>

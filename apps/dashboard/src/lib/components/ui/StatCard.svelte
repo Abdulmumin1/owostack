@@ -6,7 +6,7 @@
     value,
     subtitle = undefined,
     icon: Icon = undefined,
-    iconColor = "text-zinc-500 bg-white/5",
+    iconColor = "text-text-dim bg-black/5 dark:bg-white/5",
     children = undefined,
   }: {
     label: string;
@@ -25,11 +25,11 @@
         <Icon size={14} />
       </div>
     {/if}
-    <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{label}</span>
+    <span class="text-[10px] font-bold text-text-dim uppercase tracking-widest">{label}</span>
   </div>
-  <div class="text-2xl font-bold text-white">{value}</div>
+  <div class="text-2xl font-bold text-text-primary">{value}</div>
   {#if subtitle}
-    <p class="text-[10px] text-zinc-600 mt-1.5">{subtitle}</p>
+    <p class="text-[10px] text-text-dim mt-1.5">{subtitle}</p>
   {/if}
   {#if children}
     {@render children()}

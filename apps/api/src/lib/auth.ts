@@ -50,7 +50,8 @@ export function auth(env: Env) {
   const db = createDb(wrapD1ForDates(d1));
 
   // Determine if running in production (non-localhost)
-  const isProduction = env.BETTER_AUTH_URL && !env.BETTER_AUTH_URL.includes("localhost");
+  const isProduction =
+    env.BETTER_AUTH_URL && !env.BETTER_AUTH_URL.includes("localhost");
 
   return betterAuth({
     database: drizzleAdapter(db, {
@@ -71,6 +72,18 @@ export function auth(env: Env) {
 
     emailAndPassword: {
       enabled: true,
+      forgetPassword: {
+        enabled: true,
+      },
+      async sendResetPassword({ user, token }, request) {
+        // In dev, use the origin or localhost dashboard
+        const origin =
+          request?.headers.get("origin") || "http://localhost:5173";
+        const resetURL = `${origin}/reset-password?token=${token}`;
+
+        console.log(`[AUTH] 🔑 Password reset requested for ${user.email}`);
+        console.log(`[AUTH] 🔗 Reset URL: ${resetURL}`);
+      },
     },
 
     socialProviders: {

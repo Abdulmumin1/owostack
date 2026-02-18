@@ -40,11 +40,16 @@ function classifyTransaction(sub: any, plan: any) {
 
 function transactionLabel(type: string) {
   switch (type) {
-    case "one_time": return "One-time Purchase";
-    case "trial": return "Free Trial";
-    case "free": return "Free Plan";
-    case "subscription": return "Subscription";
-    default: return "Transaction";
+    case "one_time":
+      return "One-time Purchase";
+    case "trial":
+      return "Free Trial";
+    case "free":
+      return "Free Plan";
+    case "subscription":
+      return "Subscription";
+    default:
+      return "Transaction";
   }
 }
 
@@ -53,60 +58,68 @@ function transactionLabel(type: string) {
 // =============================================================================
 app.get("/", async (c) => {
   const organizationId = c.req.query("organizationId");
+  const limit = Number(c.req.query("limit")) || 20;
+  const offset = Number(c.req.query("offset")) || 0;
+  // const filterType = c.req.query("type") || "all";
+
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
 
   const db = c.get("db");
 
-  const customers = await db.query.customers.findMany({
-    where: eq(schema.customers.organizationId, organizationId),
-    with: {
-      subscriptions: {
-        with: {
-          plan: true,
-        },
-        orderBy: [desc(schema.subscriptions.createdAt)],
+  // Query subscriptions joined with customers and plans
+  // This allows proper pagination at the database level
+  let query = db
+    .select({
+      subscription: schema.subscriptions,
+      customer: schema.customers,
+      plan: schema.plans,
+    })
+    .from(schema.subscriptions)
+    .innerJoin(
+      schema.customers,
+      eq(schema.subscriptions.customerId, schema.customers.id),
+    )
+    .leftJoin(schema.plans, eq(schema.subscriptions.planId, schema.plans.id))
+    .where(eq(schema.customers.organizationId, organizationId))
+    .orderBy(desc(schema.subscriptions.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  const results = await query;
+
+  const transactions = results.map(({ subscription, customer, plan }: any) => {
+    const type = classifyTransaction(subscription, plan);
+    return {
+      id: subscription.id,
+      type,
+      typeLabel: transactionLabel(type),
+      status: subscription.status,
+      customer: {
+        id: customer.id,
+        email: customer.email,
+        name: customer.name,
       },
-    },
+      plan: plan
+        ? {
+            id: plan.id,
+            name: plan.name,
+            slug: plan.slug,
+            price: plan.price,
+            currency: plan.currency,
+            interval: plan.interval,
+            billingType: plan.billingType,
+          }
+        : null,
+      providerId: subscription.providerId || null,
+      amount: plan?.price || 0,
+      currency: plan?.currency || "USD",
+      currentPeriodStart: subscription.currentPeriodStart,
+      currentPeriodEnd: subscription.currentPeriodEnd,
+      createdAt: subscription.createdAt,
+    };
   });
-
-  const transactions = customers.flatMap((cust: any) =>
-    cust.subscriptions.map((sub: any) => {
-      const type = classifyTransaction(sub, sub.plan);
-      return {
-        id: sub.id,
-        type,
-        typeLabel: transactionLabel(type),
-        status: sub.status,
-        customer: {
-          id: cust.id,
-          email: cust.email,
-          name: cust.name,
-        },
-        plan: sub.plan
-          ? {
-              id: sub.plan.id,
-              name: sub.plan.name,
-              slug: sub.plan.slug,
-              price: sub.plan.price,
-              currency: sub.plan.currency,
-              interval: sub.plan.interval,
-              billingType: sub.plan.billingType,
-            }
-          : null,
-        providerId: sub.providerId || null,
-        amount: sub.plan?.price || 0,
-        currency: sub.plan?.currency || "USD",
-        currentPeriodStart: sub.currentPeriodStart,
-        currentPeriodEnd: sub.currentPeriodEnd,
-        createdAt: sub.createdAt,
-      };
-    }),
-  );
-
-  // Sort all transactions by createdAt descending
-  transactions.sort((a: any, b: any) => b.createdAt - a.createdAt);
 
   return c.json({ success: true, data: transactions });
 });

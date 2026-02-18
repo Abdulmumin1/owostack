@@ -14,6 +14,8 @@
     isLoading = true;
     error = null;
 
+    console.log({email, password})
+
     try {
       const { data, error: authError } = await signIn.email({
         email,
@@ -82,10 +84,13 @@
       </div>
 
       <div>
-        <label
-          for="password"
-          class="block text-sm font-medium text-zinc-400 mb-2">Password</label
-        >
+        <div class="flex items-center justify-between mb-2">
+          <label
+            for="password"
+            class="block text-sm font-medium text-zinc-400">Password</label
+          >
+          <a href="/forgot-password" class="text-xs text-accent hover:text-accent-hover">Forgot password?</a>
+        </div>
         <div class="input-icon-wrapper">
           <Lock
             size={18}

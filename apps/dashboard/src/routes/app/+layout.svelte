@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { slide } from "svelte/transition";
   import {
     LayoutGrid,
     CreditCard,
@@ -26,6 +27,8 @@
     ArrowRight,
     X,
     Copy,
+    Sun,
+    Moon,
   } from "lucide-svelte";
   import { page } from "$app/state";
   import {
@@ -45,54 +48,90 @@
 
   let projects = $state<any[]>([]);
   let showProjectDropdown = $state(false);
+  let showUserDropdown = $state(false);
+  let collapsedGroups = $state<Record<string, boolean>>({});
+
   let activeEnvironment = $state<"test" | "live">("test");
   let testConnected = $state(false);
   let liveConnected = $state(false);
   let isSwitching = $state(false);
 
-  // Deploy to Production modal state
   let showDeployModal = $state(false);
   let deployCredentials = $state<Record<string, Record<string, string>>>({});
-  let deployShowSecrets = $state<Record<string, boolean>>({});
-  let deploySavingProvider = $state<string | null>(null);
   let deployError = $state<string | null>(null);
+  let deploySavingProvider = $state<string | null>(null);
+  let deployShowSecrets = $state<Record<string, boolean>>({});
 
-  // Per-provider status: which test providers exist and which have live counterparts
   let testProviderIds = $state<string[]>([]);
   let liveProviderIds = $state<Set<string>>(new Set());
 
-  // Step completion state
-  let step1Done = $derived(liveProviderIds.size > 0);
-  let allTestProvidersLive = $derived(
-    testProviderIds.length > 0 && testProviderIds.every((id) => liveProviderIds.has(id))
-  );
-  let step2Done = $state(false);
+  let step1Done = $derived(testProviderIds.length > 0 && testProviderIds.every(id => liveProviderIds.has(id)));
+  let allTestProvidersLive = $derived(step1Done && testProviderIds.length > 0);
+
   let step2Loading = $state(false);
-  let step2Result = $state<string | null>(null);
-  let step3Done = $state(false);
+  let step2Done = $state(false);
+  let step2Result = $state("");
+
   let step3Loading = $state(false);
-  let generatedApiKey = $state<string | null>(null);
+  let step3Done = $state(false);
+  let generatedApiKey = $state("");
   let apiKeyCopied = $state(false);
 
-  async function openDeployModal() {
-    deployCredentials = {};
-    deployShowSecrets = {};
-    deploySavingProvider = null;
-    deployError = null;
-    step2Done = false;
-    step2Result = null;
-    step3Done = false;
-    generatedApiKey = null;
-    apiKeyCopied = false;
-    showDeployModal = true;
+  let theme = $state<"light" | "dark">("dark");
 
-    // Load actual provider accounts to determine which test providers need live counterparts
+  $effect(() => {
+    const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
+    if (savedTheme) {
+      theme = savedTheme;
+    } else {
+      theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    applyTheme();
+  });
+
+  function toggleTheme() {
+    theme = theme === "light" ? "dark" : "light";
+    localStorage.setItem("theme", theme);
+    applyTheme();
+  }
+
+  function applyTheme() {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+      document.documentElement.classList.remove("light");
+    } else {
+      document.documentElement.classList.add("light");
+      document.documentElement.classList.remove("dark");
+    }
+  }
+
+  function toggleGroup(label: string) {
+    collapsedGroups[label] = !collapsedGroups[label];
+  }
+
+  function toggleUserDropdown() {
+    showUserDropdown = !showUserDropdown;
+  }
+
+  function handleClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (!target.closest(".project-dropdown-container")) {
+      showProjectDropdown = false;
+    }
+    if (!target.closest(".user-dropdown-container")) {
+      showUserDropdown = false;
+    }
+  }
+
+  async function openDeployModal() {
+    showDeployModal = true;
+    deployError = null;
     try {
       const res = await apiFetch(`/api/dashboard/providers/accounts?organizationId=${projectId}`);
       if (res.data?.data) {
         const accounts = res.data.data as any[];
-        testProviderIds = [...new Set(accounts.filter((a: any) => a.environment === "test").map((a: any) => a.providerId))];
-        liveProviderIds = new Set(accounts.filter((a: any) => a.environment === "live").map((a: any) => a.providerId));
+        testProviderIds = [...new Set(accounts.filter(a => a.environment === 'test').map(a => a.providerId))];
+        liveProviderIds = new Set(accounts.filter(a => a.environment === 'live').map(a => a.providerId));
       }
     } catch (e) {
       console.error("Failed to load provider accounts", e);
@@ -331,6 +370,7 @@
   const navGroups = [
     {
       label: "Products",
+      collapsible: true,
       items: [
         { href: "/plans", icon: CreditCard, label: "Plans" },
         { href: "/features", icon: Boxes, label: "Features" },
@@ -348,8 +388,8 @@
     },
     {
       label: "Developer",
+      collapsible: false,
       items: [
-        { href: "/keys", icon: Key, label: "API Keys" },
         { href: "/events", icon: Webhook, label: "Events" },
         { href: "/settings", icon: Settings, label: "Settings" },
       ],
@@ -362,6 +402,8 @@
     return currentPath.startsWith(href);
   }
 </script>
+
+<svelte:window onclick={handleClickOutside} />
 
 <svelte:head>
   <title>Dashboard - Owostack</title>
@@ -376,7 +418,7 @@
     <div class="mb-10 pl-2">
       <a
         href="/"
-        class="flex items-center gap-2 font-bold text-white hover:text-accent transition-colors"
+        class="flex items-center gap-2 font-bold text-text-primary hover:text-accent transition-colors"
       >
         <Logo size={30} class="text-accent" />
         <span>Owostack</span>
@@ -387,29 +429,30 @@
     {#if projectId}
       <div class="mb-8">
         <div
-          class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3 pl-2"
+          class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3 pl-2"
         >
-          Project
+          Organization
         </div>
-        <div class="relative">
+        <div class="relative project-dropdown-container">
           <button
-            class="w-full flex items-center justify-between p-3 bg-bg-card border border-border text-left hover:border-zinc-500 transition-colors shadow-sm"
+            class="w-full flex items-center justify-between p-3 bg-bg-card border border-border text-left hover:border-text-dim transition-colors shadow-sm"
             onclick={() => (showProjectDropdown = !showProjectDropdown)}
           >
-            <span class="font-medium truncate">{currentProject.name}</span>
-            <ChevronDown size={14} class="text-zinc-500 shrink-0" />
+            <span class="font-medium truncate text-text-primary">{currentProject.name}</span>
+            <ChevronDown size={14} class="text-text-dim shrink-0" />
           </button>
 
           {#if showProjectDropdown}
             <div
               class="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border shadow-xl z-50"
+              onclick={(e) => e.stopPropagation()}
             >
               {#each projects as project}
                 <a
                   href="/app/{project.id}"
-                  class="block px-3 py-2 hover:bg-bg-card-hover hover:text-white transition-colors border-l-2 border-transparent hover:border-accent {project.id ===
+                  class="block px-3 py-2 text-text-secondary hover:bg-bg-card-hover hover:text-text-primary transition-colors border-l-2 border-transparent hover:border-accent {project.id ===
                   projectId
-                    ? 'border-accent bg-bg-card-hover'
+                    ? 'border-accent bg-bg-card-hover text-text-primary'
                     : ''}"
                   onclick={() => (showProjectDropdown = false)}
                 >
@@ -417,7 +460,7 @@
                 </a>
               {/each}
               <button
-                class="w-full text-left px-3 py-2 text-zinc-500 hover:text-white hover:bg-bg-card-hover border-t border-border mt-1"
+                class="w-full text-left px-3 py-2 text-text-dim hover:text-text-primary hover:bg-bg-card-hover border-t border-border mt-1"
               >
                 + New Organization
               </button>
@@ -429,46 +472,62 @@
       <!-- Grouped Navigation like Autumn -->
       {#each navGroups as group}
         {#if group.label}
-          <div
-            class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 pl-2 mt-6 first:mt-0"
-          >
-            {group.label}
-          </div>
-        {/if}
-        <nav class="space-y-0.5 mb-2">
-          {#each group.items as item}
-            {@const href = `/app/${projectId}${item.href}`}
-            {@const active = isActive(href)}
-            <a
-              {href}
-              class="flex items-center gap-3 px-3 py-2 transition-all duration-200 border-l-2 border-transparent {active
-                ? 'border-accent bg-bg-card text-white'
-                : 'text-zinc-400 hover:text-white'}"
+          {#if group.collapsible}
+            <button
+              class="w-full flex items-center justify-between text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2 pl-2 pr-2 mt-6 first:mt-0 hover:text-text-secondary transition-colors cursor-pointer group"
+              onclick={() => toggleGroup(group.label!)}
             >
-              <item.icon size={16} />
-              <span>{item.label}</span>
-            </a>
-          {/each}
-        </nav>
+              <span>{group.label}</span>
+              <ChevronDown
+                size={12}
+                class="transition-transform duration-200 {collapsedGroups[group.label] ? '-rotate-90' : ''} text-text-dim group-hover:text-text-secondary"
+              />
+            </button>
+          {:else}
+            <div
+              class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2 pl-2 mt-6 first:mt-0"
+            >
+              {group.label}
+            </div>
+          {/if}
+        {/if}
+        
+        {#if !group.label || !collapsedGroups[group.label!]}
+          <nav class="space-y-0.5 mb-2" transition:slide|local={{ duration: 200 }}>
+            {#each group.items as item}
+              {@const href = `/app/${projectId}${item.href}`}
+              {@const active = isActive(href)}
+              <a
+                {href}
+                class="flex items-center gap-3 px-3 py-2 transition-all duration-200 border-l-2 border-transparent {active
+                  ? 'border-accent bg-bg-card text-text-primary'
+                  : 'text-text-secondary hover:text-text-primary'}"
+              >
+                <item.icon size={16} />
+                <span>{item.label}</span>
+              </a>
+            {/each}
+          </nav>
+        {/if}
       {/each}
     {:else}
       <!-- Dashboard Navigation -->
       <div
-        class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3 pl-2"
+        class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3 pl-2"
       >
         Dashboard
       </div>
       <nav class="space-y-1 mb-8">
         <a
           href="/app"
-          class="flex items-center gap-3 px-3 py-2 bg-bg-card border-l-2 border-accent text-white"
+          class="flex items-center gap-3 px-3 py-2 bg-bg-card border-l-2 border-accent text-text-primary"
         >
           <LayoutGrid size={16} />
           <span>Overview</span>
         </a>
         <a
           href="/app/settings"
-          class="flex items-center gap-3 px-3 py-2 text-zinc-400 hover:text-white transition-colors"
+          class="flex items-center gap-3 px-3 py-2 text-text-secondary hover:text-text-primary transition-colors"
         >
           <Settings size={16} />
           <span>Settings</span>
@@ -476,21 +535,57 @@
       </nav>
     {/if}
 
-    <!-- Footer/User -->
-    <div class="mt-auto pl-2">
+    <!-- Footer/User Identity -->
+    <div class="mt-auto  relative user-dropdown-container">
       {#if $session.data}
-        <div class="flex items-center gap-2 mb-2 text-xs text-zinc-400">
-          <div class="w-2 h-2 bg-green-500"></div>
-          <span class="truncate max-w-[140px]">{$session.data.user.email}</span>
-        </div>
+        <button
+          class="w-full flex items-center gap-3 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors p-1 rounded group"
+          onclick={toggleUserDropdown}
+        >
+          <!-- Sharp Identity Square -->
+          <div class="relative shrink-0">
+            <div class="w-9 h-9 bg-accent/10 border border-accent/20 flex items-center justify-center text-xs font-bold text-accent uppercase">
+              {($session.data.user.name || $session.data.user.email)[0]}
+            </div>
+          </div>
+          
+          <!-- User Details -->
+          <div class="flex-1 min-w-0">
+            <div class="text-xs font-bold text-text-primary truncate mb-0.5">
+              {$session.data.user.name || 'Account'}
+            </div>
+    
+          </div>
+          <ChevronDown size={14} class="text-text-dim group-hover:text-text-secondary transition-transform {showUserDropdown ? 'rotate-180' : ''}" />
+        </button>
+
+        {#if showUserDropdown}
+          <div
+            class="absolute bottom-full left-4 right-4 mb-2 bg-bg-card border border-border shadow-2xl py-1 z-50 overflow-hidden"
+            transition:slide={{ duration: 150 }}
+            onclick={(e) => e.stopPropagation()}
+          >
+            <button
+              class="w-full flex items-center justify-between px-4 py-2.5 text-[10px] font-bold text-text-secondary hover:text-text-primary hover:bg-black/5 dark:hover:bg-white/5 transition-colors uppercase tracking-widest border-b border-border/50"
+              onclick={toggleTheme}
+            >
+              <span>Theme: {theme}</span>
+              {#if theme === "light"}
+                <Moon size={12} />
+              {:else}
+                <Sun size={12} />
+              {/if}
+            </button>
+            <button
+              class="w-full flex items-center justify-between px-4 py-2.5 text-[10px] font-bold text-text-secondary hover:text-red-500 hover:bg-red-500/10 transition-colors uppercase tracking-widest"
+              onclick={handleLogout}
+            >
+              <span>Sign out</span>
+              <LogOut size={12} />
+            </button>
+          </div>
+        {/if}
       {/if}
-      <button
-        class="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
-        onclick={handleLogout}
-      >
-        <LogOut size={14} />
-        <span>Log out</span>
-      </button>
     </div>
   </aside>
 
@@ -499,35 +594,37 @@
     <!-- Environment Banner (like Autumn's "You're in sandbox") -->
     {#if projectId}
       <div
-        class="w-full py-2 px-6 flex items-center justify-center gap-4 text-xs font-mono {activeEnvironment ===
+        class="w-full py-2 px-6 flex items-center justify-between gap-4 text-xs font-mono {activeEnvironment ===
         'test'
-          ? 'bg-cyan-950/50 border-b border-cyan-800/50'
-          : 'bg-red-950/50 border-b border-red-800/50'}"
+          ? 'bg-cyan-950/10 dark:bg-cyan-950/50 border-b border-cyan-800/20 dark:border-cyan-800/50'
+          : 'bg-transparent border-b border-transparent'}"
       >
         {#if activeEnvironment === "test"}
-          <span class="text-cyan-400">
+          <span class="text-cyan-700 dark:text-cyan-400">
             <FlaskConical size={14} class="inline mr-1" />
             You're in <span class="font-bold">sandbox</span>
           </span>
           <button
             onclick={openDeployModal}
-            class="flex items-center gap-1 px-3 py-1 bg-accent text-black text-xs font-bold hover:bg-accent-hover transition-colors"
+            class="flex items-center gap-1 px-3 py-1 bg-bg-secondary text-text-secondary text-xs font-bold hover:bg-bg-card-hover transition-colors"
           >
             <Rocket size={12} />
-            Deploy to Production
+            Go to Production
           </button>
+
         {:else}
-          <span class="text-red-400 font-bold">
+          <!-- <span class="text-red-400 font-bold">
             <Rocket size={14} class="inline mr-1" />
             LIVE MODE — Real payments
-          </span>
+          </span> -->
+          <span></span>
           <button
             onclick={() => switchEnvironment("test")}
             disabled={isSwitching}
-            class="flex items-center gap-1 px-3 py-1 bg-zinc-700 text-white text-xs font-medium hover:bg-zinc-600 transition-colors disabled:opacity-50"
+            class="flex items-center self-end gap-1 px-3 py-1 bg-zinc-700 text-white text-xs font-medium hover:bg-zinc-600 transition-colors disabled:opacity-50"
           >
             <FlaskConical size={12} />
-            Switch to Sandbox
+            Go to Sandbox
           </button>
         {/if}
       </div>
@@ -552,11 +649,11 @@
         <!-- Header -->
         <div class="flex items-center justify-between p-6 border-b border-border">
           <div>
-            <h2 class="text-lg font-bold text-white">Deploy to Production</h2>
-            <p class="text-xs text-zinc-500 mt-1">Follow the steps below to go live.</p>
+            <h2 class="text-lg font-bold text-text-primary">Deploy to Production</h2>
+            <p class="text-xs text-text-dim mt-1">Follow the steps below to go live.</p>
           </div>
           <button
-            class="text-zinc-500 hover:text-white transition-colors"
+            class="text-text-dim hover:text-text-primary transition-colors"
             onclick={closeDeployModal}
           >
             <X size={18} />
@@ -575,7 +672,7 @@
 
           <!-- Step 1: Connect Providers -->
           <div class="flex items-start gap-4">
-            <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {allTestProvidersLive ? 'bg-accent text-black' : step1Done ? 'bg-accent/60 text-black' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}">
+            <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {allTestProvidersLive ? 'bg-accent text-accent-contrast' : step1Done ? 'bg-accent/60 text-accent-contrast' : 'bg-accent-contrast text-text-dim border border-border'}">
               {#if allTestProvidersLive}
                 <Check size={14} />
               {:else}
@@ -583,13 +680,13 @@
               {/if}
             </div>
             <div class="flex-1 min-w-0">
-              <h3 class="text-sm font-bold text-white">Connect your provider accounts</h3>
-              <p class="text-xs text-zinc-500 mt-0.5">
+              <h3 class="text-sm font-bold text-text-primary">Connect your provider accounts</h3>
+              <p class="text-xs text-text-dim mt-0.5">
                 Add live credentials for each payment provider you use.
               </p>
 
               {#if testProviderIds.length === 0}
-                <p class="text-xs text-zinc-600 mt-2 italic">No test providers configured yet. Add one in Settings first.</p>
+                <p class="text-xs text-text-dim mt-2 italic">No test providers configured yet. Add one in Settings first.</p>
               {/if}
 
               <div class="mt-3 space-y-4">
@@ -599,20 +696,20 @@
                   {@const isSaving = deploySavingProvider === providerId}
                   <div class="border border-border bg-bg-card p-3 space-y-2">
                     <div class="flex items-center justify-between">
-                      <span class="text-xs font-bold text-white">{config?.name || providerId}</span>
+                      <span class="text-xs font-bold text-text-primary">{config?.name || providerId}</span>
                       {#if isLive}
                         <span class="text-[10px] text-accent font-medium flex items-center gap-1">
                           <Check size={12} /> Live connected
                         </span>
                       {:else}
-                        <span class="text-[10px] text-zinc-500">Needs live keys</span>
+                        <span class="text-[10px] text-text-dim">Needs live keys</span>
                       {/if}
                     </div>
                     {#if !isLive && config}
                       {#each config.fields as field}
                         {@const secretKey = `${providerId}.${field.key}`}
-                        <div class="relative">
-                          <Lock size={12} class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
+                        <div class="relative input-icon-wrapper">
+                          <Lock size={12} class="input-icon-left text-text-dim" />
                           <input
                             type={field.secret && !deployShowSecrets[secretKey] ? "password" : "text"}
                             value={deployCredentials[providerId]?.[field.key] || ""}
@@ -622,12 +719,12 @@
                               deployCredentials = deployCredentials;
                             }}
                             placeholder={field.placeholder}
-                            class="input pl-9 pr-10 font-mono text-xs w-full"
+                            class="input input-has-icon-left pr-10 font-mono text-xs w-full"
                           />
                           {#if field.secret}
                             <button
                               type="button"
-                              class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors"
+                              class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary transition-colors"
                               onclick={() => { deployShowSecrets[secretKey] = !deployShowSecrets[secretKey]; deployShowSecrets = deployShowSecrets; }}
                             >
                               {#if deployShowSecrets[secretKey]}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
@@ -652,7 +749,7 @@
               </div>
 
               {#if step1Done && !allTestProvidersLive}
-                <p class="text-[10px] text-yellow-500 mt-2">
+                <p class="text-[10px] text-yellow-600 dark:text-yellow-500 mt-2">
                   Some test providers don't have live keys yet. You can still go live, but features using those providers won't work in production.
                 </p>
               {/if}
@@ -661,7 +758,7 @@
 
           <!-- Step 2: Copy Catalog -->
           <div class="flex items-start gap-4">
-            <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {step2Done ? 'bg-accent text-black' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}">
+            <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {step2Done ? 'bg-accent text-accent-contrast' : 'bg-accent-contrast text-text-dim border border-border'}">
               {#if step2Done}
                 <Check size={14} />
               {:else}
@@ -669,8 +766,8 @@
               {/if}
             </div>
             <div class="flex-1 min-w-0">
-              <h3 class="text-sm font-bold text-white">Copy your plans to production</h3>
-              <p class="text-xs text-zinc-500 mt-0.5">
+              <h3 class="text-sm font-bold text-text-primary">Copy your plans to production</h3>
+              <p class="text-xs text-text-dim mt-0.5">
                 Sync all configured plans, features, and credit packs from sandbox to production.
               </p>
               {#if step2Result}
@@ -700,7 +797,7 @@
 
           <!-- Step 3: Generate API Key -->
           <div class="flex items-start gap-4">
-            <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {step3Done ? 'bg-accent text-black' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}">
+            <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {step3Done ? 'bg-accent text-accent-contrast' : 'bg-accent-contrast text-text-dim border border-border'}">
               {#if step3Done}
                 <Check size={14} />
               {:else}
@@ -708,8 +805,8 @@
               {/if}
             </div>
             <div class="flex-1 min-w-0">
-              <h3 class="text-sm font-bold text-white">Create a production secret key</h3>
-              <p class="text-xs text-zinc-500 mt-0.5">
+              <h3 class="text-sm font-bold text-text-primary">Create a production secret key</h3>
+              <p class="text-xs text-text-dim mt-0.5">
                 Generate a live API key for use in your production environment.
               </p>
               {#if generatedApiKey}
@@ -718,7 +815,7 @@
                     {generatedApiKey}
                   </code>
                   <button
-                    class="text-zinc-400 hover:text-white transition-colors shrink-0"
+                    class="text-text-dim hover:text-text-primary transition-colors shrink-0"
                     onclick={copyApiKey}
                     title="Copy key"
                   >
@@ -729,7 +826,7 @@
                     {/if}
                   </button>
                 </div>
-                <p class="text-[10px] text-zinc-600 mt-1">Save this key — it won't be shown again.</p>
+                <p class="text-[10px] text-text-dim mt-1">Save this key — it won't be shown again.</p>
               {/if}
             </div>
             <div class="shrink-0">

@@ -126,7 +126,7 @@
             ] as opt}
               <button
                 type="button"
-                class="py-2.5 text-[10px] font-bold uppercase tracking-widest border transition-all {type === opt.value ? 'bg-lime-600 text-lime-600-contrast border-lime-600' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-white'}"
+                class="py-2.5 text-[10px] font-bold uppercase tracking-widest border transition-all {type === opt.value ? 'bg-accent text-accent-contrast border-accent' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-text-primary dark:hover:text-text-primary'}"
                 onclick={() => (type = opt.value as typeof type)}
               >
                 {opt.label}
@@ -160,7 +160,7 @@
               ] as opt}
                 <button
                   type="button"
-                  class="py-2.5 text-[10px] font-bold uppercase tracking-widest border transition-all {meterType === opt.value ? 'bg-lime-600 text-lime-600-contrast border-lime-600' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-white'}"
+                  class="py-2.5 text-[10px] font-bold uppercase tracking-widest border transition-all {meterType === opt.value ? 'bg-accent text-accent-contrast border-accent' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-text-primary dark:hover:text-text-primary'}"
                   onclick={() => (meterType = opt.value as typeof meterType)}
                 >
                   {opt.label}
@@ -201,13 +201,13 @@
     <!-- Footer -->
     <div class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card">
       <button
-        class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
+        class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
         onclick={close}
       >
         Cancel
       </button>
       <button
-        class="px-6 py-2 bg-accent hover:bg-accent-hover text-black text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
+        class="px-6 py-2 bg-accent hover:bg-accent-hover text-accent-contrast text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
         onclick={handleSubmit}
         disabled={!name || isCreating}
       >

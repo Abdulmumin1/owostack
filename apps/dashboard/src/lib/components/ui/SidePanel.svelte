@@ -33,9 +33,9 @@
     transition:fly={{ x: 400, duration: 200 }}
   >
     <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-      <h2 class="text-xs font-bold text-white uppercase tracking-widest">{title}</h2>
+      <h2 class="text-xs font-bold text-text-primary uppercase tracking-widest">{title}</h2>
       <button
-        class="p-1 text-zinc-500 hover:text-white transition-colors"
+        class="p-1 text-text-dim hover:text-text-primary transition-colors"
         onclick={onclose}
       >
         <X size={16} />

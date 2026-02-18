@@ -15,7 +15,7 @@
   <title>Settings - Owostack</title>
 </svelte:head>
 
-<div class="max-w-2xl">
+<div class="max-w-2xl mx-auto py-8">
   <div class="mb-8">
     <h1 class="text-xl font-bold text-white mb-2 uppercase tracking-wide">Account Settings</h1>
     <p class="text-zinc-500 text-xs font-mono">
@@ -23,7 +23,7 @@
     </p>
   </div>
 
-  <div class="bg-bg-card border border-border p-6 mb-8 shadow-md">
+  <div class="bg-bg-card border border-border p-6 mb-8 shadow-md rounded-lg">
     <h3 class="text-sm font-bold text-white mb-6 uppercase tracking-wider border-b border-border pb-2">
       Profile
     </h3>
@@ -32,7 +32,7 @@
       <div class="space-y-6">
         <div>
           <p class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Full Name</p>
-          <div class="flex items-center gap-3 text-white bg-bg-secondary p-3 border border-border">
+          <div class="flex items-center gap-3 text-white bg-bg-secondary p-3 border border-border rounded">
             <User size={16} class="text-zinc-500" />
             <span class="font-mono text-sm">{$session.data.user.name}</span>
           </div>
@@ -40,7 +40,7 @@
 
         <div>
           <p class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Email Address</p>
-          <div class="flex items-center gap-3 text-white bg-bg-secondary p-3 border border-border">
+          <div class="flex items-center gap-3 text-white bg-bg-secondary p-3 border border-border rounded">
             <Mail size={16} class="text-zinc-500" />
             <span class="font-mono text-sm">{$session.data.user.email}</span>
           </div>
@@ -51,7 +51,7 @@
     {/if}
   </div>
 
-  <div class="bg-bg-card border border-border p-6 shadow-md">
+  <div class="bg-bg-card border border-border p-6 shadow-md rounded-lg">
     <h3 class="text-sm font-bold text-white mb-6 uppercase tracking-wider border-b border-border pb-2">
       Session
     </h3>

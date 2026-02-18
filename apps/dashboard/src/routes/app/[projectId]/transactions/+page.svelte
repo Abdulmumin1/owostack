@@ -9,33 +9,80 @@
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
+  const PAGE_SIZE = 20;
+
   const organizationId = $derived(page.params.projectId);
   let transactions = $state<any[]>([]);
   let isLoading = $state(true);
+  let isLoadingMore = $state(false);
   let searchQuery = $state("");
   let filterType = $state<string>("all");
   let selectedTxId = $state<string | null>(null);
+  let currentOffset = $state(0);
+  let hasMore = $state(true);
 
   const selectedTx = $derived(
     transactions.find(t => t.id === selectedTxId)
   );
 
-  async function loadTransactions() {
-    isLoading = true;
+  async function loadTransactions(reset = true) {
+    if (!organizationId) return;
+    if (!reset && (isLoading || isLoadingMore || !hasMore)) return;
+
+    if (reset) {
+      isLoading = true;
+      currentOffset = 0;
+      transactions = [];
+      hasMore = true;
+    } else {
+      isLoadingMore = true;
+    }
+
     try {
-      const res = await apiFetch(`/api/dashboard/transactions?organizationId=${organizationId}`);
-      if (res.data) {
-        transactions = res.data.data;
+      const params = new URLSearchParams();
+      params.set("organizationId", organizationId ?? "");
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", String(reset ? 0 : currentOffset));
+      
+      const res = await apiFetch(`/api/dashboard/transactions?${params}`);
+      if (res.data?.success) {
+        const newTx = res.data.data;
+        if (reset) {
+          transactions = newTx;
+        } else {
+          transactions = [...transactions, ...newTx];
+        }
+
+        hasMore = newTx.length === PAGE_SIZE;
+        currentOffset = transactions.length;
       }
     } catch (e) {
       console.error("Failed to load transactions", e);
     } finally {
       isLoading = false;
+      isLoadingMore = false;
     }
   }
 
   onMount(() => {
     loadTransactions();
+  });
+
+  // Infinite Scroll Observer
+  let loadMoreTrigger = $state<HTMLElement | null>(null);
+  $effect(() => {
+    if (loadMoreTrigger && hasMore && !isLoading && !isLoadingMore) {
+      const observer = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadTransactions(false);
+        }
+      }, {
+        root: loadMoreTrigger.closest("main"),
+        rootMargin: "0px 0px 240px 0px",
+      });
+      observer.observe(loadMoreTrigger);
+      return () => observer.disconnect();
+    }
   });
 
   const filteredTx = $derived(
@@ -51,20 +98,20 @@
 
   function typeColor(type: string) {
     switch (type) {
-      case "subscription": return "text-blue-400 bg-blue-500/10 border-blue-500/20";
-      case "one_time": return "text-purple-400 bg-purple-500/10 border-purple-500/20";
-      case "trial": return "text-cyan-400 bg-cyan-500/10 border-cyan-500/20";
-      case "free": return "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
-      default: return "text-zinc-500 bg-zinc-500/10 border-zinc-500/20";
+      case "subscription": return "text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/20";
+      case "one_time": return "text-purple-600 dark:text-purple-400 bg-purple-500/10 border-purple-500/20";
+      case "trial": return "text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 border-cyan-500/20";
+      case "free": return "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+      default: return "text-text-dim bg-bg-secondary border-border";
     }
   }
 
   function statusColor(status: string) {
     switch (status.toLowerCase()) {
-      case 'active': return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
-      case 'canceled': return 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20';
-      case 'past_due': return 'text-amber-500 bg-amber-500/10 border-amber-500/20';
-      default: return 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20';
+      case 'active': return 'text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
+      case 'canceled': return 'text-text-dim bg-bg-secondary border-border';
+      case 'past_due': return 'text-amber-600 dark:text-amber-500 bg-amber-500/10 border-amber-500/20';
+      default: return 'text-text-dim bg-bg-secondary border-border';
     }
   }
 
@@ -105,15 +152,15 @@
 <div class="max-w-6xl">
   <div class="flex items-center justify-between mb-8">
     <div>
-      <h1 class="text-xl font-bold text-white mb-2 uppercase tracking-wide">Transactions</h1>
-      <p class="text-zinc-500 text-[10px] uppercase tracking-widest font-bold">
+      <h1 class="text-xl font-bold text-text-primary mb-2 uppercase tracking-wide">Transactions</h1>
+      <p class="text-text-dim text-[10px] uppercase tracking-widest font-bold">
         All billing activity across subscriptions, purchases, and trials
       </p>
     </div>
 
     <button
       class="btn btn-secondary gap-2 text-xs uppercase tracking-wider font-bold"
-      onclick={loadTransactions}
+      onclick={() => loadTransactions(true)}
     >
       <RefreshCw size={14} class={isLoading ? "animate-spin" : ""} />
       Refresh
@@ -131,12 +178,12 @@
     ] as tab}
       <button
         class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider border transition-colors {filterType === tab.value
-          ? 'bg-white/10 text-white border-zinc-500'
-          : 'bg-transparent text-zinc-500 border-border hover:text-zinc-300 hover:border-zinc-600'}"
+          ? 'bg-black/10 dark:bg-white/10 text-text-primary border-text-dim'
+          : 'bg-transparent text-text-dim border-border hover:text-text-secondary hover:border-text-dim'}"
         onclick={() => filterType = tab.value}
       >
         {tab.label}
-        <span class="ml-1 text-zinc-600">{typeCounts[tab.value as keyof typeof typeCounts] || 0}</span>
+        <span class="ml-1 text-text-dim/60">{typeCounts[tab.value as keyof typeof typeCounts] || 0}</span>
       </button>
     {/each}
   </div>
@@ -146,7 +193,7 @@
     <div class="input-icon-wrapper max-w-sm">
       <Search
         size={14}
-        class="input-icon-left"
+        class="input-icon-left text-text-dim"
       />
       <input
         type="text"
@@ -161,14 +208,14 @@
     <div class="bg-bg-card border border-border overflow-hidden shadow-md">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-white/5 border-b border-border">
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Type</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Customer</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Plan</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Amount</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Provider</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Status</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Date</th>
+          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Type</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Plan</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Amount</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Provider</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Status</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Date</th>
             <th class="px-6 py-4"></th>
           </tr>
         </thead>
@@ -212,13 +259,13 @@
     </div>
   {:else if filteredTx.length === 0}
     <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
-      <div class="w-12 h-12 bg-white/5 flex items-center justify-center mb-4">
-        <Receipt size={24} class="text-zinc-500" />
+      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
+        <Receipt size={24} class="text-text-dim" />
       </div>
-      <h3 class="text-lg font-bold text-white mb-2">
+      <h3 class="text-lg font-bold text-text-primary mb-2">
         {searchQuery || filterType !== "all" ? "No matching transactions" : "No transactions yet"}
       </h3>
-      <p class="text-zinc-500 max-w-sm text-sm">
+      <p class="text-text-dim max-w-sm text-sm">
         {searchQuery || filterType !== "all"
           ? "Try a different search or filter."
           : "Transactions will appear here when customers subscribe to plans, make purchases, or start trials."}
@@ -229,21 +276,21 @@
     <div class="bg-bg-card border border-border overflow-hidden shadow-md">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-white/5 border-b border-border">
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Type</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Customer</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Plan</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Amount</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Provider</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Status</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Date</th>
+          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Type</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Plan</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Amount</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Provider</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Status</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Date</th>
             <th class="px-6 py-4"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-border/50">
           {#each filteredTx as tx}
             <tr
-              class="group hover:bg-white/2 transition-colors cursor-pointer {selectedTxId === tx.id ? 'bg-white/5' : ''}"
+              class="group hover:bg-black/2 dark:hover:bg-white/2 transition-colors cursor-pointer {selectedTxId === tx.id ? 'bg-black/5 dark:bg-white/5' : ''}"
               onclick={() => selectedTxId = tx.id}
             >
               <td class="px-6 py-4">
@@ -258,15 +305,15 @@
               </td>
               <td class="px-6 py-4">
                 <div class="flex flex-col">
-                  <span class="text-sm font-bold text-white">{tx.customer?.email}</span>
-                  <span class="text-[9px] text-zinc-600 font-mono">ID: {tx.id.split('-')[0]}</span>
+                  <span class="text-sm font-bold text-text-primary">{tx.customer?.email}</span>
+                  <span class="text-[9px] text-text-dim font-mono">ID: {tx.id.split('-')[0]}</span>
                 </div>
               </td>
               <td class="px-6 py-4">
-                <span class="text-sm text-zinc-300 font-medium">{tx.plan?.name}</span>
+                <span class="text-sm text-text-secondary font-medium">{tx.plan?.name}</span>
               </td>
               <td class="px-6 py-4">
-                <span class="text-sm font-semibold text-white">
+                <span class="text-sm font-semibold text-text-primary">
                   {formatMoney(tx.amount, tx.currency)}
                 </span>
               </td>
@@ -279,19 +326,30 @@
                 </span>
               </td>
               <td class="px-6 py-4">
-                <div class="flex items-center gap-2 text-xs text-zinc-500">
+                <div class="flex items-center gap-2 text-xs text-text-dim">
                   <Clock size={12} />
                   {formatDate(tx.createdAt)}
                 </div>
               </td>
               <td class="px-6 py-4 text-right">
-                <ArrowRight size={14} class="text-zinc-800 group-hover:text-zinc-500 transition-colors" />
+                <ArrowRight size={14} class="text-text-dim/20 group-hover:text-text-dim transition-colors" />
               </td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
+
+    <!-- Infinite Scroll Trigger -->
+    {#if hasMore && !isLoadingMore}
+      <div bind:this={loadMoreTrigger} class="h-4 w-full"></div>
+    {/if}
+    
+    {#if isLoadingMore}
+      <div class="flex justify-center py-4">
+        <Loader2 size={20} class="animate-spin text-text-dim" />
+      </div>
+    {/if}
   {/if}
 </div>
 

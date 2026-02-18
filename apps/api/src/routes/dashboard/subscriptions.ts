@@ -126,6 +126,12 @@ app.get("/", async (c) => {
       })),
   );
 
+  subscriptions.sort((a: any, b: any) => {
+    const aCreatedAt = Number(a.createdAt) || 0;
+    const bCreatedAt = Number(b.createdAt) || 0;
+    return bCreatedAt - aCreatedAt;
+  });
+
   return c.json({ success: true, data: subscriptions });
 });
 

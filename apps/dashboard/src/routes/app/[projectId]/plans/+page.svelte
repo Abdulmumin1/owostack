@@ -66,7 +66,16 @@
     if (amount === 0) return "Free";
     return formatCurrency(amount, currency);
   }
+
+  function handleClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.dropdown-container')) {
+      openMenuId = null;
+    }
+  }
 </script>
+
+<svelte:window onclick={handleClickOutside} />
 
 <svelte:head>
   <title>Plans - Owostack</title>
@@ -75,8 +84,8 @@
 <div class="max-w-5xl">
   <div class="flex items-center justify-between mb-8">
     <div>
-      <h1 class="text-xl font-bold text-white mb-2">Plans</h1>
-      <p class="text-zinc-500 text-xs uppercase tracking-widest font-semibold">
+      <h1 class="text-xl font-bold text-text-primary mb-2">Plans</h1>
+      <p class="text-text-dim text-xs uppercase tracking-widest font-semibold">
         Manage subscription tiers and features
       </p>
     </div>
@@ -121,11 +130,11 @@
     <div
       class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md"
     >
-      <div class="w-12 h-12 bg-white/5 flex items-center justify-center mb-4">
-        <Plus size={24} class="text-zinc-500" />
+      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
+        <Plus size={24} class="text-text-dim" />
       </div>
-      <h3 class="text-lg font-bold text-white mb-2">No plans defined</h3>
-      <p class="text-zinc-500 max-w-sm mb-6">
+      <h3 class="text-lg font-bold text-text-primary mb-2">No plans defined</h3>
+      <p class="text-text-dim max-w-sm mb-6">
         Create your first subscription plan to start charging customers.
       </p>
       <button class="btn btn-primary" onclick={() => (showCreateModal = true)}>
@@ -138,12 +147,12 @@
       {#each plans as plan}
         <a
           href="/app/{organizationId}/plans/{plan.id}"
-          class="bg-bg-card border border-border p-6 shadow-sm hover:border-zinc-500 transition-colors flex flex-col h-full relative group"
+          class="bg-bg-card border border-border p-6 shadow-sm hover:border-text-dim transition-colors flex flex-col h-full relative group"
         >
           <!-- Actions Menu -->
-          <div class="absolute top-4 right-4">
+          <div class="absolute top-4 right-4 dropdown-container">
             <button
-              class="text-zinc-500 hover:text-white transition-opacity {openMenuId === plan.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
+              class="text-text-dim hover:text-text-primary transition-opacity {openMenuId === plan.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
               onclick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -154,19 +163,20 @@
             </button>
 
             {#if openMenuId === plan.id}
-              <div 
-                class="absolute right-0 mt-2 w-40 bg-bg-card border border-border shadow-xl z-10 py-1"
+              <div
+                class="absolute right-0 mt-2 w-40 bg-bg-card border border-border shadow-xl z-50 py-1"
                 transition:fade={{ duration: 100 }}
+                onclick={(e) => e.stopPropagation()}
               >
                 <button 
-                  class="w-full text-left px-4 py-2 text-xs text-zinc-300 hover:bg-white/5 hover:text-white flex items-center gap-2"
+                  class="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary flex items-center gap-2"
                   onclick={() => copyId(plan.slug)}
                 >
                   <Copy size={14} />
                   Copy Slug
                 </button>
                 <button 
-                  class="w-full text-left px-4 py-2 text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                  class="w-full text-left px-4 py-2 text-xs text-red-500 hover:bg-red-500/10 flex items-center gap-2"
                   onclick={() => deletePlan(plan.id)}
                 >
                   <Trash2 size={14} />
@@ -177,17 +187,17 @@
           </div>
 
           <div class="mb-6">
-            <h3 class="text-lg font-bold text-white mb-1">{plan.name}</h3>
+            <h3 class="text-lg font-bold text-text-primary mb-1">{plan.name}</h3>
             <div class="flex items-baseline gap-1">
-              <span class="text-2xl font-bold text-white"
+              <span class="text-2xl font-bold text-text-primary"
                 >{formatMoney(plan.price, plan.currency)}</span
               >
               {#if plan.price > 0 && plan.interval}
-                <span class="text-xs text-zinc-500">/{plan.interval}</span>
+                <span class="text-xs text-text-dim">/{plan.interval}</span>
               {/if}
             </div>
             {#if plan.description}
-              <p class="text-xs text-zinc-500 mt-2">{plan.description}</p>
+              <p class="text-xs text-text-dim mt-2">{plan.description}</p>
             {/if}
 
             <!-- Type badges -->
@@ -200,13 +210,13 @@
               {/if}
               {#if plan.billingType === "one_time"}
                 <span
-                  class="text-[10px] font-bold bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded border border-zinc-700"
+                  class="text-[10px] font-bold bg-bg-secondary text-text-secondary px-2 py-0.5 rounded border border-border"
                   >One-off</span
                 >
               {/if}
               {#if plan.trialDays > 0}
                 <span
-                  class="text-[10px] font-bold bg-blue-900/30 text-blue-400 px-2 py-0.5 rounded border border-blue-800/50"
+                  class="text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 dark:border-blue-800/50"
                   >{plan.trialDays}{plan.metadata?.trialUnit === 'minutes' ? 'm' : 'd'} Trial</span
                 >
               {/if}
@@ -215,39 +225,39 @@
 
           <div class="flex-1 mb-8">
             <div
-              class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3"
+              class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3"
             >
               Features
             </div>
             {#if plan.planFeatures && plan.planFeatures.length > 0}
               <ul class="space-y-2">
                 {#each plan.planFeatures as pf}
-                  <li class="flex items-center gap-2 text-xs text-zinc-300">
+                  <li class="flex items-center gap-2 text-xs text-text-secondary">
                     <Check size={12} class="text-accent" />
                     <span>{pf.feature.name}</span>
                     {#if pf.limitValue !== null}
-                      <span class="text-[10px] text-zinc-500 font-mono ml-auto">
+                      <span class="text-[10px] text-text-dim font-mono ml-auto">
                         {pf.limitValue} {pf.feature.unit || 'units'}
                       </span>
                     {:else}
-                      <span class="text-[10px] text-zinc-500 font-mono ml-auto">Unlimited</span>
+                      <span class="text-[10px] text-text-dim font-mono ml-auto">Unlimited</span>
                     {/if}
                   </li>
                 {/each}
               </ul>
             {:else}
-              <p class="text-xs text-zinc-600 italic">No features added yet</p>
+              <p class="text-xs text-text-dim italic">No features added yet</p>
             {/if}
           </div>
 
           <div
             class="pt-4 border-t border-border flex items-center justify-between"
           >
-            <span class="text-[10px] text-zinc-600 font-mono"
+            <span class="text-[10px] text-text-dim font-mono"
               >ID: {plan.slug}</span
             >
             <span
-              class="text-[10px] font-bold bg-white/5 text-zinc-400 px-2 py-1"
+              class="text-[10px] font-bold bg-black/5 dark:bg-white/5 text-text-dim px-2 py-1"
             >
               Active
             </span>
@@ -257,17 +267,18 @@
 
       <!-- Add New Plan Card -->
       <button
-        class="border border-border border-dashed p-6 flex flex-col items-center justify-center gap-4 text-zinc-500 hover:text-white hover:border-zinc-500 hover:bg-white/5 transition-all min-h-[300px]"
+        class="border border-border border-dashed p-6 flex flex-col items-center justify-center gap-4 text-text-dim hover:text-text-primary hover:border-text-dim hover:bg-black/5 dark:hover:bg-white/5 transition-all min-h-[300px]"
         onclick={() => (showCreateModal = true)}
       >
-        <div class="w-12 h-12 bg-white/5 flex items-center justify-center">
+        <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center">
           <Plus size={24} />
         </div>
         <div class="text-center">
           <h3 class="font-bold text-sm mb-1">Create New Plan</h3>
-          <p class="text-xs text-zinc-500">Add a new pricing tier</p>
+          <p class="text-xs text-text-dim">Add a new pricing tier</p>
         </div>
       </button>
+
     </div>
   {/if}
 </div>

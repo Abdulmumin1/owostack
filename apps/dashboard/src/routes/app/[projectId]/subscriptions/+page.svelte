@@ -47,13 +47,13 @@
 
   function getStatusColor(status: string) {
     switch (status.toLowerCase()) {
-      case 'active': return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
-      case 'trialing': return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
-      case 'canceled': return 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20';
-      case 'expired': return 'text-orange-400 bg-orange-500/10 border-orange-500/20';
-      case 'past_due': return 'text-amber-500 bg-amber-500/10 border-amber-500/20';
-      case 'incomplete': return 'text-red-500 bg-red-500/10 border-red-500/20';
-      default: return 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20';
+      case 'active': return 'text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
+      case 'trialing': return 'text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/20';
+      case 'canceled': return 'text-text-dim bg-bg-secondary border-border';
+      case 'expired': return 'text-orange-600 dark:text-orange-400 bg-orange-500/10 border-orange-500/20';
+      case 'past_due': return 'text-amber-600 dark:text-amber-500 bg-amber-500/10 border-amber-500/20';
+      case 'incomplete': return 'text-red-600 dark:text-red-500 bg-red-500/10 border-red-500/20';
+      default: return 'text-text-dim bg-bg-secondary border-border';
     }
   }
 
@@ -69,8 +69,8 @@
 <div class="max-w-6xl">
   <div class="flex items-center justify-between mb-8">
     <div>
-      <h1 class="text-xl font-bold text-white mb-2 uppercase tracking-wide">Subscriptions</h1>
-      <p class="text-zinc-500 text-[10px] uppercase tracking-widest font-bold">
+      <h1 class="text-xl font-bold text-text-primary mb-2 uppercase tracking-wide">Subscriptions</h1>
+      <p class="text-text-dim text-[10px] uppercase tracking-widest font-bold">
         Manage customer recurring payments
       </p>
     </div>
@@ -89,7 +89,7 @@
     <div class="input-icon-wrapper max-w-sm">
       <Search
         size={14}
-        class="input-icon-left"
+        class="input-icon-left text-text-dim"
       />
       <input
         type="text"
@@ -104,12 +104,12 @@
     <div class="bg-bg-card border border-border overflow-hidden shadow-md">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-white/5 border-b border-border">
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Customer</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Plan</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Provider</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Status</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Next Billing</th>
+          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Plan</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Provider</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Status</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Next Billing</th>
             <th class="px-6 py-4"></th>
           </tr>
         </thead>
@@ -147,13 +147,13 @@
     </div>
   {:else if filteredSubs.length === 0}
     <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
-      <div class="w-12 h-12 bg-white/5 flex items-center justify-center mb-4">
-        <CreditCard size={24} class="text-zinc-500" />
+      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
+        <CreditCard size={24} class="text-text-dim" />
       </div>
-      <h3 class="text-lg font-bold text-white mb-2">
+      <h3 class="text-lg font-bold text-text-primary mb-2">
         {searchQuery ? "No matching subscriptions" : "No active subscriptions"}
       </h3>
-      <p class="text-zinc-500 max-w-sm text-sm">
+      <p class="text-text-dim max-w-sm text-sm">
         {searchQuery ? "Try a different search term." : "Subscriptions will appear here when customers subscribe to your plans."}
       </p>
     </div>
@@ -162,31 +162,31 @@
     <div class="bg-bg-card border border-border overflow-hidden shadow-md">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-white/5 border-b border-border">
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Customer</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Plan</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Provider</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Status</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Next Billing</th>
+          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Plan</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Provider</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Status</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Next Billing</th>
             <th class="px-6 py-4"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-border/50">
           {#each filteredSubs as sub}
             <tr
-              class="group hover:bg-white/2 transition-colors cursor-pointer {selectedSubId === sub.id ? 'bg-white/5' : ''}"
+              class="group hover:bg-black/2 dark:hover:bg-white/2 transition-colors cursor-pointer {selectedSubId === sub.id ? 'bg-black/5 dark:bg-white/5' : ''}"
               onclick={() => selectedSubId = sub.id}
             >
               <td class="px-6 py-4">
                 <div class="flex flex-col">
-                  <span class="text-sm font-bold text-white">{sub.customer?.email}</span>
-                  <span class="text-[9px] text-zinc-600 font-mono">ID: {sub.id.split('-')[0]}</span>
+                  <span class="text-sm font-bold text-text-primary">{sub.customer?.email}</span>
+                  <span class="text-[9px] text-text-dim font-mono">ID: {sub.id.split('-')[0]}</span>
                 </div>
               </td>
               <td class="px-6 py-4">
                 <div class="flex flex-col">
-                  <span class="text-sm text-zinc-300 font-medium">{sub.plan?.name}</span>
-                  <span class="text-[10px] text-zinc-500">
+                  <span class="text-sm text-text-secondary font-medium">{sub.plan?.name}</span>
+                  <span class="text-[10px] text-text-dim">
                     {formatMoney(sub.plan?.price, sub.plan?.currency)} / {sub.plan?.interval}
                   </span>
                 </div>
@@ -200,19 +200,19 @@
                 </span>
               </td>
               <td class="px-6 py-4">
-                <div class="flex items-center gap-2 text-xs text-zinc-500">
+                <div class="flex items-center gap-2 text-xs text-text-dim">
                   <Clock size={12} />
                   {#if sub.status === 'trialing'}
-                    <span class="text-blue-400">Trial ends {new Date(sub.currentPeriodEnd).toLocaleDateString()}</span>
+                    <span class="text-blue-600 dark:text-blue-400">Trial ends {new Date(sub.currentPeriodEnd).toLocaleDateString()}</span>
                   {:else if sub.status === 'expired'}
-                    <span class="text-orange-400">Expired {new Date(sub.currentPeriodEnd).toLocaleDateString()}</span>
+                    <span class="text-orange-600 dark:text-orange-400">Expired {new Date(sub.currentPeriodEnd).toLocaleDateString()}</span>
                   {:else}
                     {new Date(sub.currentPeriodEnd).toLocaleDateString()}
                   {/if}
                 </div>
               </td>
               <td class="px-6 py-4 text-right">
-                <ArrowRight size={14} class="text-zinc-800 group-hover:text-zinc-500 transition-colors" />
+                <ArrowRight size={14} class="text-text-dim/20 group-hover:text-text-dim transition-colors" />
               </td>
             </tr>
           {/each}

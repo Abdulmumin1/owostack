@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "../src/index";
 import { decrypt } from "../src/lib/encryption";
+import { handleChargeSuccess } from "../src/lib/webhooks/handlers/charge-success";
+import { topUpScopedBalance } from "../src/lib/addon-credits";
 
 function ok<T>(value: T) {
   return {
@@ -31,6 +33,8 @@ const mockDb: any = {
     organizations: { findFirst: vi.fn() },
     providerAccounts: { findMany: vi.fn() },
     projects: { findFirst: vi.fn() },
+    customers: { findFirst: vi.fn() },
+    creditPurchases: { findFirst: vi.fn() },
   },
   insert: vi.fn(() => ({
     values: vi.fn(() => ({
@@ -45,6 +49,9 @@ vi.mock("@owostack/db", () => ({
     organizations: { id: "id" },
     projects: { organizationId: "organizationId" },
     providerAccounts: { organizationId: "organizationId", providerId: "providerId" },
+    customers: { id: "id", organizationId: "organizationId", email: "email" },
+    creditPurchases: { paymentReference: "paymentReference" },
+    events: { id: "id" },
   },
 }));
 
@@ -74,6 +81,12 @@ vi.mock("../src/lib/encryption", () => ({
   encrypt: vi.fn(),
   maskSecretKey: vi.fn(),
   generateEncryptionKey: vi.fn(),
+}));
+
+vi.mock("../src/lib/addon-credits", () => ({
+  topUpScopedBalance: vi.fn(async () => null),
+  getScopedBalance: vi.fn(async () => 0),
+  deductScopedBalance: vi.fn(async () => false),
 }));
 
 vi.mock("../src/lib/webhooks", () => ({
@@ -135,6 +148,90 @@ describe("Webhook route pipeline behavior", () => {
       isErr: () => false,
       isOk: () => true,
     });
+  });
+
+  it("duplicate webhook delivery dispatches twice but charge.success credit purchase is idempotent (no double top-up)", async () => {
+    const processedRefs = new Set<string>();
+
+    mockDb.query.creditPurchases.findFirst.mockImplementation(async ({ where }: any) => {
+      void where;
+      return processedRefs.has("ref_credit_1") ? { id: "cp_1" } : null;
+    });
+    mockDb.query.customers.findFirst.mockResolvedValue({
+      id: "cus_1",
+      organizationId: "org_1",
+      email: "customer@example.com",
+    });
+
+    // Capture credit purchase ledger writes
+    const insertValues = vi.fn(async (payload: any) => {
+      if (payload?.paymentReference) processedRefs.add(payload.paymentReference);
+      return null;
+    });
+    mockDb.insert.mockImplementation(() => ({
+      values: insertValues,
+    }));
+
+    adapterMock.parseWebhookEvent.mockReturnValue(
+      ok({
+        type: "charge.success",
+        provider: "paystack",
+        customer: {
+          email: "customer@example.com",
+          providerCustomerId: "cus_provider_1",
+        },
+        payment: {
+          amount: 7500,
+          currency: "USD",
+          reference: "ref_credit_1",
+        },
+        checkout: {
+          lineItems: [{ quantity: 2 }],
+        },
+        metadata: {
+          type: "credit_purchase",
+          credit_pack_id: "pack_1",
+          credit_system_id: "cs_1",
+          credits: "20",
+          credits_per_pack: "20",
+          quantity: "1",
+        },
+        raw: { event: "charge.success" },
+      } as any),
+    );
+
+    handlerHandleMock.mockImplementation(async (event: any) => {
+      await handleChargeSuccess({
+        db: mockDb,
+        organizationId: "org_1",
+        event,
+        adapter: null,
+        providerAccount: null,
+        workflows: { trialEnd: null, planUpgrade: null },
+        cache: null,
+      } as any);
+      return { isErr: () => false, isOk: () => true };
+    });
+
+    const req = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-paystack-signature": "sig",
+      },
+      body: JSON.stringify({ event: "charge.success", data: {} }),
+    };
+
+    const res1 = await app.request("/webhooks/org_1", req, env);
+    const res2 = await app.request("/webhooks/org_1", req, env);
+
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+
+    expect(handlerHandleMock).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(topUpScopedBalance)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(topUpScopedBalance)).toHaveBeenCalledWith(mockDb, "cus_1", "cs_1", 40);
+    expect(insertValues).toHaveBeenCalledTimes(1);
   });
 
   it("prefers decrypted provider account webhookSecret for signature verification", async () => {

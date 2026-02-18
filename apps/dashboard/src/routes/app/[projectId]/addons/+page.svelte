@@ -116,8 +116,19 @@
     return formatCurrency(amount, currency);
   }
 
+  function handleClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.dropdown-container')) {
+      openMenuId = null;
+    }
+  }
+
   onMount(() => {
     loadPacks();
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
   });
 </script>
 
@@ -126,16 +137,16 @@
   <div class="flex items-center justify-between">
     <div>
       <div class="flex items-center gap-2 mb-1">
-        <Coins size={18} class="text-zinc-500" />
-        <h1 class="text-lg font-bold text-white">Add-on Credit Packs</h1>
+        <Coins size={18} class="text-text-dim" />
+        <h1 class="text-lg font-bold text-text-primary">Add-on Credit Packs</h1>
       </div>
-      <p class="text-[11px] text-zinc-500">
+      <p class="text-[11px] text-text-dim">
         Credit packs let customers purchase extra credits on top of their plan's included balance.
       </p>
     </div>
     <button
       onclick={() => (showCreatePanel = true)}
-      class="bg-accent hover:bg-accent-hover text-black text-[11px] font-bold px-4 py-2 rounded transition-all flex items-center gap-1.5"
+      class="bg-accent hover:bg-accent-hover text-accent-contrast text-[11px] font-bold px-4 py-2 rounded transition-all flex items-center gap-1.5"
     >
       <Plus size={14} />
       Create Pack
@@ -143,23 +154,23 @@
   </div>
 
   {#if error}
-    <div class="bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] px-4 py-3 rounded">
+    <div class="bg-red-500/10 border border-red-500/20 text-red-500 dark:text-red-400 text-[11px] px-4 py-3 rounded">
       {error}
       <button class="ml-2 underline" onclick={() => (error = "")}>dismiss</button>
     </div>
   {/if}
 
   <!-- Packs Table -->
-  <div class="bg-bg-card border border-border/50 rounded-lg overflow-hidden">
+  <div class="bg-bg-card border border-border/50 rounded-lg">
     <table class="w-full text-left border-collapse">
       <thead>
         <tr class="border-b border-border/50">
-          <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Name</th>
-          <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Slug</th>
-          <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Credits</th>
-          <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Price</th>
-          <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Scope</th>
-          <th class="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Status</th>
+          <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Name</th>
+          <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Slug</th>
+          <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Credits</th>
+          <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Price</th>
+          <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Scope</th>
+          <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Status</th>
           <th class="px-6 py-4"></th>
         </tr>
       </thead>
@@ -179,31 +190,31 @@
         {:else if packs.length === 0}
           <tr>
             <td colspan="7" class="px-6 py-16 text-center">
-              <Package size={32} class="text-zinc-700 mx-auto mb-3" />
-              <p class="text-zinc-500 text-sm mb-1">No credit packs yet</p>
-              <p class="text-zinc-600 text-[11px]">
-                Create a credit pack so customers can purchase extra credits via <code class="text-zinc-500">owostack.addon()</code>
+              <Package size={32} class="text-text-dim/20 mx-auto mb-3" />
+              <p class="text-text-dim text-sm mb-1">No credit packs yet</p>
+              <p class="text-text-dim/60 text-[11px]">
+                Create a credit pack so customers can purchase extra credits via <code class="text-text-dim">owostack.addon()</code>
               </p>
             </td>
           </tr>
         {:else}
           {#each packs as pack}
-            <tr class="group hover:bg-white/[0.02] transition-colors">
+            <tr class="group hover:bg-black/2 dark:hover:bg-white/[0.02] transition-colors">
               <td class="px-6 py-4">
                 {#if editingId === pack.id}
                   <input
                     bind:value={editForm.name}
-                    class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-white w-full focus:border-accent focus:outline-none"
+                    class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-text-primary w-full focus:border-accent focus:outline-none"
                   />
                 {:else}
-                  <div class="text-sm font-medium text-white">{pack.name}</div>
+                  <div class="text-sm font-medium text-text-primary">{pack.name}</div>
                   {#if pack.description}
-                    <div class="text-[10px] text-zinc-600 mt-0.5">{pack.description}</div>
+                    <div class="text-[10px] text-text-dim mt-0.5">{pack.description}</div>
                   {/if}
                 {/if}
               </td>
               <td class="px-6 py-4">
-                <div class="text-[11px] font-mono text-zinc-500">{pack.slug}</div>
+                <div class="text-[11px] font-mono text-text-dim">{pack.slug}</div>
               </td>
               <td class="px-6 py-4">
                 {#if editingId === pack.id}
@@ -211,10 +222,10 @@
                     type="number"
                     bind:value={editForm.credits}
                     min="1"
-                    class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-white w-20 focus:border-accent focus:outline-none"
+                    class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-text-primary w-20 focus:border-accent focus:outline-none"
                   />
                 {:else}
-                  <div class="text-sm text-white font-mono">{pack.credits}</div>
+                  <div class="text-sm text-text-primary font-mono">{pack.credits}</div>
                 {/if}
               </td>
               <td class="px-6 py-4">
@@ -224,11 +235,11 @@
                       type="number"
                       bind:value={editForm.price}
                       min="0"
-                      class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-white w-20 focus:border-accent focus:outline-none"
+                      class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-text-primary w-20 focus:border-accent focus:outline-none"
                     />
                     <select
                       bind:value={editForm.currency}
-                      class="bg-bg-primary border border-border rounded px-1 py-1 text-[10px] text-white focus:border-accent focus:outline-none"
+                      class="bg-bg-primary border border-border rounded px-1 py-1 text-[10px] text-text-primary focus:border-accent focus:outline-none"
                     >
                       {#each COMMON_CURRENCIES as c}
                         <option value={c.code}>{c.code}</option>
@@ -236,23 +247,23 @@
                     </select>
                   </div>
                 {:else}
-                  <div class="text-sm text-zinc-300">{formatPrice(pack.price, pack.currency)}</div>
+                  <div class="text-sm text-text-secondary">{formatPrice(pack.price, pack.currency)}</div>
                 {/if}
               </td>
               <td class="px-6 py-4">
                 {#if pack.creditSystemId}
-                  <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400">
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
                     {pack.creditSystem?.name || pack.creditSystemId}
                   </span>
                 {:else}
-                  <span class="text-[10px] font-medium text-zinc-600">Global</span>
+                  <span class="text-[10px] font-medium text-text-dim">Global</span>
                 {/if}
               </td>
               <td class="px-6 py-4">
                 <span
                   class="text-[10px] font-bold px-2 py-0.5 rounded {pack.isActive
-                    ? 'bg-emerald-500/10 text-emerald-400'
-                    : 'bg-zinc-500/10 text-zinc-500'}"
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-bg-secondary text-text-dim'}"
                 >
                   {pack.isActive ? "Active" : "Inactive"}
                 </span>
@@ -263,21 +274,21 @@
                     <button
                       onclick={savePack}
                       disabled={isUpdating}
-                      class="bg-accent text-black text-[10px] font-bold px-3 py-1 rounded"
+                      class="bg-accent text-accent-contrast text-[10px] font-bold px-3 py-1 rounded"
                     >
                       {isUpdating ? "..." : "Save"}
                     </button>
                     <button
                       onclick={() => (editingId = null)}
-                      class="text-zinc-500 text-[10px]"
+                      class="text-text-dim text-[10px]"
                     >
                       Cancel
                     </button>
                   </div>
                 {:else}
-                  <div class="relative inline-block text-left">
+                  <div class="relative inline-block text-left dropdown-container">
                     <button
-                      class="text-zinc-500 hover:text-white transition-opacity {openMenuId === pack.id
+                      class="text-text-dim hover:text-text-primary transition-opacity {openMenuId === pack.id
                         ? 'opacity-100'
                         : 'opacity-0 group-hover:opacity-100'}"
                       onclick={(e) => {
@@ -289,29 +300,30 @@
                     </button>
                     {#if openMenuId === pack.id}
                       <div
-                        class="absolute right-0 mt-2 w-44 bg-[#141414] border border-border shadow-xl z-10 py-1"
+                        class="absolute right-0 mt-2 w-44 bg-bg-card border border-border shadow-xl z-50 py-1"
                         transition:fade={{ duration: 100 }}
+                        onclick={(e) => e.stopPropagation()}
                       >
                         <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-zinc-300 hover:bg-white/5 flex items-center gap-2"
+                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2"
                           onclick={() => startEdit(pack)}
                         >
                           <Pencil size={12} /> Edit
                         </button>
                         <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-zinc-300 hover:bg-white/5 flex items-center gap-2"
+                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2"
                           onclick={() => copyText(pack.slug)}
                         >
                           <Copy size={12} /> Copy Slug
                         </button>
                         <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-zinc-300 hover:bg-white/5 flex items-center gap-2"
+                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2"
                           onclick={() => toggleActive(pack)}
                         >
                           {pack.isActive ? "Deactivate" : "Activate"}
                         </button>
                         <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                          class="w-full text-left px-4 py-2 text-[11px] text-red-500 hover:bg-red-500/10 flex items-center gap-2"
                           onclick={() => deletePack(pack.id)}
                         >
                           <Trash2 size={12} /> Delete
@@ -330,8 +342,8 @@
 
   <!-- SDK Usage Hint -->
   <div class="bg-bg-card border border-border/30 rounded-lg p-5">
-    <h3 class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">SDK Usage</h3>
-    <pre class="text-[11px] text-zinc-400 font-mono bg-bg-primary rounded p-4 overflow-x-auto"><code>// Purchase add-on credits
+    <h3 class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3">SDK Usage</h3>
+    <pre class="text-[11px] text-text-secondary font-mono bg-bg-primary rounded p-4 overflow-x-auto"><code>// Purchase add-on credits
 const result = await owostack.addon(&#123;
   customer: "user@example.com",
   pack: "{packs[0]?.slug || 'credit-pack-slug'}",
