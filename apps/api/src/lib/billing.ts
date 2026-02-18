@@ -4,6 +4,7 @@ import { schema } from "@owostack/db";
 import { eq, and, gte, lte, sql, isNull, desc, inArray } from "drizzle-orm";
 import { DatabaseError, NotFoundError } from "./errors";
 import { getResetPeriod } from "./reset-period";
+import { getMinimumChargeAmount } from "./provider-minimums";
 
 type DB = ReturnType<typeof createDb>;
 
@@ -199,6 +200,28 @@ export class BillingService {
         if (unbilled.features.length === 0) {
           throw new NotFoundError({
             resource: "Unbilled usage",
+            id: customerId,
+          });
+        }
+
+        // Check minimum charge amount for provider/currency
+        const paymentMethod = await this.db.query.paymentMethods.findFirst({
+          where: and(
+            eq(schema.paymentMethods.customerId, customerId),
+            eq(schema.paymentMethods.isValid, 1),
+            eq(schema.paymentMethods.isDefault, 1),
+          ),
+        });
+
+        const providerId = paymentMethod?.providerId || "unknown";
+        const minimumAmount = getMinimumChargeAmount(
+          providerId,
+          unbilled.currency,
+        );
+
+        if (minimumAmount > 0 && unbilled.totalEstimated < minimumAmount) {
+          throw new NotFoundError({
+            resource: `Invoice amount ${unbilled.totalEstimated} ${unbilled.currency} below provider minimum ${minimumAmount}`,
             id: customerId,
           });
         }

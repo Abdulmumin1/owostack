@@ -8,6 +8,7 @@ import {
   deriveProviderEnvironment,
   loadProviderAccounts,
 } from "../../lib/providers";
+import { getMinimumChargeAmount } from "../../lib/provider-minimums";
 import type { Env, Variables } from "../../index";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -83,7 +84,14 @@ app.post("/", async (c) => {
   const parsed = syncPayloadSchema.safeParse(body);
 
   if (!parsed.success) {
-    return c.json({ success: false, error: "Invalid sync payload", details: parsed.error.flatten() }, 400);
+    return c.json(
+      {
+        success: false,
+        error: "Invalid sync payload",
+        details: parsed.error.flatten(),
+      },
+      400,
+    );
   }
 
   const { features: featureDefs, plans: planDefs } = parsed.data;
@@ -91,13 +99,24 @@ app.post("/", async (c) => {
   const organizationId = c.get("organizationId");
 
   if (!organizationId) {
-    return c.json({ success: false, error: "Organization context missing" }, 500);
+    return c.json(
+      { success: false, error: "Organization context missing" },
+      500,
+    );
   }
 
   const result = {
     success: true,
-    features: { created: [] as string[], updated: [] as string[], unchanged: [] as string[] },
-    plans: { created: [] as string[], updated: [] as string[], unchanged: [] as string[] },
+    features: {
+      created: [] as string[],
+      updated: [] as string[],
+      unchanged: [] as string[],
+    },
+    plans: {
+      created: [] as string[],
+      updated: [] as string[],
+      unchanged: [] as string[],
+    },
     warnings: [] as string[],
   };
 
@@ -121,7 +140,8 @@ app.post("/", async (c) => {
       const typeChanged = existing.type !== featureDef.type;
 
       if (nameChanged || typeChanged) {
-        await db.update(schema.features)
+        await db
+          .update(schema.features)
           .set({
             name: featureDef.name,
             type: featureDef.type,
@@ -131,12 +151,15 @@ app.post("/", async (c) => {
         result.features.updated.push(featureDef.slug);
 
         if (existing.source === "dashboard") {
-          result.warnings.push(`Feature '${featureDef.slug}' was managed by dashboard — now managed by SDK.`);
+          result.warnings.push(
+            `Feature '${featureDef.slug}' was managed by dashboard — now managed by SDK.`,
+          );
         }
       } else {
         // Mark as SDK-managed even if nothing changed
         if (existing.source !== "sdk") {
-          await db.update(schema.features)
+          await db
+            .update(schema.features)
             .set({ source: "sdk" })
             .where(eq(schema.features.id, existing.id));
         }
@@ -182,7 +205,51 @@ app.post("/", async (c) => {
         existing.trialDays !== (planDef.trialDays ?? 0);
 
       if (changed) {
-        await db.update(schema.plans)
+        // Validate minimum charge amount if price changed and plan has a provider
+        if (
+          existing.price !== planDef.price &&
+          planDef.price > 0 &&
+          existing.providerId
+        ) {
+          const minimumAmount = getMinimumChargeAmount(
+            existing.providerId,
+            planDef.currency,
+          );
+
+          if (minimumAmount > 0 && planDef.price < minimumAmount) {
+            const minDisplay = minimumAmount / 100;
+            result.warnings.push(
+              `Plan '${planDef.slug}' price ${planDef.price / 100} ${planDef.currency} is below the minimum charge amount of ${minDisplay} ${planDef.currency} for ${existing.providerId}. Price update skipped.`,
+            );
+            // Skip price update but continue with other changes
+            await db
+              .update(schema.plans)
+              .set({
+                name: planDef.name,
+                currency: planDef.currency,
+                interval: planDef.interval,
+                description: planDef.description ?? null,
+                planGroup: planDef.planGroup ?? null,
+                trialDays: planDef.trialDays ?? 0,
+                type: planDef.price === 0 ? "free" : "paid",
+                metadata: planDef.metadata ?? null,
+                source: "sdk",
+                updatedAt: Date.now(),
+              })
+              .where(eq(schema.plans.id, existing.id));
+            result.plans.updated.push(planDef.slug);
+            await reconcilePlanFeatures(
+              db,
+              organizationId,
+              existing.id,
+              planDef.features,
+            );
+            continue;
+          }
+        }
+
+        await db
+          .update(schema.plans)
           .set({
             name: planDef.name,
             price: planDef.price,
@@ -199,7 +266,9 @@ app.post("/", async (c) => {
           .where(eq(schema.plans.id, existing.id));
 
         if (existing.source === "dashboard") {
-          result.warnings.push(`Plan '${planDef.slug}' was managed by dashboard — now managed by SDK.`);
+          result.warnings.push(
+            `Plan '${planDef.slug}' was managed by dashboard — now managed by SDK.`,
+          );
         }
 
         // Sync price/name changes with payment provider
@@ -237,9 +306,14 @@ app.post("/", async (c) => {
               });
 
               if (updateResult.isOk()) {
-                console.log(`[sync] Updated plan on ${existing.providerId}: ${existing.providerPlanId}`);
+                console.log(
+                  `[sync] Updated plan on ${existing.providerId}: ${existing.providerPlanId}`,
+                );
               } else {
-                console.warn(`[sync] Failed to update plan on ${existing.providerId}:`, updateResult.error);
+                console.warn(
+                  `[sync] Failed to update plan on ${existing.providerId}:`,
+                  updateResult.error,
+                );
               }
             }
           } catch (e) {
@@ -251,7 +325,8 @@ app.post("/", async (c) => {
       } else {
         // Mark as SDK-managed
         if (existing.source !== "sdk") {
-          await db.update(schema.plans)
+          await db
+            .update(schema.plans)
             .set({ source: "sdk" })
             .where(eq(schema.plans.id, existing.id));
         }
@@ -259,7 +334,12 @@ app.post("/", async (c) => {
       }
 
       // Reconcile plan features
-      await reconcilePlanFeatures(db, organizationId, existing.id, planDef.features);
+      await reconcilePlanFeatures(
+        db,
+        organizationId,
+        existing.id,
+        planDef.features,
+      );
     } else {
       // Create new plan
       const planId = crypto.randomUUID();
@@ -324,7 +404,8 @@ async function reconcilePlanFeatures(
       // If feature is disabled, remove the plan_feature if it exists
       const existing = existingByFeatureId.get(feature.id);
       if (existing) {
-        await db.delete(schema.planFeatures)
+        await db
+          .delete(schema.planFeatures)
           .where(eq(schema.planFeatures.id, existing.id));
       }
       continue;
@@ -343,7 +424,8 @@ async function reconcilePlanFeatures(
 
     if (existing) {
       // Update existing plan feature
-      await db.update(schema.planFeatures)
+      await db
+        .update(schema.planFeatures)
         .set(values)
         .where(eq(schema.planFeatures.id, existing.id));
     } else {
