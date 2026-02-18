@@ -1,6 +1,16 @@
-import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from "cloudflare:workers";
+import {
+  WorkflowEntrypoint,
+  WorkflowStep,
+  WorkflowEvent,
+} from "cloudflare:workers";
 import type { WorkflowEnv } from "./utils";
-import { getAdapter, resolveProviderAccount, intervalToMs, provisionEntitlements } from "./utils";
+import {
+  getAdapter,
+  resolveProviderAccount,
+  intervalToMs,
+  provisionEntitlements,
+  invalidateSubscriptionCache,
+} from "./utils";
 import type { ProviderAccount } from "@owostack/adapters";
 
 // Serializable snapshot of the fields we need from ProviderAccount
@@ -42,7 +52,10 @@ export interface TrialEndParams {
 // individually retryable and durable.
 // ---------------------------------------------------------------------------
 
-export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndParams> {
+export class TrialEndWorkflow extends WorkflowEntrypoint<
+  WorkflowEnv,
+  TrialEndParams
+> {
   async run(event: WorkflowEvent<TrialEndParams>, step: WorkflowStep) {
     const {
       subscriptionId,
@@ -59,7 +72,9 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
     } = event.payload;
 
     // Step 1: Sleep until trial ends
-    console.log(`[TrialEndWorkflow] Waiting for trial end: subscription=${subscriptionId}`);
+    console.log(
+      `[TrialEndWorkflow] Waiting for trial end: subscription=${subscriptionId}`,
+    );
     const waitMs = trialEndMs - Date.now();
     if (waitMs > 0) {
       await step.sleep("wait-for-trial-end", waitMs);
@@ -69,12 +84,16 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
     const sub = await step.do("check-subscription-status", async () => {
       const result = await this.env.DB.prepare(
         "SELECT id, status, cancel_at FROM subscriptions WHERE id = ? LIMIT 1",
-      ).bind(subscriptionId).first<{ id: string; status: string; cancel_at: number | null }>();
+      )
+        .bind(subscriptionId)
+        .first<{ id: string; status: string; cancel_at: number | null }>();
       return result;
     });
 
     if (!sub || sub.status !== "trialing") {
-      console.log(`[TrialEndWorkflow] Subscription ${subscriptionId} is ${sub?.status ?? "missing"}, skipping`);
+      console.log(
+        `[TrialEndWorkflow] Subscription ${subscriptionId} is ${sub?.status ?? "missing"}, skipping`,
+      );
       return;
     }
 
@@ -84,8 +103,13 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
         const now = Date.now();
         await this.env.DB.prepare(
           "UPDATE subscriptions SET status = 'canceled', canceled_at = ?, updated_at = ? WHERE id = ?",
-        ).bind(now, now, subscriptionId).run();
-        console.log(`[TrialEndWorkflow] Canceled (user requested): subscription=${subscriptionId}`);
+        )
+          .bind(now, now, subscriptionId)
+          .run();
+        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        console.log(
+          `[TrialEndWorkflow] Canceled (user requested): subscription=${subscriptionId}`,
+        );
       });
       return;
     }
@@ -97,8 +121,13 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
         const now = Date.now();
         await this.env.DB.prepare(
           "UPDATE subscriptions SET status = 'active', updated_at = ? WHERE id = ? AND status = 'trialing'",
-        ).bind(now, subscriptionId).run();
-        console.log(`[TrialEndWorkflow] Native trial ended, activated: subscription=${subscriptionId} (provider handles billing)`);
+        )
+          .bind(now, subscriptionId)
+          .run();
+        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        console.log(
+          `[TrialEndWorkflow] Native trial ended, activated: subscription=${subscriptionId} (provider handles billing)`,
+        );
       });
       return;
     }
@@ -108,11 +137,15 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
     const latestAuth = await step.do("fetch-latest-auth", async () => {
       const pm = await this.env.DB.prepare(
         "SELECT token, provider_id FROM payment_methods WHERE customer_id = ? AND is_valid = 1 AND is_default = 1 LIMIT 1",
-      ).bind(customerId).first<{ token: string; provider_id: string }>();
+      )
+        .bind(customerId)
+        .first<{ token: string; provider_id: string }>();
 
       const customer = await this.env.DB.prepare(
         "SELECT email FROM customers WHERE id = ? LIMIT 1",
-      ).bind(customerId).first<{ email: string | null }>();
+      )
+        .bind(customerId)
+        .first<{ email: string | null }>();
 
       return {
         authCode: pm?.token || authorizationCode || null,
@@ -129,27 +162,39 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
         const now = Date.now();
         await this.env.DB.prepare(
           "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ?",
-        ).bind(now, subscriptionId).run();
-        console.log(`[TrialEndWorkflow] Expired (no card/data): subscription=${subscriptionId}, authCode=${!!resolvedAuthCode}, email=${!!resolvedEmail}, amount=${amount}`);
+        )
+          .bind(now, subscriptionId)
+          .run();
+        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        console.log(
+          `[TrialEndWorkflow] Expired (no card/data): subscription=${subscriptionId}, authCode=${!!resolvedAuthCode}, email=${!!resolvedEmail}, amount=${amount}`,
+        );
       });
       return;
     }
 
     // Step 4: Resolve adapter + provider account
-    const accountData: ResolvedAccount | null = await step.do("resolve-provider", async () => {
-      const account = await resolveProviderAccount(this.env, organizationId, providerId);
-      if (!account) return null;
-      // Return a plain serializable snapshot
-      return {
-        id: account.id,
-        organizationId: account.organizationId,
-        providerId: account.providerId,
-        environment: account.environment,
-        credentials: account.credentials as ResolvedAccount["credentials"],
-        createdAt: account.createdAt,
-        updatedAt: account.updatedAt,
-      };
-    });
+    const accountData: ResolvedAccount | null = await step.do(
+      "resolve-provider",
+      async () => {
+        const account = await resolveProviderAccount(
+          this.env,
+          organizationId,
+          providerId,
+        );
+        if (!account) return null;
+        // Return a plain serializable snapshot
+        return {
+          id: account.id,
+          organizationId: account.organizationId,
+          providerId: account.providerId,
+          environment: account.environment,
+          credentials: account.credentials as ResolvedAccount["credentials"],
+          createdAt: account.createdAt,
+          updatedAt: account.updatedAt,
+        };
+      },
+    );
 
     if (!accountData) {
       // Can't charge — expire the subscription instead
@@ -157,8 +202,12 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
         const now = Date.now();
         await this.env.DB.prepare(
           "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ?",
-        ).bind(now, subscriptionId).run();
-        console.log(`[TrialEndWorkflow] Expired (no provider key): subscription=${subscriptionId}`);
+        )
+          .bind(now, subscriptionId)
+          .run();
+        console.log(
+          `[TrialEndWorkflow] Expired (no provider key): subscription=${subscriptionId}`,
+        );
       });
       return;
     }
@@ -173,46 +222,75 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
     let lastChargeError = "";
 
     for (let attempt = 0; attempt < MAX_CHARGE_ATTEMPTS; attempt++) {
-      const result = await step.do(`charge-card-attempt-${attempt}`, async () => {
-        const adapter = getAdapter(providerId);
-        if (!adapter) {
-          return { success: false as const, error: `No adapter for provider: ${providerId}`, retryable: false };
-        }
-
-        try {
-          const chargeResult = await adapter.chargeAuthorization({
-            customer: { id: customerId, email: resolvedEmail },
-            authorizationCode: resolvedAuthCode,
-            amount: amount!,
-            currency: currency || "USD",
-            metadata: {
-              subscription_id: subscriptionId,
-              plan_id: planId,
-              customer_id: customerId,
-              organization_id: organizationId,
-              trial_conversion: true,
-            },
-            environment: accountData.environment as "test" | "live",
-            account: accountData as unknown as ProviderAccount,
-          });
-
-          if (chargeResult.isErr()) {
-            const errMsg = chargeResult.error.message || JSON.stringify(chargeResult.error);
-            // Determine if the error is retryable.
-            // Authorization/validation errors are permanent — retrying won't help.
-            const permanent = /invalid_authorization|validation_error|invalid_request|authorization.*(invalid|expired|not found)/i.test(errMsg);
-            console.error(`[TrialEndWorkflow] Charge attempt ${attempt} failed: ${errMsg} (permanent=${permanent})`);
-            return { success: false as const, error: errMsg, retryable: !permanent };
+      const result = await step.do(
+        `charge-card-attempt-${attempt}`,
+        async () => {
+          const adapter = getAdapter(providerId);
+          if (!adapter) {
+            return {
+              success: false as const,
+              error: `No adapter for provider: ${providerId}`,
+              retryable: false,
+            };
           }
 
-          console.log(`[TrialEndWorkflow] Charge succeeded: subscription=${subscriptionId}, ref=${chargeResult.value.reference}`);
-          return { success: true as const, reference: chargeResult.value.reference };
-        } catch (networkErr: any) {
-          // Network/timeout errors are retryable
-          console.error(`[TrialEndWorkflow] Charge attempt ${attempt} threw: ${networkErr.message}`);
-          return { success: false as const, error: networkErr.message, retryable: true };
-        }
-      });
+          try {
+            const chargeResult = await adapter.chargeAuthorization({
+              customer: { id: customerId, email: resolvedEmail },
+              authorizationCode: resolvedAuthCode,
+              amount: amount!,
+              currency: currency || "USD",
+              metadata: {
+                subscription_id: subscriptionId,
+                plan_id: planId,
+                customer_id: customerId,
+                organization_id: organizationId,
+                trial_conversion: true,
+              },
+              environment: accountData.environment as "test" | "live",
+              account: accountData as unknown as ProviderAccount,
+            });
+
+            if (chargeResult.isErr()) {
+              const errMsg =
+                chargeResult.error.message ||
+                JSON.stringify(chargeResult.error);
+              // Determine if the error is retryable.
+              // Authorization/validation errors are permanent — retrying won't help.
+              const permanent =
+                /invalid_authorization|validation_error|invalid_request|authorization.*(invalid|expired|not found)/i.test(
+                  errMsg,
+                );
+              console.error(
+                `[TrialEndWorkflow] Charge attempt ${attempt} failed: ${errMsg} (permanent=${permanent})`,
+              );
+              return {
+                success: false as const,
+                error: errMsg,
+                retryable: !permanent,
+              };
+            }
+
+            console.log(
+              `[TrialEndWorkflow] Charge succeeded: subscription=${subscriptionId}, ref=${chargeResult.value.reference}`,
+            );
+            return {
+              success: true as const,
+              reference: chargeResult.value.reference,
+            };
+          } catch (networkErr: any) {
+            // Network/timeout errors are retryable
+            console.error(
+              `[TrialEndWorkflow] Charge attempt ${attempt} threw: ${networkErr.message}`,
+            );
+            return {
+              success: false as const,
+              error: networkErr.message,
+              retryable: true,
+            };
+          }
+        },
+      );
 
       if (result.success) {
         chargeSucceeded = true;
@@ -223,7 +301,9 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
 
       // Don't retry permanent errors
       if (!result.retryable) {
-        console.log(`[TrialEndWorkflow] Permanent charge error — skipping remaining attempts`);
+        console.log(
+          `[TrialEndWorkflow] Permanent charge error — skipping remaining attempts`,
+        );
         break;
       }
 
@@ -235,39 +315,49 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
     }
 
     if (!chargeSucceeded) {
-      console.error(`[TrialEndWorkflow] All charge attempts failed: subscription=${subscriptionId}, lastError=${lastChargeError}`);
+      console.error(
+        `[TrialEndWorkflow] All charge attempts failed: subscription=${subscriptionId}, lastError=${lastChargeError}`,
+      );
     }
 
     if (chargeSucceeded) {
       // Step 6a: Look up plan + customer to decide if we need a provider subscription
-      const planAndCustomer = await step.do("lookup-plan-customer", async () => {
-        const plan = await this.env.DB.prepare(
-          "SELECT id, billing_type, interval, provider_plan_id, paystack_plan_id, currency FROM plans WHERE id = ? LIMIT 1",
-        ).bind(planId).first<{
-          id: string;
-          billing_type: string;
-          interval: string;
-          provider_plan_id: string | null;
-          paystack_plan_id: string | null;
-          currency: string;
-        }>();
+      const planAndCustomer = await step.do(
+        "lookup-plan-customer",
+        async () => {
+          const plan = await this.env.DB.prepare(
+            "SELECT id, billing_type, interval, provider_plan_id, paystack_plan_id, currency FROM plans WHERE id = ? LIMIT 1",
+          )
+            .bind(planId)
+            .first<{
+              id: string;
+              billing_type: string;
+              interval: string;
+              provider_plan_id: string | null;
+              paystack_plan_id: string | null;
+              currency: string;
+            }>();
 
-        const customer = await this.env.DB.prepare(
-          "SELECT id, email, provider_customer_id, paystack_customer_id FROM customers WHERE id = ? LIMIT 1",
-        ).bind(customerId).first<{
-          id: string;
-          email: string;
-          provider_customer_id: string | null;
-          paystack_customer_id: string | null;
-        }>();
+          const customer = await this.env.DB.prepare(
+            "SELECT id, email, provider_customer_id, paystack_customer_id FROM customers WHERE id = ? LIMIT 1",
+          )
+            .bind(customerId)
+            .first<{
+              id: string;
+              email: string;
+              provider_customer_id: string | null;
+              paystack_customer_id: string | null;
+            }>();
 
-        return { plan, customer };
-      });
+          return { plan, customer };
+        },
+      );
 
       const { plan, customer } = planAndCustomer;
       const isRecurring = plan?.billing_type === "recurring";
       const providerPlanCode = plan?.provider_plan_id || plan?.paystack_plan_id;
-      const customerCode = customer?.provider_customer_id || customer?.paystack_customer_id;
+      const customerCode =
+        customer?.provider_customer_id || customer?.paystack_customer_id;
 
       // Step 6b: For recurring plans with provider plan codes, create a
       // subscription on the provider so it handles future billing cycles.
@@ -282,46 +372,71 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
       const trialAdapter = getAdapter(providerId);
       const skipProviderSub = trialAdapter?.supportsNativeTrials === true;
 
-      if (isRecurring && providerPlanCode && customerCode && resolvedAuthCode && !skipProviderSub) {
+      if (
+        isRecurring &&
+        providerPlanCode &&
+        customerCode &&
+        resolvedAuthCode &&
+        !skipProviderSub
+      ) {
         try {
-          const subResult = await step.do("create-provider-subscription", async () => {
-            const adapter = getAdapter(providerId);
-            if (!adapter) throw new Error(`No adapter for provider: ${providerId}`);
+          const subResult = await step.do(
+            "create-provider-subscription",
+            async () => {
+              const adapter = getAdapter(providerId);
+              if (!adapter)
+                throw new Error(`No adapter for provider: ${providerId}`);
 
-            const startDate = new Date(Date.now() + intervalToMs(plan!.interval));
+              const startDate = new Date(
+                Date.now() + intervalToMs(plan!.interval),
+              );
 
-            const result = await adapter.createSubscription({
-              customer: { id: customerCode!, email: email || customer!.email },
-              plan: { id: providerPlanCode! },
-              authorizationCode: resolvedAuthCode,
-              startDate: startDate.toISOString(),
-              environment: accountData.environment as "test" | "live",
-              account: accountData as unknown as ProviderAccount,
-              metadata: {
-                subscription_id: subscriptionId,
-                trial_conversion: true,
-              },
-            });
+              const result = await adapter.createSubscription({
+                customer: {
+                  id: customerCode!,
+                  email: email || customer!.email,
+                },
+                plan: { id: providerPlanCode! },
+                authorizationCode: resolvedAuthCode,
+                startDate: startDate.toISOString(),
+                environment: accountData.environment as "test" | "live",
+                account: accountData as unknown as ProviderAccount,
+                metadata: {
+                  subscription_id: subscriptionId,
+                  trial_conversion: true,
+                },
+              });
 
-            if (result.isErr()) {
-              throw new Error(`Create subscription failed: ${result.error.message}`);
-            }
+              if (result.isErr()) {
+                throw new Error(
+                  `Create subscription failed: ${result.error.message}`,
+                );
+              }
 
-            console.log(`[TrialEndWorkflow] Provider subscription created: ${result.value.id}, next charge at ${startDate.toISOString()}`);
-            return result.value.id;
-          });
+              console.log(
+                `[TrialEndWorkflow] Provider subscription created: ${result.value.id}, next charge at ${startDate.toISOString()}`,
+              );
+              return result.value.id;
+            },
+          );
           providerSubCode = subResult;
         } catch (subErr) {
           // Non-fatal — subscription is active locally, just no auto-renewal
-          console.error(`[TrialEndWorkflow] Failed to create provider subscription: subscription=${subscriptionId}`, subErr);
+          console.error(
+            `[TrialEndWorkflow] Failed to create provider subscription: subscription=${subscriptionId}`,
+            subErr,
+          );
         }
       }
 
       // Step 6c: Activate subscription in DB (+ update provider sub code if created)
       await step.do("activate-subscription", async () => {
         const now = Date.now();
-        const periodEnd = plan ? now + intervalToMs(plan.interval) : now + 30 * 24 * 60 * 60 * 1000;
-        const paystackSubCode = providerId === "paystack" ? providerSubCode : null;
+        const periodEnd = plan
+          ? now + intervalToMs(plan.interval)
+          : now + 30 * 24 * 60 * 60 * 1000;
+        const paystackSubCode =
+          providerId === "paystack" ? providerSubCode : null;
 
         await this.env.DB.prepare(
           `UPDATE subscriptions
@@ -333,18 +448,30 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
                current_period_end = ?,
                updated_at = ?
            WHERE id = ? AND status = 'trialing'`,
-        ).bind(
-          providerSubCode, providerSubCode, paystackSubCode,
-          now, periodEnd, now, subscriptionId,
-        ).run();
+        )
+          .bind(
+            providerSubCode,
+            providerSubCode,
+            paystackSubCode,
+            now,
+            periodEnd,
+            now,
+            subscriptionId,
+          )
+          .run();
 
-        console.log(`[TrialEndWorkflow] Activated: subscription=${subscriptionId}, providerSub=${providerSubCode || "none"}`);
+        console.log(
+          `[TrialEndWorkflow] Activated: subscription=${subscriptionId}, providerSub=${providerSubCode || "none"}`,
+        );
+        await invalidateSubscriptionCache(this.env, organizationId, customerId);
       });
 
       // Step 6d: Re-provision entitlements (idempotent — ensures features are current)
       await step.do("provision-entitlements", async () => {
         await provisionEntitlements(this.env, customerId, planId);
-        console.log(`[TrialEndWorkflow] Entitlements provisioned: customer=${customerId}, plan=${planId}`);
+        console.log(
+          `[TrialEndWorkflow] Entitlements provisioned: customer=${customerId}, plan=${planId}`,
+        );
       });
     } else {
       // Step 6b: Charge failed after all retries — expire the subscription
@@ -352,8 +479,13 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
         const now = Date.now();
         await this.env.DB.prepare(
           "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'trialing'",
-        ).bind(now, subscriptionId).run();
-        console.log(`[TrialEndWorkflow] Expired (charge failed): subscription=${subscriptionId}`);
+        )
+          .bind(now, subscriptionId)
+          .run();
+        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        console.log(
+          `[TrialEndWorkflow] Expired (charge failed): subscription=${subscriptionId}`,
+        );
       });
     }
   }

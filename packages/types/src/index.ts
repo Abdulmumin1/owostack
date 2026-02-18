@@ -6,7 +6,10 @@ export interface OwostackConfig {
   /** API secret key */
   secretKey: string;
 
-  /** Optional: Custom API URL for self-hosted deployments */
+  /** Optional: Environment mode (sandbox or live) */
+  mode?: "sandbox" | "live";
+
+  /** Optional: Custom API URL for self-hosted deployments (takes precedence over mode) */
   apiUrl?: string;
 
   /** Optional: Enable debug mode */
@@ -494,13 +497,35 @@ export type PaymentChannel =
   | "qr";
 
 export type Currency =
-  | "NGN" | "GHS" | "ZAR" | "KES"   // Africa
-  | "USD" | "CAD"                     // North America
-  | "EUR" | "GBP" | "CHF" | "SEK" | "NOK" | "DKK" | "PLN" | "CZK" // Europe
-  | "JPY" | "CNY" | "INR" | "SGD" | "HKD" | "AUD" | "NZD"          // Asia-Pacific
-  | "BRL" | "MXN" | "ARS" | "COP"   // Latin America
-  | "AED" | "SAR" | "EGP"            // Middle East
-  | (string & {});                    // Allow any ISO 4217 code
+  | "NGN"
+  | "GHS"
+  | "ZAR"
+  | "KES" // Africa
+  | "USD"
+  | "CAD" // North America
+  | "EUR"
+  | "GBP"
+  | "CHF"
+  | "SEK"
+  | "NOK"
+  | "DKK"
+  | "PLN"
+  | "CZK" // Europe
+  | "JPY"
+  | "CNY"
+  | "INR"
+  | "SGD"
+  | "HKD"
+  | "AUD"
+  | "NZD" // Asia-Pacific
+  | "BRL"
+  | "MXN"
+  | "ARS"
+  | "COP" // Latin America
+  | "AED"
+  | "SAR"
+  | "EGP" // Middle East
+  | (string & {}); // Allow any ISO 4217 code
 
 export type PlanInterval =
   | "daily"
@@ -509,7 +534,17 @@ export type PlanInterval =
   | "quarterly"
   | "yearly";
 
-export type ResetInterval = "never" | "5min" | "15min" | "30min" | "hourly" | "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
+export type ResetInterval =
+  | "never"
+  | "5min"
+  | "15min"
+  | "30min"
+  | "hourly"
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "quarterly"
+  | "yearly";
 
 export type SubscriptionStatus =
   | "active"
@@ -932,4 +967,158 @@ export interface SyncResult {
   features: SyncChanges;
   plans: SyncChanges;
   warnings: string[];
+}
+
+/**
+ * customer() - Create or resolve a customer
+ */
+
+export interface CustomerParams {
+  /** Customer ID (optional - auto-generated if not provided) */
+  id?: string;
+
+  /** Customer email (required) */
+  email: string;
+
+  /** Customer display name */
+  name?: string;
+
+  /** Custom metadata */
+  metadata?: Record<string, unknown>;
+}
+
+export interface CustomerResult {
+  /** Customer ID */
+  id: string;
+
+  /** Customer email */
+  email: string;
+
+  /** Customer display name */
+  name?: string;
+
+  /** Custom metadata */
+  metadata?: Record<string, unknown>;
+
+  /** ISO timestamp when created */
+  createdAt: string;
+
+  /** ISO timestamp when last updated */
+  updatedAt: string;
+}
+
+/**
+ * addEntity() - Add a feature entity (e.g., seat)
+ */
+
+export interface AddEntityParams {
+  /** Customer ID or email */
+  customer: string;
+
+  /** Feature slug that this entity consumes (e.g., "seats") */
+  feature: string;
+
+  /** Entity ID (unique per feature) */
+  entity: string;
+
+  /** Display name for the entity */
+  name?: string;
+
+  /** Email for the entity */
+  email?: string;
+
+  /** Custom metadata */
+  metadata?: Record<string, unknown>;
+}
+
+export interface AddEntityResult {
+  /** Whether the entity was created successfully */
+  success: boolean;
+
+  /** The entity ID */
+  entityId: string;
+
+  /** The feature slug */
+  featureId: string;
+
+  /** Current count of entities for this feature */
+  count: number;
+
+  /** Limit for this feature (null = unlimited) */
+  limit: number | null;
+
+  /** Remaining slots (null = unlimited) */
+  remaining: number | null;
+}
+
+/**
+ * removeEntity() - Remove a feature entity
+ */
+
+export interface RemoveEntityParams {
+  /** Customer ID or email */
+  customer: string;
+
+  /** Feature slug */
+  feature: string;
+
+  /** Entity ID to remove */
+  entity: string;
+}
+
+export interface RemoveEntityResult {
+  /** Whether the entity was removed successfully */
+  success: boolean;
+
+  /** The entity ID that was removed */
+  entityId: string;
+
+  /** Current count of entities for this feature after removal */
+  count: number;
+}
+
+/**
+ * listEntities() - List feature entities
+ */
+
+export interface ListEntitiesParams {
+  /** Customer ID or email */
+  customer: string;
+
+  /** Feature slug (optional - lists all entities if not provided) */
+  feature?: string;
+}
+
+export interface Entity {
+  /** Entity ID */
+  id: string;
+
+  /** Feature slug */
+  featureId: string;
+
+  /** Display name */
+  name?: string;
+
+  /** Email */
+  email?: string;
+
+  /** Custom metadata */
+  metadata?: Record<string, unknown>;
+
+  /** Entity status */
+  status: "active" | "pending_removal";
+
+  /** ISO timestamp when created */
+  createdAt: string;
+}
+
+export interface ListEntitiesResult {
+  /** Whether the request succeeded */
+  success: boolean;
+
+  /** List of entities */
+  entities: Entity[];
+
+  /** Total count */
+  total: number;
 }

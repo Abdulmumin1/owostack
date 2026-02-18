@@ -14,7 +14,9 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
 
   // Guard: cannot process without a customer email
   if (!event.customer.email) {
-    console.warn(`[WEBHOOK] charge.success with no customer email — skipping. ref=${reference}, provider=${event.provider}`);
+    console.warn(
+      `[WEBHOOK] charge.success with no customer email — skipping. ref=${reference}, provider=${event.provider}`,
+    );
     return;
   }
 
@@ -38,10 +40,14 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
         providerAuthorizationCode: event.authorization?.reusable
           ? event.authorization.code
           : null,
-        paystackCustomerId: event.provider === "paystack" ? event.customer.providerCustomerId : null,
-        paystackAuthorizationCode: event.provider === "paystack" && event.authorization?.reusable
-          ? event.authorization.code
-          : null,
+        paystackCustomerId:
+          event.provider === "paystack"
+            ? event.customer.providerCustomerId
+            : null,
+        paystackAuthorizationCode:
+          event.provider === "paystack" && event.authorization?.reusable
+            ? event.authorization.code
+            : null,
       })
       .returning();
     dbCustomer = newCustomer;
@@ -53,8 +59,14 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
         providerId: event.provider,
         providerCustomerId: event.customer.providerCustomerId,
         providerAuthorizationCode: event.authorization.code,
-        paystackAuthorizationCode: event.provider === "paystack" ? event.authorization.code : dbCustomer.paystackAuthorizationCode,
-        paystackCustomerId: event.provider === "paystack" ? event.customer.providerCustomerId : dbCustomer.paystackCustomerId,
+        paystackAuthorizationCode:
+          event.provider === "paystack"
+            ? event.authorization.code
+            : dbCustomer.paystackAuthorizationCode,
+        paystackCustomerId:
+          event.provider === "paystack"
+            ? event.customer.providerCustomerId
+            : dbCustomer.paystackCustomerId,
         updatedAt: Date.now(),
       })
       .where(eq(schema.customers.id, dbCustomer.id));
@@ -64,7 +76,11 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
   // Only save as "card" when actual card details (last4) are present (Paystack).
   // For Dodo the authorization code is a subscription_id — those are stored as
   // "provider_managed" by the subscription.created handler instead.
-  if (event.authorization?.reusable && event.authorization.code && event.authorization.last4) {
+  if (
+    event.authorization?.reusable &&
+    event.authorization.code &&
+    event.authorization.last4
+  ) {
     try {
       await upsertPaymentMethod(db, {
         customerId: dbCustomer.id,
@@ -85,31 +101,47 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
   // Parse trial flags once — reused by both auto-refund (1c) and trial handling (2).
   const isCardSetup = metadata.type === "card_setup";
   const isTrial = metadata.is_trial === true || metadata.is_trial === "true";
-  const isNativeTrial = metadata.native_trial === true || metadata.native_trial === "true";
+  const isNativeTrial =
+    metadata.native_trial === true || metadata.native_trial === "true";
   const isAuthCaptureTrial = isTrial && !isNativeTrial;
 
   // 1c. Auto-refund auth capture charges (card_setup or non-native trial).
   // These are small verification charges — refund them so the customer isn't billed.
   // Fire-and-forget: refund failure should never block the main flow.
   const refundFn = ctx.adapter?.refundCharge?.bind(ctx.adapter);
-  if ((isCardSetup || isAuthCaptureTrial) && reference && refundFn && ctx.providerAccount) {
+  if (
+    (isCardSetup || isAuthCaptureTrial) &&
+    reference &&
+    refundFn &&
+    ctx.providerAccount
+  ) {
     // Truly fire-and-forget — don't block the webhook response for a non-critical refund.
     const account = ctx.providerAccount;
     const refundType = isCardSetup ? "card_setup" : "trial";
     refundFn({
       reference,
-      reason: isCardSetup ? "Card setup verification refund" : "Trial card verification refund",
+      reason: isCardSetup
+        ? "Card setup verification refund"
+        : "Trial card verification refund",
       environment: account.environment as "test" | "live",
       account,
-    }).then((result) => {
-      if (result.isErr()) {
-        console.warn(`[WEBHOOK] Auto-refund failed for ref=${reference}: ${result.error.message}`);
-      } else {
-        console.log(`[WEBHOOK] Auto-refunded auth capture: ref=${reference}, type=${refundType}`);
-      }
-    }).catch((err) => {
-      console.warn(`[WEBHOOK] Auto-refund error for ref=${reference}: ${err}`);
-    });
+    })
+      .then((result) => {
+        if (result.isErr()) {
+          console.warn(
+            `[WEBHOOK] Auto-refund failed for ref=${reference}: ${result.error.message}`,
+          );
+        } else {
+          console.log(
+            `[WEBHOOK] Auto-refunded auth capture: ref=${reference}, type=${refundType}`,
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn(
+          `[WEBHOOK] Auto-refund error for ref=${reference}: ${err}`,
+        );
+      });
   }
 
   // 2. Handle TRIAL subscriptions (is_trial in metadata)
@@ -136,7 +168,9 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
     }
   }
 
-  console.log(`[WEBHOOK] Trial check: is_trial=${JSON.stringify(metadata.is_trial)} (resolved=${isTrial}), native=${isNativeTrial}, plan_id=${metadata.plan_id}, trial_days=${metadata.trial_days} (resolved=${trialDays})`);
+  console.log(
+    `[WEBHOOK] Trial check: is_trial=${JSON.stringify(metadata.is_trial)} (resolved=${isTrial}), native=${isNativeTrial}, plan_id=${metadata.plan_id}, trial_days=${metadata.trial_days} (resolved=${trialDays})`,
+  );
 
   // For native trials, trialDays may be 0 (metadata lost). Allow entry if native_trial flag is set.
   if (isTrial && metadata.plan_id && (trialDays > 0 || isNativeTrial)) {
@@ -146,16 +180,21 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
 
   // 2b. Trial conversion charges (from trial-end workflow's chargeAuthorization)
   // The workflow handles subscription activation — skip to avoid creating a duplicate.
-  const isTrialConversion = metadata.trial_conversion === true || metadata.trial_conversion === "true";
+  const isTrialConversion =
+    metadata.trial_conversion === true || metadata.trial_conversion === "true";
   if (isTrialConversion) {
-    console.log(`[WEBHOOK] Trial conversion charge for customer=${dbCustomer.id}, plan=${metadata.plan_id} — workflow handles activation`);
+    console.log(
+      `[WEBHOOK] Trial conversion charge for customer=${dbCustomer.id}, plan=${metadata.plan_id} — workflow handles activation`,
+    );
     return;
   }
 
   // 2c. Handle INVOICE PAYMENT (from billing.pay() checkout or auto-charge webhook)
   if (metadata.type === "invoice_payment" && metadata.invoice_id) {
     const invoiceId = String(metadata.invoice_id);
-    console.log(`[WEBHOOK] Invoice payment received: invoice=${invoiceId}, ref=${reference}`);
+    console.log(
+      `[WEBHOOK] Invoice payment received: invoice=${invoiceId}, ref=${reference}`,
+    );
     try {
       await db
         .update(schema.invoices)
@@ -243,7 +282,8 @@ async function handleTrialCreation(
   const { db, organizationId, event, workflows } = ctx;
   const { metadata } = event;
   const planId = metadata.plan_id as string;
-  const isNativeTrial = metadata.native_trial === true || metadata.native_trial === "true";
+  const isNativeTrial =
+    metadata.native_trial === true || metadata.native_trial === "true";
   const now = Date.now();
 
   // Compute trial end:
@@ -252,21 +292,29 @@ async function handleTrialCreation(
   // 3. Fallback: 30 days (native trial with no dates available)
   let trialEndMs: number;
   if (isNativeTrial && event.subscription?.nextPaymentDate) {
-    trialEndMs = safeParseDate(event.subscription.nextPaymentDate) || (now + 30 * 24 * 60 * 60 * 1000);
+    trialEndMs =
+      safeParseDate(event.subscription.nextPaymentDate) ||
+      now + 30 * 24 * 60 * 60 * 1000;
   } else if (trialDays > 0) {
-    trialEndMs = trialUnitMeta === "minutes"
-      ? now + trialDays * 60 * 1000
-      : now + trialDays * 24 * 60 * 60 * 1000;
+    trialEndMs =
+      trialUnitMeta === "minutes"
+        ? now + trialDays * 60 * 1000
+        : now + trialDays * 24 * 60 * 60 * 1000;
   } else {
     trialEndMs = now + 30 * 24 * 60 * 60 * 1000;
   }
 
-  console.log(`[TRIAL-WEBHOOK] Card captured for trial: plan=${planId}, customer=${dbCustomer.id}, native=${isNativeTrial}, duration=${trialDays} ${trialUnitMeta || 'days'}, trialEnds=${new Date(trialEndMs).toISOString()}`);
+  console.log(
+    `[TRIAL-WEBHOOK] Card captured for trial: plan=${planId}, customer=${dbCustomer.id}, native=${isNativeTrial}, duration=${trialDays} ${trialUnitMeta || "days"}, trialEnds=${new Date(trialEndMs).toISOString()}`,
+  );
 
   // For native trials, use the provider's subscription code directly (not a synthetic trial-xxx code)
   // so subsequent subscription.active events can find and link to this subscription.
   const providerSubCode = event.subscription?.providerCode;
-  const trialSubscriptionCode = (isNativeTrial && providerSubCode) ? providerSubCode : `trial-${crypto.randomUUID().slice(0, 8)}`;
+  const trialSubscriptionCode =
+    isNativeTrial && providerSubCode
+      ? providerSubCode
+      : `trial-${crypto.randomUUID().slice(0, 8)}`;
 
   // Check if an active/trialing subscription already exists (skip canceled/refunded
   // so customers can re-trial a plan they previously had)
@@ -285,7 +333,9 @@ async function handleTrialCreation(
   let trialSubId: string;
   if (!existingSub) {
     trialSubId = crypto.randomUUID();
-    console.log(`[TRIAL-WEBHOOK] Creating trial subscription: customer=${dbCustomer.id}, plan=${planId}`);
+    console.log(
+      `[TRIAL-WEBHOOK] Creating trial subscription: customer=${dbCustomer.id}, plan=${planId}`,
+    );
     await db.insert(schema.subscriptions).values([
       {
         id: trialSubId,
@@ -294,7 +344,8 @@ async function handleTrialCreation(
         providerId: (metadata.provider_id as string) || event.provider,
         providerSubscriptionId: trialSubscriptionCode,
         providerSubscriptionCode: trialSubscriptionCode,
-        paystackSubscriptionCode: event.provider === "paystack" ? trialSubscriptionCode : null,
+        paystackSubscriptionCode:
+          event.provider === "paystack" ? trialSubscriptionCode : null,
         status: "trialing",
         currentPeriodStart: now,
         currentPeriodEnd: trialEndMs,
@@ -321,20 +372,30 @@ async function handleTrialCreation(
             providerId: (metadata.provider_id as string) || event.provider,
             environment: (metadata.environment as string) || "test",
             trialEndMs,
-            authorizationCode: event.authorization?.reusable ? event.authorization.code : undefined,
+            authorizationCode: event.authorization?.reusable
+              ? event.authorization.code
+              : undefined,
             email: event.customer.email,
             amount: Number(metadata.amount) || 0,
-            currency: (metadata.currency as string) || event.payment?.currency || "USD",
+            currency:
+              (metadata.currency as string) || event.payment?.currency || "USD",
             planSlug: metadata.plan_slug as string,
             nativeTrial: false,
           },
         });
-        console.log(`[TRIAL-WEBHOOK] Trial end workflow dispatched: subscription=${trialSubId}, trialEnds=${new Date(trialEndMs).toISOString()}`);
+        console.log(
+          `[TRIAL-WEBHOOK] Trial end workflow dispatched: subscription=${trialSubId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
+        );
       } catch (wfErr) {
-        console.error(`[TRIAL-WEBHOOK] Failed to dispatch trial end workflow for subscription=${trialSubId}:`, wfErr);
+        console.error(
+          `[TRIAL-WEBHOOK] Failed to dispatch trial end workflow for subscription=${trialSubId}:`,
+          wfErr,
+        );
       }
     } else if (isNativeTrial) {
-      console.log(`[TRIAL-WEBHOOK] Native trial — skipping workflow dispatch (provider handles billing): subscription=${trialSubId}`);
+      console.log(
+        `[TRIAL-WEBHOOK] Native trial — skipping workflow dispatch (provider handles billing): subscription=${trialSubId}`,
+      );
     }
   } else {
     // Existing sub found — it may have been created as "active" by a reordered
@@ -352,7 +413,9 @@ async function handleTrialCreation(
           providerSubscriptionId: trialSubscriptionCode,
           providerSubscriptionCode: trialSubscriptionCode,
           metadata: {
-            ...(typeof existingSub.metadata === "object" && existingSub.metadata ? existingSub.metadata as Record<string, unknown> : {}),
+            ...(typeof existingSub.metadata === "object" && existingSub.metadata
+              ? (existingSub.metadata as Record<string, unknown>)
+              : {}),
             trial: true,
             trial_ends_at: trialEndMs,
             authorization_code: event.authorization?.code,
@@ -360,9 +423,13 @@ async function handleTrialCreation(
           updatedAt: now,
         })
         .where(eq(schema.subscriptions.id, existingSub.id));
-      console.log(`[TRIAL-WEBHOOK] Updated existing active sub ${existingSub.id} to trialing (reordered events)`);
+      console.log(
+        `[TRIAL-WEBHOOK] Updated existing active sub ${existingSub.id} to trialing (reordered events)`,
+      );
     } else {
-      console.log(`[TRIAL-WEBHOOK] Existing trialing sub ${existingSub.id} found, skipping creation`);
+      console.log(
+        `[TRIAL-WEBHOOK] Existing trialing sub ${existingSub.id} found, skipping creation`,
+      );
     }
   }
 
@@ -378,10 +445,15 @@ async function handleTrialCreation(
     }
   }
 
-  console.log(`[TRIAL-WEBHOOK] Trial subscription flow complete for customer=${dbCustomer.id}`);
+  console.log(
+    `[TRIAL-WEBHOOK] Trial subscription flow complete for customer=${dbCustomer.id}`,
+  );
 }
 
-async function handlePlanUpgrade(ctx: WebhookContext, dbCustomer: any): Promise<void> {
+async function handlePlanUpgrade(
+  ctx: WebhookContext,
+  dbCustomer: any,
+): Promise<void> {
   const { db, organizationId, event, workflows } = ctx;
   const { metadata } = event;
   const newPlanId = metadata.new_plan_id as string;
@@ -395,7 +467,10 @@ async function handlePlanUpgrade(ctx: WebhookContext, dbCustomer: any): Promise<
       where: eq(schema.subscriptions.id, oldSubId),
     });
     if (oldSub) {
-      oldProviderSubCode = oldSub.providerSubscriptionCode || oldSub.paystackSubscriptionCode || undefined;
+      oldProviderSubCode =
+        oldSub.providerSubscriptionCode ||
+        oldSub.paystackSubscriptionCode ||
+        undefined;
     }
   }
 
@@ -416,13 +491,32 @@ async function handlePlanUpgrade(ctx: WebhookContext, dbCustomer: any): Promise<
           currency: event.payment?.currency || "USD",
         },
       });
-      console.log(`[WEBHOOK] Plan upgrade workflow dispatched: customer=${dbCustomer.id}, newPlan=${newPlanId}`);
+      console.log(
+        `[WEBHOOK] Plan upgrade workflow dispatched: customer=${dbCustomer.id}, newPlan=${newPlanId}`,
+      );
     } catch (wfErr) {
-      console.error(`[WEBHOOK] Failed to dispatch plan upgrade workflow:`, wfErr);
-      await handlePlanUpgradeInline(ctx, dbCustomer, oldSubId, oldPlanId, newPlanId, upgradeProviderId);
+      console.error(
+        `[WEBHOOK] Failed to dispatch plan upgrade workflow:`,
+        wfErr,
+      );
+      await handlePlanUpgradeInline(
+        ctx,
+        dbCustomer,
+        oldSubId,
+        oldPlanId,
+        newPlanId,
+        upgradeProviderId,
+      );
     }
   } else {
-    await handlePlanUpgradeInline(ctx, dbCustomer, oldSubId, oldPlanId, newPlanId, upgradeProviderId);
+    await handlePlanUpgradeInline(
+      ctx,
+      dbCustomer,
+      oldSubId,
+      oldPlanId,
+      newPlanId,
+      upgradeProviderId,
+    );
   }
 }
 
@@ -441,33 +535,43 @@ async function handleCreditPurchase(
 
   // If we have per-pack info, recalculate total from quantity
   const eventQuantity = event.checkout?.lineItems?.[0]?.quantity;
-  const resolvedQuantity = typeof eventQuantity === "number" && eventQuantity > 0
-    ? eventQuantity
-    : metaQuantity;
+  const resolvedQuantity =
+    typeof eventQuantity === "number" && eventQuantity > 0
+      ? eventQuantity
+      : metaQuantity;
 
-  const creditsAmount = creditsPerPack > 0
-    ? creditsPerPack * resolvedQuantity
-    : Number(metadata.credits);
+  const creditsAmount =
+    creditsPerPack > 0
+      ? creditsPerPack * resolvedQuantity
+      : Number(metadata.credits);
 
   if (isNaN(creditsAmount) || creditsAmount <= 0) {
-    console.error(`[WEBHOOK] Invalid credits amount: credits=${metadata.credits}, perPack=${creditsPerPack}, qty=${resolvedQuantity}`);
+    console.error(
+      `[WEBHOOK] Invalid credits amount: credits=${metadata.credits}, perPack=${creditsPerPack}, qty=${resolvedQuantity}`,
+    );
     return;
   }
 
   // Every add-on must be attached to a credit system
   const creditSystemId = metadata.credit_system_id as string | undefined;
   if (!creditSystemId) {
-    console.error(`[WEBHOOK] Credit purchase missing credit_system_id: pack=${creditPackId}`);
+    console.error(
+      `[WEBHOOK] Credit purchase missing credit_system_id: pack=${creditPackId}`,
+    );
     return;
   }
 
   // Dedup: if this payment reference was already processed, skip to avoid double credits
   if (reference) {
-    const existingPurchase = await (db as any).query.creditPurchases?.findFirst?.({
+    const existingPurchase = await (
+      db as any
+    ).query.creditPurchases?.findFirst?.({
       where: eq((schema as any).creditPurchases.paymentReference, reference),
     });
     if (existingPurchase) {
-      console.log(`[WEBHOOK] Credit purchase already processed: ref=${reference}, skipping`);
+      console.log(
+        `[WEBHOOK] Credit purchase already processed: ref=${reference}, skipping`,
+      );
       return;
     }
   }
@@ -490,10 +594,15 @@ async function handleCreditPurchase(
     metadata: event.raw,
   });
 
-  console.log(`[WEBHOOK] Credit purchase: customer=${dbCustomer.id}, credits=${creditsAmount}, qty=${resolvedQuantity}, pack=${creditPackId || "manual"}, system=${creditSystemId}`);
+  console.log(
+    `[WEBHOOK] Credit purchase: customer=${dbCustomer.id}, credits=${creditsAmount}, qty=${resolvedQuantity}, pack=${creditPackId || "manual"}, system=${creditSystemId}`,
+  );
 }
 
-async function handleOneTimePurchase(ctx: WebhookContext, dbCustomer: any): Promise<void> {
+async function handleOneTimePurchase(
+  ctx: WebhookContext,
+  dbCustomer: any,
+): Promise<void> {
   const { db, event } = ctx;
   const { metadata } = event;
   const planId = metadata.plan_id as string;
@@ -519,7 +628,8 @@ async function handleOneTimePurchase(ctx: WebhookContext, dbCustomer: any): Prom
         providerId: (metadata.provider_id as string) || event.provider,
         providerSubscriptionId: "one-time",
         providerSubscriptionCode: "one-time",
-        paystackSubscriptionCode: event.provider === "paystack" ? "one-time" : null,
+        paystackSubscriptionCode:
+          event.provider === "paystack" ? "one-time" : null,
         status: "active",
         currentPeriodStart: now,
         currentPeriodEnd: now,
@@ -533,14 +643,53 @@ async function handleOneTimePurchase(ctx: WebhookContext, dbCustomer: any): Prom
   // Invalidate cache so /check sees the one-time purchase immediately
   if (ctx.cache) {
     try {
-      await ctx.cache.invalidateSubscriptions(ctx.organizationId, dbCustomer.id);
+      await ctx.cache.invalidateSubscriptions(
+        ctx.organizationId,
+        dbCustomer.id,
+      );
     } catch (e) {
       console.warn(`[WEBHOOK] One-time purchase cache invalidation failed:`, e);
     }
   }
 }
 
-async function handleSubscriptionPayment(ctx: WebhookContext, dbCustomer: any): Promise<void> {
+/**
+ * Clean up entities marked for removal at period end
+ * Called when a subscription renews to finalize entity removals
+ */
+async function cleanupPendingRemovalEntities(
+  db: any,
+  customerId: string,
+): Promise<void> {
+  try {
+    const removed = await db
+      .delete(schema.entities)
+      .where(
+        and(
+          eq(schema.entities.customerId, customerId),
+          eq(schema.entities.status, "pending_removal"),
+        ),
+      )
+      .returning();
+
+    if (removed.length > 0) {
+      console.log(
+        `[WEBHOOK] Cleaned up ${removed.length} pending removal entities for customer ${customerId}`,
+      );
+    }
+  } catch (error) {
+    console.error(
+      `[WEBHOOK] Failed to cleanup pending removal entities for customer ${customerId}:`,
+      error,
+    );
+    // Don't throw - this is cleanup, shouldn't block the renewal
+  }
+}
+
+async function handleSubscriptionPayment(
+  ctx: WebhookContext,
+  dbCustomer: any,
+): Promise<void> {
   const { db, organizationId, event, cache } = ctx;
   const { metadata } = event;
   const planId = metadata.plan_id as string;
@@ -559,7 +708,9 @@ async function handleSubscriptionPayment(ctx: WebhookContext, dbCustomer: any): 
   const plan = await db.query.plans.findFirst({
     where: eq(schema.plans.id, planId),
   });
-  const periodMs = plan ? intervalToMs(plan.interval) : 30 * 24 * 60 * 60 * 1000;
+  const periodMs = plan
+    ? intervalToMs(plan.interval)
+    : 30 * 24 * 60 * 60 * 1000;
   const startMs = safeParseDate(event.payment?.paidAt) || Date.now();
 
   if (!existingSub) {
@@ -571,7 +722,10 @@ async function handleSubscriptionPayment(ctx: WebhookContext, dbCustomer: any): 
         providerId: (metadata.provider_id as string) || event.provider,
         providerSubscriptionId: event.payment?.reference || "charge",
         providerSubscriptionCode: event.payment?.reference || "charge",
-        paystackSubscriptionCode: event.provider === "paystack" ? (event.payment?.reference || "charge") : null,
+        paystackSubscriptionCode:
+          event.provider === "paystack"
+            ? event.payment?.reference || "charge"
+            : null,
         status: "active",
         currentPeriodStart: startMs,
         currentPeriodEnd: startMs + periodMs,
@@ -589,6 +743,9 @@ async function handleSubscriptionPayment(ctx: WebhookContext, dbCustomer: any): 
         updatedAt: Date.now(),
       })
       .where(eq(schema.subscriptions.id, existingSub.id));
+
+    // Clean up entities marked for removal at period end
+    await cleanupPendingRemovalEntities(db, dbCustomer.id);
   }
 
   await provisionEntitlements(db, dbCustomer.id, planId);
@@ -598,12 +755,18 @@ async function handleSubscriptionPayment(ctx: WebhookContext, dbCustomer: any): 
     try {
       await cache.invalidateSubscriptions(organizationId, dbCustomer.id);
     } catch (e) {
-      console.warn(`[WEBHOOK] Cache invalidation after subscription update failed:`, e);
+      console.warn(
+        `[WEBHOOK] Cache invalidation after subscription update failed:`,
+        e,
+      );
     }
   }
 }
 
-async function handleAutoRenewal(ctx: WebhookContext, _dbCustomer: any): Promise<void> {
+async function handleAutoRenewal(
+  ctx: WebhookContext,
+  _dbCustomer: any,
+): Promise<void> {
   const { db, organizationId, event, cache } = ctx;
   const subCode = event.subscription?.providerCode;
   if (!subCode) return;
@@ -620,7 +783,8 @@ async function handleAutoRenewal(ctx: WebhookContext, _dbCustomer: any): Promise
     const periodMs = intervalToMs(existingSub.plan.interval);
     const startMs = safeParseDate(event.payment?.paidAt) || Date.now();
     // Prefer provider's next billing date over calculated period (more accurate for variable-length months)
-    const endMs = safeParseDate(event.subscription?.nextPaymentDate) || (startMs + periodMs);
+    const endMs =
+      safeParseDate(event.subscription?.nextPaymentDate) || startMs + periodMs;
 
     await db
       .update(schema.subscriptions)
@@ -632,12 +796,20 @@ async function handleAutoRenewal(ctx: WebhookContext, _dbCustomer: any): Promise
       })
       .where(eq(schema.subscriptions.id, existingSub.id));
 
-    console.log(`[WEBHOOK] Auto-renewal: advanced period for sub ${existingSub.id} (code=${subCode}), newEnd=${new Date(endMs).toISOString()}`);
+    // Clean up entities marked for removal at period end
+    await cleanupPendingRemovalEntities(db, existingSub.customerId);
+
+    console.log(
+      `[WEBHOOK] Auto-renewal: advanced period for sub ${existingSub.id} (code=${subCode}), newEnd=${new Date(endMs).toISOString()}`,
+    );
 
     // Invalidate cache so /check and /track see updated period
     if (cache) {
       try {
-        await cache.invalidateSubscriptions(organizationId, existingSub.customerId);
+        await cache.invalidateSubscriptions(
+          organizationId,
+          existingSub.customerId,
+        );
       } catch (e) {
         console.warn(`[WEBHOOK] Auto-renewal cache invalidation failed:`, e);
       }
@@ -664,7 +836,8 @@ async function handlePlanUpgradeInline(
     });
 
     if (oldSub) {
-      const subCode = oldSub.providerSubscriptionCode || oldSub.paystackSubscriptionCode;
+      const subCode =
+        oldSub.providerSubscriptionCode || oldSub.paystackSubscriptionCode;
       if (
         adapter &&
         providerAccount &&
@@ -680,7 +853,10 @@ async function handlePlanUpgradeInline(
             account: providerAccount,
           });
         } catch (e) {
-          console.warn(`Webhook inline upgrade: provider cancel threw for ${subCode}:`, e);
+          console.warn(
+            `Webhook inline upgrade: provider cancel threw for ${subCode}:`,
+            e,
+          );
         }
       }
 
@@ -695,7 +871,9 @@ async function handlePlanUpgradeInline(
   const newPlan = await db.query.plans.findFirst({
     where: eq(schema.plans.id, newPlanId),
   });
-  const periodMs = newPlan ? intervalToMs(newPlan.interval) : 30 * 24 * 60 * 60 * 1000;
+  const periodMs = newPlan
+    ? intervalToMs(newPlan.interval)
+    : 30 * 24 * 60 * 60 * 1000;
   const startMs = safeParseDate(event.payment?.paidAt) || now;
 
   // Idempotency: check for existing active/trialing sub before inserting
@@ -711,7 +889,7 @@ async function handlePlanUpgradeInline(
   });
 
   // Preserve old billing cycle end (reuses oldSub fetched above)
-  const endMs = oldSub?.currentPeriodEnd || (startMs + periodMs);
+  const endMs = oldSub?.currentPeriodEnd || startMs + periodMs;
 
   let newSubId: string | undefined;
   if (!existingUpgradedSub) {
@@ -724,7 +902,8 @@ async function handlePlanUpgradeInline(
         providerId: upgradeProviderId,
         providerSubscriptionId: "upgrade",
         providerSubscriptionCode: "upgrade",
-        paystackSubscriptionCode: event.provider === "paystack" ? "upgrade" : null,
+        paystackSubscriptionCode:
+          event.provider === "paystack" ? "upgrade" : null,
         status: "active",
         currentPeriodStart: startMs,
         currentPeriodEnd: endMs,
@@ -739,7 +918,9 @@ async function handlePlanUpgradeInline(
   // Skip for providers with native trials / checkout-based subscriptions —
   // createSubscription would create a checkout session, not a real subscription.
   const providerPlanCode = newPlan?.providerPlanId || newPlan?.paystackPlanId;
-  const authCode = dbCustomer.providerAuthorizationCode || dbCustomer.paystackAuthorizationCode;
+  const authCode =
+    dbCustomer.providerAuthorizationCode ||
+    dbCustomer.paystackAuthorizationCode;
   const skipProviderSub = adapter?.supportsNativeTrials === true;
   if (
     adapter &&
@@ -764,13 +945,17 @@ async function handlePlanUpgradeInline(
           .set({
             providerSubscriptionId: result.value.id,
             providerSubscriptionCode: result.value.id,
-            paystackSubscriptionCode: event.provider === "paystack" ? result.value.id : null,
+            paystackSubscriptionCode:
+              event.provider === "paystack" ? result.value.id : null,
             updatedAt: Date.now(),
           })
           .where(eq(schema.subscriptions.id, newSubId));
       }
     } catch (e) {
-      console.warn(`[WEBHOOK] Inline upgrade: provider createSubscription failed:`, e);
+      console.warn(
+        `[WEBHOOK] Inline upgrade: provider createSubscription failed:`,
+        e,
+      );
     }
   }
 

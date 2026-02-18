@@ -31,6 +31,9 @@
     "features/credits",
 
     "---SDK Reference---",
+    "sdk/configuration",
+    "sdk/customer",
+    "sdk/entities",
     "sdk/attach",
     "sdk/plans",
     "sdk/check",

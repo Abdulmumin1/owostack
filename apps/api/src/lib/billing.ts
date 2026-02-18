@@ -76,7 +76,11 @@ export class BillingService {
         const subscription = await this.db.query.subscriptions.findFirst({
           where: and(
             eq(schema.subscriptions.customerId, customerId),
-            inArray(schema.subscriptions.status, ["active", "canceled", "pending_cancel"]),
+            inArray(schema.subscriptions.status, [
+              "active",
+              "canceled",
+              "pending_cancel",
+            ]),
           ),
           with: {
             plan: {
@@ -183,93 +187,109 @@ export class BillingService {
   ): Promise<Result<GenerateInvoiceResult, NotFoundError | DatabaseError>> {
     return Result.tryPromise({
       try: async () => {
-        const unbilledResult = await this.getUnbilledUsage(customerId, organizationId);
+        const unbilledResult = await this.getUnbilledUsage(
+          customerId,
+          organizationId,
+        );
         if (unbilledResult.isErr()) {
           throw unbilledResult.error;
         }
 
         const unbilled = unbilledResult.value;
         if (unbilled.features.length === 0) {
-          throw new NotFoundError({ resource: "Unbilled usage", id: customerId });
+          throw new NotFoundError({
+            resource: "Unbilled usage",
+            id: customerId,
+          });
         }
 
+        // Generate unique invoice number with random suffix to prevent race conditions
         const invoiceCount = await this.db
           .select({ count: sql<number>`COUNT(*)` })
           .from(schema.invoices)
           .where(eq(schema.invoices.organizationId, organizationId));
 
-        const invoiceNumber = `INV-${String((invoiceCount[0]?.count || 0) + 1).padStart(5, "0")}`;
+        const seq = (invoiceCount[0]?.count || 0) + 1;
+        const suffix = crypto.randomUUID().slice(0, 4).toUpperCase();
+        const invoiceNumber = `INV-${String(seq).padStart(5, "0")}-${suffix}`;
 
-        const periodStart = Math.min(...unbilled.features.map(f => f.periodStart));
-        const periodEnd = Math.max(...unbilled.features.map(f => f.periodEnd));
+        const periodStart = Math.min(
+          ...unbilled.features.map((f) => f.periodStart),
+        );
+        const periodEnd = Math.max(
+          ...unbilled.features.map((f) => f.periodEnd),
+        );
         const usageCutoffAt = Date.now();
 
         const invoiceId = crypto.randomUUID();
         const now = Date.now();
 
-        await this.db.insert(schema.invoices).values({
-          id: invoiceId,
-          organizationId,
-          customerId,
-          number: invoiceNumber,
-          status: "open",
-          currency: unbilled.currency,
-          subtotal: unbilled.totalEstimated,
-          tax: 0,
-          total: unbilled.totalEstimated,
-          amountPaid: 0,
-          amountDue: unbilled.totalEstimated,
-          periodStart,
-          periodEnd,
-          usageCutoffAt,
-          dueAt: now + 7 * 24 * 60 * 60 * 1000,
-          createdAt: now,
-          updatedAt: now,
-        });
-
+        // Wrap invoice generation in transaction for atomicity
         const items: InvoiceLineItem[] = [];
-        for (const f of unbilled.features) {
-          const itemId = crypto.randomUUID();
-          const description = `${f.featureName}: ${f.billableQuantity} ${f.billingUnits > 1 ? `units (${f.billingUnits} per package)` : "units"}`;
-
-          await this.db.insert(schema.invoiceItems).values({
-            id: itemId,
-            invoiceId,
-            featureId: f.featureId,
-            description,
-            quantity: f.billableQuantity,
-            unitPrice: Math.round(f.pricePerUnit / f.billingUnits),
-            amount: f.estimatedAmount,
-            periodStart: f.periodStart,
-            periodEnd: f.periodEnd,
+        await this.db.transaction(async (tx: any) => {
+          await tx.insert(schema.invoices).values({
+            id: invoiceId,
+            organizationId,
+            customerId,
+            number: invoiceNumber,
+            status: "open",
+            currency: unbilled.currency,
+            subtotal: unbilled.totalEstimated,
+            tax: 0,
+            total: unbilled.totalEstimated,
+            amountPaid: 0,
+            amountDue: unbilled.totalEstimated,
+            periodStart,
+            periodEnd,
+            usageCutoffAt,
+            dueAt: now + 7 * 24 * 60 * 60 * 1000,
             createdAt: now,
+            updatedAt: now,
           });
 
-          items.push({
-            featureId: f.featureId,
-            featureSlug: f.featureSlug,
-            description,
-            quantity: f.billableQuantity,
-            unitPrice: Math.round(f.pricePerUnit / f.billingUnits),
-            amount: f.estimatedAmount,
-            periodStart: f.periodStart,
-            periodEnd: f.periodEnd,
-          });
+          for (const f of unbilled.features) {
+            const itemId = crypto.randomUUID();
+            const description = `${f.featureName}: ${f.billableQuantity} ${f.billingUnits > 1 ? `units (${f.billingUnits} per package)` : "units"}`;
 
-          await this.db
-            .update(schema.usageRecords)
-            .set({ invoiceId })
-            .where(
-              and(
-                eq(schema.usageRecords.customerId, customerId),
-                eq(schema.usageRecords.featureId, f.featureId),
-                gte(schema.usageRecords.periodStart, f.periodStart),
-                lte(schema.usageRecords.periodEnd, f.periodEnd),
-                isNull(schema.usageRecords.invoiceId),
-                lte(schema.usageRecords.createdAt, usageCutoffAt),
-              ),
-            );
-        }
+            await tx.insert(schema.invoiceItems).values({
+              id: itemId,
+              invoiceId,
+              featureId: f.featureId,
+              description,
+              quantity: f.billableQuantity,
+              unitPrice: Math.round(f.pricePerUnit / f.billingUnits),
+              amount: f.estimatedAmount,
+              periodStart: f.periodStart,
+              periodEnd: f.periodEnd,
+              createdAt: now,
+            });
+
+            items.push({
+              featureId: f.featureId,
+              featureSlug: f.featureSlug,
+              description,
+              quantity: f.billableQuantity,
+              unitPrice: Math.round(f.pricePerUnit / f.billingUnits),
+              amount: f.estimatedAmount,
+              periodStart: f.periodStart,
+              periodEnd: f.periodEnd,
+            });
+
+            await tx
+              .update(schema.usageRecords)
+              .set({ invoiceId })
+              .where(
+                and(
+                  eq(schema.usageRecords.customerId, customerId),
+                  eq(schema.usageRecords.featureId, f.featureId),
+                  gte(schema.usageRecords.periodStart, f.periodStart),
+                  lte(schema.usageRecords.periodEnd, f.periodEnd),
+                  isNull(schema.usageRecords.invoiceId),
+                  lte(schema.usageRecords.createdAt, usageCutoffAt),
+                ),
+              );
+          }
+        });
 
         return {
           invoiceId,
@@ -293,7 +313,7 @@ export class BillingService {
   async getInvoices(
     customerId: string,
     organizationId: string,
-  ): Promise<Result<typeof schema.invoices.$inferSelect[], DatabaseError>> {
+  ): Promise<Result<(typeof schema.invoices.$inferSelect)[], DatabaseError>> {
     return Result.tryPromise({
       try: async () => {
         return await this.db.query.invoices.findMany({

@@ -6,7 +6,7 @@ icon: Users
 
 # Sell seat & org plans
 
-Owostack supports per-seat and per-organization pricing through **entity-scoped metering**. You model seats and credits as metered features, then scope usage with the `entity` field.
+Owostack supports per-seat and per-organization pricing through **entities**. You create entities to represent seats, workspaces, or any scoped resource, then track usage per-entity.
 
 This guide shows a common setup:
 
@@ -42,62 +42,180 @@ export default new Owostack({
 });
 ```
 
-## 3. Start the subscription
+## 3. Create the organization
 
 ```ts
-const attach = await owo.attach({
-  customer: "user_123",
-  product: "team",
-  customerData: { email: "user@example.com" },
+// Create or get the org customer
+const org = await owo.customer({
+  email: "org@acme.com",
+  name: "Acme Corp",
 });
 ```
 
-## 4. Reserve a seat (org-level limit)
-
-Use `entity = orgId` so all seat usage rolls into **one org bucket**.
+## 4. Start the subscription
 
 ```ts
-const seatReserve = await owo.check({
-  customer: "user_123",
-  feature: "seats",
-  value: 1,
-  entity: "org_acme",
-  sendEvent: true,
+await org.attach({
+  product: "team",
 });
+```
 
-if (!seatReserve.allowed) {
-  throw new Error("Seat limit reached");
+## 5. Add a seat (entity)
+
+Use `addEntity()` to reserve a seat. This validates against the seat limit and tracks the entity.
+
+```ts
+// Add team members - validates against 5-seat limit
+try {
+  await owo.addEntity({
+    customer: "org@acme.com",
+    feature: "seats",
+    entity: "user_123", // Your user ID
+    name: "John Doe",
+    email: "john@acme.com",
+    metadata: { role: "admin" },
+  });
+} catch (err) {
+  if (err.code === "limit_exceeded") {
+    // Show upgrade UI
+    console.log("Seat limit reached - upgrade to add more seats");
+  }
 }
 ```
 
-`sendEvent: true` atomically checks **and** increments seat usage when allowed.
+## 6. Track AI credits per seat
 
-## 5. Track AI credits per seat
-
-Use `entity = seatId` so each seat gets its **own 1000‑credit bucket**.
+Use `entity` parameter to scope usage to a specific seat:
 
 ```ts
 await owo.track({
-  customer: "user_123",
+  customer: "org@acme.com",
   feature: "ai-credits",
+  entity: "user_123", // Deduct from this seat's quota
   value: 20,
-  entity: "seat_456",
 });
 ```
 
-To show remaining credits for a seat:
+To check remaining credits for a seat:
 
 ```ts
 const credits = await owo.check({
-  customer: "user_123",
+  customer: "org@acme.com",
   feature: "ai-credits",
-  entity: "seat_456",
+  entity: "user_123",
 });
 
 console.log("Credits remaining:", credits.balance);
 ```
 
-## Notes & limitations
+## 7. List and manage seats
 
-- Seat removal isn’t supported yet (no negative tracking). Use `sendEvent` only when a seat is created.
-- For **org‑wide credits** (one shared pool), use `entity = orgId` instead of a seat ID.
+```ts
+// List all active seats
+const { entities } = await owo.listEntities({
+  customer: "org@acme.com",
+  feature: "seats",
+});
+
+// Remove a seat (frees the slot)
+await owo.removeEntity({
+  customer: "org@acme.com",
+  feature: "seats",
+  entity: "user_123",
+});
+```
+
+## Org-wide credits (shared pool)
+
+For a shared credit pool across all seats, omit the `entity` parameter:
+
+```ts
+// Track against org-wide pool
+await owo.track({
+  customer: "org@acme.com",
+  feature: "shared-credits",
+  value: 100,
+  // No entity = org-wide
+});
+```
+
+## Complete example
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY!,
+});
+
+async function setupOrg() {
+  // 1. Create org
+  const org = await owo.customer({
+    email: "org@acme.com",
+    name: "Acme Corp",
+  });
+
+  // 2. Subscribe to team plan
+  await org.attach({ product: "team" });
+
+  // 3. Add team members
+  const teamMembers = [
+    { id: "user_1", name: "Alice", email: "alice@acme.com" },
+    { id: "user_2", name: "Bob", email: "bob@acme.com" },
+  ];
+
+  for (const member of teamMembers) {
+    try {
+      await owo.addEntity({
+        customer: org.email,
+        feature: "seats",
+        entity: member.id,
+        name: member.name,
+        email: member.email,
+      });
+      console.log(`Added ${member.name} as a seat`);
+    } catch (err) {
+      if (err.code === "limit_exceeded") {
+        console.error(`Cannot add ${member.name}: seat limit reached`);
+      }
+    }
+  }
+
+  // 4. Track usage per seat
+  await owo.track({
+    customer: org.email,
+    feature: "ai-credits",
+    entity: "user_1",
+    value: 100,
+  });
+
+  // 5. Check seat status
+  const seatStatus = await owo.check({
+    customer: org.email,
+    feature: "ai-credits",
+    entity: "user_1",
+  });
+
+  console.log(`User 1 has ${seatStatus.balance} credits remaining`);
+}
+```
+
+## Notes
+
+- **Entity uniqueness:** Entity IDs are unique per feature. The same ID can be reused across different features.
+- **Limit validation:** `addEntity()` validates synchronously against the feature limit. If the limit would be exceeded, it throws with code `limit_exceeded`.
+- **Entity required:** You must explicitly add an entity with `addEntity()` before using it in `check()` or `track()`. Attempting to track/check a non-existent entity will fail with `entity_not_found` error.
+- **Seat removal:** Removing an entity immediately frees the slot for reuse.
+- **Metadata:** Store custom data (role, permissions, etc.) in the `metadata` field when adding entities.
+- **Org vs individual:** An org customer is the same as an individual customer in Owostack. Use entities to represent seats/workspaces within that customer.
+
+## API Reference
+
+See the SDK reference for detailed documentation:
+
+- [`customer()`](/docs/sdk/customer) - Create and manage customers
+- [`addEntity()`](/docs/sdk/entities) - Add entities/seats
+- [`removeEntity()`](/docs/sdk/entities) - Remove entities
+- [`listEntities()`](/docs/sdk/entities) - List entities
+- [`check()`](/docs/sdk/check) - Check feature access (supports entity scope)
+- [`track()`](/docs/sdk/track) - Track usage (supports entity scope)

@@ -71,6 +71,13 @@
       "when": 1770751739118,
       "tag": "0009_glamorous_monster_badoon",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1771227053547,
+      "tag": "0010_fluffy_justice",
+      "breakpoints": true
     }
   ]
 }

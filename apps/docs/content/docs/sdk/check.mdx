@@ -27,14 +27,20 @@ await owo.check({
 
 ## Parameters
 
-| Parameter  | Type     | Required | Description                         |
-| ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | ✅       | Your internal user ID               |
-| `feature`  | `string` | ✅       | Feature key to check access for     |
-| `value`    | `number` | -        | Units to check against limit        |
-| `entity`   | `string` | -        | Scope usage to an entity (seat/org) |
-| `sendEvent`| `boolean`| -        | Atomically track if allowed         |
-| `customerData` | `object` | -    | Auto-create customer if missing     |
+| Parameter      | Type      | Required | Description                     |
+| -------------- | --------- | -------- | ------------------------------- |
+| `customer`     | `string`  | ✅       | Your internal user ID           |
+| `feature`      | `string`  | ✅       | Feature key to check access for |
+| `value`        | `number`  | -        | Units to check against limit    |
+| `entity`       | `string`  | -        | Scope to an entity (must exist) |
+| `sendEvent`    | `boolean` | -        | Atomically track if allowed     |
+| `customerData` | `object`  | -        | Auto-create customer if missing |
+
+<Callout type="warning">
+  When using `entity`, the entity must be created with
+  [`addEntity()`](/docs/sdk/entities) first. Checking a non-existent entity
+  returns `entity_not_found` error.
+</Callout>
 
 ## Response
 
@@ -47,7 +53,12 @@ interface CheckResult {
   balance: number | null;
   resetsAt: string | null;
   resetInterval: string | null;
-  details: { message: string; planName?: string; trial?: boolean; trialEndsAt?: string | null };
+  details: {
+    message: string;
+    planName?: string;
+    trial?: boolean;
+    trialEndsAt?: string | null;
+  };
 }
 ```
 

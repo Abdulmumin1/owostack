@@ -35,6 +35,7 @@ import apiAddon from "./routes/api/addon";
 import apiSync from "./routes/api/sync";
 import apiWallet from "./routes/api/wallet";
 import apiPlans from "./routes/api/plans";
+import apiCustomers from "./routes/api/customers";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
@@ -45,11 +46,16 @@ import { TrialEndWorkflow } from "./lib/workflows/trial-end";
 import { DowngradeWorkflow } from "./lib/workflows/downgrade";
 import { PlanUpgradeWorkflow } from "./lib/workflows/plan-upgrade";
 import { OverageBillingWorkflow } from "./lib/workflows/overage-billing";
-export { TrialEndWorkflow, DowngradeWorkflow, PlanUpgradeWorkflow, OverageBillingWorkflow };
+export {
+  TrialEndWorkflow,
+  DowngradeWorkflow,
+  PlanUpgradeWorkflow,
+  OverageBillingWorkflow,
+};
 
 export type Env = {
-  DB: D1Database;           // Per-environment business data (customers, plans, subs, etc.)
-  DB_AUTH: D1Database;      // Shared auth data (users, sessions, orgs, projects)
+  DB: D1Database; // Per-environment business data (customers, plans, subs, etc.)
+  DB_AUTH: D1Database; // Shared auth data (users, sessions, orgs, projects)
   CACHE: KVNamespace;
   USAGE_METER: DurableObjectNamespace<UsageMeterDO>;
   TRIAL_END_WORKFLOW: Workflow;
@@ -69,7 +75,7 @@ export type Env = {
 };
 
 export type Variables = {
-  db: ReturnType<typeof createDb>;     // Business DB (per-environment)
+  db: ReturnType<typeof createDb>; // Business DB (per-environment)
   authDb: ReturnType<typeof createDb>; // Auth DB (shared across environments)
   user: User | null;
   session: any | null;
@@ -98,7 +104,7 @@ app.use(
         "https://app.owostack.com",
         "https://owostack.com",
       ];
-      if (origin ) {
+      if (origin) {
         return origin;
       }
       // Fallback for non-browser requests (e.g., Postman)
@@ -121,8 +127,14 @@ app.use("*", async (c, next) => {
   await next();
 });
 
+app.get("/api/auth/debug-routes", (c) => {
+  const routes = Object.keys(auth(c.env).api);
+  return c.json({ routes });
+});
+
 // Auth Routes (Better Auth)
 app.on(["POST", "GET"], "/api/auth/*", (c) => {
+  console.log(`[AUTH-DEBUG] ${c.req.method} ${c.req.url}`);
   return auth(c.env).handler(c.req.raw);
 });
 
@@ -131,13 +143,12 @@ app.on(["POST", "GET"], "/api/auth/*", (c) => {
 // =============================================================================
 const dashboardRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-
 dashboardRoutes.use(
   "*",
   cors({
     origin: (origin) => {
       // Allow requests from localhost during development
-       const allowedOrigins = [
+      const allowedOrigins = [
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:3000",
@@ -193,10 +204,7 @@ dashboardRoutes.use("*", async (c, next) => {
         where: eq(schema.organizations.id, organizationId),
       });
       if (org) {
-        await db
-          .insert(schema.organizations)
-          .values(org)
-          .onConflictDoNothing();
+        await db.insert(schema.organizations).values(org).onConflictDoNothing();
       }
     }
   }
@@ -244,6 +252,7 @@ v1Routes.route("/billing", apiBilling);
 v1Routes.route("/sync", apiSync);
 v1Routes.route("/", apiWallet);
 v1Routes.route("/plans", apiPlans);
+v1Routes.route("/", apiCustomers);
 
 apiRoutes.route("/v1", v1Routes);
 
@@ -258,8 +267,14 @@ app.route("/v1", v1Routes);
 // POST /webhooks/:organizationId            (backward compat — defaults to paystack)
 // =============================================================================
 
-async function handleWebhookRequest(c: any, organizationId: string, providerId: string) {
-  console.log(`[WEBHOOK-ROUTE] Received webhook for org=${organizationId}, provider=${providerId}`);
+async function handleWebhookRequest(
+  c: any,
+  organizationId: string,
+  providerId: string,
+) {
+  console.log(
+    `[WEBHOOK-ROUTE] Received webhook for org=${organizationId}, provider=${providerId}`,
+  );
 
   // 1. Resolve adapter from registry
   const adapter = providerRegistry.get(providerId);
@@ -271,7 +286,9 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   // 2. Get the signature from the provider-specific header
   const sigHeader = adapter.signatureHeaderName || `x-${providerId}-signature`;
   const signature = c.req.header(sigHeader);
-  console.log(`[WEBHOOK-ROUTE] Signature header=${sigHeader}, hasSignature=${!!signature}`);
+  console.log(
+    `[WEBHOOK-ROUTE] Signature header=${sigHeader}, hasSignature=${!!signature}`,
+  );
 
   if (!signature) {
     return c.json(
@@ -320,12 +337,20 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   });
   for (const pa of providerAccounts) {
     const creds = (pa as any).credentials || {};
-    if (typeof creds.webhookSecret === "string" && creds.webhookSecret.length > 0) {
+    if (
+      typeof creds.webhookSecret === "string" &&
+      creds.webhookSecret.length > 0
+    ) {
       try {
         secret = await decrypt(creds.webhookSecret, c.env.ENCRYPTION_KEY);
-        console.log(`[WEBHOOK-ROUTE] Using provider account webhookSecret for org=${organizationId}, provider=${providerId}`);
+        console.log(
+          `[WEBHOOK-ROUTE] Using provider account webhookSecret for org=${organizationId}, provider=${providerId}`,
+        );
       } catch (e) {
-        console.warn(`[WEBHOOK-ROUTE] Failed to decrypt provider webhookSecret:`, e);
+        console.warn(
+          `[WEBHOOK-ROUTE] Failed to decrypt provider webhookSecret:`,
+          e,
+        );
       }
       break;
     }
@@ -340,19 +365,26 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   if (!secret) {
     const encryptedKey =
       workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
-    console.log(`[WEBHOOK-ROUTE] No webhookSecret, falling back to ${workerEnv} secret key (hasKey=${!!encryptedKey})`);
+    console.log(
+      `[WEBHOOK-ROUTE] No webhookSecret, falling back to ${workerEnv} secret key (hasKey=${!!encryptedKey})`,
+    );
 
     if (encryptedKey) {
       try {
         secret = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
       } catch (e) {
-        console.error(`[WEBHOOK-ROUTE] Failed to decrypt key for verification:`, e);
+        console.error(
+          `[WEBHOOK-ROUTE] Failed to decrypt key for verification:`,
+          e,
+        );
       }
     }
   }
 
   if (!secret) {
-    console.error(`[WEBHOOK-ROUTE] No secret available for org=${organizationId}, provider=${providerId}`);
+    console.error(
+      `[WEBHOOK-ROUTE] No secret available for org=${organizationId}, provider=${providerId}`,
+    );
     return c.json({ error: "Webhook secret not configured" }, 500);
   }
 
@@ -372,7 +404,9 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   });
 
   if (verifyResult.isErr() || !verifyResult.value) {
-    console.error(`[WEBHOOK-ROUTE] Signature verification FAILED for org=${organizationId}, provider=${providerId}`);
+    console.error(
+      `[WEBHOOK-ROUTE] Signature verification FAILED for org=${organizationId}, provider=${providerId}`,
+    );
     return c.json(
       errorToResponse(new WebhookError({ reason: "invalid_signature" })),
       401,
@@ -394,12 +428,16 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   const parseResult = adapter.parseWebhookEvent({ payload: rawPayload });
   if (parseResult.isErr()) {
     // Unknown events are not errors — just ACK them
-    console.log(`[WEBHOOK-ROUTE] Unhandled event from ${providerId}: ${parseResult.error.message}`);
+    console.log(
+      `[WEBHOOK-ROUTE] Unhandled event from ${providerId}: ${parseResult.error.message}`,
+    );
     return c.json({ success: true, received: true, skipped: true });
   }
 
   const normalizedEvent = parseResult.value;
-  console.log(`[WEBHOOK-ROUTE] Event: ${normalizedEvent.type}, provider=${normalizedEvent.provider}, ref=${normalizedEvent.payment?.reference || "n/a"}`);
+  console.log(
+    `[WEBHOOK-ROUTE] Event: ${normalizedEvent.type}, provider=${normalizedEvent.provider}, ref=${normalizedEvent.payment?.reference || "n/a"}`,
+  );
 
   // 7. Build provider account for API calls (cancel sub, etc.)
   // Provider accounts are loaded from the DB — no legacy fallback.
@@ -412,7 +450,10 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
       try {
         creds.secretKey = await decrypt(creds.secretKey, c.env.ENCRYPTION_KEY);
       } catch (e) {
-        console.warn(`[WEBHOOK-ROUTE] Failed to decrypt provider secretKey:`, e);
+        console.warn(
+          `[WEBHOOK-ROUTE] Failed to decrypt provider secretKey:`,
+          e,
+        );
       }
     }
     providerAccount = {
@@ -452,7 +493,11 @@ app.post("/webhooks/:organizationId", async (c) => {
 
 // Provider-agnostic: /webhooks/:orgId/:provider
 app.post("/webhooks/:organizationId/:provider", async (c) => {
-  return handleWebhookRequest(c, c.req.param("organizationId"), c.req.param("provider"));
+  return handleWebhookRequest(
+    c,
+    c.req.param("organizationId"),
+    c.req.param("provider"),
+  );
 });
 
 // =============================================================================
@@ -475,7 +520,9 @@ export default {
   // Cron → enqueue org-level messages (lightweight, stays well within 30s)
   // -------------------------------------------------------------------------
   async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
-    console.log(`[CRON] Triggered at ${new Date(event.scheduledTime).toISOString()}, cron=${event.cron}`);
+    console.log(
+      `[CRON] Triggered at ${new Date(event.scheduledTime).toISOString()}, cron=${event.cron}`,
+    );
 
     const db = createDb(env.DB);
 
@@ -494,23 +541,31 @@ export default {
       const orgs = await db
         .select()
         .from((schema as any).overageSettings)
-        .where(eq((schema as any).overageSettings.billingInterval, targetInterval));
+        .where(
+          eq((schema as any).overageSettings.billingInterval, targetInterval),
+        );
 
-      console.log(`[CRON] Found ${orgs.length} orgs with interval=${targetInterval}, enqueuing...`);
+      console.log(
+        `[CRON] Found ${orgs.length} orgs with interval=${targetInterval}, enqueuing...`,
+      );
 
       // Enqueue one message per org — the queue consumer handles the heavy lifting
-      const messages: { body: OverageBillingQueueMessage }[] = orgs.map((org: any) => ({
-        body: {
-          organizationId: org.organizationId,
-          targetInterval,
-          scheduledTime: event.scheduledTime,
-        },
-      }));
+      const messages: { body: OverageBillingQueueMessage }[] = orgs.map(
+        (org: any) => ({
+          body: {
+            organizationId: org.organizationId,
+            targetInterval,
+            scheduledTime: event.scheduledTime,
+          },
+        }),
+      );
 
       // Queue.sendBatch accepts up to 100 messages per call
       const QUEUE_BATCH_LIMIT = 100;
       for (let i = 0; i < messages.length; i += QUEUE_BATCH_LIMIT) {
-        await env.OVERAGE_BILLING_QUEUE.sendBatch(messages.slice(i, i + QUEUE_BATCH_LIMIT));
+        await env.OVERAGE_BILLING_QUEUE.sendBatch(
+          messages.slice(i, i + QUEUE_BATCH_LIMIT),
+        );
       }
 
       console.log(`[CRON] Enqueued ${messages.length} org messages to queue`);
@@ -523,7 +578,11 @@ export default {
   // Queue consumer — each message = one org. Query customers, dispatch workflows.
   // Each consumer invocation gets its own 30s CPU budget.
   // -------------------------------------------------------------------------
-  async queue(batch: MessageBatch<OverageBillingQueueMessage>, env: Env, _ctx: ExecutionContext) {
+  async queue(
+    batch: MessageBatch<OverageBillingQueueMessage>,
+    env: Env,
+    _ctx: ExecutionContext,
+  ) {
     const db = createDb(env.DB);
 
     for (const msg of batch.messages) {
@@ -542,15 +601,19 @@ export default {
           .where(eq(schema.customers.organizationId, organizationId));
 
         // Deduplicate — a customer with multiple active subs appears multiple times
-        const uniqueIds = [...new Set(customers.map((c: { id: string }) => c.id))];
-        console.log(`[QUEUE] Org ${organizationId}: dispatching ${uniqueIds.length} workflows`);
+        const uniqueIds = [
+          ...new Set(customers.map((c: { id: string }) => c.id)),
+        ];
+        console.log(
+          `[QUEUE] Org ${organizationId}: dispatching ${uniqueIds.length} workflows`,
+        );
 
         // Dispatch in parallel batches
         const BATCH_SIZE = 50;
         for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
           const chunk = uniqueIds.slice(i, i + BATCH_SIZE);
           await Promise.allSettled(
-            chunk.map(customerId =>
+            chunk.map((customerId) =>
               env.OVERAGE_BILLING_WORKFLOW.create({
                 id: `overage-cron-${customerId}-${scheduledTime}`,
                 params: {
@@ -558,8 +621,11 @@ export default {
                   customerId,
                   trigger: "cron" as const,
                 },
-              }).catch(e => {
-                console.warn(`[QUEUE] Failed to create workflow for customer=${customerId}:`, e);
+              }).catch((e) => {
+                console.warn(
+                  `[QUEUE] Failed to create workflow for customer=${customerId}:`,
+                  e,
+                );
               }),
             ),
           );

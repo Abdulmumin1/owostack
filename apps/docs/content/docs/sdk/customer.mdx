@@ -1,0 +1,179 @@
+---
+title: customer()
+description: Create or resolve a customer
+draft: false
+icon: User
+---
+
+# customer()
+
+Create a new customer or resolve an existing one by email or ID. Returns a customer object that can be used for subscriptions and billing operations.
+
+## Signature
+
+```ts
+await owo.customer({
+  id?: string,         // Optional: Your customer ID
+  email: string,       // Required: Customer email
+  name?: string,       // Optional: Display name
+  metadata?: Record<string, unknown>, // Optional: Custom data
+}): Promise<Customer>
+```
+
+## Parameters
+
+| Parameter  | Type     | Required | Description               |
+| ---------- | -------- | -------- | ------------------------- |
+| `id`       | `string` | -        | Your internal customer ID |
+| `email`    | `string` | ✅       | Customer email address    |
+| `name`     | `string` | -        | Customer display name     |
+| `metadata` | `object` | -        | Custom key-value data     |
+
+## Returns
+
+Returns a `Customer` object with these properties:
+
+```ts
+interface Customer {
+  id: string; // Customer ID
+  email: string; // Customer email
+  name?: string; // Display name
+  metadata?: Record<string, unknown>; // Custom data
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
+}
+```
+
+## Examples
+
+### Create Organization
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+
+// Create an org customer
+const org = await owo.customer({
+  email: "billing@acme.com",
+  name: "Acme Corporation",
+  metadata: {
+    industry: "SaaS",
+    size: "50-100",
+  },
+});
+
+console.log(org.id); // "cus_xxx"
+console.log(org.email); // "billing@acme.com"
+```
+
+### Get Existing Customer
+
+```ts
+// Resolve existing customer by email
+const existing = await owo.customer({
+  email: "billing@acme.com",
+});
+
+// Or by your internal ID
+const byId = await owo.customer({
+  id: "org_acme",
+  email: "billing@acme.com",
+});
+```
+
+### Update Customer
+
+```ts
+// Update metadata and name
+await owo.customer({
+  email: "billing@acme.com",
+  name: "Acme Inc", // Updates name
+  metadata: {
+    // Merges with existing metadata
+    plan: "enterprise",
+  },
+});
+```
+
+## Using the Customer Object
+
+The returned customer object has convenience methods:
+
+```ts
+const org = await owo.customer({ email: "org@acme.com" });
+
+// Attach subscription
+await org.attach({ product: "team" });
+
+// Manage entities (seats)
+await org.addEntity({
+  feature: "seats",
+  entity: "user_123",
+  name: "John Doe",
+});
+
+const { entities } = await org.listEntities({ feature: "seats" });
+```
+
+## Entity Management Methods
+
+Customer objects provide these entity management methods:
+
+### `customer.addEntity(params)`
+
+Add an entity (e.g., seat) to the customer.
+
+```ts
+await org.addEntity({
+  feature: "seats",
+  entity: "user_123",
+  name: "John Doe",
+  email: "john@acme.com",
+  metadata: { role: "admin" },
+});
+```
+
+**Parameters:**
+
+- `feature` (string, required): Feature slug
+- `entity` (string, required): Your entity ID
+- `name` (string, optional): Display name
+- `email` (string, optional): Contact email
+- `metadata` (object, optional): Custom data
+
+### `customer.removeEntity(params)`
+
+Remove an entity and free up the slot.
+
+```ts
+await org.removeEntity({
+  feature: "seats",
+  entity: "user_123",
+});
+```
+
+### `customer.listEntities(params?)`
+
+List entities for this customer.
+
+```ts
+// List all entities
+const { entities } = await org.listEntities();
+
+// Filter by feature
+const { entities: seats } = await org.listEntities({ feature: "seats" });
+```
+
+## Best Practices
+
+1. **Create early** - Create the customer before attaching subscriptions or adding entities
+2. **Use consistent IDs** - Either always pass your own `id` or always use email as identifier
+3. **Store metadata** - Use metadata for customer segmentation and analytics
+4. **Update on changes** - Call `customer()` when user data changes to keep billing records in sync
+
+## Related
+
+- [`attach()`](./attach) - Subscribe customer to a plan
+- [`addEntity()`](./entities) - Add entities/seats (flat API)
+- [Seat Pricing Guide](/docs/guides/seat-pricing) - Complete seat-based billing walkthrough

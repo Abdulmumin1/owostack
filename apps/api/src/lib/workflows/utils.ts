@@ -4,6 +4,7 @@ import { provisionEntitlements as provisionEntitlementsShared } from "../plan-sw
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
 import { decrypt } from "../encryption";
 import { getProviderRegistry } from "../providers";
+import { EntitlementCache } from "../cache";
 
 // ---------------------------------------------------------------------------
 // Env subset that workflows need
@@ -12,6 +13,7 @@ import { getProviderRegistry } from "../providers";
 export interface WorkflowEnv {
   DB: D1Database;
   DB_AUTH: D1Database;
+  CACHE?: KVNamespace; // Optional cache for invalidation
   ENCRYPTION_KEY: string;
   ENVIRONMENT?: string; // "test" | "live" | "development" — set per worker deployment
 }
@@ -59,9 +61,14 @@ export async function resolveProviderAccount(
     // Decrypt sensitive credential fields (provider-agnostic)
     if (typeof credentials.secretKey === "string") {
       try {
-        credentials.secretKey = await decrypt(credentials.secretKey, env.ENCRYPTION_KEY);
+        credentials.secretKey = await decrypt(
+          credentials.secretKey,
+          env.ENCRYPTION_KEY,
+        );
       } catch {
-        console.warn(`[workflow-utils] Failed to decrypt secretKey for account ${(matched as any).id}`);
+        console.warn(
+          `[workflow-utils] Failed to decrypt secretKey for account ${(matched as any).id}`,
+        );
       }
     }
 
@@ -105,13 +112,59 @@ export async function provisionEntitlements(
 
 export function intervalToMs(interval: string): number {
   switch (interval) {
-    case "hourly": return 60 * 60 * 1000;
-    case "daily": return 24 * 60 * 60 * 1000;
-    case "weekly": return 7 * 24 * 60 * 60 * 1000;
-    case "monthly": return 30 * 24 * 60 * 60 * 1000;
-    case "quarterly": return 90 * 24 * 60 * 60 * 1000;
-    case "biannually": case "semi_annual": return 180 * 24 * 60 * 60 * 1000;
-    case "annually": case "yearly": return 365 * 24 * 60 * 60 * 1000;
-    default: return 30 * 24 * 60 * 60 * 1000;
+    case "hourly":
+      return 60 * 60 * 1000;
+    case "daily":
+      return 24 * 60 * 60 * 1000;
+    case "weekly":
+      return 7 * 24 * 60 * 60 * 1000;
+    case "monthly":
+      return 30 * 24 * 60 * 60 * 1000;
+    case "quarterly":
+      return 90 * 24 * 60 * 60 * 1000;
+    case "biannually":
+    case "semi_annual":
+      return 180 * 24 * 60 * 60 * 1000;
+    case "annually":
+    case "yearly":
+      return 365 * 24 * 60 * 60 * 1000;
+    default:
+      return 30 * 24 * 60 * 60 * 1000;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cache invalidation helper for workflows
+// ---------------------------------------------------------------------------
+
+/**
+ * Invalidate cached subscription data after workflow updates.
+ * Call this after any subscription status/plan change to ensure
+ * /check and /track endpoints see fresh data.
+ */
+export async function invalidateSubscriptionCache(
+  env: WorkflowEnv,
+  organizationId: string,
+  customerId: string,
+): Promise<void> {
+  if (!env.CACHE) {
+    console.log(
+      `[workflow-utils] No CACHE available, skipping invalidation for customer ${customerId}`,
+    );
+    return;
+  }
+
+  try {
+    const cache = new EntitlementCache(env.CACHE);
+    await cache.invalidateSubscriptions(organizationId, customerId);
+    console.log(
+      `[workflow-utils] Invalidated subscription cache for customer ${customerId}`,
+    );
+  } catch (error) {
+    // Log but don't fail - cache invalidation is best-effort
+    console.warn(
+      `[workflow-utils] Cache invalidation failed for customer ${customerId}:`,
+      error,
+    );
   }
 }

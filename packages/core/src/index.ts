@@ -23,6 +23,14 @@ import type {
   PlansParams,
   PlansResult,
   PublicPlan,
+  CustomerParams,
+  CustomerResult,
+  AddEntityParams,
+  AddEntityResult,
+  RemoveEntityParams,
+  RemoveEntityResult,
+  ListEntitiesParams,
+  ListEntitiesResult,
 } from "@owostack/types";
 
 import { bindFeatureHandles, buildSyncPayload } from "./catalog.js";
@@ -50,7 +58,7 @@ export class Owostack {
 
   constructor(config: OwostackConfig) {
     this._config = config;
-    this.apiUrl = config.apiUrl || "https://api.owostack.dev";
+    this.apiUrl = this.resolveApiUrl(config);
     this.billing = new BillingNamespace(this);
     this.wallet = buildWalletFn(this);
     this.plans = buildPlansFn(this);
@@ -59,6 +67,25 @@ export class Owostack {
     if (config.catalog && config.catalog.length > 0) {
       bindFeatureHandles(this, config.catalog);
     }
+  }
+
+  private resolveApiUrl(config: OwostackConfig): string {
+    // Explicit apiUrl takes highest precedence
+    if (config.apiUrl) {
+      return config.apiUrl;
+    }
+
+    // Mode-based URLs
+    if (config.mode === "sandbox") {
+      return "https://api-sandbox.owostack.dev";
+    }
+
+    if (config.mode === "live") {
+      return "https://api.owostack.dev";
+    }
+
+    // Default fallback
+    return "https://api.owostack.dev";
   }
 
   /**
@@ -204,6 +231,95 @@ export class Owostack {
   }
 
   /**
+   * customer() - Create or resolve a customer
+   *
+   * Creates a new customer or resolves an existing one by email or ID.
+   * If customerData is provided and customer doesn't exist, creates a new customer.
+   *
+   * @example
+   * ```ts
+   * // Create new customer
+   * const customer = await owo.customer({
+   *   email: 'org@acme.com',
+   *   name: 'Acme Corp',
+   *   metadata: { plan: 'enterprise' }
+   * });
+   *
+   * // Get existing customer
+   * const existing = await owo.customer({ email: 'org@acme.com' });
+   * ```
+   */
+  async customer(params: CustomerParams): Promise<CustomerResult> {
+    const response = await this.post("/customers", params);
+    return response as CustomerResult;
+  }
+
+  /**
+   * addEntity() - Add a feature entity (e.g., seat)
+   *
+   * Creates a new entity scoped to a feature. Validates against the feature limit.
+   * Throws if the limit would be exceeded.
+   *
+   * @example
+   * ```ts
+   * await owo.addEntity({
+   *   customer: 'org@acme.com',
+   *   feature: 'seats',
+   *   entity: 'user_123',
+   *   name: 'John Doe',
+   *   metadata: { role: 'admin' }
+   * });
+   * ```
+   */
+  async addEntity(params: AddEntityParams): Promise<AddEntityResult> {
+    const response = await this.post("/entities", params);
+    return response as AddEntityResult;
+  }
+
+  /**
+   * removeEntity() - Remove a feature entity
+   *
+   * Removes an entity and frees up the slot for the feature limit.
+   *
+   * @example
+   * ```ts
+   * await owo.removeEntity({
+   *   customer: 'org@acme.com',
+   *   feature: 'seats',
+   *   entity: 'user_123'
+   * });
+   * ```
+   */
+  async removeEntity(params: RemoveEntityParams): Promise<RemoveEntityResult> {
+    const response = await this.post("/entities/remove", params);
+    return response as RemoveEntityResult;
+  }
+
+  /**
+   * listEntities() - List feature entities
+   *
+   * Returns all entities for a customer, optionally filtered by feature.
+   *
+   * @example
+   * ```ts
+   * // List all entities
+   * const { entities } = await owo.listEntities({ customer: 'org@acme.com' });
+   *
+   * // List seats only
+   * const { entities: seats } = await owo.listEntities({
+   *   customer: 'org@acme.com',
+   *   feature: 'seats'
+   * });
+   * ```
+   */
+  async listEntities(params: ListEntitiesParams): Promise<ListEntitiesResult> {
+    const query: Record<string, string> = { customer: params.customer };
+    if (params.feature) query.feature = params.feature;
+    const response = await this.get("/entities", query);
+    return response as ListEntitiesResult;
+  }
+
+  /**
    * plans() - List Plans
    *
    * Returns all active plans for the organization. Useful for building
@@ -239,7 +355,10 @@ export class Owostack {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new OwostackError(error.code || "unknown_error", error.message || error.error || "Request failed");
+      throw new OwostackError(
+        error.code || "unknown_error",
+        error.message || error.error || "Request failed",
+      );
     }
 
     return response.json();
@@ -249,11 +368,15 @@ export class Owostack {
    * Internal GET request handler
    * @internal
    */
-  async get(endpoint: string, query?: Record<string, string>): Promise<unknown> {
+  async get(
+    endpoint: string,
+    query?: Record<string, string>,
+  ): Promise<unknown> {
     const url = new URL(`${this.apiUrl}${endpoint}`);
     if (query) {
       for (const [key, value] of Object.entries(query)) {
-        if (value !== undefined && value !== "") url.searchParams.set(key, value);
+        if (value !== undefined && value !== "")
+          url.searchParams.set(key, value);
       }
     }
 
@@ -266,7 +389,10 @@ export class Owostack {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new OwostackError(error.code || "unknown_error", error.message || error.error || "Request failed");
+      throw new OwostackError(
+        error.code || "unknown_error",
+        error.message || error.error || "Request failed",
+      );
     }
 
     return response.json();
@@ -315,7 +441,10 @@ function buildPlansFn(client: Owostack): PlansFn {
 
 type WalletFn = {
   (customer: string): Promise<WalletResult>;
-  setup(customer: string, opts?: { callbackUrl?: string; provider?: string }): Promise<WalletSetupResult>;
+  setup(
+    customer: string,
+    opts?: { callbackUrl?: string; provider?: string },
+  ): Promise<WalletSetupResult>;
   list(customer: string): Promise<WalletResult>;
   remove(customer: string, id: string): Promise<WalletRemoveResult>;
 };
@@ -324,14 +453,23 @@ function buildWalletFn(client: Owostack): WalletFn {
   const fn = ((customer: string) =>
     client.get("/wallet", { customer })) as WalletFn;
 
-  fn.setup = (customer: string, opts?: { callbackUrl?: string; provider?: string }) =>
-    client.post("/wallet/setup", { customer, ...opts }) as Promise<WalletSetupResult>;
+  fn.setup = (
+    customer: string,
+    opts?: { callbackUrl?: string; provider?: string },
+  ) =>
+    client.post("/wallet/setup", {
+      customer,
+      ...opts,
+    }) as Promise<WalletSetupResult>;
 
   fn.list = (customer: string) =>
     client.get("/wallet", { customer }) as Promise<WalletResult>;
 
   fn.remove = (customer: string, id: string) =>
-    client.post("/wallet/remove", { customer, id }) as Promise<WalletRemoveResult>;
+    client.post("/wallet/remove", {
+      customer,
+      id,
+    }) as Promise<WalletRemoveResult>;
 
   return fn;
 }
@@ -481,4 +619,12 @@ export type {
   PlansResult,
   PublicPlan,
   PublicPlanFeature,
+  CustomerParams,
+  CustomerResult,
+  AddEntityParams,
+  AddEntityResult,
+  RemoveEntityParams,
+  RemoveEntityResult,
+  ListEntitiesParams,
+  ListEntitiesResult,
 } from "@owostack/types";

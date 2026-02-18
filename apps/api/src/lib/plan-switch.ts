@@ -2,7 +2,9 @@ import { eq, and, inArray } from "drizzle-orm";
 import { createDb, schema } from "@owostack/db";
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
 // Workflow type (any since it's a Cloudflare Workflow binding)
-type WorkflowBinding = { create: (opts: { params: Record<string, unknown> }) => Promise<unknown> };
+type WorkflowBinding = {
+  create: (opts: { params: Record<string, unknown> }) => Promise<unknown>;
+};
 
 type DB = ReturnType<typeof createDb>;
 
@@ -19,8 +21,20 @@ export type SwitchType = "upgrade" | "downgrade" | "lateral" | "new";
 
 export interface SwitchPreview {
   type: SwitchType;
-  currentPlan: { id: string; name: string; slug: string; price: number; interval: string } | null;
-  newPlan: { id: string; name: string; slug: string; price: number; interval: string };
+  currentPlan: {
+    id: string;
+    name: string;
+    slug: string;
+    price: number;
+    interval: string;
+  } | null;
+  newPlan: {
+    id: string;
+    name: string;
+    slug: string;
+    price: number;
+    interval: string;
+  };
   proratedAmount: number; // Amount to charge/credit (positive = charge, negative = credit)
   effectiveAt: "immediate" | "period_end";
   currentPeriodEnd: number | null;
@@ -58,7 +72,10 @@ export function detectSwitchType(
   if (!currentPlan) return "new";
 
   // Normalize to monthly price for comparison across intervals
-  const currentMonthly = normalizeToMonthly(currentPlan.price, currentPlan.interval);
+  const currentMonthly = normalizeToMonthly(
+    currentPlan.price,
+    currentPlan.interval,
+  );
   const newMonthly = normalizeToMonthly(newPlan.price, newPlan.interval);
 
   if (newMonthly > currentMonthly) return "upgrade";
@@ -104,7 +121,10 @@ export function calculateProration(
   if (totalPeriodMs <= 0) return newPlan.price;
 
   const elapsedMs = now - periodStart;
-  const remainingRatio = Math.max(0, Math.min(1, 1 - elapsedMs / totalPeriodMs));
+  const remainingRatio = Math.max(
+    0,
+    Math.min(1, 1 - elapsedMs / totalPeriodMs),
+  );
 
   // Credit for unused portion of current plan
   const unusedCredit = Math.round(currentPlan.price * remainingRatio);
@@ -140,7 +160,13 @@ export async function previewSwitch(
     return {
       type: "new",
       currentPlan: null,
-      newPlan: { id: newPlan.id, name: newPlan.name, slug: newPlan.slug, price: newPlan.price, interval: newPlan.interval },
+      newPlan: {
+        id: newPlan.id,
+        name: newPlan.name,
+        slug: newPlan.slug,
+        price: newPlan.price,
+        interval: newPlan.interval,
+      },
       proratedAmount: newPlan.price,
       effectiveAt: "immediate",
       currentPeriodEnd: null,
@@ -185,8 +211,20 @@ export async function previewSwitch(
 
   return {
     type: switchType,
-    currentPlan: { id: currentPlan.id, name: currentPlan.name, slug: currentPlan.slug, price: currentPlan.price, interval: currentPlan.interval },
-    newPlan: { id: newPlan.id, name: newPlan.name, slug: newPlan.slug, price: newPlan.price, interval: newPlan.interval },
+    currentPlan: {
+      id: currentPlan.id,
+      name: currentPlan.name,
+      slug: currentPlan.slug,
+      price: currentPlan.price,
+      interval: currentPlan.interval,
+    },
+    newPlan: {
+      id: newPlan.id,
+      name: newPlan.name,
+      slug: newPlan.slug,
+      price: newPlan.price,
+      interval: newPlan.interval,
+    },
     proratedAmount,
     effectiveAt,
     currentPeriodEnd: existingSub.currentPeriodEnd,
@@ -255,14 +293,29 @@ export async function executeSwitch(
   // FREE plan — handle entirely in DB, no Paystack
   // =========================================================================
   if (newPlan.price === 0) {
-    return handleFreePlanSwitch(db, customer, existingSub, newPlan, switchType, provider, options);
+    return handleFreePlanSwitch(
+      db,
+      customer,
+      existingSub,
+      newPlan,
+      switchType,
+      provider,
+      options,
+    );
   }
 
   // =========================================================================
   // UPGRADE — immediate switch, prorated charge
   // =========================================================================
   if (switchType === "upgrade") {
-    return handleUpgrade(db, customer, existingSub!, newPlan, provider, options);
+    return handleUpgrade(
+      db,
+      customer,
+      existingSub!,
+      newPlan,
+      provider,
+      options,
+    );
   }
 
   // =========================================================================
@@ -317,12 +370,20 @@ async function handleFreePlanSwitch(
       status: "active",
       currentPeriodStart: now,
       currentPeriodEnd: now + thirtyDaysMs,
-      metadata: { switched_from: existingSub?.planId || null, switch_type: switchType },
+      metadata: {
+        switched_from: existingSub?.planId || null,
+        switch_type: switchType,
+      },
     })
     .returning();
 
   // Provision entitlements for the new plan (clean up old plan's entitlements)
-  await provisionEntitlements(db, customer.id, newPlan.id, existingSub?.plan?.id);
+  await provisionEntitlements(
+    db,
+    customer.id,
+    newPlan.id,
+    existingSub?.plan?.id,
+  );
 
   return {
     success: true,
@@ -350,15 +411,21 @@ async function handleUpgrade(
   );
 
   const providerId = resolveProviderId(provider, options.metadata);
-  const authCode = customer.providerAuthorizationCode || customer.paystackAuthorizationCode;
-  const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
+  const authCode =
+    customer.providerAuthorizationCode || customer.paystackAuthorizationCode;
+  const customerRef =
+    customer.providerCustomerId ||
+    customer.paystackCustomerId ||
+    customer.email;
   const planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
 
   // ---------------------------------------------------------------------------
   // Native plan change — providers like Dodo handle proration internally.
   // This skips the manual charge→cancel→create flow entirely.
   // ---------------------------------------------------------------------------
-  const providerSubCode = existingSub.providerSubscriptionCode || existingSub.paystackSubscriptionCode;
+  const providerSubCode =
+    existingSub.providerSubscriptionCode ||
+    existingSub.paystackSubscriptionCode;
   const isRealProviderSub =
     providerSubCode &&
     providerSubCode !== "one-time" &&
@@ -367,12 +434,21 @@ async function handleUpgrade(
     providerSubCode !== "charge" &&
     !providerSubCode.startsWith("trial-");
 
-  if (provider && typeof provider.adapter.changePlan === "function" && planRef && isRealProviderSub) {
+  if (
+    provider &&
+    typeof provider.adapter.changePlan === "function" &&
+    planRef &&
+    isRealProviderSub
+  ) {
     const changeResult = await provider.adapter.changePlan({
       subscriptionId: providerSubCode,
       newPlanId: planRef,
       prorationMode: "prorated_immediately",
-      metadata: { old_plan_id: existingSub.plan.id, new_plan_id: newPlan.id, ...options.metadata },
+      metadata: {
+        old_plan_id: existingSub.plan.id,
+        new_plan_id: newPlan.id,
+        ...options.metadata,
+      },
       environment: provider.account.environment,
       account: provider.account,
     });
@@ -385,7 +461,9 @@ async function handleUpgrade(
         .set({
           planId: newPlan.id,
           metadata: {
-            ...(typeof existingSub.metadata === "object" ? existingSub.metadata : {}),
+            ...(typeof existingSub.metadata === "object"
+              ? existingSub.metadata
+              : {}),
             switched_from: existingSub.plan.id,
             switch_type: "upgrade",
             native_plan_change: true,
@@ -394,7 +472,12 @@ async function handleUpgrade(
         })
         .where(eq(schema.subscriptions.id, existingSub.id));
 
-      await provisionEntitlements(db, customer.id, newPlan.id, existingSub.plan.id);
+      await provisionEntitlements(
+        db,
+        customer.id,
+        newPlan.id,
+        existingSub.plan.id,
+      );
 
       return {
         success: true,
@@ -406,7 +489,9 @@ async function handleUpgrade(
     }
 
     // Native change failed — fall through to manual flow
-    console.warn(`[plan-switch] Native changePlan failed: ${changeResult.error.message}, falling back`);
+    console.warn(
+      `[plan-switch] Native changePlan failed: ${changeResult.error.message}, falling back`,
+    );
   }
 
   // If prorated amount is 0 or negative (near end of period), just switch directly
@@ -436,7 +521,8 @@ async function handleUpgrade(
         id: crypto.randomUUID(),
         customerId: customer.id,
         planId: newPlan.id,
-        paystackSubscriptionCode: providerId === "paystack" ? (newProviderSubCode || null) : null,
+        paystackSubscriptionCode:
+          providerId === "paystack" ? newProviderSubCode || null : null,
         providerId,
         providerSubscriptionId: newProviderSubCode || null,
         providerSubscriptionCode: newProviderSubCode || null,
@@ -452,7 +538,12 @@ async function handleUpgrade(
       })
       .returning();
 
-    await provisionEntitlements(db, customer.id, newPlan.id, existingSub.plan.id);
+    await provisionEntitlements(
+      db,
+      customer.id,
+      newPlan.id,
+      existingSub.plan.id,
+    );
 
     return {
       success: true,
@@ -465,7 +556,13 @@ async function handleUpgrade(
 
   // Always use checkout for upgrade proration (auto-charge reserved for overages only)
   return createUpgradeCheckout(
-    db, customer, existingSub, newPlan, provider, proratedAmount, options,
+    db,
+    customer,
+    existingSub,
+    newPlan,
+    provider,
+    proratedAmount,
+    options,
   );
 }
 
@@ -483,11 +580,15 @@ async function createUpgradeCheckout(
       success: false,
       type: "upgrade",
       requiresCheckout: true,
-      message: "Payment provider not configured — cannot process upgrade payment",
+      message:
+        "Payment provider not configured — cannot process upgrade payment",
     };
   }
 
-  const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
+  const customerRef =
+    customer.providerCustomerId ||
+    customer.paystackCustomerId ||
+    customer.email;
 
   // NOTE: Do NOT pass `plan` here. We charge the prorated amount as a one-time
   // payment; the webhook handler creates the new subscription when the charge succeeds.
@@ -549,7 +650,9 @@ async function handleDowngrade(
       status: "active", // Keep active until period end
       cancelAt: existingSub.currentPeriodEnd,
       metadata: {
-        ...(typeof existingSub.metadata === "object" ? existingSub.metadata : {}),
+        ...(typeof existingSub.metadata === "object"
+          ? existingSub.metadata
+          : {}),
         scheduled_downgrade: {
           new_plan_id: newPlan.id,
           scheduled_at: now,
@@ -573,13 +676,19 @@ async function handleDowngrade(
           environment: options.environment || "test",
           executeAt: existingSub.currentPeriodEnd,
           oldPlanId: existingSub.plan?.id,
-          providerSubscriptionCode: existingSub.providerSubscriptionCode || existingSub.paystackSubscriptionCode,
+          providerSubscriptionCode:
+            existingSub.providerSubscriptionCode ||
+            existingSub.paystackSubscriptionCode,
           customerEmail: customer.email,
-          customerAuthorizationCode: customer.providerAuthorizationCode || customer.paystackAuthorizationCode,
+          customerAuthorizationCode:
+            customer.providerAuthorizationCode ||
+            customer.paystackAuthorizationCode,
           newPlanProviderCode: newPlan.providerPlanId || newPlan.paystackPlanId,
         },
       });
-      console.log(`[plan-switch] Downgrade workflow dispatched: sub=${existingSub.id}, newPlan=${newPlan.id}`);
+      console.log(
+        `[plan-switch] Downgrade workflow dispatched: sub=${existingSub.id}, newPlan=${newPlan.id}`,
+      );
     } catch (e) {
       console.error("Failed to dispatch downgrade workflow:", e);
       // The metadata is still stored, so a manual process can pick it up
@@ -613,7 +722,9 @@ async function handleLateralSwitch(
         existingSub.providerId ||
         (existingSub.paystackSubscriptionCode ? "paystack" : null),
       metadata: {
-        ...(typeof existingSub.metadata === "object" ? existingSub.metadata : {}),
+        ...(typeof existingSub.metadata === "object"
+          ? existingSub.metadata
+          : {}),
         switched_from: existingSub.plan.id,
         switch_type: "lateral",
         switched_at: now,
@@ -673,7 +784,10 @@ async function handleOneTimePurchase(
     };
   }
 
-  const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
+  const customerRef =
+    customer.providerCustomerId ||
+    customer.paystackCustomerId ||
+    customer.email;
 
   // Always use checkout for one-time purchases (auto-charge reserved for overages only)
   if (!provider) {
@@ -732,8 +846,12 @@ async function handleNewSubscription(
   options: { callbackUrl?: string; metadata?: Record<string, unknown> },
 ): Promise<SwitchResult> {
   const providerId = resolveProviderId(provider, options.metadata);
-  const authCode = customer.providerAuthorizationCode || customer.paystackAuthorizationCode;
-  const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
+  const authCode =
+    customer.providerAuthorizationCode || customer.paystackAuthorizationCode;
+  const customerRef =
+    customer.providerCustomerId ||
+    customer.paystackCustomerId ||
+    customer.email;
   const planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
 
   // If card on file and provider available, create subscription directly.
@@ -761,7 +879,8 @@ async function handleNewSubscription(
           id: crypto.randomUUID(),
           customerId: customer.id,
           planId: newPlan.id,
-          paystackSubscriptionCode: providerId === "paystack" ? subResult.value.id : null,
+          paystackSubscriptionCode:
+            providerId === "paystack" ? subResult.value.id : null,
           providerId,
           providerSubscriptionId: subResult.value.id,
           providerSubscriptionCode: subResult.value.id,
@@ -847,7 +966,11 @@ async function findSwitchableSubscription(
   const subs = await db.query.subscriptions.findMany({
     where: and(
       eq(schema.subscriptions.customerId, customerId),
-      inArray(schema.subscriptions.status, ["active", "trialing", "pending_cancel"]),
+      inArray(schema.subscriptions.status, [
+        "active",
+        "trialing",
+        "pending_cancel",
+      ]),
     ),
     with: { plan: true },
   });
@@ -856,7 +979,9 @@ async function findSwitchableSubscription(
 
   // If the new plan has a planGroup, find a sub in the same group
   if (newPlan.planGroup) {
-    return subs.find((s: any) => s.plan.planGroup === newPlan.planGroup) || null;
+    return (
+      subs.find((s: any) => s.plan.planGroup === newPlan.planGroup) || null
+    );
   }
 
   // No planGroup — find any non-addon active sub (base plan replacement)
@@ -885,7 +1010,10 @@ async function cancelSubscription(
         account: provider.account,
       });
       if (result.isErr()) {
-        console.warn(`Provider cancel failed for ${subCode}:`, result.error.message);
+        console.warn(
+          `Provider cancel failed for ${subCode}:`,
+          result.error.message,
+        );
       }
     } catch (e) {
       console.warn(`Provider cancel threw for ${subCode}:`, e);
@@ -910,35 +1038,12 @@ export async function provisionEntitlements(
     with: { feature: true },
   });
 
-  // Remove entitlements from the OLD plan (if switching) to avoid orphans
-  if (oldPlanId) {
-    const oldPlanFeatures = await db.query.planFeatures.findMany({
-      where: eq(schema.planFeatures.planId, oldPlanId),
-    });
-    for (const opf of oldPlanFeatures) {
-      await db
-        .delete(schema.entitlements)
-        .where(
-          and(
-            eq(schema.entitlements.customerId, customerId),
-            eq(schema.entitlements.featureId, opf.featureId),
-          ),
-        );
-    }
-  } else {
-    // No old plan — just remove entitlements for features in the new plan (avoid duplicates)
-    const featureIds = planFeatures.map((pf: any) => pf.featureId);
-    for (const featureId of featureIds) {
-      await db
-        .delete(schema.entitlements)
-        .where(
-          and(
-            eq(schema.entitlements.customerId, customerId),
-            eq(schema.entitlements.featureId, featureId),
-          ),
-        );
-    }
-  }
+  // Fetch old plan features if switching
+  const oldPlanFeatures = oldPlanId
+    ? await db.query.planFeatures.findMany({
+        where: eq(schema.planFeatures.planId, oldPlanId),
+      })
+    : [];
 
   // Create new entitlements from plan features
   const now = Date.now();
@@ -953,10 +1058,40 @@ export async function provisionEntitlements(
     updatedAt: now,
   }));
 
-  if (entitlementValues.length > 0) {
-    await db.insert(schema.entitlements).values(entitlementValues);
-  }
+  // Wrap in transaction for atomicity - ensures deletes and inserts happen together
+  await db.transaction(async (tx: any) => {
+    // Remove entitlements from the OLD plan (if switching) to avoid orphans
+    if (oldPlanId && oldPlanFeatures.length > 0) {
+      for (const opf of oldPlanFeatures) {
+        await tx
+          .delete(schema.entitlements)
+          .where(
+            and(
+              eq(schema.entitlements.customerId, customerId),
+              eq(schema.entitlements.featureId, opf.featureId),
+            ),
+          );
+      }
+    } else if (!oldPlanId) {
+      // No old plan — just remove entitlements for features in the new plan (avoid duplicates)
+      const featureIds = planFeatures.map((pf: any) => pf.featureId);
+      for (const featureId of featureIds) {
+        await tx
+          .delete(schema.entitlements)
+          .where(
+            and(
+              eq(schema.entitlements.customerId, customerId),
+              eq(schema.entitlements.featureId, featureId),
+            ),
+          );
+      }
+    }
 
+    // Insert new entitlements
+    if (entitlementValues.length > 0) {
+      await tx.insert(schema.entitlements).values(entitlementValues);
+    }
+  });
 }
 
 function intervalToMs(interval: string): number {
