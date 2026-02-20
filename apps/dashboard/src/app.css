@@ -8,28 +8,29 @@
 
 @theme {
   /* ---------------------------------------------------------------------------
-     Base Values (Light Mode Defaults)
+     Base Values (Light Mode Defaults) - Exact Match to Design
   --------------------------------------------------------------------------- */
-  --color-bg-primary: #eaece1;
-  --color-bg-secondary: #eff0e9;
-  --color-bg-card: #eff0e9;
-  --color-bg-card-hover: #f5f5f4;
+  --color-bg-primary: #f6f7f2; /* Main area background */
+  --color-bg-secondary: #eef2e6; /* Exact sidebar and input background */
+  --color-bg-card: #ffffff; /* Pure white cards */
+  --color-bg-card-hover: #f3f6ea; /* Table header / hover background */
 
-  --color-border: #d6d6d4;
-  --color-border-light: #e5e5e3;
+  --color-border: #e3ead9; /* Soft green-tinted border */
+  --color-border-light: #ecf1e6;
 
   /* Owostack Lime Green */
-  --color-accent: #589305;
-  --color-accent-hover: #76b715;
+  --color-accent: #65a30d; /* Exact brand green */
+  --color-accent-hover: #4d7c0f;
   --color-accent-contrast: #ffffff;
 
-  --color-text-primary: #161715;
-  --color-text-secondary: #4a4a48;
-  --color-text-dim: #717170;
+  /* Earthy/Olive text to match the table headings and titles */
+  --color-text-primary: #2b3323; /* Exact title black-green */
+  --color-text-secondary: #48543b; /* Deeper olive text */
+  --color-text-dim: #7a8c66; /* Exact table heading olive-green */
 
   /* Code blocks should stay dark */
-  --color-bg-code: #0d1117;
-  --color-text-code: #e6edf3;
+  --color-bg-code: #2b3323;
+  --color-text-code: #f6f7f2;
 
   /* Overrides for "No Border Radius" */
   --radius-xs: 0px;
