@@ -1,50 +1,21 @@
 <script lang="ts">
-  import { Mail, Lock, ArrowRight, Github, Zap, Activity, CheckCircle2, Server } from "lucide-svelte";
+  import { Mail, Lock, ArrowRight, Github, Activity, TrendingUp } from "lucide-svelte";
   import { signIn } from "$lib/auth-client";
   import { goto } from "$app/navigation";
   import Logo from "$lib/components/ui/Logo.svelte";
   import { onMount } from "svelte";
-  import { fade, slide } from 'svelte/transition';
 
   let email = $state("");
   let password = $state("");
   let isLoading = $state(false);
   let error = $state<string | null>(null);
   let mounted = $state(false);
-  
-  // Logs for the terminal animation
-  let logs = $state<{id: number, time: string, action: string, status: string, color: string}[]>([]);
-  let logId = 0;
-
-  const possibleLogs = [
-    { action: "GET /v1/access", status: "ALLOWED", color: "text-accent" },
-    { action: "POST /v1/usage", status: "RECORDED", color: "text-text-primary" },
-    { action: "WEBHOOK sub.created", status: "SYNCED", color: "text-accent" },
-    { action: "GET /v1/invoice", status: "GENERATED", color: "text-text-secondary" },
-  ];
 
   onMount(() => {
-    mounted = true;
-    
-    // Initial logs
-    addLog();
-    addLog();
-    
-    // Add new logs periodically
-    const interval = setInterval(() => {
-      addLog();
-    }, 2500);
-
-    return () => clearInterval(interval);
+    setTimeout(() => {
+      mounted = true;
+    }, 100);
   });
-
-  function addLog() {
-    const now = new Date();
-    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-    const template = possibleLogs[Math.floor(Math.random() * possibleLogs.length)];
-    
-    logs = [{ id: logId++, time, ...template }, ...logs].slice(0, 5);
-  }
 
   async function handleSubmit(e: Event) {
     e.preventDefault();
@@ -92,52 +63,74 @@
     <div class="flex-1 flex flex-col justify-center items-center relative z-10">
       <div class="w-full max-w-md">
         
-        <!-- Live Status Card -->
+        <!-- Dashboard Preview -->
         <div class="bg-bg-card border border-border overflow-hidden mb-8 animate-slide-up {mounted ? 'animate-in' : ''} shadow-[4px_4px_0px_0px_var(--color-border)]">
-          <!-- Header -->
-          <div class="bg-bg-primary border-b border-border p-3 flex items-center justify-between">
+          <div class="p-4 border-b border-border bg-bg-secondary flex justify-between items-center">
             <div class="flex items-center gap-2">
-              <div class="flex gap-1">
-                <div class="w-2 h-2 bg-border"></div>
-                <div class="w-2 h-2 bg-accent"></div>
-              </div>
-              <span class="ml-2 text-[10px] font-bold font-mono text-text-dim uppercase tracking-widest">Your billig</span>
+              <Activity size={14} class="text-accent" />
+              <span class="text-[10px] font-bold uppercase tracking-widest text-text-primary">Monthly Revenue</span>
             </div>
-           
+            <div class="flex items-center gap-1 text-[10px] font-bold text-green-500 bg-green-500/10 px-2 py-0.5">
+              <TrendingUp size={10} />
+              <span>+12.5%</span>
+            </div>
+          </div>
+          
+          <div class="p-6">
+            <div class="text-3xl font-bold text-text-primary tracking-tight mb-1">$45,231.89</div>
+            <div class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-6">Current MRR</div>
+            
+            <!-- Faux Chart -->
+            <div class="flex items-end gap-2 h-24 mt-4">
+              {#each [35, 42, 38, 55, 48, 65, 58, 75, 68, 85, 80, 100] as height, i}
+                <div class="flex-1 bg-accent/20 hover:bg-accent transition-colors duration-300 relative group h-full">
+                  <div class="absolute bottom-0 w-full bg-accent transition-all duration-1000 ease-out" style="height: {mounted ? height : 0}%"></div>
+                </div>
+              {/each}
+            </div>
           </div>
 
-          <!-- Live Logs Terminal -->
-          <div class="bg-bg-secondary p-4 font-mono text-[11px] h-48 overflow-hidden relative border-b border-border">
-            {#each logs as log (log.id)}
-              <div class="flex gap-3 mb-2" in:slide={{ duration: 300 }}>
-                <span class="text-text-dim opacity-40 shrink-0">{log.time}</span>
-                <span class="text-text-primary shrink-0 uppercase font-bold tracking-tight">{log.action}</span>
-                <span class="ml-auto {log.color} font-bold uppercase tracking-widest">{log.status}</span>
+          <div class="bg-bg-secondary p-4 border-t border-border">
+            <div class="text-[9px] font-bold text-text-dim uppercase tracking-widest mb-4">Recent Transactions</div>
+            <div class="space-y-3">
+              <div class="flex justify-between items-center text-[10px]">
+                <div class="flex items-center gap-2 w-24">
+                  <div class="w-2 h-2 bg-accent/20 border border-accent flex items-center justify-center">
+                     <div class="w-1 h-1 bg-accent"></div>
+                  </div>
+                  <span class="font-bold text-text-primary uppercase tracking-tight">Pro Plan</span>
+                </div>
+                <span class="font-mono text-text-secondary opacity-60 truncate w-20">ada@...</span>
+                <span class="font-bold text-text-primary font-mono w-16 text-right">+$29.00</span>
               </div>
-            {/each}
-          </div>
-
-          <!-- Footer / Stats -->
-          <div class="bg-bg-card p-4 grid grid-cols-3 gap-px bg-border">
-            <div class="bg-bg-card p-2 text-center">
-              <div class="text-[9px] uppercase text-text-dim font-bold tracking-widest mb-1">Uptime</div>
-              <div class="font-bold text-text-primary tracking-tight">99.99%</div>
-            </div>
-            <div class="bg-bg-card p-2 text-center border-l border-border">
-              <div class="text-[9px] uppercase text-text-dim font-bold tracking-widest mb-1">Latency</div>
-              <div class="font-bold text-accent tracking-tight">24ms</div>
-            </div>
-            <div class="bg-bg-card p-2 text-center border-l border-border">
-              <div class="text-[9px] uppercase text-text-dim font-bold tracking-widest mb-1">Requests</div>
-              <div class="font-bold text-text-primary tracking-tight">2.4M</div>
+              <div class="flex justify-between items-center text-[10px]">
+                <div class="flex items-center gap-2 w-24">
+                  <div class="w-2 h-2 bg-accent/20 border border-accent flex items-center justify-center">
+                     <div class="w-1 h-1 bg-accent"></div>
+                  </div>
+                  <span class="font-bold text-text-primary uppercase tracking-tight">Overage</span>
+                </div>
+                <span class="font-mono text-text-secondary opacity-60 truncate w-20">alan@...</span>
+                <span class="font-bold text-text-primary font-mono w-16 text-right">+$4.20</span>
+              </div>
+              <div class="flex justify-between items-center text-[10px]">
+                <div class="flex items-center gap-2 w-24">
+                  <div class="w-2 h-2 bg-accent/20 border border-accent flex items-center justify-center">
+                     <div class="w-1 h-1 bg-accent"></div>
+                  </div>
+                  <span class="font-bold text-text-primary uppercase tracking-tight">Enterprise</span>
+                </div>
+                <span class="font-mono text-text-secondary opacity-60 truncate w-20">grace@...</span>
+                <span class="font-bold text-text-primary font-mono w-16 text-right">+$99.00</span>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Tagline -->
         <div class="text-center animate-slide-up delay-200 {mounted ? 'animate-in' : ''}">
-          <p class="text-xl font-bold uppercase tracking-tight text-text-primary">Billing running.</p>
-          <p class="text-sm text-text-secondary mt-1">Focus on your product. We handle the rest.</p>
+          <p class="text-xl font-bold uppercase tracking-tight text-text-primary">Welcome back</p>
+          <p class="text-sm text-text-secondary mt-1">Pick up right where you left off.</p>
         </div>
 
       </div>
@@ -264,11 +257,6 @@
     to { opacity: 1; transform: translateY(0); }
   }
 
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
   .animate-slide-up {
     opacity: 0;
     transform: translateY(10px);
@@ -278,10 +266,6 @@
   .animate-slide-up.animate-in {
     opacity: 1;
     transform: translateY(0);
-  }
-
-  .animate-pulse-dot {
-    animation: pulse-dot 1.5s ease-in-out infinite;
   }
 
   .delay-200 {
