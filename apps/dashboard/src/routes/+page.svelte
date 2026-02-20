@@ -45,7 +45,44 @@
   <title>Owostack — Billing Infrastructure for AI SaaS</title>
 </svelte:head>
 
-<div class="min-h-screen bg-bg-primary text-text-primary font-sans selection:bg-accent/30">
+<div class="min-h-screen bg-bg-primary text-text-primary font-sans selection:bg-accent/30 relative overflow-hidden">
+  
+  <!-- Abstract Background Art -->
+  <div class="absolute inset-0 pointer-events-none overflow-hidden">
+    <!-- Gradient Orbs -->
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    
+    <!-- Subtle Grid -->
+    <div class="grid-pattern"></div>
+    
+    <!-- Flowing Lines -->
+    <svg class="flow-lines" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <linearGradient id="lineGrad1" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0" />
+          <stop offset="50%" stop-color="var(--color-accent)" stop-opacity="0.3" />
+          <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0" />
+        </linearGradient>
+        <linearGradient id="lineGrad2" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="var(--color-secondary)" stop-opacity="0" />
+          <stop offset="50%" stop-color="var(--color-secondary)" stop-opacity="0.2" />
+          <stop offset="100%" stop-color="var(--color-secondary)" stop-opacity="0" />
+        </linearGradient>
+      </defs>
+      <path class="flow-line flow-line-1" d="M-100,200 Q400,150 700,300 T1440,250" stroke="url(#lineGrad1)" fill="none" stroke-width="1" />
+      <path class="flow-line flow-line-2" d="M-100,400 Q300,350 600,500 T1440,450" stroke="url(#lineGrad2)" fill="none" stroke-width="1" />
+      <path class="flow-line flow-line-3" d="M-100,600 Q350,550 650,700 T1440,650" stroke="url(#lineGrad1)" fill="none" stroke-width="1" />
+    </svg>
+    
+    <!-- Floating Particles -->
+    <div class="particle particle-1"></div>
+    <div class="particle particle-2"></div>
+    <div class="particle particle-3"></div>
+    <div class="particle particle-4"></div>
+    <div class="particle particle-5"></div>
+  </div>
 
   <!-- Header -->
   <header class="px-6 py-5">
@@ -393,6 +430,7 @@ Not backed by Y Combinator</div>
 </div>
 
 <style>
+  /* Shimmer Effects for Provider Names */
   .shimmer-paystack,
   .shimmer-stripe,
   .shimmer-dodo {
@@ -420,5 +458,220 @@ Not backed by Y Combinator</div>
     0% { background-position: 100% 50%; }
     50% { background-position: 0% 50%; }
     100% { background-position: 100% 50%; }
+  }
+
+  /* Abstract Background Elements */
+  
+  /* Gradient Orbs */
+  .orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.4;
+    animation: float 20s ease-in-out infinite;
+  }
+
+  .orb-1 {
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, var(--color-accent) 0%, transparent 70%);
+    top: -200px;
+    right: -100px;
+    animation-delay: 0s;
+  }
+
+  .orb-2 {
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, var(--color-secondary) 0%, transparent 70%);
+    bottom: 10%;
+    left: -150px;
+    animation-delay: -7s;
+    opacity: 0.3;
+  }
+
+  .orb-3 {
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, var(--color-tertiary) 0%, transparent 70%);
+    top: 40%;
+    right: 10%;
+    animation-delay: -14s;
+    opacity: 0.25;
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translate(0, 0) scale(1);
+    }
+    33% {
+      transform: translate(30px, -30px) scale(1.05);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.95);
+    }
+  }
+
+  /* Dot Grid Pattern */
+  .grid-pattern {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, var(--color-border) 1px, transparent 1px);
+    background-size: 60px 60px;
+    opacity: 0.3;
+    mask-image: radial-gradient(ellipse 80% 50% at 50% 50%, black 40%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 50% at 50% 50%, black 40%, transparent 100%);
+  }
+
+  /* Flowing Lines */
+  .flow-lines {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.5;
+  }
+
+  .flow-line {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+    animation: flow 15s linear infinite;
+  }
+
+  .flow-line-1 {
+    animation-delay: 0s;
+  }
+
+  .flow-line-2 {
+    animation-delay: -5s;
+  }
+
+  .flow-line-3 {
+    animation-delay: -10s;
+  }
+
+  @keyframes flow {
+    0% {
+      stroke-dashoffset: 1000;
+      opacity: 0;
+    }
+    10% {
+      opacity: 0.5;
+    }
+    90% {
+      opacity: 0.5;
+    }
+    100% {
+      stroke-dashoffset: -1000;
+      opacity: 0;
+    }
+  }
+
+  /* Floating Particles */
+  .particle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    opacity: 0;
+    animation: drift 25s ease-in-out infinite;
+  }
+
+  .particle-1 {
+    left: 10%;
+    top: 20%;
+    animation-delay: 0s;
+    animation-duration: 30s;
+  }
+
+  .particle-2 {
+    left: 25%;
+    top: 60%;
+    animation-delay: -5s;
+    animation-duration: 28s;
+    background: var(--color-secondary);
+  }
+
+  .particle-3 {
+    right: 20%;
+    top: 30%;
+    animation-delay: -10s;
+    animation-duration: 32s;
+    background: var(--color-tertiary);
+  }
+
+  .particle-4 {
+    right: 30%;
+    top: 70%;
+    animation-delay: -15s;
+    animation-duration: 26s;
+  }
+
+  .particle-5 {
+    left: 50%;
+    top: 40%;
+    animation-delay: -20s;
+    animation-duration: 34s;
+    background: var(--color-secondary);
+  }
+
+  @keyframes drift {
+    0%, 100% {
+      transform: translate(0, 0);
+      opacity: 0;
+    }
+    10% {
+      opacity: 0.6;
+    }
+    50% {
+      transform: translate(100px, 50px);
+      opacity: 0.3;
+    }
+    90% {
+      opacity: 0.6;
+    }
+  }
+
+  /* Dark mode adjustments */
+  :global(.dark) .orb {
+    opacity: 0.2;
+  }
+
+  :global(.dark) .grid-pattern {
+    opacity: 0.15;
+  }
+
+  :global(.dark) .flow-lines {
+    opacity: 0.3;
+  }
+
+  :global(.dark) .particle {
+    opacity: 0;
+  }
+
+  :global(.dark) .particle-1,
+  :global(.dark) .particle-2,
+  :global(.dark) .particle-3,
+  :global(.dark) .particle-4,
+  :global(.dark) .particle-5 {
+    animation: drift-dark 25s ease-in-out infinite;
+  }
+
+  @keyframes drift-dark {
+    0%, 100% {
+      transform: translate(0, 0);
+      opacity: 0;
+    }
+    10% {
+      opacity: 0.4;
+    }
+    50% {
+      transform: translate(100px, 50px);
+      opacity: 0.2;
+    }
+    90% {
+      opacity: 0.4;
+    }
   }
 </style>

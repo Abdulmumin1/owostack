@@ -7,7 +7,22 @@
   import CreateCreditSystemModal from "$lib/components/features/CreateCreditSystemModal.svelte";
   import EditCreditSystemModal from "$lib/components/features/EditCreditSystemModal.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
-  import { ArrowRight, ArrowSquareOut, CaretRight, CircleNotch, Coins, Copy, Cube, DotsThree, Hash, Lightning, Pencil, Plus, ToggleLeft, Trash } from "phosphor-svelte";
+  import {
+    ArrowRight,
+    ArrowSquareOut,
+    CaretRight,
+    CircleNotch,
+    Coins,
+    Copy,
+    Cube,
+    DotsThree,
+    Hash,
+    Lightning,
+    Pencil,
+    Plus,
+    ToggleLeft,
+    Trash,
+  } from "phosphor-svelte";
 
   let features = $state<any[]>([]);
   let creditSystems = $state<any[]>([]);
@@ -27,7 +42,7 @@
     try {
       const [featuresRes, creditsRes] = await Promise.all([
         apiFetch(`/api/dashboard/features?organizationId=${organizationId}`),
-        apiFetch(`/api/dashboard/credits?organizationId=${organizationId}`)
+        apiFetch(`/api/dashboard/credits?organizationId=${organizationId}`),
       ]);
 
       if (featuresRes.data?.success) features = featuresRes.data.data;
@@ -40,14 +55,19 @@
   }
 
   async function deleteFeature(id: string) {
-    if (!confirm("Are you sure you want to delete this feature? Plans using this feature might break.")) return;
-    
+    if (
+      !confirm(
+        "Are you sure you want to delete this feature? Plans using this feature might break.",
+      )
+    )
+      return;
+
     try {
       const res = await apiFetch(`/api/dashboard/features/${id}`, {
-        method: "DELETE"
+        method: "DELETE",
       });
       if (res.data?.success) {
-        features = features.filter(f => f.id !== id);
+        features = features.filter((f) => f.id !== id);
       }
     } catch (e) {
       console.error("Failed to delete feature", e);
@@ -60,10 +80,10 @@
 
     try {
       const res = await apiFetch(`/api/dashboard/credits/${id}`, {
-        method: "DELETE"
+        method: "DELETE",
       });
       if (res.data?.success) {
-        creditSystems = creditSystems.filter(cs => cs.id !== id);
+        creditSystems = creditSystems.filter((cs) => cs.id !== id);
       }
     } catch (e) {
       console.error("Failed to delete credit system", e);
@@ -87,7 +107,7 @@
 
   function handleClickOutside(event: MouseEvent) {
     const target = event.target as HTMLElement;
-    if (!target.closest('.dropdown-container')) {
+    if (!target.closest(".dropdown-container")) {
       openFeatureMenuId = null;
       openCreditSystemMenuId = null;
     }
@@ -95,15 +115,14 @@
 
   onMount(() => {
     loadData();
-    document.addEventListener('click', handleClickOutside);
+    document.addEventListener("click", handleClickOutside);
     return () => {
-      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener("click", handleClickOutside);
     };
   });
 </script>
 
 <div class="space-y-12 max-w-6xl mx-auto">
- 
   <!-- Features Section -->
   <section class="space-y-4">
     <div class="flex items-center justify-between">
@@ -121,13 +140,22 @@
       </div>
     </div>
 
-    <div class="table-container">
+    <div class="table-container !overflow-visible">
       <table class="w-full text-left border-collapse">
         <thead>
           <tr>
-            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Name</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">ID</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Type</th>
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Name</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >ID</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Type</th
+            >
             <th class="px-6 py-4"></th>
           </tr>
         </thead>
@@ -152,7 +180,10 @@
             {/each}
           {:else if features.length === 0}
             <tr>
-              <td colspan="4" class="px-6 py-12 text-center text-text-dim text-sm italic">
+              <td
+                colspan="4"
+                class="px-6 py-12 text-center text-text-dim text-sm italic"
+              >
                 No features defined yet.
               </td>
             </tr>
@@ -160,43 +191,74 @@
             {#each features as feature}
               <tr class="group hover:bg-bg-secondary transition-colors">
                 <td class="px-6 py-4">
-                  <div class="text-sm font-medium text-text-primary">{feature.name}</div>
+                  <div class="text-sm font-medium text-text-primary">
+                    {feature.name}
+                  </div>
                 </td>
                 <td class="px-6 py-4">
-                  <div class="text-[11px] font-mono text-text-dim">{feature.slug}</div>
+                  <div class="text-[11px] font-mono text-text-dim">
+                    {feature.slug}
+                  </div>
                 </td>
                 <td class="px-6 py-4">
                   <div class="flex items-center gap-2">
-                    {#if feature.type === 'metered'}
-                      <Lightning size={14} class="text-warning" weight="duotone" />
-                      <span class="text-[11px] text-text-secondary capitalize">{feature.meterType?.replace('_', ' ') || 'Consumable'}</span>
-                    {:else if feature.type === 'boolean'}
-                      <ToggleLeft size={14} class="text-info" weight="duotone" />
-                      <span class="text-[11px] text-text-secondary">Boolean</span>
+                    {#if feature.type === "metered"}
+                      <Lightning
+                        size={14}
+                        class="text-warning"
+                        weight="duotone"
+                      />
+                      <span class="text-[11px] text-text-secondary capitalize"
+                        >{feature.meterType?.replace("_", " ") ||
+                          "Consumable"}</span
+                      >
+                    {:else if feature.type === "boolean"}
+                      <ToggleLeft
+                        size={14}
+                        class="text-info"
+                        weight="duotone"
+                      />
+                      <span class="text-[11px] text-text-secondary"
+                        >Boolean</span
+                      >
                     {:else}
                       <Hash size={14} class="text-success" weight="duotone" />
-                      <span class="text-[11px] text-text-secondary">Static</span>
+                      <span class="text-[11px] text-text-secondary">Static</span
+                      >
                     {/if}
                   </div>
                 </td>
                 <td class="px-6 py-4 text-right">
-                  <div class="relative inline-block text-left dropdown-container">
+                  <div
+                    class="relative inline-block text-left dropdown-container"
+                  >
                     <button
                       class="text-text-dim hover:text-text-primary transition-all p-1 rounded hover:bg-bg-secondary"
                       onclick={(e) => {
                         e.stopPropagation();
-                        openFeatureMenuId = openFeatureMenuId === feature.id ? null : feature.id;
+                        openFeatureMenuId =
+                          openFeatureMenuId === feature.id ? null : feature.id;
                         openCreditSystemMenuId = null;
                       }}
                     >
                       <DotsThree size={16} weight="duotone" />
                     </button>
                     {#if openFeatureMenuId === feature.id}
-                      <div class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-50 py-1 rounded shadow-sm" transition:fade={{ duration: 100 }} onclick={(e) => e.stopPropagation()}>
-                        <button class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2" onclick={() => copyFeatureText(feature.slug)}>
+                      <div
+                        class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-50 py-1 rounded shadow-sm"
+                        transition:fade={{ duration: 100 }}
+                        onclick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+                          onclick={() => copyFeatureText(feature.slug)}
+                        >
                           <Copy size={12} weight="fill" /> Copy Slug
                         </button>
-                        <button class="w-full text-left px-4 py-2 text-[11px] text-error hover:bg-error-bg flex items-center gap-2" onclick={() => deleteFeature(feature.id)}>
+                        <button
+                          class="w-full text-left px-4 py-2 text-[11px] text-error hover:bg-error-bg flex items-center gap-2"
+                          onclick={() => deleteFeature(feature.id)}
+                        >
                           <Trash size={12} weight="fill" /> Delete
                         </button>
                       </div>
@@ -226,13 +288,22 @@
       </button>
     </div>
 
-    <div class="table-container">
+    <div class="table-container !overflow-visible">
       <table class="w-full text-left border-collapse">
         <thead>
           <tr>
-            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Name</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">ID</th>
-            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Features</th>
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Name</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >ID</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Features</th
+            >
             <th class="px-6 py-4"></th>
           </tr>
         </thead>
@@ -259,7 +330,8 @@
             <tr>
               <td colspan="4" class="px-6 py-10 text-center">
                 <p class="text-text-dim text-[11px] mb-4">
-                  Credit systems let you assign different credit costs to features, and draw usage from a common balance
+                  Credit systems let you assign different credit costs to
+                  features, and draw usage from a common balance
                 </p>
               </td>
             </tr>
@@ -267,41 +339,69 @@
             {#each creditSystems as system}
               <tr class="group hover:bg-bg-secondary transition-colors">
                 <td class="px-6 py-4">
-                  <div class="text-sm font-medium text-text-primary">{system.name}</div>
+                  <div class="text-sm font-medium text-text-primary">
+                    {system.name}
+                  </div>
                 </td>
                 <td class="px-6 py-4">
-                  <div class="text-[11px] font-mono text-text-dim">{system.slug}</div>
+                  <div class="text-[11px] font-mono text-text-dim">
+                    {system.slug}
+                  </div>
                 </td>
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap gap-1">
                     {#each system.features as f}
-                      <span class="text-[9px] bg-bg-secondary border border-border px-1.5 py-0.5 rounded text-text-secondary">
+                      <span
+                        class="text-[9px] bg-bg-secondary border border-border px-1.5 py-0.5 rounded text-text-secondary"
+                      >
                         {f.feature.name} ({f.cost})
                       </span>
                     {/each}
                   </div>
                 </td>
                 <td class="px-6 py-4 text-right">
-                  <div class="relative inline-block text-left dropdown-container">
+                  <div
+                    class="relative inline-block text-left dropdown-container"
+                  >
                     <button
                       class="text-text-dim hover:text-text-primary transition-all p-1 rounded hover:bg-bg-secondary"
                       onclick={(e) => {
                         e.stopPropagation();
-                        openCreditSystemMenuId = openCreditSystemMenuId === system.id ? null : system.id;
+                        openCreditSystemMenuId =
+                          openCreditSystemMenuId === system.id
+                            ? null
+                            : system.id;
                         openFeatureMenuId = null;
                       }}
                     >
                       <DotsThree size={16} weight="duotone" />
                     </button>
                     {#if openCreditSystemMenuId === system.id}
-                      <div class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-50 py-1 rounded shadow-sm" transition:fade={{ duration: 100 }} onclick={(e) => e.stopPropagation()}>
-                        <button class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2" onclick={() => { editingCreditSystemId = system.id; showEditCSModal = true; openCreditSystemMenuId = null; }}>
+                      <div
+                        class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-50 py-1 rounded shadow-sm"
+                        transition:fade={{ duration: 100 }}
+                        onclick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+                          onclick={() => {
+                            editingCreditSystemId = system.id;
+                            showEditCSModal = true;
+                            openCreditSystemMenuId = null;
+                          }}
+                        >
                           <Pencil size={12} weight="duotone" /> Edit
                         </button>
-                        <button class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2" onclick={() => copyCreditSystemText(system.slug)}>
+                        <button
+                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+                          onclick={() => copyCreditSystemText(system.slug)}
+                        >
                           <Copy size={12} weight="fill" /> Copy Slug
                         </button>
-                        <button class="w-full text-left px-4 py-2 text-[11px] text-error hover:bg-error-bg flex items-center gap-2" onclick={() => deleteCreditSystem(system.id)}>
+                        <button
+                          class="w-full text-left px-4 py-2 text-[11px] text-error hover:bg-error-bg flex items-center gap-2"
+                          onclick={() => deleteCreditSystem(system.id)}
+                        >
                           <Trash size={12} weight="fill" /> Delete
                         </button>
                       </div>
@@ -335,6 +435,9 @@
   isOpen={showEditCSModal}
   bind:creditSystemId={editingCreditSystemId}
   {organizationId}
-  onclose={() => { showEditCSModal = false; editingCreditSystemId = ""; }}
+  onclose={() => {
+    showEditCSModal = false;
+    editingCreditSystemId = "";
+  }}
   onsuccess={handleFeatureCreated}
 />
