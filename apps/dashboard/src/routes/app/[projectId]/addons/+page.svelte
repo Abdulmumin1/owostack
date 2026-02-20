@@ -4,15 +4,7 @@
   import { fade } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
-  import {
-    Coins,
-    Plus,
-    MoreHorizontal,
-    Trash2,
-    Copy,
-    Pencil,
-    Package,
-  } from "lucide-svelte";
+  import { Coins, Copy, DotsThree, FloppyDisk, Package, Pencil, Plus, Trash } from "phosphor-svelte";
   import CreateCreditPackModal from "$lib/components/addons/CreateCreditPackModal.svelte";
   import { defaultCurrency } from "$lib/stores/currency";
   import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
@@ -137,7 +129,7 @@
   <div class="flex items-center justify-between">
     <div>
       <div class="flex items-center gap-2 mb-1">
-        <Coins size={18} class="text-text-dim" />
+        <Coins   size={18} class="text-text-dim"  weight="duotone" />
         <h1 class="text-lg font-bold text-text-primary">Add-on Credit Packs</h1>
       </div>
       <p class="text-[11px] text-text-dim">
@@ -146,25 +138,25 @@
     </div>
     <button
       onclick={() => (showCreatePanel = true)}
-      class="bg-accent hover:bg-accent-hover text-accent-contrast text-[11px] font-bold px-4 py-2 rounded transition-all flex items-center gap-1.5"
+      class="btn btn-primary"
     >
-      <Plus size={14} />
+      <Plus size={14} weight="fill" />
       Create Pack
     </button>
   </div>
 
   {#if error}
-    <div class="bg-red-500/10 border border-red-500/20 text-red-500 dark:text-red-400 text-[11px] px-4 py-3 rounded">
+    <div class="bg-error-bg border border-error text-error text-[11px] px-4 py-3 rounded">
       {error}
       <button class="ml-2 underline" onclick={() => (error = "")}>dismiss</button>
     </div>
   {/if}
 
   <!-- Packs Table -->
-  <div class="bg-bg-card border border-border/50 rounded-lg">
+  <div class="table-container">
     <table class="w-full text-left border-collapse">
       <thead>
-        <tr class="border-b border-border/50">
+        <tr>
           <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Name</th>
           <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Slug</th>
           <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Credits</th>
@@ -190,7 +182,7 @@
         {:else if packs.length === 0}
           <tr>
             <td colspan="7" class="px-6 py-16 text-center">
-              <Package size={32} class="text-text-dim/20 mx-auto mb-3" />
+              <Package   size={32} class="text-text-dim/20 mx-auto mb-3"  weight="duotone" />
               <p class="text-text-dim text-sm mb-1">No credit packs yet</p>
               <p class="text-text-dim/60 text-[11px]">
                 Create a credit pack so customers can purchase extra credits via <code class="text-text-dim">owostack.addon()</code>
@@ -199,7 +191,7 @@
           </tr>
         {:else}
           {#each packs as pack}
-            <tr class="group hover:bg-black/2 dark:hover:bg-white/[0.02] transition-colors">
+            <tr class="group hover:bg-bg-tertiary transition-colors">
               <td class="px-6 py-4">
                 {#if editingId === pack.id}
                   <input
@@ -252,7 +244,7 @@
               </td>
               <td class="px-6 py-4">
                 {#if pack.creditSystemId}
-                  <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-warning-bg text-warning">
                     {pack.creditSystem?.name || pack.creditSystemId}
                   </span>
                 {:else}
@@ -262,7 +254,7 @@
               <td class="px-6 py-4">
                 <span
                   class="text-[10px] font-bold px-2 py-0.5 rounded {pack.isActive
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    ? 'bg-success-bg text-success'
                     : 'bg-bg-secondary text-text-dim'}"
                 >
                   {pack.isActive ? "Active" : "Inactive"}
@@ -274,9 +266,13 @@
                     <button
                       onclick={savePack}
                       disabled={isUpdating}
-                      class="bg-accent text-accent-contrast text-[10px] font-bold px-3 py-1 rounded"
+                      class="btn btn-primary btn-sm"
                     >
-                      {isUpdating ? "..." : "Save"}
+                      {#if isUpdating}
+                        ...
+                      {:else}
+                        <FloppyDisk size={12} weight="fill" />
+                      {/if}
                     </button>
                     <button
                       onclick={() => (editingId = null)}
@@ -296,37 +292,37 @@
                         openMenuId = openMenuId === pack.id ? null : pack.id;
                       }}
                     >
-                      <MoreHorizontal size={16} />
+                      <DotsThree   size={16}  weight="duotone" />
                     </button>
                     {#if openMenuId === pack.id}
                       <div
-                        class="absolute right-0 mt-2 w-44 bg-bg-card border border-border shadow-xl z-50 py-1"
+                        class="absolute right-0 mt-2 w-44 bg-bg-card border border-border z-50 py-1 rounded shadow-sm"
                         transition:fade={{ duration: 100 }}
                         onclick={(e) => e.stopPropagation()}
                       >
                         <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2"
+                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
                           onclick={() => startEdit(pack)}
                         >
-                          <Pencil size={12} /> Edit
+                          <Pencil size={12} weight="duotone" /> Edit
                         </button>
                         <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2"
+                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
                           onclick={() => copyText(pack.slug)}
                         >
-                          <Copy size={12} /> Copy Slug
+                          <Copy size={12} weight="fill" /> Copy Slug
                         </button>
                         <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2"
+                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
                           onclick={() => toggleActive(pack)}
                         >
                           {pack.isActive ? "Deactivate" : "Activate"}
                         </button>
                         <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-red-500 hover:bg-red-500/10 flex items-center gap-2"
+                          class="w-full text-left px-4 py-2 text-[11px] text-error hover:bg-error-bg flex items-center gap-2"
                           onclick={() => deletePack(pack.id)}
                         >
-                          <Trash2 size={12} /> Delete
+                          <Trash size={12} weight="fill" /> Delete
                         </button>
                       </div>
                     {/if}

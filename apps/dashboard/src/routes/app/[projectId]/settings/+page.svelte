@@ -1,27 +1,5 @@
 <script lang="ts">
-  import {
-    Save,
-    Eye,
-    EyeOff,
-    CheckCircle,
-    AlertCircle,
-    Loader2,
-    Copy,
-    Check,
-    Webhook,
-    Settings,
-    Cpu,
-    Lock,
-    Plus,
-    Trash2,
-    Pencil,
-    X,
-    Receipt,
-    Users,
-    Key,
-    LogOut,
-    Shield
-  } from "lucide-svelte";
+  import { Check, CheckCircle, CircleNotch, Copy, Cpu, Eye, EyeSlash, FloppyDisk, Gear, Globe, Key, Lock, Pencil, Plus, Receipt, Shield, SignOut, Trash, Users, WarningCircle, X } from "phosphor-svelte";
   import { page } from "$app/state";
   import { organization, apiFetch, authClient, useSession } from "$lib/auth-client";
   import { getActiveEnvironment } from "$lib/env";
@@ -104,7 +82,7 @@
   let overageGracePeriodHours = $state(0);
   let isSavingOverage = $state(false);
 
-  // Webhook
+  // Globe
   let copiedUrl = $state<string | null>(null);
 
   // Derived
@@ -133,12 +111,12 @@
   );
 
   const tabs = [
-    { id: "general", label: "General", icon: Settings, description: "Organization details & currency" },
-    { id: "keys", label: "API Keys", icon: Key, description: "Manage access tokens" },
-    { id: "providers", label: "Payment Providers", icon: Cpu, description: "Connect gateways" },
-    { id: "webhook", label: "Webhooks", icon: Webhook, description: "Event notifications" },
-    { id: "overage", label: "Overage Billing", icon: Receipt, description: "Usage limits & billing" },
-    { id: "team", label: "Team Members", icon: Users, description: "Manage access & roles" },
+    { id: "general", label: "General", icon: Gear, description: "Organization details & currency", color: "text-zinc-500" },
+    { id: "keys", label: "API Keys", icon: Key, description: "Manage access tokens", color: "text-amber-500" },
+    { id: "providers", label: "Payment Providers", icon: Cpu, description: "Connect gateways", color: "text-emerald-500" },
+    { id: "webhook", label: "Webhooks", icon: Globe, description: "Event notifications", color: "text-blue-500" },
+    { id: "overage", label: "Overage Billing", icon: Receipt, description: "Usage limits & billing", color: "text-rose-500" },
+    { id: "team", label: "Team Members", icon: Users, description: "Manage access & roles", color: "text-indigo-500" },
   ];
 
   // =========================================================================
@@ -234,13 +212,13 @@
   async function saveGeneralSettings() {
     isSaving = true;
     try {
-      // Save Org Name/Slug
+      // FloppyDisk Org Name/Slug
       await organization.update({
         organizationId: projectId,
         data: { name: projectName, slug: projectSlug },
       });
       
-      // Save Currency
+      // FloppyDisk Currency
       await apiFetch(`/api/dashboard/config/default-currency`, {
         method: "PUT",
         body: JSON.stringify({
@@ -250,7 +228,7 @@
       });
       defaultCurrency.set(orgCurrency);
       
-      showSuccess("Settings updated successfully");
+      showSuccess("Gear updated successfully");
     } catch (e) {
       console.error("Failed to save settings", e);
     } finally {
@@ -438,14 +416,14 @@
 </script>
 
 <svelte:head>
-  <title>Settings - Owostack</title>
+  <title>Gear - Owostack</title>
 </svelte:head>
 
 <div class="max-w-6xl mx-auto">
   <div class="mb-8">
     <div class="flex items-center gap-3 mb-2">
-      <h1 class="text-2xl font-bold text-text-primary">Project Settings</h1>
-      <span class="text-[10px] px-2 py-0.5 border {getActiveEnvironment() === 'live' ? 'border-emerald-500/50 text-emerald-500 bg-emerald-500/5' : 'border-amber-500/50 text-amber-500 bg-amber-500/5'} uppercase tracking-widest font-bold rounded">
+      <h1 class="text-2xl font-bold text-text-primary">Project Gear</h1>
+      <span class="text-[10px] px-2 py-0.5 border {getActiveEnvironment() === 'live' ? 'border-success text-success bg-success-bg' : 'border-warning text-warning bg-warning-bg'} uppercase tracking-widest font-bold rounded-sm">
         {getActiveEnvironment()} Mode
       </span>
     </div>
@@ -461,23 +439,23 @@
           ? 'border-accent text-text-primary bg-accent/5'
           : 'border-transparent text-text-dim hover:text-text-secondary hover:border-text-dim'}"
       >
-        <svelte:component this={tab.icon} size={14} />
+        <svelte:component this={tab.icon} weight={activeTab === tab.id ? 'fill' : 'duotone'} class={activeTab === tab.id ? 'text-accent' : tab.color} />
         {tab.label}
       </button>
     {/each}
   </div>
 
   <!-- Main Content -->
-  <div class="bg-bg-card border border-border rounded-xl shadow-sm overflow-hidden min-h-[600px]">
+  <div class="bg-bg-card border border-border rounded-lg overflow-hidden min-h-[600px]">
     {#if isLoading}
           <div class="flex items-center justify-center h-full min-h-[400px]">
-            <Loader2 size={32} class="animate-spin text-text-dim" />
+            <CircleNotch   size={32} class="animate-spin text-text-dim"   />
           </div>
         {:else}
           <!-- GENERAL TAB -->
           {#if activeTab === "general"}
             <div class="p-8" in:fade={{ duration: 200 }}>
-              <h2 class="text-lg font-bold text-text-primary mb-6">General Settings</h2>
+              <h2 class="text-lg font-bold text-text-primary mb-6">General Gear</h2>
               
               <div class="space-y-8">
                 <div>
@@ -504,12 +482,12 @@
                 </div>
 
                 <div class="pt-6 border-t border-border flex items-center justify-between">
-                  <button class="btn btn-primary" onclick={saveGeneralSettings} disabled={isSaving}>
-                    {#if isSaving} <Loader2 size={16} class="animate-spin" /> {:else} Save Changes {/if}
+                  <button class="btn btn-primary flex items-center gap-2" onclick={saveGeneralSettings} disabled={isSaving}>
+                    {#if isSaving} <CircleNotch size={16} class="animate-spin" weight="duotone" /> Saving... {:else} <FloppyDisk size={16} weight="fill" /> Save Changes {/if}
                   </button>
                   {#if successMessage}
-                    <span class="text-sm text-emerald-600 dark:text-emerald-500 flex items-center gap-1" in:fade>
-                      <Check size={14} /> {successMessage}
+                    <span class="text-sm text-success flex items-center gap-1" in:fade>
+                      <Check   size={14}  weight="fill" /> {successMessage}
                     </span>
                   {/if}
                 </div>
@@ -544,14 +522,14 @@
                     disabled={!inviteEmail || isInviting}
                     onclick={inviteMember}
                   >
-                    {#if isInviting} <Loader2 size={16} class="animate-spin" /> {:else} Send Invite {/if}
+                    {#if isInviting} <CircleNotch   size={16} class="animate-spin"   /> {:else} Send Invite {/if}
                   </button>
                 </div>
               </div>
 
               <div class="border border-border rounded-lg overflow-hidden">
                 <table class="w-full text-left">
-                  <thead class="bg-black/5 dark:bg-white/5 border-b border-border">
+                  <thead class="bg-bg-secondary border-b border-border">
                     <tr>
                       <th class="px-6 py-3 text-xs font-bold text-text-dim uppercase tracking-wider">User</th>
                       <th class="px-6 py-3 text-xs font-bold text-text-dim uppercase tracking-wider">Role</th>
@@ -564,7 +542,7 @@
                       <tr>
                         <td class="px-6 py-4">
                           <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent font-bold text-xs uppercase">
+                            <div class="w-8 h-8 rounded-full bg-accent-light border border-accent flex items-center justify-center text-accent font-bold text-xs uppercase">
                               {(member.user.name || member.user.email)[0]}
                             </div>
                             <div>
@@ -574,7 +552,7 @@
                           </div>
                         </td>
                         <td class="px-6 py-4">
-                          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-black/5 dark:bg-white/5 text-text-secondary border border-border capitalize">
+                          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-bg-secondary text-text-secondary border border-border capitalize">
                             {member.role}
                           </span>
                         </td>
@@ -582,7 +560,7 @@
                           {formatDate(member.createdAt)}
                         </td>
                         <td class="px-6 py-4 text-right">
-                          <button class="text-text-dim hover:text-red-500 transition-colors opacity-50 cursor-not-allowed" title="Not implemented">
+                          <button class="text-text-dim hover:text-error transition-colors opacity-50 cursor-not-allowed" title="Not implemented">
                             Remove
                           </button>
                         </td>
@@ -606,20 +584,20 @@
               </div>
 
               {#if generatedKey}
-                <div class="mb-8 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4">
+                <div class="mb-8 bg-success-bg border border-success text-success rounded-lg p-4">
                   <div class="flex items-start gap-3">
-                    <CheckCircle size={20} class="text-emerald-600 dark:text-emerald-500 mt-1" />
+                    <CheckCircle   size={20} class="text-success mt-1"  weight="fill" />
                     <div class="flex-1">
                       <h4 class="text-sm font-bold text-text-primary mb-1">Key Generated Successfully</h4>
                       <p class="text-xs text-text-dim mb-3">Copy your key now. You won't see it again.</p>
-                      <div class="flex items-center gap-2 bg-black/5 dark:bg-black/30 border border-border rounded px-3 py-2">
-                        <code class="text-sm font-mono text-emerald-600 dark:text-emerald-400 flex-1">{generatedKey}</code>
+                      <div class="flex items-center gap-2 bg-bg-secondary border border-border rounded px-3 py-2">
+                        <code class="text-sm font-mono text-success flex-1">{generatedKey}</code>
                         <button class="text-text-dim hover:text-text-primary dark:hover:text-text-primary dark:hover:text-text-primary" onclick={() => copyUrl(generatedKey)}>
-                          <Copy size={16} />
+                          <Copy   size={16}  weight="fill" />
                         </button>
                       </div>
                     </div>
-                    <button class="text-text-dim hover:text-text-primary dark:hover:text-text-primary dark:hover:text-text-primary" onclick={() => generatedKey = ""}><X size={16} /></button>
+                    <button class="text-text-dim hover:text-text-primary dark:hover:text-text-primary dark:hover:text-text-primary" onclick={() => generatedKey = ""}><X   size={16}  weight="fill" /></button>
                   </div>
                 </div>
               {/if}
@@ -631,7 +609,7 @@
                     <input type="text" placeholder="Key Name" bind:value={newKeyName} class="flex-1 input" />
                     <button class="btn btn-secondary" onclick={() => { showKeyModal = false; newKeyName = ""; }}>Cancel</button>
                     <button class="btn btn-primary" disabled={!newKeyName || isCreatingKey} onclick={createApiKey}>
-                      {#if isCreatingKey} <Loader2 size={16} class="animate-spin" /> {:else} Create {/if}
+                      {#if isCreatingKey} <CircleNotch   size={16} class="animate-spin"   /> {:else} Create {/if}
                     </button>
                   </div>
                 </div>
@@ -641,11 +619,11 @@
                 {#each apiKeys as key}
                   <div class="flex items-center justify-between p-4 bg-bg-secondary border border-border rounded-lg group hover:border-text-dim transition-colors">
                     <div class="flex items-center gap-4">
-                      <div class="bg-accent/10 p-2 rounded text-accent"><Key size={18} /></div>
+                      <div class="bg-accent/10 p-2 rounded text-accent"><Key   size={18}   /></div>
                       <div>
                         <div class="flex items-center gap-2 mb-1">
                           <h3 class="text-sm font-bold text-text-primary">{key.name}</h3>
-                          <span class="text-[10px] px-1.5 py-0.5 border {getActiveEnvironment() === 'live' ? 'border-emerald-500/50 text-emerald-600 dark:text-emerald-500' : 'border-amber-500/50 text-amber-600 dark:text-amber-500'} uppercase tracking-wider font-bold rounded">
+                          <span class="text-[10px] px-1.5 py-0.5 border {getActiveEnvironment() === 'live' ? 'border-success text-success' : 'border-warning text-warning'} uppercase tracking-wider font-bold rounded-sm">
                             {getActiveEnvironment()}
                           </span>
                         </div>
@@ -664,9 +642,9 @@
                       </div>
 
                       <div class="flex items-center gap-3">
-                          <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 border border-emerald-500/20">Active</span>
+                          <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-success-bg text-success border border-success">Active</span>
                           <button 
-                            class="p-2 text-text-dim hover:text-red-500 hover:bg-red-500/10 transition-all rounded"
+                            class="p-2 text-text-dim hover:text-error hover:bg-error-bg transition-all rounded"
                             onclick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -674,7 +652,7 @@
                             }}
                             title="Revoke Key"
                           >
-                            <Trash2 size={16} />
+                            <Trash   size={16}  weight="fill" />
                           </button>
                       </div>
                     </div>
@@ -682,7 +660,7 @@
                 {/each}
                 {#if apiKeys.length === 0}
                   <div class="text-center py-12 border border-dashed border-border rounded-lg">
-                    <Key size={24} class="text-text-dim/20 mx-auto mb-3" />
+                    <Key   size={24} class="text-text-dim/20 mx-auto mb-3"   />
                     <p class="text-text-dim text-sm">No API keys generated yet</p>
                   </div>
                 {/if}
@@ -698,18 +676,18 @@
                   <h2 class="text-lg font-bold text-text-primary">Payment Providers</h2>
                   <p class="text-xs text-text-dim mt-1">Connect payment gateways to process transactions</p>
                 </div>
-                <button class="btn btn-primary" onclick={openAddForm}><Plus size={14} /> Add Provider</button>
+                <button class="btn btn-primary" onclick={openAddForm}><Plus   size={14}  weight="fill" /> Add Provider</button>
               </div>
 
               {#if providerError}
-                <div class="p-4 bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs mb-6 flex items-center gap-2">
-                  <AlertCircle size={14} /> {providerError}
+                <div class="p-4 bg-error-bg border border-error text-error text-xs mb-6 flex items-center gap-2">
+                  <WarningCircle   size={14}  weight="fill" /> {providerError}
                 </div>
               {/if}
 
               {#if providerAccounts.length === 0}
                 <div class="text-center py-12 border border-dashed border-border rounded-lg">
-                  <Cpu size={32} class="mx-auto text-text-dim/20 mb-4" />
+                  <Cpu   size={32} class="mx-auto text-text-dim/20 mb-4"   />
                   <p class="text-text-dim text-sm mb-4">No providers connected yet</p>
                   <button class="btn btn-secondary" onclick={openAddForm}>Connect First Provider</button>
                 </div>
@@ -719,7 +697,7 @@
                     <div class="border border-border bg-bg-secondary/30 p-5 flex items-center justify-between rounded-lg group hover:border-text-dim transition-colors">
                       <div class="flex items-center gap-4">
                         <div class="w-10 h-10 bg-bg-card border border-border flex items-center justify-center rounded">
-                          <Cpu size={18} class="text-text-dim" />
+                          <Cpu   size={18} class="text-text-dim"   />
                         </div>
                         <div>
                           <div class="flex items-center gap-2 mb-1">
@@ -728,7 +706,7 @@
                           </div>
                           <div class="flex items-center gap-3 text-[10px] text-text-dim uppercase tracking-widest">
                             <span class="flex items-center gap-1">
-                              <span class="w-1.5 h-1.5 {account.environment === 'live' ? 'bg-emerald-500' : 'bg-amber-500'} inline-block rounded-full"></span>
+                              <span class="w-1.5 h-1.5 {account.environment === 'live' ? 'bg-success' : 'bg-warning'} inline-block rounded-full"></span>
                               {account.environment}
                             </span>
                           </div>
@@ -736,16 +714,16 @@
                       </div>
                       <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button class="p-2 text-text-dim hover:text-text-primary dark:hover:text-text-primary dark:hover:text-text-primary hover:bg-black/5 dark:hover:bg-white/5 rounded border border-transparent hover:border-border" onclick={() => openEditForm(account)}>
-                          <Pencil size={14} />
+                          <Pencil   size={14}   />
                         </button>
                         {#if deletingId === account.id}
-                          <button class="p-2 text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20 rounded" onclick={() => deleteProviderAccount(account.id)} disabled={isDeleting}>
-                            <Check size={14} />
+                          <button class="p-2 text-error bg-error-bg border border-error rounded" onclick={() => deleteProviderAccount(account.id)} disabled={isDeleting}>
+                            <Check   size={14}  weight="fill" />
                           </button>
-                          <button class="p-2 text-text-dim hover:text-text-primary dark:hover:text-text-primary dark:hover:text-text-primary" onclick={() => deletingId = null}><X size={14} /></button>
+                          <button class="p-2 text-text-dim hover:text-text-primary dark:hover:text-text-primary dark:hover:text-text-primary" onclick={() => deletingId = null}><X   size={14}  weight="fill" /></button>
                         {:else}
-                          <button class="p-2 text-text-dim hover:text-red-600 hover:bg-red-500/10 rounded border border-transparent hover:border-red-500/20" onclick={() => deletingId = account.id}>
-                            <Trash2 size={14} />
+                          <button class="p-2 text-text-dim hover:text-error hover:bg-error-bg rounded border border-transparent hover:border-error" onclick={() => deletingId = account.id}>
+                            <Trash   size={14}  weight="fill" />
                           </button>
                         {/if}
                       </div>
@@ -759,14 +737,14 @@
           <!-- WEBHOOKS TAB -->
           {#if activeTab === "webhook"}
             <div class="p-8" in:fade={{ duration: 200 }}>
-              <h2 class="text-lg font-bold text-text-primary mb-6">Webhook Configuration</h2>
+              <h2 class="text-lg font-bold text-text-primary mb-6">Globe Configuration</h2>
               
               <div class="space-y-6">
-                <div class="bg-blue-500/10 border border-blue-500/20 p-5 rounded-lg flex gap-4">
-                  <AlertCircle size={18} class="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+<div class="bg-info-bg border border-info p-5 rounded-lg flex gap-4">
+                  <WarningCircle weight="duotone" size={18} class="text-info shrink-0 mt-0.5" />
                   <div>
-                    <h4 class="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-1">Required Configuration</h4>
-                    <p class="text-xs text-blue-600/80 dark:text-blue-400/80 leading-relaxed">
+                    <h4 class="text-xs font-bold text-info uppercase tracking-widest mb-1">Required Configuration</h4>
+                    <p class="text-xs text-info/80 leading-relaxed">
                       You must register these webhook URLs in your payment provider dashboards to track payments and subscription updates.
                     </p>
                   </div>
@@ -784,7 +762,7 @@
                       <div class="bg-[var(--color-bg-code)] border border-border p-3 rounded flex items-center gap-4">
                         <code class="flex-1 font-mono text-xs text-[var(--color-text-code)] break-all">{wh.url}</code>
                         <button class="text-text-dim hover:text-text-primary dark:hover:text-text-primary dark:hover:text-text-primary" onclick={() => copyUrl(wh.url)}>
-                          {#if copiedUrl === wh.url} <Check size={16} class="text-emerald-500" /> {:else} <Copy size={16} /> {/if}
+                          {#if copiedUrl === wh.url} <Check   size={16} class="text-emerald-500"  weight="fill" /> {:else} <Copy   size={16}  weight="fill" /> {/if}
                         </button>
                       </div>
                     </div>
@@ -835,8 +813,8 @@
                 </div>
 
                 <div class="pt-6 border-t border-border flex justify-end">
-                  <button class="btn btn-primary" onclick={saveOverageSettings} disabled={isSavingOverage}>
-                    {#if isSavingOverage} <Loader2 size={16} class="animate-spin" /> {:else} Save Settings {/if}
+                  <button class="btn btn-primary flex items-center gap-2" onclick={saveOverageSettings} disabled={isSavingOverage}>
+                    {#if isSavingOverage} <CircleNotch size={16} class="animate-spin" weight="duotone" /> Saving... {:else} <FloppyDisk size={16} weight="fill" /> Save Settings {/if}
                   </button>
                 </div>
               </div>
@@ -849,10 +827,10 @@
   <!-- Add/Edit Provider Modal -->
   <SidePanel 
     open={showForm} 
-    title={formStep === 'webhook' ? "Configure Webhook" : (editingAccountId ? "Update Provider" : "Add Payment Provider")} 
+    title={formStep === 'webhook' ? "Configure Globe" : (editingAccountId ? "Update Provider" : "Add Payment Provider")} 
     onclose={closeForm}
     width="max-w-md"
-  >
+   >
     <div class="p-6 space-y-8">
       {#if formStep === 'configure'}
         {#if !editingAccountId}
@@ -884,7 +862,7 @@
             <div>
               <label for={field.key} class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3">{field.label}</label>
               <div class="relative input-icon-wrapper">
-                <Lock size={12} class="input-icon-left text-text-dim" />
+                <Lock   size={12} class="input-icon-left text-text-dim"   />
                 <input
                   type={field.secret && !showSecretFields[field.key] ? "password" : "text"}
                   id={field.key}
@@ -893,7 +871,7 @@
                   class="input input-has-icon-left w-full pr-10 font-mono text-xs"
                 />
                 <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary dark:hover:text-text-primary dark:hover:text-text-primary" onclick={() => showSecretFields[field.key] = !showSecretFields[field.key]}>
-                  {#if showSecretFields[field.key]} <EyeOff size={14} /> {:else} <Eye size={14} /> {/if}
+                  {#if showSecretFields[field.key]} <EyeSlash   size={14}   /> {:else} <Eye   size={14}   /> {/if}
                 </button>
               </div>
             </div>
@@ -901,13 +879,13 @@
         {/if}
       {:else if formStep === 'webhook' && lastCreatedProviderId}
         <div class="space-y-4">
-          <div class="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded text-emerald-600 dark:text-emerald-400 text-xs flex gap-2">
-            <CheckCircle size={16} /> Provider connected successfully!
+<div class="bg-success-bg border border-success p-4 rounded text-success text-xs flex gap-2">
+            <CheckCircle weight="fill" size={16} /> Provider connected successfully!
           </div>
           <p class="text-xs text-text-dim">Add this webhook URL to your provider settings:</p>
           <div class="bg-[var(--color-bg-code)] p-3 rounded border border-border flex gap-2">
             <code class="flex-1 font-mono text-xs text-[var(--color-text-code)] break-all">{apiBase}/webhooks/{projectId}/{lastCreatedProviderId}</code>
-            <button class="text-text-dim hover:text-text-primary dark:hover:text-text-primary dark:hover:text-text-primary" onclick={() => copyUrl(`${apiBase}/webhooks/${projectId}/${lastCreatedProviderId}`)}><Copy size={14} /></button>
+            <button class="text-text-dim hover:text-text-primary dark:hover:text-text-primary dark:hover:text-text-primary" onclick={() => copyUrl(`${apiBase}/webhooks/${projectId}/${lastCreatedProviderId}`)}><Copy   size={14}  weight="fill" /></button>
           </div>
         </div>
       {/if}
@@ -915,8 +893,8 @@
     <div class="p-6 border-t border-border flex justify-end gap-3 sticky bottom-0 bg-bg-card">
       {#if formStep === 'configure'}
         <button class="btn btn-secondary" onclick={closeForm}>Cancel</button>
-        <button class="btn btn-primary" onclick={saveProviderAccount} disabled={isSavingProvider}>
-          {#if isSavingProvider} <Loader2 size={14} class="animate-spin" /> {:else} Save Provider {/if}
+        <button class="btn btn-primary flex items-center gap-2" onclick={saveProviderAccount} disabled={isSavingProvider}>
+          {#if isSavingProvider} <CircleNotch size={14} class="animate-spin" weight="duotone" /> Saving... {:else} <FloppyDisk size={14} weight="fill" /> Save Provider {/if}
         </button>
       {:else}
         <button class="btn btn-primary" onclick={closeForm}>Done</button>
@@ -931,7 +909,7 @@
     height: 42px;
     background-color: var(--color-bg-secondary);
     border: 1px solid var(--color-border);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sm);
     padding-left: 1rem;
     padding-right: 1rem;
     color: var(--color-text-primary);

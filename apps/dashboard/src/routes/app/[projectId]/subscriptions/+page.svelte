@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Search, Filter, RefreshCw, ArrowRight, CreditCard, Loader2, CheckCircle, AlertCircle, Clock } from "lucide-svelte";
+  import { ArrowRight, ArrowsClockwise, CheckCircle, CircleNotch, Clock, CreditCard, Funnel, MagnifyingGlass, WarningCircle } from "phosphor-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import { formatCurrency } from "$lib/utils/currency";
@@ -47,12 +47,12 @@
 
   function getStatusColor(status: string) {
     switch (status.toLowerCase()) {
-      case 'active': return 'text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
-      case 'trialing': return 'text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/20';
+      case 'active': return 'text-success bg-success-bg border-success/20';
+      case 'trialing': return 'text-info bg-info-bg border-info/20';
       case 'canceled': return 'text-text-dim bg-bg-secondary border-border';
-      case 'expired': return 'text-orange-600 dark:text-orange-400 bg-orange-500/10 border-orange-500/20';
-      case 'past_due': return 'text-amber-600 dark:text-amber-500 bg-amber-500/10 border-amber-500/20';
-      case 'incomplete': return 'text-red-600 dark:text-red-500 bg-red-500/10 border-red-500/20';
+      case 'expired': return 'text-warning bg-warning-bg border-warning/20';
+      case 'past_due': return 'text-warning bg-warning-bg border-warning/20';
+      case 'incomplete': return 'text-error bg-error-bg border-error/20';
       default: return 'text-text-dim bg-bg-secondary border-border';
     }
   }
@@ -79,7 +79,7 @@
       class="btn btn-secondary gap-2 text-xs uppercase tracking-wider font-bold"
       onclick={loadSubscriptions}
     >
-      <RefreshCw size={14} class={isLoading ? "animate-spin" : ""} />
+      <ArrowsClockwise size={14} class={isLoading ? "animate-spin" : ""} weight="fill" />
       Refresh
     </button>
   </div>
@@ -87,13 +87,13 @@
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-4 mb-6">
     <div class="input-icon-wrapper max-w-sm">
-      <Search
+      <MagnifyingGlass
         size={14}
         class="input-icon-left text-text-dim"
-      />
+        weight="fill" />
       <input
         type="text"
-        placeholder="Search by customer or plan..."
+        placeholder="MagnifyingGlass by customer or plan..."
         bind:value={searchQuery}
         class="input input-has-icon-left"
       />
@@ -101,10 +101,10 @@
   </div>
 
   {#if isLoading && subscriptions.length === 0}
-    <div class="bg-bg-card border border-border overflow-hidden shadow-md">
+    <div class="bg-bg-card border border-border overflow-hidden">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+          <tr class="bg-bg-secondary border-b border-border">
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Plan</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Provider</th>
@@ -146,8 +146,8 @@
       </table>
     </div>
   {:else if filteredSubs.length === 0}
-    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
-      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
+    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center">
+      <div class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4">
         <CreditCard size={24} class="text-text-dim" />
       </div>
       <h3 class="text-lg font-bold text-text-primary mb-2">
@@ -159,10 +159,10 @@
     </div>
   {:else}
     <!-- Subscriptions Table -->
-    <div class="bg-bg-card border border-border overflow-hidden shadow-md">
+    <div class="bg-bg-card border border-border overflow-hidden">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+          <tr class="bg-bg-secondary border-b border-border">
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Plan</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Provider</th>
@@ -174,7 +174,7 @@
         <tbody class="divide-y divide-border/50">
           {#each filteredSubs as sub}
             <tr
-              class="group hover:bg-black/2 dark:hover:bg-white/2 transition-colors cursor-pointer {selectedSubId === sub.id ? 'bg-black/5 dark:bg-white/5' : ''}"
+              class="group hover:bg-bg-secondary transition-colors cursor-pointer {selectedSubId === sub.id ? 'bg-bg-secondary' : ''}"
               onclick={() => selectedSubId = sub.id}
             >
               <td class="px-6 py-4">
@@ -203,16 +203,16 @@
                 <div class="flex items-center gap-2 text-xs text-text-dim">
                   <Clock size={12} />
                   {#if sub.status === 'trialing'}
-                    <span class="text-blue-600 dark:text-blue-400">Trial ends {new Date(sub.currentPeriodEnd).toLocaleDateString()}</span>
+                    <span class="text-info">Trial ends {new Date(sub.currentPeriodEnd).toLocaleDateString()}</span>
                   {:else if sub.status === 'expired'}
-                    <span class="text-orange-600 dark:text-orange-400">Expired {new Date(sub.currentPeriodEnd).toLocaleDateString()}</span>
+                    <span class="text-warning">Expired {new Date(sub.currentPeriodEnd).toLocaleDateString()}</span>
                   {:else}
                     {new Date(sub.currentPeriodEnd).toLocaleDateString()}
                   {/if}
                 </div>
               </td>
               <td class="px-6 py-4 text-right">
-                <ArrowRight size={14} class="text-text-dim/20 group-hover:text-text-dim transition-colors" />
+                <ArrowRight size={14} class="text-text-dim/20 group-hover:text-text-dim transition-colors" weight="fill" />
               </td>
             </tr>
           {/each}
@@ -232,6 +232,6 @@
     <SubscriptionDetail
       subscriptionId={selectedSubId}
       onupdate={loadSubscriptions}
-    />
+      />
   {/if}
 </SidePanel>

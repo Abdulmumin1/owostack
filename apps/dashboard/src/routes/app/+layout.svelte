@@ -1,35 +1,6 @@
 <script lang="ts">
   import { slide } from "svelte/transition";
-  import {
-    LayoutGrid,
-    CreditCard,
-    Users,
-    Activity,
-    Webhook,
-    Key,
-    Settings,
-    ChevronDown,
-    LogOut,
-    Plus,
-    Rocket,
-    FlaskConical,
-    Boxes,
-    BarChart3,
-    ChartNoAxesColumn,
-    Receipt,
-    Coins,
-    Eye,
-    EyeOff,
-    Lock,
-    Save,
-    Loader2,
-    Check,
-    ArrowRight,
-    X,
-    Copy,
-    Sun,
-    Moon,
-  } from "lucide-svelte";
+  import { ArrowRight, CaretDown, ChartBar, Check, CircleNotch, Coins, Copy, CreditCard, Cube, Eye, EyeSlash, Flask, FloppyDisk, Gear, Globe, Key, Lock, Moon, Plus, Pulse, Receipt, Rocket, SignOut, SquaresFour, Sun, Users, X } from "phosphor-svelte";
   import { page } from "$app/state";
   import {
     useSession,
@@ -345,7 +316,7 @@
 
   async function switchEnvironment(env: "test" | "live") {
     if (env === "live" && !liveConnected) {
-      alert("Live mode not configured. Add a live key in Settings first.");
+      alert("Live mode not configured. Add a live key in Gear first.");
       return;
     }
     if (env === "live" && activeEnvironment === "test") {
@@ -372,26 +343,26 @@
       label: "Products",
       collapsible: true,
       items: [
-        { href: "/plans", icon: CreditCard, label: "Plans" },
-        { href: "/features", icon: Boxes, label: "Features" },
-        { href: "/addons", icon: Coins, label: "Add-ons" },
-        { href: "/subscriptions", icon: CreditCard, label: "Subscriptions" },
+        { href: "/plans", icon: CreditCard, label: "Plans", color: "text-info" },
+        { href: "/features", icon: Cube, label: "Features", color: "text-tertiary" },
+        { href: "/addons", icon: Coins, label: "Add-ons", color: "text-warning" },
+        { href: "/subscriptions", icon: CreditCard, label: "Subscriptions", color: "text-success" },
       ],
     },
     {
       label: null, // No label - standalone items
       items: [
-        { href: "/customers", icon: Users, label: "Customers" },
-        { href: "/transactions", icon: Receipt, label: "Transactions" },
-        { href: "/usage", icon: ChartNoAxesColumn, label: "Usage" },
+        { href: "/customers", icon: Users, label: "Customers", color: "text-tertiary" },
+        { href: "/transactions", icon: Receipt, label: "Transactions", color: "text-error" },
+        { href: "/usage", icon: ChartBar, label: "Usage", color: "text-info" },
       ],
     },
     {
       label: "Developer",
       collapsible: false,
       items: [
-        { href: "/events", icon: Webhook, label: "Events" },
-        { href: "/settings", icon: Settings, label: "Settings" },
+        { href: "/events", icon: Globe, label: "Events", color: "text-warning" },
+        { href: "/settings", icon: Gear, label: "Settings", color: "text-text-muted" },
       ],
     },
   ];
@@ -420,7 +391,7 @@
         href="/"
         class="flex items-center gap-2 font-bold text-text-primary hover:text-accent transition-colors"
       >
-        <Logo size={30} class="text-accent" />
+        <Logo size={30} class="text-accent"  weight="duotone" />
         <span>Owostack</span>
       </a>
     </div>
@@ -439,7 +410,7 @@
             onclick={() => (showProjectDropdown = !showProjectDropdown)}
           >
             <span class="font-medium truncate text-text-primary">{currentProject.name}</span>
-            <ChevronDown size={14} class="text-text-dim shrink-0" />
+            <CaretDown   size={14} class="text-text-dim shrink-0"  weight="fill" />
           </button>
 
           {#if showProjectDropdown}
@@ -478,10 +449,10 @@
               onclick={() => toggleGroup(group.label!)}
             >
               <span>{group.label}</span>
-              <ChevronDown
+              <CaretDown  
                 size={12}
                 class="transition-transform duration-200 {collapsedGroups[group.label] ? '-rotate-90' : ''} text-text-dim group-hover:text-text-secondary"
-              />
+               weight="fill" />
             </button>
           {:else}
             <div
@@ -503,7 +474,7 @@
                   ? 'border-accent bg-bg-card text-text-primary'
                   : 'text-text-secondary hover:text-text-primary'}"
               >
-                <item.icon size={16} />
+                <item.icon weight={active ? 'fill' : 'duotone'} size={16} class={item.color} />
                 <span>{item.label}</span>
               </a>
             {/each}
@@ -522,14 +493,14 @@
           href="/app"
           class="flex items-center gap-3 px-3 py-2 bg-bg-card border-l-2 border-accent text-text-primary"
         >
-          <LayoutGrid size={16} />
+          <SquaresFour   size={16} class="text-blue-500"  weight="duotone" />
           <span>Overview</span>
         </a>
         <a
           href="/app/settings"
           class="flex items-center gap-3 px-3 py-2 text-text-secondary hover:text-text-primary transition-colors"
         >
-          <Settings size={16} />
+          <Gear   size={16} class="text-zinc-500"  weight="duotone" />
           <span>Settings</span>
         </a>
       </nav>
@@ -544,7 +515,7 @@
         >
           <!-- Sharp Identity Square -->
           <div class="relative shrink-0">
-            <div class="w-9 h-9 bg-accent/10 border border-accent/20 flex items-center justify-center text-xs font-bold text-accent uppercase">
+            <div class="w-9 h-9 bg-accent-light border border-accent flex items-center justify-center text-xs font-bold text-accent uppercase">
               {($session.data.user.name || $session.data.user.email)[0]}
             </div>
           </div>
@@ -556,7 +527,7 @@
             </div>
     
           </div>
-          <ChevronDown size={14} class="text-text-dim group-hover:text-text-secondary transition-transform {showUserDropdown ? 'rotate-180' : ''}" />
+          <CaretDown   size={14} class="text-text-dim group-hover:text-text-secondary transition-transform {showUserDropdown ? 'rotate-180' : ''}"  weight="fill" />
         </button>
 
         {#if showUserDropdown}
@@ -571,9 +542,9 @@
             >
               <span>Theme: {theme}</span>
               {#if theme === "light"}
-                <Moon size={12} />
+                <Moon   size={12}  weight="duotone" />
               {:else}
-                <Sun size={12} />
+                <Sun   size={12}  weight="duotone" />
               {/if}
             </button>
             <button
@@ -581,7 +552,7 @@
               onclick={handleLogout}
             >
               <span>Sign out</span>
-              <LogOut size={12} />
+              <SignOut   size={12}  weight="duotone" />
             </button>
           </div>
         {/if}
@@ -596,34 +567,34 @@
       <div
         class="w-full py-2 px-6 flex items-center justify-between gap-4 text-xs font-mono {activeEnvironment ===
         'test'
-          ? 'bg-cyan-950/10 dark:bg-cyan-950/50 border-b border-cyan-800/20 dark:border-cyan-800/50'
+          ? 'bg-info-bg border-b border-info/20'
           : 'bg-transparent border-b border-transparent'}"
       >
         {#if activeEnvironment === "test"}
-          <span class="text-cyan-700 dark:text-cyan-400">
-            <FlaskConical size={14} class="inline mr-1" />
+          <span class="text-info">
+            <Flask size={14} class="inline mr-1" weight="duotone" />
             You're in <span class="font-bold">sandbox</span>
           </span>
           <button
             onclick={openDeployModal}
             class="flex items-center gap-1 px-3 py-1 bg-bg-secondary text-text-secondary text-xs font-bold hover:bg-bg-card-hover transition-colors"
           >
-            <Rocket size={12} />
+            <Rocket   size={12}  weight="duotone" />
             Go to Production
           </button>
 
         {:else}
           <!-- <span class="text-red-400 font-bold">
-            <Rocket size={14} class="inline mr-1" />
+            <Rocket   size={14} class="inline mr-1"  weight="duotone" />
             LIVE MODE — Real payments
           </span> -->
           <span></span>
           <button
             onclick={() => switchEnvironment("test")}
             disabled={isSwitching}
-            class="flex items-center self-end gap-1 px-3 py-1 bg-zinc-700 text-white text-xs font-medium hover:bg-zinc-600 transition-colors disabled:opacity-50"
+            class="flex items-center self-end gap-1 px-3 py-1 bg-bg-tertiary text-text-primary text-xs font-medium hover:bg-bg-secondary transition-colors disabled:opacity-50 border border-border"
           >
-            <FlaskConical size={12} />
+            <Flask   size={12}  weight="duotone" />
             Go to Sandbox
           </button>
         {/if}
@@ -638,11 +609,11 @@
   {#if showDeployModal}
     <div class="fixed inset-0 z-50 flex items-center justify-center">
       <!-- Backdrop -->
-      <div
-        class="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onclick={closeDeployModal}
-        role="presentation"
-      ></div>
+        <div
+          class="absolute inset-0 bg-bg-primary/80 backdrop-blur-sm"
+          onclick={closeDeployModal}
+          role="presentation"
+        ></div>
 
       <!-- Modal -->
       <div class="relative bg-bg-secondary border border-border shadow-2xl w-full max-w-lg mx-4">
@@ -656,13 +627,13 @@
             class="text-text-dim hover:text-text-primary transition-colors"
             onclick={closeDeployModal}
           >
-            <X size={18} />
+            <X   size={18}  weight="fill" />
           </button>
         </div>
 
         <!-- Error -->
         {#if deployError}
-          <div class="mx-6 mt-4 p-3 bg-red-900/20 border border-red-500/50 text-red-400 text-xs">
+          <div class="mx-6 mt-4 p-3 bg-error-bg border border-error text-error text-xs uppercase tracking-tight">
             {deployError}
           </div>
         {/if}
@@ -674,7 +645,7 @@
           <div class="flex items-start gap-4">
             <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {allTestProvidersLive ? 'bg-accent text-accent-contrast' : step1Done ? 'bg-accent/60 text-accent-contrast' : 'bg-accent-contrast text-text-dim border border-border'}">
               {#if allTestProvidersLive}
-                <Check size={14} />
+                <Check   size={14}  weight="fill" />
               {:else}
                 1
               {/if}
@@ -686,7 +657,7 @@
               </p>
 
               {#if testProviderIds.length === 0}
-                <p class="text-xs text-text-dim mt-2 italic">No test providers configured yet. Add one in Settings first.</p>
+                <p class="text-xs text-text-dim mt-2 italic">No test providers configured yet. Add one in Gear first.</p>
               {/if}
 
               <div class="mt-3 space-y-4">
@@ -699,7 +670,7 @@
                       <span class="text-xs font-bold text-text-primary">{config?.name || providerId}</span>
                       {#if isLive}
                         <span class="text-[10px] text-accent font-medium flex items-center gap-1">
-                          <Check size={12} /> Live connected
+                          <Check   size={12}  weight="fill" /> Live connected
                         </span>
                       {:else}
                         <span class="text-[10px] text-text-dim">Needs live keys</span>
@@ -709,7 +680,7 @@
                       {#each config.fields as field}
                         {@const secretKey = `${providerId}.${field.key}`}
                         <div class="relative input-icon-wrapper">
-                          <Lock size={12} class="input-icon-left text-text-dim" />
+                          <Lock   size={12} class="input-icon-left text-text-dim"  weight="duotone" />
                           <input
                             type={field.secret && !deployShowSecrets[secretKey] ? "password" : "text"}
                             value={deployCredentials[providerId]?.[field.key] || ""}
@@ -727,7 +698,7 @@
                               class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary transition-colors"
                               onclick={() => { deployShowSecrets[secretKey] = !deployShowSecrets[secretKey]; deployShowSecrets = deployShowSecrets; }}
                             >
-                              {#if deployShowSecrets[secretKey]}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
+                              {#if deployShowSecrets[secretKey]}<EyeSlash   size={14}  weight="duotone" />{:else}<Eye   size={14}  weight="duotone" />{/if}
                             </button>
                           {/if}
                         </div>
@@ -738,7 +709,7 @@
                         disabled={isSaving}
                       >
                         {#if isSaving}
-                          <Loader2 size={14} class="animate-spin" /> Connecting...
+                          <CircleNotch   size={14} class="animate-spin"  weight="duotone" /> Connecting...
                         {:else}
                           Connect {config.name}
                         {/if}
@@ -760,7 +731,7 @@
           <div class="flex items-start gap-4">
             <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {step2Done ? 'bg-accent text-accent-contrast' : 'bg-accent-contrast text-text-dim border border-border'}">
               {#if step2Done}
-                <Check size={14} />
+                <Check   size={14}  weight="fill" />
               {:else}
                 2
               {/if}
@@ -777,7 +748,7 @@
             <div class="shrink-0">
               {#if step2Done}
                 <span class="text-xs text-accent font-medium flex items-center gap-1">
-                  <Check size={14} /> Copied
+                  <Check   size={14}  weight="fill" /> Copied
                 </span>
               {:else}
                 <button
@@ -786,7 +757,7 @@
                   disabled={step2Loading}
                 >
                   {#if step2Loading}
-                    <Loader2 size={14} class="animate-spin" /> Copying...
+                    <CircleNotch   size={14} class="animate-spin"  weight="duotone" /> Copying...
                   {:else}
                     Copy Plans
                   {/if}
@@ -799,7 +770,7 @@
           <div class="flex items-start gap-4">
             <div class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {step3Done ? 'bg-accent text-accent-contrast' : 'bg-accent-contrast text-text-dim border border-border'}">
               {#if step3Done}
-                <Check size={14} />
+                <Check   size={14}  weight="fill" />
               {:else}
                 3
               {/if}
@@ -820,19 +791,19 @@
                     title="Copy key"
                   >
                     {#if apiKeyCopied}
-                      <Check size={14} class="text-accent" />
+                      <Check   size={14} class="text-accent"  weight="fill" />
                     {:else}
-                      <Copy size={14} />
+                      <Copy   size={14}  weight="fill" />
                     {/if}
                   </button>
                 </div>
-                <p class="text-[10px] text-text-dim mt-1">Save this key — it won't be shown again.</p>
+                <p class="text-[10px] text-text-dim mt-1">FloppyDisk this key — it won't be shown again.</p>
               {/if}
             </div>
             <div class="shrink-0">
               {#if step3Done}
                 <span class="text-xs text-accent font-medium flex items-center gap-1">
-                  <Check size={14} /> Generated
+                  <Check   size={14}  weight="fill" /> Generated
                 </span>
               {:else}
                 <button
@@ -841,7 +812,7 @@
                   disabled={step3Loading}
                 >
                   {#if step3Loading}
-                    <Loader2 size={14} class="animate-spin" /> Generating...
+                    <CircleNotch   size={14} class="animate-spin"  weight="duotone" /> Generating...
                   {:else}
                     Generate API Key
                   {/if}
@@ -859,9 +830,9 @@
             disabled={!step1Done || isSwitching}
           >
             {#if isSwitching}
-              <Loader2 size={16} class="animate-spin" /> Switching...
+              <CircleNotch   size={16} class="animate-spin"  weight="duotone" /> Switching...
             {:else}
-              <ArrowRight size={16} />
+              <ArrowRight   size={16}  weight="fill" />
               Go to Production
             {/if}
           </button>

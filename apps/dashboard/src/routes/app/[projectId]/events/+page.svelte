@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Search, Filter, RefreshCw, ArrowRight, Webhook, Loader2, Clock, User, Zap, ChevronDown } from "lucide-svelte";
+  import { ArrowRight, ArrowsClockwise, CaretDown, CircleNotch, Clock, Funnel, Globe, Lightning, MagnifyingGlass, User } from "phosphor-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import { onMount } from "svelte";
@@ -94,8 +94,8 @@
   function getEventIcon(type: string) {
     if (type.startsWith("subscription")) return Clock;
     if (type.startsWith("customer")) return User;
-    if (type.startsWith("payment") || type.startsWith("charge")) return Zap;
-    return Webhook;
+    if (type.startsWith("payment") || type.startsWith("charge")) return Lightning;
+    return Globe;
   }
 
   // Infinite Scroll Observer
@@ -133,7 +133,7 @@
       class="btn btn-secondary gap-2 text-xs uppercase tracking-wider font-bold"
       onclick={() => loadEvents(true)}
     >
-      <RefreshCw size={14} class={isLoading ? "animate-spin" : ""} />
+      <ArrowsClockwise   size={14} class={isLoading ? "animate-spin" : ""}  weight="fill" />
       Refresh
     </button>
   </div>
@@ -141,10 +141,10 @@
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-4 mb-6">
     <div class="input-icon-wrapper max-w-sm">
-      <Search
+      <MagnifyingGlass  
         size={14}
         class="input-icon-left text-text-dim"
-      />
+       weight="fill" />
       <input
         type="text"
         placeholder="Filter loaded events..."
@@ -155,10 +155,10 @@
   </div>
 
   {#if isLoading && events.length === 0}
-    <div class="bg-bg-card border border-border overflow-hidden shadow-md rounded-lg">
+    <div class="table-container">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+          <tr class="bg-bg-secondary border-b border-border">
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Type</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Date</th>
@@ -187,9 +187,9 @@
       </table>
     </div>
   {:else if filteredEvents.length === 0}
-    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md rounded-lg">
-      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
-        <Webhook size={24} class="text-text-dim" />
+    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center rounded-lg">
+      <div class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4">
+        <Globe   size={24} class="text-text-dim"  weight="duotone" />
       </div>
       <h3 class="text-lg font-bold text-text-primary mb-2">
         {searchQuery ? "No matching events" : "No events found"}
@@ -200,10 +200,10 @@
     </div>
   {:else}
     <!-- Events Table -->
-    <div class="bg-bg-card border border-border overflow-hidden shadow-md rounded-lg">
+    <div class="table-container">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+          <tr class="bg-bg-secondary border-b border-border">
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Type</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Date</th>
@@ -213,13 +213,13 @@
         <tbody class="divide-y divide-border/50">
           {#each filteredEvents as event}
             <tr
-              class="group hover:bg-black/2 dark:hover:bg-white/2 transition-colors cursor-pointer {selectedEventId === event.id ? 'bg-black/5 dark:bg-white/5' : ''}"
+              class="group hover:bg-bg-tertiary transition-colors cursor-pointer {selectedEventId === event.id ? 'bg-bg-secondary' : ''}"
               onclick={() => selectedEventId = event.id}
             >
               <td class="px-6 py-4">
                 <div class="flex items-center gap-3">
-                  <div class="w-8 h-8 bg-black/5 dark:bg-white/5 border border-border flex items-center justify-center rounded shrink-0">
-                    <svelte:component this={getEventIcon(event.type)} size={14} class="text-text-dim" />
+                  <div class="w-8 h-8 bg-bg-secondary border border-border flex items-center justify-center rounded shrink-0">
+                    <svelte:component this={getEventIcon(event.type)} weight="duotone" />
                   </div>
                   <div>
                     <div class="text-sm font-bold text-text-primary">{event.type}</div>
@@ -246,7 +246,7 @@
                 </div>
               </td>
               <td class="px-6 py-4 text-right">
-                <ArrowRight size={14} class="text-text-dim/20 group-hover:text-text-dim transition-colors ml-auto" />
+                <ArrowRight   size={14} class="text-text-dim/20 group-hover:text-text-dim transition-colors ml-auto"  weight="fill" />
               </td>
             </tr>
           {/each}
@@ -261,7 +261,7 @@
     
     {#if isLoadingMore}
       <div class="flex justify-center py-4">
-        <Loader2 size={20} class="animate-spin text-zinc-500" />
+        <CircleNotch size={20} class="animate-spin text-text-muted" weight="duotone" />
       </div>
     {/if}
   {/if}
@@ -274,6 +274,6 @@
   onclose={() => { selectedEventId = null; }}
 >
   {#if selectedEventId}
-    <EventDetail eventId={selectedEventId} />
+    <EventDetail eventId={selectedEventId}  />
   {/if}
 </SidePanel>

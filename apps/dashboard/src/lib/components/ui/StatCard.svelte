@@ -6,7 +6,7 @@
     value,
     subtitle = undefined,
     icon: Icon = undefined,
-    iconColor = "text-text-dim bg-black/5 dark:bg-white/5",
+    iconColor = "text-text-dim bg-bg-secondary",
     children = undefined,
   }: {
     label: string;
@@ -18,11 +18,11 @@
   } = $props();
 </script>
 
-<div class="bg-bg-card border border-border p-5 shadow-md">
+<div class="bg-bg-card border border-border p-5 rounded-lg">
   <div class="flex items-center gap-2 mb-3">
     {#if Icon}
       <div class="w-7 h-7 {iconColor} flex items-center justify-center rounded">
-        <Icon size={14} />
+        <Icon  size={14}  weight="duotone" />
       </div>
     {/if}
     <span class="text-[10px] font-bold text-text-dim uppercase tracking-widest">{label}</span>

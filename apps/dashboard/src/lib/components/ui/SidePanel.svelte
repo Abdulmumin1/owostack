@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { X } from "lucide-svelte";
+  import { X } from "phosphor-svelte";
   import { fade, fly } from "svelte/transition";
   import type { Snippet } from "svelte";
 
@@ -21,7 +21,7 @@
 {#if open}
   <!-- Backdrop -->
   <button
-    class="fixed inset-0 bg-black/50 backdrop-blur-xs z-40 cursor-default"
+    class="fixed inset-0 bg-bg-primary/80 backdrop-blur-sm z-40 cursor-default"
     transition:fade={{ duration: 150 }}
     onclick={onclose}
     aria-label="Close panel"
@@ -29,7 +29,7 @@
 
   <!-- Panel -->
   <div
-    class="fixed top-0 right-0 h-full {width} w-full bg-bg-secondary border-l border-border z-50 flex flex-col shadow-2xl"
+    class="fixed top-0 right-0 h-full {width} w-full bg-bg-card border-l border-border z-50 flex flex-col"
     transition:fly={{ x: 400, duration: 200 }}
   >
     <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
@@ -38,7 +38,7 @@
         class="p-1 text-text-dim hover:text-text-primary transition-colors"
         onclick={onclose}
       >
-        <X size={16} />
+        <X   size={16}  weight="fill" />
       </button>
     </div>
     <div class="flex-1 overflow-y-auto">

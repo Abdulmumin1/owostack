@@ -1,15 +1,5 @@
 <script lang="ts">
-  import {
-    X,
-    Check,
-    CreditCard,
-    Box,
-    Calendar,
-    Clock,
-    Loader2,
-    Plus,
-    Minus,
-  } from "lucide-svelte";
+  import { Calendar, Check, CircleNotch, Clock, CreditCard, Cube, Minus, Plus, X } from "phosphor-svelte";
   import { fade, fly } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
   import { Result } from "better-result";
@@ -331,10 +321,10 @@
               <div
                 class="mb-3 w-8 h-8 rounded-full bg-bg-card border border-border flex items-center justify-center"
               >
-                <Box
+                <Cube  
                   size={16}
                   class={planType === "free" ? "text-accent" : "text-text-dim"}
-                />
+                 weight="duotone" />
               </div>
               <div class="font-bold text-text-primary mb-0.5">Free</div>
               <div class="text-[10px] text-text-dim leading-relaxed">
@@ -357,10 +347,10 @@
               <div
                 class="mb-3 w-8 h-8 rounded-full bg-bg-card border border-border flex items-center justify-center"
               >
-                <CreditCard
+                <CreditCard  
                   size={16}
                   class={planType === "paid" ? "text-accent" : "text-text-dim"}
-                />
+                 weight="duotone" />
               </div>
               <div class="font-bold text-text-primary mb-0.5">Paid</div>
               <div class="text-[10px] text-text-dim leading-relaxed">
@@ -427,7 +417,7 @@
                     : 'text-text-dim hover:text-text-secondary'}"
                   onclick={() => (billingType = "recurring")}
                 >
-                  <Clock size={12} />
+                  <Clock   size={12}  weight="duotone" />
                   Recurring
                 </button>
                 <button
@@ -437,7 +427,7 @@
                     : 'text-text-dim hover:text-text-secondary'}"
                   onclick={() => (billingType = "one_time")}
                 >
-                  <Check size={12} />
+                  <Check   size={12}  weight="fill" />
                   One-off
                 </button>
               </div>
@@ -522,7 +512,7 @@
                   : 'border-border group-hover:border-text-dim'}"
               >
                 {#if hasTrial}
-                  <Check size={10} class="text-accent-contrast" />
+                  <Check   size={10} class="text-accent-contrast"  weight="fill" />
                 {/if}
               </div>
               <input type="checkbox" bind:checked={hasTrial} class="hidden" />
@@ -569,7 +559,7 @@
                         : 'border-border group-hover:border-text-dim'}"
                     >
                       {#if trialCardRequired}
-                        <Check size={10} class="text-accent-contrast" />
+                        <Check   size={10} class="text-accent-contrast"  weight="fill" />
                       {/if}
                     </div>
                     <input
@@ -648,7 +638,7 @@
                                 : 'border-border'}"
                             >
                               {#if isSelected}
-                                <Check size={10} class="text-accent-contrast" />
+                                <Check   size={10} class="text-accent-contrast"  weight="fill" />
                               {/if}
                             </div>
                             <input
@@ -678,11 +668,11 @@
                                 >Limit Value</label
                               >
                               <div class="flex items-center gap-2">
-                                <input
+                                  <input
                                   type="number"
                                   bind:value={isSelected.limitValue}
                                   placeholder="Unlimited"
-                                  class="w-20 bg-black/5 dark:bg-white/5 border border-border rounded px-2 py-1 text-xs text-text-primary focus:border-accent outline-none"
+                                  class="w-20 bg-bg-secondary border border-border rounded px-2 py-1 text-xs text-text-primary focus:border-accent outline-none"
                                 />
                                 <span
                                   class="text-[10px] text-text-dim font-bold uppercase"
@@ -724,7 +714,7 @@
                                 : 'border-border'}"
                             >
                               {#if isSelected}
-                                <Check size={10} class="text-accent-contrast" />
+                                <Check   size={10} class="text-accent-contrast"  weight="fill" />
                               {/if}
                             </div>
                             <input
@@ -754,11 +744,11 @@
                                 >Included Credits</label
                               >
                               <div class="flex items-center gap-2">
-                                <input
+                                  <input
                                   type="number"
                                   bind:value={isSelected.limitValue}
                                   placeholder="Unlimited"
-                                  class="w-20 bg-black/5 dark:bg-white/5 border border-border rounded px-2 py-1 text-xs text-text-primary focus:border-accent outline-none"
+                                  class="w-20 bg-bg-secondary border border-border rounded px-2 py-1 text-xs text-text-primary focus:border-accent outline-none"
                                 />
                                 <span
                                   class="text-[10px] text-text-dim font-bold uppercase"
@@ -779,7 +769,7 @@
 
         {#if error}
           <div
-            class="text-red-600 dark:text-red-400 text-xs py-2 bg-red-500/10 px-3 rounded-md border border-red-500/20"
+            class="text-error text-xs py-2 bg-error-bg px-3 rounded-md border border-error"
           >
             {error}
           </div>
@@ -802,12 +792,12 @@
         disabled={!planName || (planType === "paid" && !price) || isCreating}
       >
         {#if isCreating}
-          <Loader2 size={12} class="animate-spin" />
+          <CircleNotch   size={12} class="animate-spin"  weight="duotone" />
           Creating...
         {:else}
-          Create plan <span class="bg-black/10 px-1 rounded ml-1 text-[10px]"
-            >⌘↵</span
-          >
+          Create plan <span class="bg-bg-secondary px-1 rounded ml-1 text-[10px]">
+            ⌘↵
+          </span>
         {/if}
       </button>
     </div>

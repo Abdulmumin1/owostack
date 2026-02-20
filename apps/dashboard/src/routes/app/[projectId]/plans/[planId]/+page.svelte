@@ -1,22 +1,5 @@
 <script lang="ts">
-  import { 
-    ChevronLeft, 
-    Plus, 
-    Settings2, 
-    Trash2, 
-    Zap, 
-    Info, 
-    Loader2, 
-    X,
-    ChevronRight,
-    ZapOff,
-    Edit3,
-    Search,
-    ExternalLink,
-    Calendar,
-    Box,
-    Copy
-  } from "lucide-svelte";
+  import { ArrowSquareOut, Calendar, CaretLeft, CircleNotch, Copy, Cube, FloppyDisk, Info, Lightning, LightningSlash, MagnifyingGlass, PencilSimple, Plus, Sliders, Trash, X } from "phosphor-svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import { fade, slide, fly } from "svelte/transition";
@@ -25,6 +8,7 @@
   import { page } from "$app/state";
   import { defaultCurrency } from "$lib/stores/currency";
   import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
+  import CreateFeatureModal from "$lib/components/features/CreateFeatureModal.svelte";
 
   const projectId = $derived(page.params.projectId);
   const planId = $derived(page.params.planId);
@@ -39,6 +23,7 @@
   let showAttachModal = $state(false);
   let showConfigModal = $state(false);
   let showEditPlanModal = $state(false);
+  let showCreateFeatureModal = $state(false);
   let selectedFeature = $state<any>(null);
   let editingPlanFeature = $state<any>(null);
 
@@ -124,7 +109,7 @@
         body: JSON.stringify(payload),
       });
 
-      console.log("Save plan response:", res);
+      console.log("FloppyDisk plan response:", res);
 
       if (res.error) {
         throw new Error(res.error.message || "Failed to update plan");
@@ -209,6 +194,14 @@
   function formatMoney(amount: number, currency: string) {
     return formatCurrency(amount, currency);
   }
+
+  function onFeatureCreated(feature: any) {
+    if (feature) {
+      features = [...features, feature];
+      // Automatically attach the new feature
+      handleAttachFeature(feature.id);
+    }
+  }
 </script>
 
 <svelte:head>
@@ -222,7 +215,7 @@
       href="/app/{projectId}/plans" 
       class="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary dark:hover:text-white transition-colors text-[10px] font-bold uppercase tracking-widest"
     >
-      <ChevronLeft size={14} />
+      <CaretLeft   size={14}  weight="fill" />
       Back to Plans
     </a>
 
@@ -230,8 +223,8 @@
       <div class="flex items-end justify-between border-b border-border pb-8">
         <div class="space-y-4">
           <div class="flex items-center gap-3">
-            <div class="w-12 h-12 bg-bg-card border border-border flex items-center justify-center shadow-md rounded">
-              <Box size={24} class="text-text-secondary" />
+            <div class="w-12 h-12 bg-bg-card border border-border flex items-center justify-center rounded">
+              <Cube size={24} class="text-text-secondary" weight="duotone" />
             </div>
             <div>
               <h1 class="text-2xl font-bold text-text-primary tracking-tight uppercase italic">{plan.name}</h1>
@@ -337,8 +330,8 @@
         <section class="space-y-6">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="w-8 h-8 bg-bg-card border border-border flex items-center justify-center shadow-md rounded">
-                <Zap size={16} class="text-accent" />
+              <div class="w-8 h-8 bg-bg-card border border-border flex items-center justify-center rounded">
+                <Lightning size={16} class="text-accent" weight="duotone" />
               </div>
               <h2 class="text-xs font-bold text-text-primary uppercase tracking-widest">Features & Entitlements</h2>
             </div>
@@ -346,12 +339,12 @@
               class="btn btn-primary"
               onclick={() => (showAttachModal = true)}
             >
-              <Plus size={14} />
+              <Plus   size={14}  weight="fill" />
               Add Feature
             </button>
           </div>
 
-          <div class="bg-bg-card border border-border divide-y divide-border/50 shadow-md">
+          <div class="bg-bg-card border border-border divide-y divide-border/50">
             {#if plan.planFeatures && plan.planFeatures.length > 0}
               {#each plan.planFeatures as pf}
                 {@const cs = creditSystems.find((s: any) => s.id === pf.featureId)}
@@ -360,20 +353,20 @@
                   <div class="group hover:bg-bg-card-hover transition-colors">
                     <div class="p-6 flex items-center justify-between">
                       <div class="flex items-center gap-5">
-                        <div class="w-10 h-10 bg-amber-500/10 border border-amber-500/20 flex items-center justify-center group-hover:border-amber-500 transition-colors rounded">
-                          <span class="text-amber-600 dark:text-amber-500 text-lg">&#9733;</span>
+                        <div class="w-10 h-10 bg-warning-bg border border-warning flex items-center justify-center group-hover:border-warning transition-colors rounded">
+                          <span class="text-warning text-lg">&#9733;</span>
                         </div>
                         <div class="space-y-1">
                           <h4 class="text-sm font-bold text-text-primary uppercase tracking-tight">{cs.name}</h4>
                           <div class="flex items-center gap-2">
-                            <span class="text-[9px] font-bold text-amber-700 dark:text-amber-500 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 uppercase tracking-tighter rounded">
+                            <span class="text-[9px] font-bold text-warning bg-warning-bg border border-warning px-1.5 py-0.5 uppercase tracking-tighter rounded">
                               Credit System
                             </span>
                             <div class="h-1 w-1 bg-text-dim"></div>
                             {#if pf.limitValue === null}
                               <span class="text-[10px] font-bold text-accent uppercase tracking-tighter">Unlimited credits</span>
                             {:else}
-                              <span class="text-[10px] font-bold text-black dark:text-white  uppercase tracking-tighter">Pool: {pf.limitValue} credits</span>
+                              <span class="text-[10px] font-bold text-text-primary uppercase tracking-tighter">Pool: {pf.limitValue} credits</span>
                             {/if}
                             {#if pf.resetInterval !== 'none'}
                               <div class="h-1 w-1 bg-text-dim"></div>
@@ -391,27 +384,27 @@
                             showConfigModal = true;
                           }}
                         >
-                          <Settings2 size={16} />
+                          <Sliders   size={16}  weight="duotone" />
                         </button>
                         <button 
                           class="p-2 text-text-secondary hover:text-red-500 transition-colors"
                           title="Remove credit system"
                           onclick={() => detachFeature(pf.id)}
                         >
-                          <Trash2 size={16} />
+                          <Trash   size={16}  weight="fill" />
                         </button>
                       </div>
                     </div>
                     <!-- Child features -->
                     {#if cs.features && cs.features.length > 0}
-                        <div class="mx-6 mb-4 border border-border bg-black/2 dark:bg-bg-primary/50 rounded overflow-hidden divide-y divide-border/50">
+                        <div class="mx-6 mb-4 border border-border bg-bg-secondary dark:bg-bg-primary/50 rounded overflow-hidden divide-y divide-border/50">
                           {#each cs.features as csf}
                             <div class="px-4 py-3 flex items-center justify-between">
                               <div class="flex items-center gap-3">
-                                <div class="w-1.5 h-1.5 bg-amber-500"></div>
+                                <div class="w-1.5 h-1.5 bg-warning"></div>
                                 <span class="text-xs font-bold text-text-secondary uppercase tracking-tight">{csf.feature?.name || csf.featureId}</span>
                               </div>
-                              <span class="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest">{csf.cost} credits/use</span>
+                              <span class="text-[10px] font-bold text-warning uppercase tracking-widest">{csf.cost} credits/use</span>
                             </div>
                           {/each}
                         </div>
@@ -422,7 +415,7 @@
                     <div class="p-6 flex items-center justify-between group hover:bg-bg-card-hover transition-colors">
                       <div class="flex items-center gap-5">
                         <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center group-hover:border-border-light transition-colors rounded">
-                          <Zap size={18} class="text-text-dim group-hover:text-accent transition-colors" />
+                          <Lightning   size={18} class="text-text-dim group-hover:text-accent transition-colors"  weight="duotone" />
                         </div>
                         <div class="space-y-1">
                           <h4 class="text-sm font-bold text-text-primary uppercase tracking-tight">{pf.feature.name}</h4>
@@ -465,7 +458,7 @@
                             showConfigModal = true;
                           }}
                         >
-                          <Settings2 size={16} />
+                          <Sliders   size={16}  weight="duotone" />
                         </button>
                       {/if}
                       <button 
@@ -473,7 +466,7 @@
                         title="Remove feature"
                         onclick={() => detachFeature(pf.id)}
                       >
-                        <Trash2 size={16} />
+                        <Trash   size={16}  weight="fill" />
                       </button>
                     </div>
                   </div>
@@ -481,8 +474,8 @@
               {/each}
             {:else}
               <div class="p-16 text-center space-y-4">
-                <div class="w-16 h-16 bg-black/5 dark:bg-bg-primary border border-border flex items-center justify-center mx-auto shadow-md rounded">
-                  <ZapOff size={28} class="text-text-dim" />
+                <div class="w-16 h-16 bg-bg-secondary dark:bg-bg-primary border border-border flex items-center justify-center mx-auto rounded">
+                  <LightningSlash size={28} class="text-text-dim" weight="duotone" />
                 </div>
                 <div class="space-y-1">
                   <h4 class="text-text-primary font-bold uppercase italic">No features yet</h4>
@@ -503,9 +496,9 @@
 
       <!-- Right Sidebar Area -->
       <aside class="lg:col-span-4 space-y-8">
-        <section class="bg-bg-card border border-border p-6 space-y-6 shadow-md rounded-lg">
+        <section class="bg-bg-card border border-border p-6 space-y-6 rounded-lg">
           <div class="flex items-center gap-2 border-b border-border pb-4">
-            <Info size={14} class="text-text-dim" />
+            <Info   size={14} class="text-text-dim"  weight="fill" />
             <h2 class="text-[10px] font-bold text-text-primary uppercase tracking-widest">Plan Details</h2>
           </div>
           
@@ -513,14 +506,14 @@
             <div class="space-y-2">
               <div class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Slug / Identifier</div>
               <div class="group relative">
-                <code class="text-xs text-text-secondary bg-black/5 dark:bg-bg-primary px-3 py-2 border border-border block w-full font-mono group-hover:border-text-dim transition-colors rounded">
+                <code class="text-xs text-text-secondary bg-bg-secondary dark:bg-bg-primary px-3 py-2 border border-border block w-full font-mono group-hover:border-text-dim transition-colors rounded">
                   {plan.slug}
                 </code>
                 <button 
                   class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text-dim hover:text-text-primary dark:hover:text-white transition-colors opacity-0 group-hover:opacity-100"
                   onclick={() => navigator.clipboard.writeText(plan.slug)}
                 >
-                  <Copy size={12} />
+                  <Copy   size={12}  weight="fill" />
                 </button>
 
               </div>
@@ -534,16 +527,16 @@
                   ? `https://dashboard.paystack.com/#/plans/${planCode}`
                   : null}
                 {#if providerDashUrl}
-                  <a 
-                    href={providerDashUrl}
-                    target="_blank"
-                    class="flex items-center justify-between text-xs text-text-secondary bg-black/5 dark:bg-bg-primary px-3 py-2 border border-border hover:border-text-dim transition-colors rounded"
-                  >
+                    <a 
+                      href={providerDashUrl}
+                      target="_blank"
+                      class="flex items-center justify-between text-xs text-text-secondary bg-bg-secondary dark:bg-bg-primary px-3 py-2 border border-border hover:border-text-dim transition-colors rounded"
+                    >
                     <span class="font-mono">{planCode}</span>
-                    <ExternalLink size={12} class="text-text-dim" />
+                    <ArrowSquareOut   size={12} class="text-text-dim"  weight="duotone" />
                   </a>
                 {:else}
-                  <div class="flex items-center justify-between text-xs text-text-secondary bg-black/5 dark:bg-bg-primary px-3 py-2 border border-border rounded">
+                  <div class="flex items-center justify-between text-xs text-text-secondary bg-bg-secondary dark:bg-bg-primary px-3 py-2 border border-border rounded">
                     <span class="font-mono">{planCode}</span>
                     {#if plan.providerId}
                       <span class="text-[9px] text-text-dim uppercase tracking-widest">{plan.providerId}</span>
@@ -551,7 +544,7 @@
                   </div>
                 {/if}
               {:else}
-                <div class="text-xs text-text-dim italic bg-black/5 dark:bg-bg-primary px-3 py-2 border border-border border-dashed font-bold uppercase tracking-widest rounded">
+                <div class="text-xs text-text-dim italic bg-bg-secondary dark:bg-bg-primary px-3 py-2 border border-border border-dashed font-bold uppercase tracking-widest rounded">
                   Not synced
                 </div>
               {/if}
@@ -578,7 +571,7 @@
               class="btn btn-secondary w-full"
               onclick={() => (showEditPlanModal = true)}
             >
-               <Edit3 size={14} />
+               <PencilSimple   size={14}  weight="duotone" />
                Edit Metadata
              </button>
           </div>
@@ -586,7 +579,7 @@
 
         <!-- Usage Statistics (Placeholder) -->
         <section class="p-6 border border-border border-dashed flex flex-col items-center justify-center text-center space-y-3 opacity-60 hover:opacity-100 transition-opacity rounded-lg">
-          <Loader2 size={20} class="text-text-dim" />
+          <CircleNotch   size={20} class="text-text-dim"  weight="duotone" />
           <div>
             <h4 class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Usage Insights</h4>
             <p class="text-[10px] text-text-dim mt-1 uppercase font-bold tracking-widest">Coming Soon</p>
@@ -604,7 +597,7 @@
       <div class="space-y-4">
         <label for="featureSearch" class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Available Features</label>
         <div class="input-icon-wrapper">
-          <Search size={14} class="input-icon-left" />
+          <MagnifyingGlass   size={14} class="input-icon-left"  weight="fill" />
           <input 
             id="featureSearch"
             type="text" 
@@ -621,11 +614,11 @@
               onclick={() => handleAttachFeature(feature.id)}
               disabled={isSaving}
             >
-              <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center group-hover:border-lime-600 transition-colors">
-                <Zap size={16} class="text-text-dim group-hover:text-lime-600 transition-colors" />
+              <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center group-hover:border-secondary transition-colors">
+                <Lightning size={16} class="text-text-dim group-hover:text-secondary transition-colors" weight="duotone" />
               </div>
               <div>
-                <div class="text-xs font-bold text-white uppercase tracking-tight group-hover:text-lime-600 transition-colors">{feature.name}</div>
+                <div class="text-xs font-bold text-text-primary uppercase tracking-tight group-hover:text-secondary transition-colors">{feature.name}</div>
                 <div class="text-[9px] text-text-dim font-bold uppercase tracking-widest mt-0.5">{feature.type} • {feature.slug}</div>
               </div>
             </button>
@@ -633,10 +626,10 @@
           
           <button 
             class="w-full p-4 flex items-center gap-4 bg-bg-primary border border-border border-dashed text-text-dim hover:text-text-primary dark:hover:text-white transition-all text-left group mt-2"
-            onclick={() => goto(`/app/${projectId}/features`)}
+            onclick={() => (showCreateFeatureModal = true)}
           >
             <div class="w-10 h-10 bg-bg-card border border-border flex items-center justify-center">
-              <Plus size={16} />
+              <Plus   size={16}  weight="fill" />
             </div>
             <span class="text-xs font-bold uppercase tracking-widest">Create new feature</span>
           </button>
@@ -648,9 +641,9 @@
 
 <!-- Configure Feature Side Panel -->
 <SidePanel open={showConfigModal && !!editingPlanFeature} title={`Configure ${editingPlanFeature?.feature?.name}`} onclose={() => (showConfigModal = false)} width="max-w-[450px]">
-  <div class="text-sm">
+  <div class="text-sm h-full">
     <form 
-      class="flex flex-col"
+      class="flex flex-col h-full"
       onsubmit={(e) => {
         e.preventDefault();
         const data = {
@@ -672,38 +665,38 @@
           <div class="space-y-3">
             <button
               type="button"
-              class="relative w-full p-4 text-left flex gap-4 shadow-md transition-all {configUsageModel === 'included' ? 'bg-lime-600/5 border border-lime-600' : 'bg-bg-card border border-border hover:border-border-light'}"
+              class="relative w-full p-4 text-left flex gap-4 transition-all {configUsageModel === 'included' ? 'bg-secondary-light border border-secondary' : 'bg-bg-card border border-border hover:border-border-light'}"
               onclick={() => (configUsageModel = 'included')}
             >
               <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0">
-                <Calendar size={18} class={configUsageModel === 'included' ? 'text-lime-600' : 'text-text-dim'} />
+                <Calendar size={18} class={configUsageModel === 'included' ? 'text-secondary' : 'text-text-dim'} weight="duotone" />
               </div>
               <div>
                 <div class="text-xs font-bold text-text-primary uppercase tracking-tight mb-0.5">Included</div>
                 <p class="text-[10px] font-bold text-text-dim uppercase tracking-widest leading-relaxed">Included usage limit.</p>
               </div>
               {#if configUsageModel === 'included'}
-                <div class="absolute top-4 right-4 w-4 h-4 border-2 border-lime-600 flex items-center justify-center">
-                  <div class="w-2 h-2 bg-lime-600"></div>
+                <div class="absolute top-4 right-4 w-4 h-4 border-2 border-secondary flex items-center justify-center">
+                  <div class="w-2 h-2 bg-secondary"></div>
                 </div>
               {/if}
             </button>
 
             <button
               type="button"
-              class="relative w-full p-4 text-left flex gap-4 transition-all {configUsageModel === 'usage_based' ? 'bg-lime-600/5 border border-lime-600' : 'bg-bg-card border border-border hover:border-border-light'}"
+              class="relative w-full p-4 text-left flex gap-4 transition-all {configUsageModel === 'usage_based' ? 'bg-secondary-light border border-secondary' : 'bg-bg-card border border-border hover:border-border-light'}"
               onclick={() => (configUsageModel = 'usage_based')}
             >
               <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0">
-                <Settings2 size={18} class={configUsageModel === 'usage_based' ? 'text-lime-600' : 'text-text-dim'} />
+                <Sliders size={18} class={configUsageModel === 'usage_based' ? 'text-secondary' : 'text-text-dim'} weight="duotone" />
               </div>
               <div>
                 <div class="text-xs font-bold text-text-primary uppercase tracking-tight mb-0.5">Priced</div>
                 <p class="text-[10px] font-bold text-text-dim uppercase tracking-widest leading-relaxed">Charge for usage.</p>
               </div>
               {#if configUsageModel === 'usage_based'}
-                <div class="absolute top-4 right-4 w-4 h-4 border-2 border-lime-600 flex items-center justify-center">
-                  <div class="w-2 h-2 bg-lime-600"></div>
+                <div class="absolute top-4 right-4 w-4 h-4 border-2 border-secondary flex items-center justify-center">
+                  <div class="w-2 h-2 bg-secondary"></div>
                 </div>
               {/if}
             </button>
@@ -712,8 +705,8 @@
 
         <!-- Pricing Config (shown when Priced is selected) -->
         {#if configUsageModel === 'usage_based'}
-          <div class="space-y-4 p-4 bg-amber-500/10 border border-amber-500/20 rounded">
-            <div class="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest">Pricing Configuration</div>
+          <div class="space-y-4 p-4 bg-warning-bg border border-warning rounded">
+            <div class="text-[10px] font-bold text-warning uppercase tracking-widest">Pricing Configuration</div>
             
             <div class="grid grid-cols-2 gap-4">
               <div class="space-y-2">
@@ -813,7 +806,7 @@
             </div>
             
             {#if configOverage === 'charge'}
-              <div class="grid grid-cols-2 gap-4 p-4 bg-amber-900/10 border border-amber-800/50 rounded">
+              <div class="grid grid-cols-2 gap-4 p-4 bg-warning-bg border border-warning rounded">
                 <div class="space-y-2">
                   <label for="overagePricePerUnit" class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Overage Price</label>
                   <div class="input-icon-wrapper">
@@ -892,10 +885,10 @@
           disabled={isSaving}
         >
           {#if isSaving}
-            <Loader2 size={16} class="animate-spin" />
+            <CircleNotch   size={16} class="animate-spin"  weight="duotone" />
             Saving...
           {:else}
-            Save Configuration
+            FloppyDisk Configuration
           {/if}
         </button>
       </div>
@@ -905,15 +898,15 @@
 
 <!-- Edit Plan Side Panel -->
 <SidePanel open={showEditPlanModal && !!plan} title="Edit Plan" onclose={() => (showEditPlanModal = false)} width="max-w-[450px]">
-  <div class="text-sm">
+  <div class="text-sm h-full">
     <form
       onsubmit={(e) => {
         e.preventDefault();
         savePlanEdits();
       }}
-      class="flex flex-col"
+      class="flex flex-col h-full"
     >
-      <div class="p-6 space-y-5">
+      <div class="p-6 space-y-5 flex-1">
         <div>
           <label for="editName" class="text-[10px] font-bold text-text-dim uppercase tracking-widest block mb-2">Name</label>
           <div class="input-icon-wrapper">
@@ -1003,20 +996,27 @@
         </div>
       </div>
 
-      <div class="p-6 border-t border-border bg-bg-card flex justify-end gap-3 sticky bottom-0">
+      <div class="p-6 border-t border-border bg-bg-card flex justify-end gap-3 sticky bottom-0 mt-auto">
         <button type="button" class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary dark:hover:text-white transition-colors uppercase tracking-widest" onclick={() => (showEditPlanModal = false)}>Cancel</button>
         <button type="submit" class="btn btn-primary px-8" disabled={isSaving || !editName.trim()}>
           {#if isSaving}
-            <Loader2 size={16} class="animate-spin text-accent-contrast" />
+            <CircleNotch   size={16} class="animate-spin text-accent-contrast"  weight="duotone" />
             Saving...
           {:else}
-            Save Changes
+            <FloppyDisk size={16} weight="fill" /> Save Changes
           {/if}
         </button>
       </div>
     </form>
   </div>
 </SidePanel>
+
+<CreateFeatureModal
+  bind:isOpen={showCreateFeatureModal}
+  organizationId={projectId}
+  onclose={() => (showCreateFeatureModal = false)}
+  onsuccess={onFeatureCreated}
+/>
 
 <style lang="postcss">
   .custom-scrollbar::-webkit-scrollbar {

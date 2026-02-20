@@ -2,7 +2,7 @@
   import { Result } from "better-result";
   import { apiFetch } from "$lib/auth-client";
   import { fade } from "svelte/transition";
-  import { X, Plus, Trash2, Loader2, Coins, Check } from "lucide-svelte";
+  import { Check, CircleNotch, Coins, FloppyDisk, Plus, Trash, X } from "phosphor-svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
 
   let { 
@@ -147,12 +147,12 @@
   <div class="text-sm">
     {#if isLoading}
       <div class="p-5 flex items-center justify-center min-h-[300px]">
-        <Loader2 size={24} class="animate-spin text-zinc-500" />
+        <CircleNotch size={24} class="animate-spin text-text-muted" weight="duotone" />
       </div>
     {:else}
       <div class="p-5 space-y-6">
         {#if error}
-          <div class="bg-red-500/10 p-4 border border-red-500/20 text-xs text-red-500 font-medium">
+          <div class="bg-error-bg p-4 border border-error text-xs text-error font-medium rounded">
             {error}
           </div>
         {/if}
@@ -161,7 +161,7 @@
           <div>
             <label class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2">Name</label>
             <div class="input-icon-wrapper">
-              <Coins size={14} class="input-icon-left text-text-dim" />
+              <Coins   size={14} class="input-icon-left text-text-dim"  weight="duotone" />
               <input
                 type="text"
                 bind:value={name}
@@ -189,13 +189,13 @@
                 class="text-[10px] font-bold text-accent uppercase tracking-widest hover:text-text-primary transition-colors flex items-center gap-1"
                 onclick={addFeature}
               >
-                <Plus size={12} /> Add Feature
+                <Plus   size={12}  weight="fill" /> Add Feature
               </button>
             </div>
 
             <div class="space-y-3">
               {#each selectedFeatures as item, index}
-                <div class="flex items-center gap-3 bg-black/5 dark:bg-white/5 border border-border p-3 rounded group" transition:fade>
+                <div class="flex items-center gap-3 bg-bg-secondary border border-border p-3 rounded group" transition:fade>
                   <select
                     bind:value={item.featureId}
                     class="flex-1 bg-transparent text-xs text-text-primary outline-none border-none focus:ring-0"
@@ -222,7 +222,7 @@
                     class="text-text-dim hover:text-red-500 transition-colors p-1"
                     onclick={() => removeFeature(index)}
                   >
-                    <Trash2 size={14} />
+                    <Trash   size={14}  weight="fill" />
                   </button>
                 </div>
               {/each}
@@ -248,10 +248,10 @@
           onclick={handleSubmit}
         >
           {#if isSaving}
-            <Loader2 size={12} class="animate-spin" />
+            <CircleNotch size={12} class="animate-spin" weight="duotone" />
             Saving...
           {:else}
-            <Check size={12} />
+            <FloppyDisk size={12} weight="fill" />
             Save Changes
           {/if}
         </button>
@@ -268,7 +268,7 @@
     background: transparent;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #27272a;
-    border-radius: 10px;
+    background: var(--color-border);
+    border-radius: var(--radius-xs);
   }
 </style>

@@ -2,7 +2,7 @@
   import { Result } from "better-result";
   import { apiFetch } from "$lib/auth-client";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
-  import { Loader2, Check, Coins, Plus, CheckCircle } from "lucide-svelte";
+  import { Check, CheckCircle, CircleNotch, Coins, Plus } from "phosphor-svelte";
   import { defaultCurrency } from "$lib/stores/currency";
   import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
   import { SUPPORTED_PROVIDERS } from "$lib/providers";
@@ -357,10 +357,10 @@
         disabled={!name || credits < 1 || !creditSystemId || !selectedProviderId || isCreating}
       >
         {#if isCreating}
-          <Loader2 size={14} class="animate-spin" />
+          <CircleNotch   size={14} class="animate-spin"  weight="duotone" />
           Creating...
         {:else}
-          <Check size={14} />
+          <Check   size={14}  weight="fill" />
           Create Pack
         {/if}
       </button>

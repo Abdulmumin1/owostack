@@ -1,9 +1,5 @@
 <script lang="ts">
-  import {
-    Calendar, CreditCard, Clock, Package, Zap, User, Loader2,
-    Mail, Hash, Shield, ArrowUpRight, ArrowDownRight, ArrowRight,
-    XCircle, AlertTriangle, CheckCircle, RefreshCw, Ban,
-  } from "lucide-svelte";
+  import { ArrowDownRight, ArrowRight, ArrowUpRight, ArrowsClockwise, Calendar, CheckCircle, CircleNotch, Clock, CreditCard, Envelope, Hash, Lightning, Package, Prohibit, Shield, User, Warning, XCircle } from "phosphor-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import { formatCurrency } from "$lib/utils/currency";
@@ -148,10 +144,10 @@
 
   function statusColor(status: string) {
     switch (status) {
-      case "active": return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 border-emerald-500/20";
+      case "active": return "bg-success-bg text-success border-success/20";
       case "canceled": return "bg-bg-secondary text-text-dim border-border";
-      case "trialing": return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20";
-      case "past_due": return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20";
+      case "trialing": return "bg-info-bg text-info border-info/20";
+      case "past_due": return "bg-warning-bg text-warning border-warning/20";
       default: return "bg-bg-secondary text-text-dim border-border";
     }
   }
@@ -163,16 +159,16 @@
     if (type.includes("subscription")) return Calendar;
     if (type.includes("charge") || type.includes("payment")) return CreditCard;
     if (type.includes("customer")) return User;
-    return Zap;
+    return Lightning;
   }
 
   function eventColor(type: string) {
-    if (type.includes("cancel")) return "bg-red-500/10 text-red-600 dark:text-red-400";
-    if (type.includes("downgrade")) return "bg-amber-500/10 text-amber-600 dark:text-amber-400";
-    if (type.includes("upgrade")) return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
-    if (type.includes("charge.success") || type.includes("payment")) return "bg-green-500/10 text-green-600 dark:text-green-400";
-    if (type.includes("charge.failed")) return "bg-red-500/10 text-red-600 dark:text-red-400";
-    return "bg-blue-500/10 text-blue-600 dark:text-blue-400";
+    if (type.includes("cancel")) return "bg-error-bg text-error";
+    if (type.includes("downgrade")) return "bg-warning-bg text-warning";
+    if (type.includes("upgrade")) return "bg-success-bg text-success";
+    if (type.includes("charge.success") || type.includes("payment")) return "bg-success-bg text-success";
+    if (type.includes("charge.failed")) return "bg-error-bg text-error";
+    return "bg-info-bg text-info";
   }
 
   function eventLabel(type: string) {
@@ -246,8 +242,8 @@
   <div class="p-5 space-y-5">
     <!-- Subscription Header -->
     <div class="flex items-start gap-3">
-      <div class="w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent shrink-0">
-        <Package size={16} />
+      <div class="w-10 h-10 rounded-full bg-accent-light border border-accent flex items-center justify-center text-accent shrink-0">
+        <Package size={16} weight="duotone" />
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
@@ -259,27 +255,27 @@
         </div>
         <div class="flex flex-col gap-1">
           <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
-            <CreditCard size={10} />
+            <CreditCard   size={10}  weight="duotone" />
             {formatCurrency(data.plan.price, data.plan.currency)}{isOneTime ? ' (one-time)' : ` / ${data.plan.interval}`}
           </span>
           <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
-            <Mail size={10} />
+            <Envelope   size={10}  weight="duotone" />
             {data.customer.email}
           </span>
           {#if !isOneTime}
             <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
-              <Clock size={10} />
+              <Clock   size={10}  weight="duotone" />
               {formatDate(data.subscription.currentPeriodStart)} – {formatDate(data.subscription.currentPeriodEnd)}
             </span>
           {:else}
             <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
-              <Clock size={10} />
+              <Clock   size={10}  weight="duotone" />
               Purchased {formatDate(data.subscription.createdAt)}
             </span>
           {/if}
           {#if (data.subscription.providerSubscriptionCode || data.subscription.paystackSubscriptionCode) && (data.subscription.providerSubscriptionCode || data.subscription.paystackSubscriptionCode) !== "one-time"}
             <span class="flex items-center gap-1.5 text-[10px] text-text-dim font-mono">
-              <Hash size={10} />
+              <Hash   size={10}  weight="duotone" />
               {data.subscription.providerSubscriptionCode || data.subscription.paystackSubscriptionCode}
             </span>
           {/if}
@@ -289,10 +285,10 @@
 
     <!-- Alerts -->
     {#if hasPendingCancel}
-      <div class="bg-amber-500/5 border border-amber-500/20 rounded p-3 flex items-start gap-2">
-        <AlertTriangle size={14} class="text-amber-500 mt-0.5 shrink-0" />
+      <div class="bg-warning-bg border border-warning rounded p-3 flex items-start gap-2">
+        <Warning size={14} class="text-warning mt-0.5 shrink-0" weight="fill" />
         <div>
-          <p class="text-xs font-semibold text-amber-600 dark:text-amber-400">Cancellation scheduled</p>
+          <p class="text-xs font-semibold text-warning">Cancellation scheduled</p>
           <p class="text-[10px] text-text-dim mt-0.5">
             Effective {formatDate(data.subscription.cancelAt)}
           </p>
@@ -300,10 +296,10 @@
       </div>
     {/if}
     {#if hasPendingDowngrade}
-      <div class="bg-blue-500/5 border border-blue-500/20 rounded p-3 flex items-start gap-2">
-        <ArrowDownRight size={14} class="text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+      <div class="bg-info-bg border border-info rounded p-3 flex items-start gap-2">
+        <ArrowDownRight size={14} class="text-info mt-0.5 shrink-0" weight="duotone" />
         <div>
-          <p class="text-xs font-semibold text-blue-600 dark:text-blue-400">Downgrade scheduled</p>
+          <p class="text-xs font-semibold text-info">Downgrade scheduled</p>
           <p class="text-[10px] text-text-dim mt-0.5">
             Effective {formatDate((data.subscription.metadata as any).scheduled_downgrade.effective_at)}
           </p>
@@ -313,15 +309,15 @@
 
     <!-- Quick Stats -->
     <div class="grid grid-cols-3 gap-3">
-      <div class="bg-black/5 dark:bg-white/5 rounded p-3 text-center">
+      <div class="bg-bg-secondary rounded p-3 text-center">
         <div class="text-lg font-bold text-text-primary">{data.entitlements?.length || 0}</div>
         <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Features</div>
       </div>
-      <div class="bg-black/5 dark:bg-white/5 rounded p-3 text-center">
+      <div class="bg-bg-secondary rounded p-3 text-center">
         <div class="text-lg font-bold text-text-primary">{data.timeline?.length || 0}</div>
         <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Events</div>
       </div>
-      <div class="bg-black/5 dark:bg-white/5 rounded p-3 text-center">
+      <div class="bg-bg-secondary rounded p-3 text-center">
         <div class="text-lg font-bold text-text-primary">{otherPlans.length}</div>
         <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Plans</div>
       </div>
@@ -338,7 +334,7 @@
               disabled={actionLoading !== null}
               onclick={() => { showSwitchPlan = !showSwitchPlan; switchPreview = null; }}
             >
-              <RefreshCw size={11} />
+              <ArrowsClockwise   size={11}  weight="fill" />
               Switch Plan
             </button>
             {#if !hasPendingCancel}
@@ -348,23 +344,23 @@
                 onclick={() => cancelSubscription(false)}
               >
                 {#if actionLoading === "cancel"}
-                  <Loader2 size={11} class="animate-spin" />
+                  <CircleNotch   size={11} class="animate-spin"  weight="duotone" />
                 {:else}
-                  <Clock size={11} />
+                  <Clock   size={11}  weight="duotone" />
                 {/if}
                 Cancel at Period End
               </button>
             {/if}
           {/if}
           <button
-            class="btn gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 hover:bg-red-500/20"
+            class="btn gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5 bg-error-bg text-error border border-error hover:bg-error-bg/80"
             disabled={actionLoading !== null}
             onclick={() => cancelSubscription(true)}
           >
             {#if actionLoading === "cancel"}
-              <Loader2 size={11} class="animate-spin" />
+              <CircleNotch   size={11} class="animate-spin"  weight="duotone" />
             {:else}
-              <Ban size={11} />
+              <Prohibit   size={11}  weight="duotone" />
             {/if}
             {isOneTime ? 'Revoke Access' : 'Cancel Now'}
           </button>
@@ -374,12 +370,12 @@
 
     <!-- Switch Plan Panel -->
     {#if showSwitchPlan && otherPlans.length > 0}
-      <div class="bg-black/5 dark:bg-white/5 rounded p-4 space-y-3">
+      <div class="bg-bg-secondary rounded p-4 space-y-3">
         <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest">Switch to...</h4>
         <div class="space-y-2">
           {#each otherPlans as plan}
             <button
-              class="w-full text-left bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 rounded p-3 transition-colors flex items-center justify-between group"
+              class="w-full text-left bg-bg-secondary hover:bg-bg-tertiary rounded p-3 transition-colors flex items-center justify-between group"
               disabled={previewLoading}
               onclick={() => previewPlanSwitch(plan.id)}
             >
@@ -389,7 +385,7 @@
                   {formatCurrency(plan.price, plan.currency)} / {plan.interval}
                 </span>
               </div>
-              <ArrowRight size={12} class="text-text-dim/20 group-hover:text-text-dim transition-colors" />
+              <ArrowRight   size={12} class="text-text-dim/20 group-hover:text-text-dim transition-colors"  weight="fill" />
             </button>
           {/each}
         </div>
@@ -397,17 +393,17 @@
         <!-- Preview Result -->
         {#if previewLoading}
           <div class="flex items-center gap-2 text-text-dim text-xs py-2">
-            <Loader2 size={12} class="animate-spin" />
+            <CircleNotch   size={12} class="animate-spin"  weight="duotone" />
             Calculating...
           </div>
         {/if}
         {#if switchPreview}
-          <div class="bg-black/5 dark:bg-white/5 rounded p-3 border border-border space-y-2">
+          <div class="bg-bg-secondary rounded p-3 border border-border space-y-2">
             <div class="flex items-center gap-2">
               <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border
-                {switchPreview.type === 'upgrade' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' :
-                 switchPreview.type === 'downgrade' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' :
-                 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'}">
+                {switchPreview.type === 'upgrade' ? 'bg-success-bg text-success border-success/20' :
+                 switchPreview.type === 'downgrade' ? 'bg-warning-bg text-warning border-warning/20' :
+                 'bg-info-bg text-info border-info/20'}">
                 {switchPreview.type}
               </span>
               <span class="text-xs text-text-dim">{switchPreview.effectiveAt === 'immediate' ? 'Immediate' : 'At period end'}</span>
@@ -424,9 +420,9 @@
               onclick={executePlanSwitch}
             >
               {#if actionLoading === "switch"}
-                <Loader2 size={11} class="animate-spin" />
+                <CircleNotch   size={11} class="animate-spin"  weight="duotone" />
               {:else}
-                <CheckCircle size={11} />
+                <CheckCircle   size={11}  weight="fill" />
               {/if}
               Confirm {switchPreview.type}
             </button>
@@ -445,9 +441,9 @@
         <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-3">Entitlements</h4>
         <div class="space-y-2">
           {#each data.entitlements as ent}
-            <div class="bg-black/5 dark:bg-white/5 rounded p-3 flex items-center justify-between">
+            <div class="bg-bg-secondary rounded p-3 flex items-center justify-between">
               <div class="flex items-center gap-2">
-                <Shield size={12} class="text-text-dim" />
+                <Shield size={12} class="text-text-dim" weight="duotone" />
                 <span class="text-xs font-medium text-text-primary">{ent.featureName}</span>
                 {#if ent.unit}
                   <span class="text-[9px] text-text-dim">({ent.unit})</span>
@@ -458,7 +454,7 @@
                   <span class="text-xs font-bold text-text-primary">{ent.limitValue}</span>
                   <span class="text-[9px] text-text-dim ml-1">/ {ent.resetInterval}</span>
                 {:else}
-                  <span class="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Unlimited</span>
+                  <span class="text-[9px] font-bold text-success uppercase">Unlimited</span>
                 {/if}
               </div>
             </div>
@@ -467,17 +463,17 @@
       </div>
     {/if}
 
-    <!-- Activity Timeline -->
+    <!-- Pulse Timeline -->
     <div>
-      <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-2">Activity</h4>
-      <div class="bg-black/5 dark:bg-white/5 rounded overflow-hidden">
+      <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-2">Pulse</h4>
+      <div class="bg-bg-secondary rounded overflow-hidden">
         <Timeline items={timeline} />
       </div>
     </div>
   </div>
 {:else}
   <div class="flex flex-col items-center justify-center py-16 text-center px-5">
-    <Package size={24} class="text-text-dim/20 mb-3" />
+    <Package   size={24} class="text-text-dim/20 mb-3"  weight="duotone" />
     <p class="text-xs text-text-dim">Subscription not found</p>
   </div>
 {/if}

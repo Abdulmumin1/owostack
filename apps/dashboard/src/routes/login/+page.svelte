@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Mail, Lock, ArrowRight, Github, Activity, TrendingUp } from "lucide-svelte";
+  import { ArrowRight, Envelope, GithubLogo, Lock, Pulse, TrendUp } from "phosphor-svelte";
   import { signIn } from "$lib/auth-client";
   import { goto } from "$app/navigation";
   import Logo from "$lib/components/ui/Logo.svelte";
@@ -46,7 +46,7 @@
 </svelte:head>
 
 <div class="min-h-screen flex bg-bg-primary">
-  <!-- Left Side: Live Activity Dashboard -->
+  <!-- Left Side: Live Pulse Dashboard -->
   <div class="hidden lg:flex lg:w-1/2 bg-bg-secondary border-r border-border p-12 flex-col justify-between relative overflow-hidden">
     <!-- Grid Background -->
     <div class="absolute inset-0 opacity-[0.03]" 
@@ -55,7 +55,7 @@
 
     <div class="relative z-10">
       <a href="/" class="inline-flex items-center gap-2 text-lg font-bold text-text-primary">
-        <Logo size={24} class="text-accent" />
+        <Logo size={24} class="text-accent"  weight="duotone" />
         <span>Owostack</span>
       </a>
     </div>
@@ -64,16 +64,16 @@
       <div class="w-full max-w-md">
         
         <!-- Dashboard Preview -->
-        <div class="bg-bg-card border border-border overflow-hidden mb-8 animate-slide-up {mounted ? 'animate-in' : ''} shadow-[4px_4px_0px_0px_var(--color-border)]">
+        <div class="card bg-bg-card overflow-hidden mb-8 animate-slide-up {mounted ? 'animate-in' : ''}">
           <div class="p-4 border-b border-border bg-bg-secondary flex justify-between items-center">
             <div class="flex items-center gap-2">
-              <Activity size={14} class="text-accent" />
+              <Pulse   size={14} class="text-accent"  weight="duotone" />
               <span class="text-[10px] font-bold uppercase tracking-widest text-text-primary">Monthly Revenue</span>
             </div>
-            <div class="flex items-center gap-1 text-[10px] font-bold text-green-500 bg-green-500/10 px-2 py-0.5">
-              <TrendingUp size={10} />
-              <span>+12.5%</span>
-            </div>
+             <div class="flex items-center gap-1 text-[10px] font-bold text-success bg-success-bg px-2 py-0.5 rounded-sm">
+               <TrendUp size={10} weight="duotone" />
+               <span>+12.5%</span>
+             </div>
           </div>
           
           <div class="p-6">
@@ -83,7 +83,7 @@
             <!-- Faux Chart -->
             <div class="flex items-end gap-2 h-24 mt-4">
               {#each [35, 42, 38, 55, 48, 65, 58, 75, 68, 85, 80, 100] as height, i}
-                <div class="flex-1 bg-accent/20 hover:bg-accent transition-colors duration-300 relative group h-full">
+                <div class="flex-1 bg-accent-light hover:bg-accent transition-colors duration-300 relative group h-full">
                   <div class="absolute bottom-0 w-full bg-accent transition-all duration-1000 ease-out" style="height: {mounted ? height : 0}%"></div>
                 </div>
               {/each}
@@ -137,7 +137,7 @@
     </div>
 
     <!-- <div class="text-[10px] font-bold text-text-dim relative z-10 flex items-center gap-2 uppercase tracking-widest">
-      <Server size={12} />
+      <Server size={12}  weight="duotone" />
       <span>US-East-1</span>
       <span class="mx-1 opacity-20">•</span>
       <span>v2.4.0</span>
@@ -152,7 +152,7 @@
           href="/"
           class="inline-flex items-center gap-2 text-xl font-bold text-text-primary mb-4"
         >
-          <Logo size={28} class="text-accent" />
+          <Logo size={28} class="text-accent"  weight="duotone" />
           <span>Owostack</span>
         </a>
       </div>
@@ -164,7 +164,7 @@
 
       {#if error}
         <div
-          class="mb-4 p-3 bg-red-900/10 border border-red-500/50 text-red-600 text-[10px] font-bold uppercase tracking-wider"
+          class="mb-4 p-3 bg-error-bg border border-error text-error text-[10px] font-bold uppercase tracking-wider"
         >
           {error}
         </div>
@@ -176,10 +176,10 @@
             >Email</label
           >
           <div class="input-icon-wrapper">
-            <Mail
+            <Envelope  
               size={18}
               class="input-icon-left"
-            />
+             weight="duotone" />
             <input
               type="email"
               id="email"
@@ -200,10 +200,10 @@
             <a href="/forgot-password" class="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline">Forgot?</a>
           </div>
           <div class="input-icon-wrapper">
-            <Lock
+            <Lock  
               size={18}
               class="input-icon-left"
-            />
+             weight="duotone" />
             <input
               type="password"
               id="password"
@@ -224,7 +224,7 @@
             Signing in...
           {:else}
           Sign In
-          <ArrowRight size={16} />
+          <ArrowRight   size={16}  weight="fill" />
           {/if}
         </button>
       </form>
@@ -238,7 +238,7 @@
       </div>
 
       <button type="button" class="btn btn-secondary w-full py-4">
-        <Github size={16} />
+        <GithubLogo   size={16}  weight="duotone" />
         GitHub
       </button>
 
@@ -266,13 +266,5 @@
   .animate-slide-up.animate-in {
     opacity: 1;
     transform: translateY(0);
-  }
-
-  .delay-200 {
-    transition-delay: 200ms;
-  }
-
-  :global(*) {
-    border-radius: 0 !important;
   }
 </style>

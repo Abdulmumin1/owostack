@@ -15,10 +15,10 @@
   <div class="divide-y divide-border/20">
     {#each items as item}
       <div class="px-4 py-3 flex items-start gap-3">
-        <div class="w-6 h-6 rounded-full {item.iconColor || 'bg-black/5 dark:bg-white/5 text-text-dim'} flex items-center justify-center shrink-0 mt-0.5">
+        <div class="w-6 h-6 rounded-full {item.iconColor || 'bg-bg-secondary text-text-dim'} flex items-center justify-center shrink-0 mt-0.5">
           {#if item.icon}
             {@const Icon = item.icon}
-            <Icon size={10} />
+            <Icon size={10}   weight="duotone" />
           {/if}
         </div>
         <div class="flex-1 min-w-0">

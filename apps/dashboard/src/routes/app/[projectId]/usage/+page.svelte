@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BarChart3, Users, DollarSign, Activity, Layers, ArrowUpRight, ArrowDownRight, Loader2, ChevronDown } from "lucide-svelte";
+  import { ArrowDownRight, ArrowUpRight, CaretDown, ChartBar, CircleNotch, CurrencyDollar, Pulse, Stack, Users } from "phosphor-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import { formatCurrency } from "$lib/utils/currency";
@@ -98,7 +98,7 @@
   {#if isLoading}
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       {#each Array(4) as _}
-        <div class="bg-bg-card border border-border p-5 shadow-md space-y-4">
+        <div class="bg-bg-card border border-border p-5 space-y-4 rounded-lg">
           <div class="flex items-center justify-between">
             <Skeleton class="h-3 w-20" />
             <Skeleton class="w-8 h-8 rounded" />
@@ -110,7 +110,7 @@
     </div>
 
     <div class="grid lg:grid-cols-2 gap-4 mb-6">
-      <div class="bg-bg-card border border-border p-5 shadow-md h-64">
+      <div class="bg-bg-card border border-border p-5 h-64 rounded-lg">
         <div class="flex items-center justify-between mb-6">
           <Skeleton class="h-3 w-32" />
           <Skeleton class="h-3 w-20" />
@@ -121,7 +121,7 @@
           {/each}
         </div>
       </div>
-      <div class="bg-bg-card border border-border p-5 shadow-md h-64">
+      <div class="bg-bg-card border border-border p-5 h-64 rounded-lg">
         <Skeleton class="h-3 w-32 mb-6" />
         <div class="space-y-4">
           {#each Array(4) as _}
@@ -137,7 +137,7 @@
       </div>
     </div>
 
-    <div class="bg-bg-card border border-border shadow-md overflow-hidden">
+    <div class="bg-bg-card border border-border overflow-hidden rounded-lg">
       <div class="p-5 border-b border-border">
         <Skeleton class="h-3 w-32" />
       </div>
@@ -158,40 +158,40 @@
   {:else if usage}
     <!-- Summary Cards -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <StatCard label="Customers" value={formatNumber(usage.totalCustomers)} icon={Users} iconColor="text-blue-500 bg-blue-500/10">
+      <StatCard label="Customers" value={formatNumber(usage.totalCustomers)} icon={Users} iconColor="text-info bg-info-bg">
         {#if growthPct !== null}
           <div class="flex items-center gap-1 mt-1.5">
             {#if growthPct >= 0}
-              <ArrowUpRight size={12} class="text-emerald-500" />
-              <span class="text-[10px] font-bold text-emerald-500">{growthPct}%</span>
+              <ArrowUpRight size={12} class="text-success" />
+              <span class="text-[10px] font-bold text-success">{growthPct}%</span>
             {:else}
-              <ArrowDownRight size={12} class="text-red-400" />
-              <span class="text-[10px] font-bold text-red-400">{growthPct}%</span>
+              <ArrowDownRight size={12} class="text-error" />
+              <span class="text-[10px] font-bold text-error">{growthPct}%</span>
             {/if}
             <span class="text-[10px] text-text-dim">vs last week</span>
           </div>
         {/if}
       </StatCard>
 
-      <StatCard label="Active Subs" value={formatNumber(usage.activeSubscriptions)} subtitle="Currently active" icon={Activity} iconColor="text-accent bg-accent/10" />
+      <StatCard label="Active Subs" value={formatNumber(usage.activeSubscriptions)} subtitle="Currently active" icon={Pulse} iconColor="text-accent bg-accent-light" />
       <StatCard
         label="MRR"
         value={usage.mrrTotal ? formatCurrency(usage.mrrTotal.amount, usage.mrrTotal.currency) : formatCurrency(0)}
         subtitle={usage.mrr?.length > 1 ? usage.mrr.map((m: any) => formatCurrency(m.amount, m.currency)).join(' + ') : 'Monthly recurring'}
-        icon={DollarSign}
-        iconColor="text-emerald-500 bg-emerald-500/10"
+        icon={CurrencyDollar}
+        iconColor="text-success bg-success-bg"
       >
         {#if usage.mrrTotal?.approximate}
           <span class="text-[9px] text-text-dim mt-0.5 block">≈ converted rate</span>
         {/if}
       </StatCard>
-      <StatCard label="Plans" value={usage.customersPerPlan?.length || 0} subtitle="With active customers" icon={Layers} iconColor="text-purple-500 bg-purple-500/10" />
+      <StatCard label="Plans" value={usage.customersPerPlan?.length || 0} subtitle="With active customers" icon={Stack} iconColor="text-tertiary bg-tertiary-light" />
     </div>
 
     <!-- Row 2: Growth + Plan Distribution -->
     <div class="grid lg:grid-cols-2 gap-4 mb-6">
       <!-- Customer Growth (Last 30 Days) -->
-      <div class="bg-bg-card border border-border shadow-md">
+      <div class="bg-bg-card border border-border rounded-lg">
         <div class="p-5 border-b border-border">
           <div class="flex items-center justify-between">
             <h3 class="text-[10px] font-bold text-text-primary uppercase tracking-widest">Customer Growth</h3>
@@ -204,7 +204,7 @@
               data={growthChartData}
               labelStart={growthChartData[0]?.label}
               labelEnd={growthChartData[growthChartData.length - 1]?.label}
-            />
+             />
           {:else}
             <div class="flex items-center justify-center h-24 text-text-dim text-xs">
               No new customers in the last 30 days
@@ -214,7 +214,7 @@
       </div>
 
       <!-- Customers per Plan -->
-      <div class="bg-bg-card border border-border shadow-md">
+      <div class="bg-bg-card border border-border rounded-lg">
         <div class="p-5 border-b border-border">
           <h3 class="text-[10px] font-bold text-text-primary uppercase tracking-widest">Customers by Plan</h3>
         </div>
@@ -246,7 +246,7 @@
     <!-- Row 3: Feature Consumption + Subscription Status -->
     <div class="grid lg:grid-cols-3 gap-4 mb-6">
       <!-- Feature Consumption (takes 2 cols) -->
-      <div class="lg:col-span-3 bg-bg-card border border-border shadow-md overflow-hidden">
+      <div class="lg:col-span-3 bg-bg-card border border-border overflow-hidden rounded-lg">
         <div class="p-5 border-b border-border">
           <div class="flex items-center justify-between">
             <h3 class="text-[10px] font-bold text-text-primary uppercase tracking-widest">Feature Consumption</h3>
@@ -262,7 +262,7 @@
               <col class="w-[30%]" />
             </colgroup>
             <thead>
-              <tr class="bg-black/2 dark:bg-white/2">
+              <tr class="bg-bg-secondary">
                 <th class="px-5 py-2.5 text-[10px] font-bold text-text-dim uppercase tracking-widest text-left">Feature</th>
                 <th class="px-5 py-2.5 text-[10px] font-bold text-text-dim uppercase tracking-widest text-center">Consumers</th>
                 <th class="px-5 py-2.5 text-[10px] font-bold text-text-dim uppercase tracking-widest text-center">Total Usage</th>
@@ -271,7 +271,7 @@
             </thead>
             <tbody class="divide-y divide-border/30">
               {#each usage.featureConsumption as feat}
-                <tr class="hover:bg-black/2 dark:hover:bg-white/2 transition-colors">
+                <tr class="hover:bg-bg-secondary transition-colors">
                   <td class="px-5 py-3">
                     <div class="text-sm text-text-primary font-medium truncate">{feat.featureName}</div>
                     <div class="text-[10px] text-text-dim font-mono truncate">{feat.featureSlug}</div>
@@ -295,7 +295,7 @@
           </table>
         {:else}
           <div class="p-10 flex flex-col items-center justify-center text-center">
-            <BarChart3 size={20} class="text-text-dim mb-3" />
+            <ChartBar   size={20} class="text-text-dim mb-3"  />
             <p class="text-xs text-text-dim">No feature usage recorded this month</p>
             <p class="text-[10px] text-text-dim mt-1">Usage will appear here once customers start consuming features via the API</p>
           </div>
@@ -303,9 +303,9 @@
       </div>
     </div>
   {:else}
-    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
-      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4 rounded">
-        <BarChart3 size={24} class="text-text-dim" />
+    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center rounded-lg">
+      <div class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4 rounded">
+        <ChartBar   size={24} class="text-text-dim"  />
       </div>
       <h3 class="text-lg font-bold text-text-primary mb-2">No Analytics Yet</h3>
       <p class="text-text-dim max-w-sm text-sm">

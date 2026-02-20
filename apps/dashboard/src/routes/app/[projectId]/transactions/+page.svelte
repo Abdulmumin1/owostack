@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Search, RefreshCw, ArrowRight, Receipt, Loader2, Clock, CreditCard, Gift, ShoppingBag, CheckCircle } from "lucide-svelte";
+  import { ArrowRight, ArrowsClockwise, CheckCircle, CircleNotch, Clock, CreditCard, Gift, MagnifyingGlass, Receipt, ShoppingBag } from "phosphor-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import { formatCurrency } from "$lib/utils/currency";
@@ -98,19 +98,19 @@
 
   function typeColor(type: string) {
     switch (type) {
-      case "subscription": return "text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/20";
-      case "one_time": return "text-purple-600 dark:text-purple-400 bg-purple-500/10 border-purple-500/20";
-      case "trial": return "text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 border-cyan-500/20";
-      case "free": return "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+      case "subscription": return "text-info bg-info-bg border-info/20";
+      case "one_time": return "text-tertiary bg-tertiary-light border-tertiary/20";
+      case "trial": return "text-tertiary bg-tertiary-light border-tertiary/20";
+      case "free": return "text-success bg-success-bg border-success/20";
       default: return "text-text-dim bg-bg-secondary border-border";
     }
   }
 
   function statusColor(status: string) {
     switch (status.toLowerCase()) {
-      case 'active': return 'text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
+      case 'active': return 'text-success bg-success-bg border-success/20';
       case 'canceled': return 'text-text-dim bg-bg-secondary border-border';
-      case 'past_due': return 'text-amber-600 dark:text-amber-500 bg-amber-500/10 border-amber-500/20';
+      case 'past_due': return 'text-warning bg-warning-bg border-warning/20';
       default: return 'text-text-dim bg-bg-secondary border-border';
     }
   }
@@ -162,7 +162,7 @@
       class="btn btn-secondary gap-2 text-xs uppercase tracking-wider font-bold"
       onclick={() => loadTransactions(true)}
     >
-      <RefreshCw size={14} class={isLoading ? "animate-spin" : ""} />
+      <ArrowsClockwise weight="duotone" size={14} class={isLoading ? "animate-spin" : ""} />
       Refresh
     </button>
   </div>
@@ -178,7 +178,7 @@
     ] as tab}
       <button
         class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider border transition-colors {filterType === tab.value
-          ? 'bg-black/10 dark:bg-white/10 text-text-primary border-text-dim'
+          ? 'bg-bg-secondary text-text-primary border-text-dim'
           : 'bg-transparent text-text-dim border-border hover:text-text-secondary hover:border-text-dim'}"
         onclick={() => filterType = tab.value}
       >
@@ -191,10 +191,7 @@
   <!-- Search -->
   <div class="flex items-center justify-between gap-4 mb-6">
     <div class="input-icon-wrapper max-w-sm">
-      <Search
-        size={14}
-        class="input-icon-left text-text-dim"
-      />
+      <MagnifyingGlass weight="duotone" size={14} class="input-icon-left text-text-dim" />
       <input
         type="text"
         placeholder="Search by customer, plan, or type..."
@@ -205,10 +202,10 @@
   </div>
 
   {#if isLoading && transactions.length === 0}
-    <div class="bg-bg-card border border-border overflow-hidden shadow-md">
+    <div class="bg-bg-card border border-border overflow-hidden">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+          <tr class="bg-bg-tertiary border-b border-border">
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Type</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Plan</th>
@@ -258,9 +255,9 @@
       </table>
     </div>
   {:else if filteredTx.length === 0}
-    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
-      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
-        <Receipt size={24} class="text-text-dim" />
+    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center">
+      <div class="w-12 h-12 bg-bg-tertiary flex items-center justify-center mb-4">
+        <Receipt weight="duotone" size={24} class="text-text-dim" />
       </div>
       <h3 class="text-lg font-bold text-text-primary mb-2">
         {searchQuery || filterType !== "all" ? "No matching transactions" : "No transactions yet"}
@@ -273,10 +270,10 @@
     </div>
   {:else}
     <!-- Transactions Table -->
-    <div class="bg-bg-card border border-border overflow-hidden shadow-md">
+    <div class="bg-bg-card border border-border overflow-hidden">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+          <tr class="bg-bg-tertiary border-b border-border">
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Type</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Plan</th>
@@ -290,13 +287,13 @@
         <tbody class="divide-y divide-border/50">
           {#each filteredTx as tx}
             <tr
-              class="group hover:bg-black/2 dark:hover:bg-white/2 transition-colors cursor-pointer {selectedTxId === tx.id ? 'bg-black/5 dark:bg-white/5' : ''}"
+              class="group hover:bg-bg-tertiary transition-colors cursor-pointer {selectedTxId === tx.id ? 'bg-bg-tertiary' : ''}"
               onclick={() => selectedTxId = tx.id}
             >
               <td class="px-6 py-4">
                 <div class="flex items-center gap-2">
                   <div class="w-7 h-7 rounded {typeColor(tx.type)} border flex items-center justify-center">
-                    <svelte:component this={typeIcon(tx.type)} size={12} />
+                    <svelte:component this={typeIcon(tx.type)} weight="duotone" />
                   </div>
                   <span class="text-[10px] font-bold uppercase tracking-wider {typeColor(tx.type).split(' ')[0]}">
                     {tx.typeLabel}
@@ -327,12 +324,12 @@
               </td>
               <td class="px-6 py-4">
                 <div class="flex items-center gap-2 text-xs text-text-dim">
-                  <Clock size={12} />
+                  <Clock weight="duotone" size={12} />
                   {formatDate(tx.createdAt)}
                 </div>
               </td>
               <td class="px-6 py-4 text-right">
-                <ArrowRight size={14} class="text-text-dim/20 group-hover:text-text-dim transition-colors" />
+                <ArrowRight weight="duotone" size={14} class="text-text-dim/20 group-hover:text-text-dim transition-colors" />
               </td>
             </tr>
           {/each}
@@ -347,7 +344,7 @@
     
     {#if isLoadingMore}
       <div class="flex justify-center py-4">
-        <Loader2 size={20} class="animate-spin text-text-dim" />
+        <CircleNotch weight="duotone" size={20} class="animate-spin text-text-dim" />
       </div>
     {/if}
   {/if}

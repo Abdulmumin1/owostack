@@ -2,8 +2,9 @@
   import { onMount } from "svelte";
   import { apiFetch } from "$lib/auth-client";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
-  import { Webhook, User, Clock, Zap, CheckCircle, XCircle } from "lucide-svelte";
+  import { CheckCircle, Clock, Globe, Lightning, User, XCircle } from "phosphor-svelte";
   import { fade } from "svelte/transition";
+  import Avatar from "$lib/components/ui/Avatar.svelte";
 
   let { eventId } = $props<{ eventId: string }>();
 
@@ -37,8 +38,8 @@
   function getEventIcon(type: string) {
     if (type.startsWith("subscription")) return Clock;
     if (type.startsWith("customer")) return User;
-    if (type.startsWith("payment") || type.startsWith("charge")) return Zap;
-    return Webhook;
+    if (type.startsWith("payment") || type.startsWith("charge")) return Lightning;
+    return Globe;
   }
 
   function formatKey(key: string) {
@@ -64,10 +65,10 @@
     </div>
   {:else if error}
     <div class="p-8 text-center">
-      <div class="w-12 h-12 bg-red-500/10 text-red-600 dark:text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-        <XCircle size={24} />
+      <div class="w-12 h-12 bg-error-bg text-error rounded-full flex items-center justify-center mx-auto mb-4">
+        <XCircle size={24} weight="duotone" />
       </div>
-      <p class="text-red-600 dark:text-red-400 font-medium">{error}</p>
+      <p class="text-error font-medium">{error}</p>
       <button class="mt-4 text-xs text-text-dim hover:text-text-primary underline" onclick={loadEvent}>
         Try again
       </button>
@@ -77,8 +78,8 @@
       <!-- Header -->
       <div class="p-6 border-b border-border bg-bg-card">
         <div class="flex items-start gap-4">
-          <div class="w-12 h-12 bg-black/5 dark:bg-white/5 border border-border rounded flex items-center justify-center shrink-0">
-            <svelte:component this={getEventIcon(event.type)} size={24} class="text-text-dim" />
+          <div class="w-12 h-12 bg-bg-secondary border border-border rounded flex items-center justify-center shrink-0">
+            <svelte:component this={getEventIcon(event.type)} weight="duotone" />
           </div>
           <div>
             <h2 class="text-lg font-bold text-text-primary break-all">{event.type}</h2>
@@ -89,7 +90,7 @@
               </span>
             </div>
             <p class="text-xs text-text-dim mt-2 flex items-center gap-1">
-              <Clock size={12} />
+              <Clock   size={12}  weight="duotone" />
               {new Date(event.createdAt).toLocaleString()}
             </p>
           </div>
@@ -102,8 +103,8 @@
           <div>
             <h3 class="text-xs font-bold text-text-dim uppercase tracking-widest mb-3">Customer</h3>
             <div class="bg-bg-card border border-border rounded p-4 flex items-center gap-3">
-              <div class="w-8 h-8 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent font-bold text-xs">
-                {event.customer.email[0].toUpperCase()}
+              <div class="w-8 h-8 rounded-full overflow-hidden">
+                <Avatar name={event.customer.email} size={32} />
               </div>
               <div>
                 <div class="text-sm font-bold text-text-primary">{event.customer.name || 'Anonymous'}</div>
@@ -118,7 +119,7 @@
           <h3 class="text-xs font-bold text-text-dim uppercase tracking-widest mb-3">Event Payload</h3>
           <div class="bg-bg-secondary border border-border rounded overflow-hidden">
             <div class="flex border-b border-border">
-               <div class="px-4 py-2 text-[10px] font-bold text-text-dim uppercase bg-black/5 dark:bg-white/5">JSON</div>
+               <div class="px-4 py-2 text-[10px] font-bold text-text-dim uppercase bg-bg-tertiary">JSON</div>
             </div>
             <pre class="p-4 text-xs font-mono text-text-secondary overflow-x-auto whitespace-pre-wrap">{JSON.stringify(event.data, null, 2)}</pre>
           </div>
@@ -149,6 +150,6 @@
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
     background: var(--color-border);
-    border-radius: 10px;
+    border-radius: var(--radius-xs);
   }
 </style>

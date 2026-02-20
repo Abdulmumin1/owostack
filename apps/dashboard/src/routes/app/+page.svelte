@@ -1,18 +1,5 @@
 <script lang="ts">
-  import {
-    ArrowRight,
-    Building2,
-    Plus,
-    X,
-    Eye,
-    EyeOff,
-    Loader2,
-    CheckCircle,
-    Link2,
-    Lock,
-    Key,
-    Cpu,
-  } from "lucide-svelte";
+  import { ArrowRight, Buildings, CheckCircle, CircleNotch, Cpu, Eye, EyeSlash, Key, Link, Lock, Plus, X } from "phosphor-svelte";
   import { organization, apiFetch } from "$lib/auth-client";
   import { getActiveEnvironment } from "$lib/env";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
@@ -175,7 +162,7 @@
 
     {#if orgs.length > 0}
       <button class="btn btn-primary" onclick={() => (showCreateModal = true)}>
-        <Plus size={16} />
+        <Plus   size={16}  weight="fill" />
         New Organization
       </button>
     {/if}
@@ -212,9 +199,9 @@
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-4">
               <div
-                class="w-10 h-10 flex items-center justify-center bg-black/5 dark:bg-black/50 text-text-dim"
+                class="w-10 h-10 flex items-center justify-center bg-info-bg text-info"
               >
-                <Building2 size={18} />
+                <Buildings   size={18}  weight="duotone" />
               </div>
               <div>
                 <h3 class="font-bold text-text-primary text-sm mb-0.5">
@@ -231,7 +218,7 @@
               <div
                 class="w-8 h-8 flex items-center justify-center border border-border group-hover:border-text-dim group-hover:text-text-primary text-text-dim transition-colors"
               >
-                <ArrowRight size={14} />
+                <ArrowRight   size={14}  weight="fill" />
               </div>
             </div>
           </div>
@@ -243,8 +230,8 @@
     <div
       class="border border-border border-dashed p-12 flex flex-col items-center justify-center text-center"
     >
-      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
-        <Building2 size={24} class="text-text-dim" />
+      <div class="w-12 h-12 bg-info-bg text-info flex items-center justify-center mb-4">
+        <Buildings size={24} weight="duotone" />
       </div>
       <h3 class="text-text-primary font-bold mb-2">No organizations yet</h3>
       <p class="text-text-dim text-sm mb-6 max-w-xs">
@@ -253,7 +240,7 @@
       </p>
 
       <button class="btn btn-primary" onclick={() => (showCreateModal = true)}>
-        <Plus size={16} />
+        <Plus   size={16}  weight="fill" />
         Create Organization
       </button>
     </div>
@@ -298,7 +285,7 @@
       </div>
 
       {#if createError}
-        <div class="mb-4 p-3 bg-red-900/20 border border-red-500/50 text-red-400 text-xs uppercase tracking-tight">
+        <div class="mb-4 p-3 bg-error-bg border border-error text-error text-xs uppercase tracking-tight">
           {createError}
         </div>
       {/if}
@@ -313,7 +300,7 @@
               >Organization Name</label
             >
             <div class="input-icon-wrapper">
-              <Building2 size={14} class="input-icon-left" />
+              <Buildings   size={14} class="input-icon-left"  weight="duotone" />
               <input
                 type="text"
                 id="orgName"
@@ -331,7 +318,7 @@
               >Slug</label
             >
             <div class="input-icon-wrapper">
-              <Link2 size={14} class="input-icon-left" />
+              <Link   size={14} class="input-icon-left"  weight="duotone" />
               <input
                 type="text"
                 id="orgSlug"
@@ -354,14 +341,14 @@
               {#each availableProviders as provider}
                 <button
                   class="w-full p-3 border text-left transition-all flex items-center gap-3 {selectedProviderId === provider.id
-                    ? 'border-accent bg-accent/5'
-                    : 'border-border bg-bg-secondary/30 hover:border-zinc-600'}"
+                    ? 'border-accent bg-accent-light'
+                    : 'border-border bg-bg-secondary hover:border-border-strong'}"
                   onclick={() => {
                     selectedProviderId = provider.id;
                     providerCredentials = {};
                   }}
                 >
-                  <Cpu size={16} class="text-text-dim shrink-0" />
+                  <Cpu   size={16} class="text-text-dim shrink-0"  weight="duotone" />
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2">
                       <span class="text-xs font-bold text-text-primary">{provider.name}</span>
@@ -381,10 +368,10 @@
                 <label
                   for={field.key}
                   class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2"
-                  >{field.label} {#if field.optional}<span class="text-zinc-600 font-normal">(Optional)</span>{:else}<span class="text-red-500">*</span>{/if}</label
+                  >{field.label} {#if field.optional}<span class="text-text-muted font-normal">(Optional)</span>{:else}<span class="text-error">*</span>{/if}</label
                 >
                 <div class="input-icon-wrapper">
-                  <Lock size={14} class="input-icon-left text-zinc-600" />
+                  <Lock size={14} class="input-icon-left text-text-muted" weight="duotone" />
                   <input
                     type={field.secret && !showSecretFields[field.key] ? "password" : "text"}
                     id={field.key}
@@ -399,9 +386,9 @@
                       onclick={() => (showSecretFields[field.key] = !showSecretFields[field.key])}
                     >
                       {#if showSecretFields[field.key]}
-                        <EyeOff size={16} />
+                        <EyeSlash   size={16}  weight="duotone" />
                       {:else}
-                        <Eye size={16} />
+                        <Eye   size={16}  weight="duotone" />
                       {/if}
                     </button>
                   {/if}
@@ -410,12 +397,12 @@
             {/each}
 
             {#if selectedProviderConfig.docsUrl}
-              <p class="text-[10px] text-zinc-600 uppercase tracking-tight">
+              <p class="text-[10px] text-text-muted uppercase tracking-tight">
                 Find your keys at <a
                   href={selectedProviderConfig.docsUrl}
                   target="_blank"
                   class="text-accent hover:underline font-bold"
-                  >{selectedProviderConfig.name} Developer Settings</a
+                  >{selectedProviderConfig.name} Developer Gear</a
                 >
               </p>
             {/if}
@@ -428,7 +415,7 @@
     <div class="p-5 border-t border-border flex items-center justify-between sticky bottom-0 bg-bg-card">
       {#if currentStep === 1}
         <button
-          class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-text-primary dark:hover:text-text-primary transition-colors uppercase tracking-widest"
+          class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
           onclick={closeModal}
         >
           Cancel
@@ -439,18 +426,18 @@
           disabled={!newOrgName || !newOrgSlug}
         >
           Continue
-          <ArrowRight size={14} />
+          <ArrowRight   size={14}  weight="fill" />
         </button>
       {:else}
         <div class="flex items-center gap-2">
           <button
-            class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-text-primary dark:hover:text-text-primary transition-colors uppercase tracking-widest"
+            class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
             onclick={prevStep}
           >
             Back
           </button>
           <button
-            class="px-4 py-2 text-xs font-bold text-zinc-600 hover:text-zinc-400 transition-colors uppercase tracking-widest"
+            class="px-4 py-2 text-xs font-bold text-text-muted hover:text-text-dim transition-colors uppercase tracking-widest"
             onclick={() => createOrganization(true)}
             disabled={isCreating}
           >
@@ -463,10 +450,10 @@
           disabled={!hasRequiredCredentials() || isCreating}
         >
           {#if isCreating}
-            <Loader2 size={14} class="animate-spin" />
+            <CircleNotch   size={14} class="animate-spin"  weight="duotone" />
             Creating...
           {:else}
-            <CheckCircle size={14} />
+            <CheckCircle   size={14}  weight="fill" />
             Create & Connect
           {/if}
         </button>

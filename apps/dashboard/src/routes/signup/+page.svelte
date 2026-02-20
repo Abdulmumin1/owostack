@@ -1,18 +1,5 @@
 <script lang="ts">
-  import {
-    Mail,
-    Lock,
-    User,
-    ArrowRight,
-    Github,
-    Check,
-    Sparkles,
-    CreditCard,
-    ShieldCheck,
-    BarChart3,
-    Users,
-    Globe
-  } from "lucide-svelte";
+  import { ArrowRight, ChartBar, Check, CreditCard, Envelope, GithubLogo, Globe, Lock, ShieldCheck, Sparkle, User, Users } from "phosphor-svelte";
   import { signUp } from "$lib/auth-client";
   import { goto } from "$app/navigation";
   import Logo from "$lib/components/ui/Logo.svelte";
@@ -54,7 +41,7 @@
     { 
       id: "meter",
       text: "Usage metering & overages", 
-      icon: BarChart3,
+      icon: ChartBar,
       preview: {
         type: "meter",
         metric: "Token Usage",
@@ -133,7 +120,7 @@
 
     <div class="relative z-10">
       <a href="/" class="inline-flex items-center gap-2 text-lg font-bold text-text-primary">
-        <Logo size={24} class="text-accent" />
+        <Logo size={24} class="text-accent"  weight="duotone" />
         <span>Owostack</span>
       </a>
     </div>
@@ -141,7 +128,7 @@
     <div class="flex-1 flex flex-col justify-center relative z-10 max-w-md w-full mx-auto">
       <div class="mb-10 animate-slide-up {mounted ? 'animate-in' : ''}">
         <div class="flex items-center gap-2 mb-3">
-          <Sparkles size={20} class="text-accent animate-pulse-dot" />
+          <Sparkle   size={20} class="text-accent animate-pulse-dot"  weight="duotone" />
           <span class="text-xs font-bold text-accent uppercase tracking-wider">Quick setup</span>
         </div>
         <h2 class="text-3xl font-bold mb-3 tracking-tight text-text-primary uppercase">Build billing in minutes</h2>
@@ -242,7 +229,7 @@
                     <div class="flex">
                       {#each Array(4) as _, idx (idx)}
                         <div class="w-8 h-8 -mr-2 bg-bg-secondary border border-border flex items-center justify-center text-[10px] font-bold text-text-dim">
-                          <Users size={12} />
+                          <Users   size={12}  weight="duotone" />
                         </div>
                       {/each}
                       <div class="w-8 h-8 bg-accent text-accent-contrast flex items-center justify-center text-[10px] font-bold">+</div>
@@ -253,9 +240,9 @@
                     </div>
                   </div>
 
-                {:else if features[activeFeature].preview.type === 'providers' && Array.isArray(features[activeFeature].preview.list)}
+                {:else if features[activeFeature].preview.type === 'providers'}
                   <div class="flex items-center justify-around gap-4">
-                    {#each features[activeFeature].preview.list as provider (provider)}
+                    {#each features[activeFeature].preview.list || [] as provider (provider)}
                       <div class="text-[10px] font-bold text-text-secondary uppercase tracking-widest border border-border px-3 py-1 bg-bg-secondary">
                         {provider}
                       </div>
@@ -279,7 +266,7 @@
           href="/"
           class="inline-flex items-center gap-2 text-xl font-bold text-text-primary mb-4"
         >
-          <Logo size={28} class="text-accent" />
+          <Logo size={28} class="text-accent" weight="duotone" />
           <span>Owostack</span>
         </a>
       </div>
@@ -291,7 +278,7 @@
 
       {#if error}
         <div
-          class="mb-4 p-3 bg-red-900/10 border border-red-500/50 text-red-600 text-[10px] font-bold uppercase tracking-wider"
+          class="mb-4 p-3 bg-error-bg border border-error text-error text-[10px] font-bold uppercase tracking-wider"
         >
           {error}
         </div>
@@ -303,10 +290,10 @@
             >Full Name</label
           >
           <div class="input-icon-wrapper">
-            <User
+            <User  
               size={18}
               class="input-icon-left"
-            />
+             weight="duotone" />
             <input
               type="text"
               id="name"
@@ -323,10 +310,10 @@
             >Email</label
           >
           <div class="input-icon-wrapper">
-            <Mail
+            <Envelope  
               size={18}
               class="input-icon-left"
-            />
+             weight="duotone" />
             <input
               type="email"
               id="email"
@@ -344,10 +331,10 @@
             class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2">Password</label
           >
           <div class="input-icon-wrapper">
-            <Lock
+            <Lock  
               size={18}
               class="input-icon-left"
-            />
+             weight="duotone" />
             <input
               type="password"
               id="password"
@@ -369,7 +356,7 @@
             Creating...
           {:else}
           Create Account
-          <ArrowRight size={16} />
+          <ArrowRight   size={16}  weight="fill" />
           {/if}
         </button>
       </form>
@@ -383,7 +370,7 @@
       </div>
 
       <button type="button" class="btn btn-secondary w-full py-4">
-        <Github size={16} />
+        <GithubLogo   size={16}  weight="duotone" />
         GitHub
       </button>
 
@@ -430,9 +417,5 @@
   .animate-slide-up.animate-in {
     opacity: 1;
     transform: translateY(0);
-  }
-
-  :global(*) {
-    border-radius: 0 !important;
   }
 </style>

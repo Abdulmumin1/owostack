@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Copy, CheckCircle, Circle, ArrowRight, Loader2, Link2, ExternalLink } from "lucide-svelte";
+  import { ArrowRight, ArrowSquareOut, CheckCircle, Circle, CircleNotch, Copy, Link } from "phosphor-svelte";
   import { apiFetch } from "$lib/auth-client";
   import { onMount } from "svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
@@ -70,7 +70,7 @@
   {#if isLoading}
     <div class="grid md:grid-cols-4 gap-4 mb-12">
       {#each Array(4) as _}
-        <div class="bg-bg-card border border-border p-5 shadow-md flex flex-col space-y-6">
+        <div class="bg-bg-card border border-border p-5 flex flex-col space-y-6 rounded-lg">
           <div class="flex items-start justify-between">
             <Skeleton class="w-7 h-7" />
             <Skeleton class="w-5 h-5 rounded-full" />
@@ -83,7 +83,7 @@
         </div>
       {/each}
     </div>
-    <div class="bg-bg-card border border-border p-8 shadow-md">
+    <div class="bg-bg-card border border-border p-8 rounded-lg">
       <Skeleton class="h-6 w-32 mb-6" />
       <div class="space-y-8">
         <div class="space-y-3">
@@ -100,18 +100,18 @@
     <!-- Workflow Steps -->
     <div class="grid md:grid-cols-4 gap-4 mb-12">
       {#each steps as step}
-        <div class="bg-bg-card border border-border p-5 shadow-md relative group transition-all {activeStep === step.num ? 'border-accent ring-1 ring-accent/20' : ''} {step.check ? 'bg-accent/5' : ''}">
+        <div class="bg-bg-card border border-border p-5 relative group transition-all rounded-lg {activeStep === step.num ? 'border-accent ring-1 ring-accent/20' : ''} {step.check ? 'bg-accent-light' : ''}">
           
           <div class="flex items-start justify-between mb-4">
             <div class="w-7 h-7 flex items-center justify-center border border-border bg-bg-secondary font-mono font-bold text-xs {activeStep === step.num ? 'text-accent border-accent' : 'text-text-dim'}">
               {step.num}
             </div>
             {#if step.check}
-              <CheckCircle size={18} class="text-emerald-600 dark:text-green-500" />
+              <CheckCircle size={18} class="text-success" weight="fill" />
             {:else if activeStep === step.num}
               <div class="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
             {:else}
-              <Circle size={18} class="text-black/10 dark:text-zinc-800" />
+              <Circle size={18} class="text-border" weight="duotone" />
             {/if}
           </div>
 
@@ -123,7 +123,7 @@
               href="/app/{projectId}/{step.link}" 
               class="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-accent hover:text-text-primary transition-colors"
             >
-              Configure <ArrowRight size={10} />
+              Configure <ArrowRight   size={10}  weight="fill" />
             </a>
           {:else if step.num === 4}
              <span class="text-[10px] font-bold uppercase tracking-wider text-text-dim/60">Waiting for events</span>
@@ -134,8 +134,8 @@
 
     {#if !hasKeys}
       <!-- Empty State / Call to Action -->
-      <div class="bg-accent/5 border border-accent/20 p-8 mb-12 flex flex-col items-center text-center">
-        <Link2 size={40} class="text-accent mb-4" />
+      <div class="bg-accent-light border border-accent p-8 mb-12 flex flex-col items-center text-center rounded-lg">
+        <Link   size={40} class="text-accent mb-4"  weight="duotone" />
         <h2 class="text-xl font-bold text-text-primary mb-2">Connect a payment provider</h2>
         <p class="text-text-dim max-w-md mb-6 text-sm">
           To start using Owostack, connect a payment provider (Paystack, Stripe, etc.) by providing your API keys. This allows us to sync plans and manage subscriptions.
@@ -148,7 +148,7 @@
   {/if}
 
   <!-- Quick Start Guide -->
-  <div class="bg-bg-card border border-border p-8 shadow-md">
+  <div class="bg-bg-card border border-border p-8 rounded-lg">
     <h2 class="text-lg font-bold text-text-primary mb-6 uppercase tracking-wider">Quick Start</h2>
     
     <div class="space-y-8">
@@ -161,7 +161,7 @@
         <div class="bg-[var(--color-bg-code)] border border-border p-4 flex items-center justify-between group">
           <code class="font-mono text-sm text-[var(--color-text-code)]">npm install @owostack/core</code>
           <button class="text-text-dim hover:text-text-primary transition-colors" onclick={copyInstall}>
-            <Copy size={16} />
+            <Copy   size={16}  weight="fill" />
           </button>
         </div>
       </div>

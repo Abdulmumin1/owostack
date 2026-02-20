@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { Activity, Calendar, CreditCard, Clock, Package, Zap, User, Loader2, Mail, Hash } from "lucide-svelte";
+  import { Calendar, CircleNotch, Clock, CreditCard, Envelope, Hash, Lightning, Package, Pulse, User } from "phosphor-svelte";
   import { apiFetch } from "$lib/auth-client";
   import { formatCurrency } from "$lib/utils/currency";
   import ProgressBar from "$lib/components/ui/ProgressBar.svelte";
   import Timeline from "$lib/components/ui/Timeline.svelte";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
+  import Avatar from "$lib/components/ui/Avatar.svelte";
 
   let {
     customerId,
@@ -62,10 +63,10 @@
 
   function statusColor(status: string) {
     switch (status) {
-      case "active": return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 border-emerald-500/20";
-      case "canceled": return "bg-red-400/10 text-red-600 dark:text-red-400 border-red-400/20";
-      case "trialing": return "bg-blue-400/10 text-blue-600 dark:text-blue-400 border-blue-400/20";
-      case "past_due": return "bg-amber-400/10 text-amber-600 dark:text-amber-400 border-amber-400/20";
+      case "active": return "bg-success-bg text-success border-success/20";
+      case "canceled": return "bg-error-bg text-error border-error/20";
+      case "trialing": return "bg-info-bg text-info border-info/20";
+      case "past_due": return "bg-warning-bg text-warning border-warning/20";
       default: return "bg-bg-secondary text-text-dim border-border";
     }
   }
@@ -86,7 +87,7 @@
     if (type.includes("subscription")) return Calendar;
     if (type.includes("charge") || type.includes("payment")) return CreditCard;
     if (type.includes("customer")) return User;
-    return Zap;
+    return Lightning;
   }
 
   const maxUsage = $derived(
@@ -101,13 +102,13 @@
         label: eventLabel(e.type),
         ts: e.createdAt as number,
         icon: eventIcon(e.type),
-        iconColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+        iconColor: "bg-info-bg text-info",
       })),
       ...(data?.recentUsage || []).map((u: any) => ({
         label: `Used ${u.amount} ${u.unit || "units"} of ${u.featureName}`,
         ts: u.createdAt as number,
-        icon: Activity,
-        iconColor: "bg-accent/10 text-accent",
+        icon: Pulse,
+        iconColor: "bg-accent-light text-accent",
       })),
     ];
     return merged
@@ -154,8 +155,8 @@
   <div class="p-5 space-y-5">
     <!-- Customer Info -->
     <div class="flex items-start gap-3">
-      <div class="w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent font-bold text-sm uppercase shrink-0">
-        {data.customer.email[0]}
+      <div class="w-10 h-10 rounded-full overflow-hidden shrink-0">
+        <Avatar name={data.customer.email} size={40} />
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
@@ -164,17 +165,17 @@
         </div>
         <div class="flex flex-col gap-1 mt-1">
           <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
-            <Mail size={10} />
+            <Envelope   size={10}  weight="duotone" />
             {data.customer.email}
           </span>
           {#if data.customer.externalId}
             <span class="flex items-center gap-1.5 text-[10px] text-text-dim font-mono">
-              <Hash size={10} />
+              <Hash   size={10}  weight="duotone" />
               {data.customer.externalId}
             </span>
           {/if}
           <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
-            <Clock size={10} />
+            <Clock   size={10}  weight="duotone" />
             Joined {formatDate(data.customer.createdAt)}
           </span>
         </div>
@@ -183,15 +184,15 @@
 
     <!-- Quick Stats -->
     <div class="grid grid-cols-3 gap-3">
-      <div class="bg-black/5 dark:bg-white/5 rounded p-3 text-center">
+      <div class="bg-bg-secondary rounded p-3 text-center">
         <div class="text-lg font-bold text-text-primary">{data.subscriptions?.length || 0}</div>
         <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Subs</div>
       </div>
-      <div class="bg-black/5 dark:bg-white/5 rounded p-3 text-center">
+      <div class="bg-bg-secondary rounded p-3 text-center">
         <div class="text-lg font-bold text-text-primary">{data.featureUsageSummary?.length || 0}</div>
         <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Features</div>
       </div>
-      <div class="bg-black/5 dark:bg-white/5 rounded p-3 text-center">
+      <div class="bg-bg-secondary rounded p-3 text-center">
         <div class="text-lg font-bold text-text-primary">{data.events?.length || 0}</div>
         <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Events</div>
       </div>
@@ -203,10 +204,10 @@
       {#if data.subscriptions?.length > 0}
         <div class="space-y-2">
           {#each data.subscriptions as sub}
-            <div class="bg-black/5 dark:bg-white/5 rounded p-3">
+            <div class="bg-bg-secondary rounded p-3">
               <div class="flex items-center justify-between mb-1.5">
                 <div class="flex items-center gap-2">
-                  <Package size={12} class="text-text-dim" />
+                  <Package   size={12} class="text-text-dim"  weight="duotone" />
                   <span class="text-xs font-semibold text-text-primary">{sub.planName}</span>
                   <span class="text-[9px] text-text-dim font-mono">{formatCurrency(sub.planPrice, sub.planCurrency)}/{sub.planInterval}</span>
                 </div>
@@ -251,17 +252,17 @@
       </div>
     {/if}
 
-    <!-- Activity Timeline -->
+    <!-- Pulse Timeline -->
     <div>
-      <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-2">Activity</h4>
-      <div class="bg-black/5 dark:bg-white/5 rounded overflow-hidden">
+      <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-2">Pulse</h4>
+      <div class="bg-bg-secondary rounded overflow-hidden">
         <Timeline items={timeline} />
       </div>
     </div>
   </div>
 {:else}
   <div class="flex flex-col items-center justify-center py-16 text-center px-5">
-    <User size={24} class="text-text-dim/20 mb-3" />
+    <User   size={24} class="text-text-dim/20 mb-3"  weight="duotone" />
     <p class="text-xs text-text-dim">Customer not found</p>
   </div>
 {/if}

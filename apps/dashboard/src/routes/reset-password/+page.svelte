@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Lock, ArrowRight, CheckCircle, Eye, EyeOff } from "lucide-svelte";
+  import { ArrowRight, CheckCircle, Eye, EyeSlash, Lock } from "phosphor-svelte";
   import { resetPassword } from "$lib/auth-client";
   import { page } from "$app/state";
   import Logo from "$lib/components/ui/Logo.svelte";
@@ -60,7 +60,7 @@
         href="/"
         class="inline-flex items-center gap-2 text-2xl font-bold text-white mb-6"
       >
-        <Logo size={32} class="text-accent" />
+        <Logo size={32} class="text-accent"  weight="duotone" />
         <span>Owostack</span>
       </a>
       <h1 class="text-2xl font-bold mb-2">Reset Password</h1>
@@ -70,7 +70,7 @@
     {#if success}
       <div class="text-center py-8">
         <div class="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
-          <CheckCircle size={32} />
+          <CheckCircle   size={32}  weight="fill" />
         </div>
         <h2 class="text-xl font-bold text-white mb-2">Password reset successful</h2>
         <p class="text-zinc-400 mb-6">Your password has been reset successfully. You can now log in with your new password.</p>
@@ -99,10 +99,10 @@
           >
           <div class="relative">
             <div class="input-icon-wrapper">
-              <Lock
+              <Lock  
                 size={18}
                 class="input-icon-left"
-              />
+               weight="duotone" />
               <input
                 type={showPassword ? "text" : "password"}
                 id="password"
@@ -117,7 +117,7 @@
               class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
               onclick={() => showPassword = !showPassword}
             >
-              {#if showPassword} <EyeOff size={16} /> {:else} <Eye size={16} /> {/if}
+              {#if showPassword} <EyeSlash   size={16}  weight="duotone" /> {:else} <Eye   size={16}  weight="duotone" /> {/if}
             </button>
           </div>
         </div>
@@ -127,10 +127,10 @@
             >Confirm New Password</label
           >
           <div class="input-icon-wrapper">
-            <Lock
+            <Lock  
               size={18}
               class="input-icon-left"
-            />
+             weight="duotone" />
             <input
               type={showPassword ? "text" : "password"}
               id="confirmPassword"
@@ -151,7 +151,7 @@
             Resetting...
           {:else}
             Reset Password
-            <ArrowRight size={18} />
+            <ArrowRight   size={18}  weight="fill" />
           {/if}
         </button>
       </form>

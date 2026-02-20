@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, Plus, MoreHorizontal, X, Loader2, Trash2, Copy, ExternalLink } from "lucide-svelte";
+  import { ArrowSquareOut, Check, CircleNotch, Copy, DotsThree, Plus, Trash, X } from "phosphor-svelte";
   import { page } from "$app/state";
   import { fade, fly } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
@@ -92,7 +92,7 @@
 
     {#if plans.length > 0}
       <button class="btn btn-primary" onclick={() => (showCreateModal = true)}>
-        <Plus size={16} />
+        <Plus   size={16}  weight="fill" />
         Create Plan
       </button>
     {/if}
@@ -101,7 +101,7 @@
   {#if isLoading}
     <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
       {#each Array(3) as _}
-        <div class="bg-bg-card border border-border p-6 shadow-sm flex flex-col h-full space-y-6">
+        <div class="bg-bg-card border border-border p-6 flex flex-col h-full space-y-6 rounded-lg">
           <div class="space-y-3">
             <Skeleton class="h-6 w-3/4" />
             <Skeleton class="h-8 w-1/2" />
@@ -128,10 +128,10 @@
     </div>
   {:else if plans.length === 0}
     <div
-      class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md"
+      class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center rounded-lg"
     >
-      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
-        <Plus size={24} class="text-text-dim" />
+      <div class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4">
+        <Plus   size={24} class="text-text-dim"  weight="fill" />
       </div>
       <h3 class="text-lg font-bold text-text-primary mb-2">No plans defined</h3>
       <p class="text-text-dim max-w-sm mb-6">
@@ -147,7 +147,7 @@
       {#each plans as plan}
         <a
           href="/app/{organizationId}/plans/{plan.id}"
-          class="bg-bg-card border border-border p-6 shadow-sm hover:border-text-dim transition-colors flex flex-col h-full relative group"
+          class="bg-bg-card border border-border p-6 hover:border-text-dim transition-colors flex flex-col h-full relative group rounded-lg"
         >
           <!-- Actions Menu -->
           <div class="absolute top-4 right-4 dropdown-container">
@@ -159,27 +159,27 @@
                 openMenuId = openMenuId === plan.id ? null : plan.id;
               }}
             >
-              <MoreHorizontal size={20} />
+              <DotsThree   size={20}  />
             </button>
 
             {#if openMenuId === plan.id}
               <div
-                class="absolute right-0 mt-2 w-40 bg-bg-card border border-border shadow-xl z-50 py-1"
+                class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-50 py-1 rounded shadow-sm"
                 transition:fade={{ duration: 100 }}
                 onclick={(e) => e.stopPropagation()}
               >
                 <button 
-                  class="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary flex items-center gap-2"
+                  class="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary hover:text-text-primary flex items-center gap-2"
                   onclick={() => copyId(plan.slug)}
                 >
-                  <Copy size={14} />
+                  <Copy size={14} weight="fill" />
                   Copy Slug
                 </button>
                 <button 
-                  class="w-full text-left px-4 py-2 text-xs text-red-500 hover:bg-red-500/10 flex items-center gap-2"
+                  class="w-full text-left px-4 py-2 text-xs text-error hover:bg-error-bg flex items-center gap-2"
                   onclick={() => deletePlan(plan.id)}
                 >
-                  <Trash2 size={14} />
+                  <Trash size={14} weight="fill" />
                   Delete Plan
                 </button>
               </div>
@@ -204,7 +204,7 @@
             <div class="flex gap-2 mt-3">
               {#if plan.type === "free"}
                 <span
-                  class="text-[10px] font-bold bg-accent/10 text-accent px-2 py-0.5 rounded border border-accent/20"
+                  class="text-[10px] font-bold bg-accent-light text-accent px-2 py-0.5 rounded border border-accent"
                   >Free</span
                 >
               {/if}
@@ -216,7 +216,7 @@
               {/if}
               {#if plan.trialDays > 0}
                 <span
-                  class="text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 dark:border-blue-800/50"
+                  class="text-[10px] font-bold bg-info-bg text-info px-2 py-0.5 rounded border border-info"
                   >{plan.trialDays}{plan.metadata?.trialUnit === 'minutes' ? 'm' : 'd'} Trial</span
                 >
               {/if}
@@ -233,7 +233,7 @@
               <ul class="space-y-2">
                 {#each plan.planFeatures as pf}
                   <li class="flex items-center gap-2 text-xs text-text-secondary">
-                    <Check size={12} class="text-accent" />
+                    <Check   size={12} class="text-accent"  weight="fill" />
                     <span>{pf.feature.name}</span>
                     {#if pf.limitValue !== null}
                       <span class="text-[10px] text-text-dim font-mono ml-auto">
@@ -257,7 +257,7 @@
               >ID: {plan.slug}</span
             >
             <span
-              class="text-[10px] font-bold bg-black/5 dark:bg-white/5 text-text-dim px-2 py-1"
+              class="text-[10px] font-bold bg-bg-secondary text-text-dim px-2 py-1 rounded-sm"
             >
               Active
             </span>
@@ -267,11 +267,11 @@
 
       <!-- Add New Plan Card -->
       <button
-        class="border border-border border-dashed p-6 flex flex-col items-center justify-center gap-4 text-text-dim hover:text-text-primary hover:border-text-dim hover:bg-black/5 dark:hover:bg-white/5 transition-all min-h-[300px]"
+        class="border border-border border-dashed p-6 flex flex-col items-center justify-center gap-4 text-text-dim hover:text-text-primary hover:border-text-dim hover:bg-bg-secondary transition-all min-h-[300px] rounded-lg"
         onclick={() => (showCreateModal = true)}
       >
-        <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center">
-          <Plus size={24} />
+        <div class="w-12 h-12 bg-bg-secondary flex items-center justify-center rounded">
+          <Plus   size={24}  weight="fill" />
         </div>
         <div class="text-center">
           <h3 class="font-bold text-sm mb-1">Create New Plan</h3>
@@ -287,4 +287,4 @@
   {organizationId}
   bind:isOpen={showCreateModal}
   onsuccess={handlePlanCreated}
-/>
+ />

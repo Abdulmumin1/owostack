@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Search, Filter, Download, Users, Loader2, MoreHorizontal, Trash2, Copy, ChevronDown } from "lucide-svelte";
+  import { CaretDown, CircleNotch, Copy, DotsThree, DownloadSimple, Funnel, MagnifyingGlass, Trash, Users } from "phosphor-svelte";
   import { page } from "$app/state";
   import { fade } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
@@ -8,6 +8,7 @@
   import CustomerDetail from "$lib/components/customers/CustomerDetail.svelte";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
+  import Avatar from "$lib/components/ui/Avatar.svelte";
 
   const PAGE_SIZE = 25;
 
@@ -155,11 +156,11 @@
 
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-4 mb-6">
-    <div class="input-icon-wrapper max-w-sm">
-      <Search
+<div class="input-icon-wrapper max-w-sm">
+      <MagnifyingGlass  
         size={14}
         class="input-icon-left text-text-dim"
-      />
+       />
       <input
         type="text"
         placeholder="Search by email, name or ID..."
@@ -173,7 +174,7 @@
       <button
         class="btn btn-secondary gap-2 text-xs uppercase tracking-wider font-bold"
       >
-        <Filter size={14} />
+        <Funnel   size={14}  weight="duotone" />
         Filter
       </button>
       <button
@@ -181,9 +182,9 @@
         onclick={() => loadCustomers(true)}
       >
         {#if isLoading}
-          <Loader2 size={14} class="animate-spin" />
+          <CircleNotch   size={14} class="animate-spin"  weight="duotone" />
         {:else}
-          <Download size={14} />
+          <DownloadSimple   size={14}  weight="duotone" />
         {/if}
         Refresh
       </button>
@@ -191,10 +192,10 @@
   </div>
 
   {#if isLoading && customers.length === 0}
-    <div class="bg-bg-card border border-border overflow-hidden shadow-md">
+    <div class="table-container">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+          <tr class="bg-bg-secondary border-b border-border">
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">External ID</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Provider</th>
@@ -234,9 +235,9 @@
       </table>
     </div>
   {:else if customers.length === 0}
-    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center shadow-md">
-      <div class="w-12 h-12 bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
-        <Users size={24} class="text-text-dim" />
+    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center">
+      <div class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4">
+        <Users   size={24} class="text-text-dim"  weight="duotone" />
       </div>
       <h3 class="text-lg font-bold text-text-primary mb-2">
         {searchQuery ? "No matching customers" : "No customers yet"}
@@ -249,10 +250,10 @@
     </div>
   {:else}
     <!-- Table -->
-    <div class="bg-bg-card border border-border overflow-hidden shadow-md">
+    <div class="table-container">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-black/5 dark:bg-white/5 border-b border-border">
+          <tr class="bg-bg-secondary border-b border-border">
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">External ID</th>
             <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Provider</th>
@@ -264,13 +265,13 @@
         <tbody class="divide-y divide-border/50">
           {#each customers as customer}
             <tr
-              class="group hover:bg-black/2 dark:hover:bg-white/2 transition-colors cursor-pointer {selectedCustomerId === customer.id ? 'bg-black/5 dark:bg-white/5' : ''}"
+              class="group hover:bg-bg-tertiary transition-colors cursor-pointer {selectedCustomerId === customer.id ? 'bg-bg-secondary' : ''}"
               onclick={() => { selectedCustomerId = customer.id; openMenuId = null; }}
             >
               <td class="px-6 py-4">
                 <div class="flex items-center gap-3">
-                  <div class="w-8 h-8 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent font-bold text-xs uppercase">
-                    {customer.email[0]}
+                  <div class="w-8 h-8 rounded-full overflow-hidden">
+                    <Avatar name={customer.email} size={32} />
                   </div>
                   <div>
                     <div class="text-sm font-bold text-text-primary">{customer.name || 'Anonymous'}</div>
@@ -288,7 +289,7 @@
                 {formatDate(customer.createdAt)}
               </td>
               <td class="px-6 py-4">
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 border border-emerald-500/20">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-success-bg text-success border border-success">
                   Active
                 </span>
               </td>
@@ -301,30 +302,30 @@
                       openMenuId = openMenuId === customer.id ? null : customer.id;
                     }}
                   >
-                    <MoreHorizontal size={16} />
+                    <DotsThree   size={16}  weight="duotone" />
                   </button>
 
                   {#if openMenuId === customer.id}
-                    <div
-                      class="absolute right-0 mt-2 w-40 bg-bg-card border border-border shadow-xl z-50 py-1"
-                      transition:fade={{ duration: 100 }}
-                      onclick={(e) => e.stopPropagation()}
-                    >
-                      <button 
-                        class="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary flex items-center gap-2"
-                        onclick={(e) => { e.stopPropagation(); copyId(customer.id); }}
+                      <div
+                        class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-50 py-1 rounded shadow-sm"
+                        transition:fade={{ duration: 100 }}
+                        onclick={(e) => e.stopPropagation()}
                       >
-                        <Copy size={14} />
-                        Copy ID
-                      </button>
-                      <button 
-                        class="w-full text-left px-4 py-2 text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-2"
-                        onclick={(e) => { e.stopPropagation(); deleteCustomer(customer.id); }}
-                      >
-                        <Trash2 size={14} />
-                        Delete
-                      </button>
-                    </div>
+                        <button 
+                          class="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary hover:text-text-primary flex items-center gap-2"
+                          onclick={(e) => { e.stopPropagation(); copyId(customer.id); }}
+                        >
+                          <Copy size={14} weight="fill" />
+                          Copy ID
+                        </button>
+                        <button 
+                          class="w-full text-left px-4 py-2 text-xs text-error hover:bg-error-bg flex items-center gap-2"
+                          onclick={(e) => { e.stopPropagation(); deleteCustomer(customer.id); }}
+                        >
+                          <Trash size={14} weight="fill" />
+                          Delete
+                        </button>
+                      </div>
                   {/if}
                 </div>
               </td>
@@ -341,7 +342,7 @@
     
     {#if isLoadingMore}
       <div class="flex justify-center py-4">
-        <Loader2 size={20} class="animate-spin text-text-dim" />
+        <CircleNotch   size={20} class="animate-spin text-text-dim"  weight="duotone" />
       </div>
     {/if}
   {/if}
@@ -354,6 +355,6 @@
   onclose={() => { selectedCustomerId = null; }}
 >
   {#if selectedCustomerId}
-    <CustomerDetail customerId={selectedCustomerId} />
+    <CustomerDetail customerId={selectedCustomerId}  />
   {/if}
 </SidePanel>

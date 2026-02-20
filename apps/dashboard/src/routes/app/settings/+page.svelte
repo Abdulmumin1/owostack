@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { User, Mail, LogOut } from "lucide-svelte";
+  import { Envelope, SignOut, User } from "phosphor-svelte";
   import { useSession, authClient } from "$lib/auth-client";
   import { goto } from "$app/navigation";
 
@@ -12,12 +12,12 @@
 </script>
 
 <svelte:head>
-  <title>Settings - Owostack</title>
+  <title>Gear - Owostack</title>
 </svelte:head>
 
 <div class="max-w-2xl mx-auto py-8">
   <div class="mb-8">
-    <h1 class="text-xl font-bold text-white mb-2 uppercase tracking-wide">Account Settings</h1>
+    <h1 class="text-xl font-bold text-white mb-2 uppercase tracking-wide">Account Gear</h1>
     <p class="text-zinc-500 text-xs font-mono">
       Manage your profile
     </p>
@@ -33,7 +33,7 @@
         <div>
           <p class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Full Name</p>
           <div class="flex items-center gap-3 text-white bg-bg-secondary p-3 border border-border rounded">
-            <User size={16} class="text-zinc-500" />
+            <User   size={16} class="text-zinc-500"  weight="duotone" />
             <span class="font-mono text-sm">{$session.data.user.name}</span>
           </div>
         </div>
@@ -41,7 +41,7 @@
         <div>
           <p class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Email Address</p>
           <div class="flex items-center gap-3 text-white bg-bg-secondary p-3 border border-border rounded">
-            <Mail size={16} class="text-zinc-500" />
+            <Envelope   size={16} class="text-zinc-500"  weight="duotone" />
             <span class="font-mono text-sm">{$session.data.user.email}</span>
           </div>
         </div>
@@ -61,7 +61,7 @@
       onclick={handleLogout}
     >
       <span>Sign Out</span>
-      <LogOut size={16} class="group-hover:text-red-400" />
+      <SignOut   size={16} class="group-hover:text-red-400"  weight="duotone" />
     </button>
   </div>
 </div>
