@@ -373,7 +373,7 @@
                             {#if pf.limitValue === null}
                               <span class="text-[10px] font-bold text-accent uppercase tracking-tighter">Unlimited credits</span>
                             {:else}
-                              <span class="text-[10px] font-bold text-white uppercase tracking-tighter">Pool: {pf.limitValue} credits</span>
+                              <span class="text-[10px] font-bold text-black dark:text-white  uppercase tracking-tighter">Pool: {pf.limitValue} credits</span>
                             {/if}
                             {#if pf.resetInterval !== 'none'}
                               <div class="h-1 w-1 bg-text-dim"></div>
