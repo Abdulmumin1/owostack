@@ -123,6 +123,7 @@ export class Owostack {
       return {
         success: true,
         features: { created: [], updated: [], unchanged: [] },
+        creditSystems: { created: [], updated: [], unchanged: [] },
         plans: { created: [], updated: [], unchanged: [] },
         warnings: ["No catalog entries to sync."],
       };
@@ -571,8 +572,14 @@ export class OwostackError extends Error {
 }
 
 // Re-export catalog builder functions
-export { metered, boolean, plan, buildSyncPayload } from "./catalog.js";
-export { MeteredHandle, BooleanHandle } from "./catalog.js";
+export {
+  metered,
+  boolean,
+  creditSystem,
+  plan,
+  buildSyncPayload,
+} from "./catalog.js";
+export { MeteredHandle, BooleanHandle, CreditSystemHandle } from "./catalog.js";
 
 // Re-export types for convenience
 export type {

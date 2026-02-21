@@ -4,146 +4,63 @@ import type {
   MeteredFeatureConfig,
   PlanFeatureEntry,
   PlanDefinition,
+  CreditSystemDefinition,
   Currency,
   PlanInterval,
+  ResetInterval,
   SyncPayload,
   CatalogEntry,
 } from "@owostack/types";
 
 /**
  * Global registry of feature handles.
- * When metered() or boolean() is called, the handle is registered here.
- * The Owostack constructor reads from this to bind all handles to the client.
- * @internal
  */
-export const _featureRegistry = new Map<string, MeteredHandle | BooleanHandle>();
+export const _featureRegistry = new Map<string, any>();
 
 /**
- * Base feature handle — bound to an Owostack client instance.
- * Provides .check() for all feature types.
+ * Base feature functionality for all feature types.
  */
-abstract class BaseFeatureHandle {
-  readonly slug: string;
-  readonly featureType: "metered" | "boolean";
-  readonly featureName: string | undefined;
-
-  /** @internal — set by Owostack constructor when processing catalog */
-  _client: {
-    check: (params: { customer: string; feature: string; value?: number; entity?: string; sendEvent?: boolean }) => Promise<CheckResult>;
-    track: (params: { customer: string; feature: string; value?: number; entity?: string }) => Promise<TrackResult>;
-  } | null = null;
-
-  constructor(slug: string, featureType: "metered" | "boolean", name?: string) {
-    this.slug = slug;
-    this.featureType = featureType;
-    this.featureName = name;
-  }
-
-  private ensureBound() {
-    if (!this._client) {
+class FeatureMethods {
+  static async check(
+    handle: any,
+    customer: string,
+    opts?: { value?: number; entity?: string; sendEvent?: boolean },
+  ): Promise<CheckResult> {
+    if (!handle._client) {
       throw new Error(
-        `Feature '${this.slug}' is not bound to an Owostack client. ` +
-        `Pass it inside a plan() in the catalog option of new Owostack({}).`
+        `Feature '${handle.slug}' is not bound to an Owostack client. ` +
+          `Pass it inside a plan() in the catalog option of new Owostack({}).`,
       );
     }
-    return this._client;
-  }
-
-  /**
-   * Check if a customer has access to this feature.
-   */
-  async check(customer: string, opts?: { value?: number; entity?: string; sendEvent?: boolean }): Promise<CheckResult> {
-    const client = this.ensureBound();
-    return client.check({
+    return handle._client.check({
       customer,
-      feature: this.slug,
+      feature: handle.slug,
       ...opts,
     });
-  }
-}
-
-/**
- * MeteredHandle — returned by metered().
- * Has .check(), .track(), .limit(), .unlimited() methods.
- */
-export class MeteredHandle extends BaseFeatureHandle {
-  constructor(slug: string, name?: string) {
-    super(slug, "metered", name);
-  }
-
-  /**
-   * Track usage for this feature.
-   */
-  async track(customer: string, value = 1, opts?: { entity?: string }): Promise<TrackResult> {
-    if (!this._client) {
-      throw new Error(
-        `Feature '${this.slug}' is not bound to an Owostack client. ` +
-        `Pass it inside a plan() in the catalog option of new Owostack({}).`
-      );
-    }
-    return this._client.track({
-      customer,
-      feature: this.slug,
-      value,
-      ...opts,
-    });
-  }
-
-  /**
-   * Create a plan feature entry with a specific limit.
-   */
-  limit(value: number, config?: Omit<MeteredFeatureConfig, "limit">): PlanFeatureEntry {
-    return {
-      _type: "plan_feature",
-      slug: this.slug,
-      featureType: "metered",
-      name: this.featureName,
-      enabled: true,
-      config: { limit: value, ...config },
-    };
-  }
-
-  /**
-   * Create a plan feature entry with no limit (unlimited).
-   */
-  unlimited(): PlanFeatureEntry {
-    return {
-      _type: "plan_feature",
-      slug: this.slug,
-      featureType: "metered",
-      name: this.featureName,
-      enabled: true,
-      config: { limit: null },
-    };
-  }
-
-  /**
-   * Create a plan feature entry with full config.
-   */
-  config(opts: MeteredFeatureConfig): PlanFeatureEntry {
-    return {
-      _type: "plan_feature",
-      slug: this.slug,
-      featureType: "metered",
-      name: this.featureName,
-      enabled: true,
-      config: opts,
-    };
   }
 }
 
 /**
  * BooleanHandle — returned by boolean().
- * Has .check(), .on(), .off() methods. No .track().
  */
-export class BooleanHandle extends BaseFeatureHandle {
+export class BooleanHandle {
+  readonly slug: string;
+  readonly featureType = "boolean" as const;
+  readonly featureName: string | undefined;
+  _client: any = null;
+
   constructor(slug: string, name?: string) {
-    super(slug, "boolean", name);
+    this.slug = slug;
+    this.featureName = name;
   }
 
-  /**
-   * Feature is included in this plan.
-   */
+  async check(
+    customer: string,
+    opts?: { value?: number; entity?: string; sendEvent?: boolean },
+  ): Promise<CheckResult> {
+    return FeatureMethods.check(this, customer, opts);
+  }
+
   on(): PlanFeatureEntry {
     return {
       _type: "plan_feature",
@@ -154,9 +71,6 @@ export class BooleanHandle extends BaseFeatureHandle {
     };
   }
 
-  /**
-   * Feature is NOT included in this plan.
-   */
   off(): PlanFeatureEntry {
     return {
       _type: "plan_feature",
@@ -169,39 +83,130 @@ export class BooleanHandle extends BaseFeatureHandle {
 }
 
 /**
+ * MeteredHandle — returned by metered().
+ */
+export interface MeteredHandle {
+  readonly slug: string;
+  readonly featureType: "metered";
+  readonly featureName: string | undefined;
+  _client: any;
+
+  check(
+    customer: string,
+    opts?: { value?: number; entity?: string; sendEvent?: boolean },
+  ): Promise<CheckResult>;
+
+  track(
+    customer: string,
+    value?: number,
+    opts?: { entity?: string },
+  ): Promise<TrackResult>;
+
+  limit(
+    value: number,
+    config?: Omit<MeteredFeatureConfig, "limit">,
+  ): PlanFeatureEntry;
+
+  included(
+    value: number,
+    config?: Omit<MeteredFeatureConfig, "limit">,
+  ): PlanFeatureEntry;
+
+  unlimited(config?: Omit<MeteredFeatureConfig, "limit">): PlanFeatureEntry;
+
+  config(opts: MeteredFeatureConfig): PlanFeatureEntry;
+
+  (creditCost: number): { feature: string; creditCost: number };
+}
+
+/**
  * Create a metered feature handle.
- *
- * @example
- * ```ts
- * const apiCalls = metered("api-calls", { name: "API Calls" });
- *
- * // In a plan:
- * plan("pro", { features: [apiCalls.limit(50000)] })
- *
- * // Direct usage:
- * await apiCalls.check("user@example.com");
- * await apiCalls.track("user@example.com", 1);
- * ```
  */
 export function metered(slug: string, opts?: { name?: string }): MeteredHandle {
-  const handle = new MeteredHandle(slug, opts?.name);
-  _featureRegistry.set(slug, handle);
-  return handle;
+  const callable = (creditCost: number) => ({ feature: slug, creditCost });
+
+  const handleProps = {
+    slug,
+    featureType: "metered" as const,
+    featureName: opts?.name,
+    _client: null,
+
+    async check(
+      customer: string,
+      checkOpts?: { value?: number; entity?: string; sendEvent?: boolean },
+    ): Promise<CheckResult> {
+      return FeatureMethods.check(this, customer, checkOpts);
+    },
+
+    async track(
+      customer: string,
+      value = 1,
+      trackOpts?: { entity?: string },
+    ): Promise<TrackResult> {
+      const handle = this as any;
+      if (!handle._client) {
+        throw new Error(
+          `Feature '${slug}' is not bound to an Owostack client.`,
+        );
+      }
+      return handle._client.track({
+        customer,
+        feature: slug,
+        value,
+        ...trackOpts,
+      });
+    },
+
+    limit(
+      value: number,
+      config?: Omit<MeteredFeatureConfig, "limit">,
+    ): PlanFeatureEntry {
+      return {
+        _type: "plan_feature",
+        slug,
+        featureType: "metered",
+        name: opts?.name,
+        enabled: true,
+        config: { limit: value, reset: "monthly", overage: "block", ...config },
+      };
+    },
+
+    included(
+      value: number,
+      config?: Omit<MeteredFeatureConfig, "limit">,
+    ): PlanFeatureEntry {
+      return this.limit(value, config);
+    },
+    unlimited(config?: Omit<MeteredFeatureConfig, "limit">): PlanFeatureEntry {
+      return {
+        _type: "plan_feature",
+        slug,
+        featureType: "metered",
+        name: opts?.name,
+        enabled: true,
+        config: { limit: null, reset: "monthly", overage: "block", ...config },
+      };
+    },
+
+    config(configOpts: MeteredFeatureConfig): PlanFeatureEntry {
+      return {
+        _type: "plan_feature",
+        slug,
+        featureType: "metered",
+        name: opts?.name,
+        enabled: true,
+        config: { reset: "monthly", overage: "block", ...configOpts },
+      };
+    },
+  };
+
+  Object.assign(callable, handleProps);
+  _featureRegistry.set(slug, callable);
+  return callable as unknown as MeteredHandle;
 }
 
 /**
  * Create a boolean feature handle.
- *
- * @example
- * ```ts
- * const analytics = boolean("analytics", { name: "Analytics Dashboard" });
- *
- * // In a plan:
- * plan("pro", { features: [analytics.on()] })
- *
- * // Direct usage:
- * const { allowed } = await analytics.check("user@example.com");
- * ```
  */
 export function boolean(slug: string, opts?: { name?: string }): BooleanHandle {
   const handle = new BooleanHandle(slug, opts?.name);
@@ -210,34 +215,103 @@ export function boolean(slug: string, opts?: { name?: string }): BooleanHandle {
 }
 
 /**
- * Create a plan definition for the catalog.
- *
- * @example
- * ```ts
- * plan("pro", {
- *   name: "Pro",
- *   price: 500000,
- *   currency: "NGN",
- *   interval: "monthly",
- *   features: [
- *     apiCalls.limit(50000, { overage: "charge", overagePrice: 100 }),
- *     analytics.on(),
- *     seats.limit(20, { reset: "never" }),
- *   ],
- * })
- * ```
+ * CreditSystemHandle — returned by creditSystem().
  */
-export function plan(slug: string, config: {
-  name: string;
-  description?: string;
-  price: number;
-  currency: Currency;
-  interval: PlanInterval;
-  features: PlanFeatureEntry[];
-  planGroup?: string;
-  trialDays?: number;
-  metadata?: Record<string, unknown>;
-}): PlanDefinition {
+export class CreditSystemHandle {
+  readonly slug: string;
+  readonly name: string | undefined;
+  readonly description: string | undefined;
+  private featureCosts: Map<string, number>;
+
+  constructor(
+    slug: string,
+    featureCosts: Map<string, number>,
+    opts?: { name?: string; description?: string },
+  ) {
+    this.slug = slug;
+    this.featureCosts = featureCosts;
+    this.name = opts?.name;
+    this.description = opts?.description;
+  }
+
+  credits(
+    amount: number,
+    config?: { reset?: ResetInterval; overage?: "block" | "charge" },
+  ): PlanFeatureEntry {
+    return {
+      _type: "plan_feature",
+      slug: this.slug,
+      featureType: "metered",
+      name: this.name,
+      enabled: true,
+      config: {
+        limit: amount,
+        reset: config?.reset || "monthly",
+        overage: config?.overage || "block",
+      },
+    };
+  }
+
+  _buildDefinition(): CreditSystemDefinition {
+    return {
+      _type: "credit_system",
+      slug: this.slug,
+      name: this.name || this.slug,
+      description: this.description,
+      features: Array.from(this.featureCosts.entries()).map(
+        ([feature, creditCost]) => ({
+          feature,
+          creditCost,
+        }),
+      ),
+    };
+  }
+}
+
+export const _creditSystemRegistry = new Map<string, CreditSystemHandle>();
+
+/**
+ * Create a credit system handle.
+ */
+export function creditSystem(
+  slug: string,
+  opts: {
+    name?: string;
+    description?: string;
+    features: Array<{ feature: string; creditCost: number }>;
+  },
+): CreditSystemHandle {
+  const featureCosts = new Map<string, number>();
+
+  for (const featureEntry of opts.features) {
+    featureCosts.set(featureEntry.feature, featureEntry.creditCost);
+  }
+
+  const handle = new CreditSystemHandle(slug, featureCosts, {
+    name: opts.name,
+    description: opts.description,
+  });
+  _creditSystemRegistry.set(slug, handle);
+  return handle;
+}
+
+/**
+ * Create a plan definition.
+ */
+export function plan(
+  slug: string,
+  config: {
+    name: string;
+    description?: string;
+    price: number;
+    currency: Currency;
+    interval: PlanInterval;
+    features: PlanFeatureEntry[];
+    planGroup?: string;
+    trialDays?: number;
+    metadata?: Record<string, unknown>;
+  },
+): PlanDefinition {
   return {
     _type: "plan",
     slug,
@@ -245,10 +319,6 @@ export function plan(slug: string, config: {
   };
 }
 
-/**
- * Slugifies a feature slug into a human-readable name.
- * "api-calls" → "Api Calls"
- */
 function slugToName(slug: string): string {
   return slug
     .split(/[-_]/)
@@ -257,21 +327,48 @@ function slugToName(slug: string): string {
 }
 
 /**
- * Extract unique features and plan definitions from the catalog,
- * then serialize into the SyncPayload format for POST /api/sync.
- * @internal
+ * Extract SyncPayload from catalog.
  */
 export function buildSyncPayload(catalog: CatalogEntry[]): SyncPayload {
-  const featureMap = new Map<string, { slug: string; type: "metered" | "boolean"; name: string }>();
+  const featureMap = new Map<
+    string,
+    { slug: string; type: "metered" | "boolean"; name: string }
+  >();
 
   for (const entry of catalog) {
     if (entry._type !== "plan") continue;
     for (const f of entry.features) {
+      if (_creditSystemRegistry.has(f.slug)) continue;
       if (!featureMap.has(f.slug)) {
         featureMap.set(f.slug, {
           slug: f.slug,
           type: f.featureType,
           name: f.name || slugToName(f.slug),
+        });
+      }
+    }
+  }
+
+  const creditSystems: SyncPayload["creditSystems"] = catalog
+    .filter((e): e is CreditSystemDefinition => e._type === "credit_system")
+    .map((cs) => ({
+      slug: cs.slug,
+      name: cs.name,
+      description: cs.description,
+      features: cs.features,
+    }));
+
+  for (const entry of catalog) {
+    if (entry._type !== "plan") continue;
+    for (const f of entry.features) {
+      const csHandle = _creditSystemRegistry.get(f.slug);
+      if (csHandle && !creditSystems.find((cs) => cs.slug === f.slug)) {
+        const def = csHandle._buildDefinition();
+        creditSystems.push({
+          slug: def.slug,
+          name: def.name,
+          description: def.description,
+          features: def.features,
         });
       }
     }
@@ -292,30 +389,31 @@ export function buildSyncPayload(catalog: CatalogEntry[]): SyncPayload {
       features: p.features.map((f: PlanFeatureEntry) => ({
         slug: f.slug,
         enabled: f.enabled,
-        ...(f.config || {}),
+        limit: f.config?.limit ?? null,
+        reset: f.config?.reset || "monthly",
+        overage: f.config?.overage || "block",
+        overagePrice: f.config?.overagePrice ?? undefined,
+        maxOverageUnits: f.config?.maxOverageUnits ?? undefined,
+        billingUnits: f.config?.billingUnits ?? 1,
+        creditCost: f.config?.creditCost ?? 0,
       })),
     }));
 
   return {
     features: Array.from(featureMap.values()),
+    creditSystems,
     plans,
   };
 }
 
 /**
- * Bind all registered feature handles to a client instance.
- * Called by the Owostack constructor after processing the catalog.
- * @internal
+ * Bind handles to client.
  */
 export function bindFeatureHandles(
-  client: {
-    check: (params: { customer: string; feature: string; value?: number; entity?: string; sendEvent?: boolean }) => Promise<CheckResult>;
-    track: (params: { customer: string; feature: string; value?: number; entity?: string }) => Promise<TrackResult>;
-  },
+  client: any,
   catalog?: CatalogEntry[],
 ): void {
   if (catalog) {
-    // Only bind handles that appear in this client's catalog
     const slugsInCatalog = new Set<string>();
     for (const entry of catalog) {
       if (entry._type === "plan") {
@@ -330,7 +428,6 @@ export function bindFeatureHandles(
       }
     }
   } else {
-    // Fallback: bind all
     for (const handle of _featureRegistry.values()) {
       handle._client = client;
     }

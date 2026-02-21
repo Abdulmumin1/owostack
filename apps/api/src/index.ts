@@ -36,6 +36,8 @@ import apiSync from "./routes/api/sync";
 import apiWallet from "./routes/api/wallet";
 import apiPlans from "./routes/api/plans";
 import apiCustomers from "./routes/api/customers";
+import apiCreditSystems from "./routes/api/credit-systems";
+import cliAuth from "./routes/cli-auth";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
@@ -56,7 +58,8 @@ export {
 export type Env = {
   DB: D1Database; // Per-environment business data (customers, plans, subs, etc.)
   DB_AUTH: D1Database; // Shared auth data (users, sessions, orgs, projects)
-  CACHE: KVNamespace;
+  CACHE: KVNamespace; // Per-environment cache
+  CACHE_SHARED: KVNamespace; // Shared cache across all environments (CLI auth, etc.)
   USAGE_METER: DurableObjectNamespace<UsageMeterDO>;
   TRIAL_END_WORKFLOW: Workflow;
   DOWNGRADE_WORKFLOW: Workflow;
@@ -131,6 +134,9 @@ app.get("/api/auth/debug-routes", (c) => {
   const routes = Object.keys(auth(c.env).api);
   return c.json({ routes });
 });
+
+// CLI Authentication Routes (must be BEFORE Better Auth wildcard)
+app.route("/api/auth/cli", cliAuth);
 
 // Auth Routes (Better Auth)
 app.on(["POST", "GET"], "/api/auth/*", (c) => {
@@ -253,6 +259,7 @@ v1Routes.route("/sync", apiSync);
 v1Routes.route("/", apiWallet);
 v1Routes.route("/plans", apiPlans);
 v1Routes.route("/", apiCustomers);
+v1Routes.route("/credit-systems", apiCreditSystems);
 
 apiRoutes.route("/v1", v1Routes);
 

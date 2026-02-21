@@ -65,8 +65,21 @@ const syncPlanSchema = z.object({
   features: z.array(syncPlanFeatureSchema),
 });
 
+const syncCreditSystemFeatureSchema = z.object({
+  feature: z.string().min(1),
+  creditCost: z.number().min(0),
+});
+
+const syncCreditSystemSchema = z.object({
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  features: z.array(syncCreditSystemFeatureSchema),
+});
+
 const syncPayloadSchema = z.object({
   features: z.array(syncFeatureSchema),
+  creditSystems: z.array(syncCreditSystemSchema).optional(),
   plans: z.array(syncPlanSchema),
 });
 
@@ -94,7 +107,11 @@ app.post("/", async (c) => {
     );
   }
 
-  const { features: featureDefs, plans: planDefs } = parsed.data;
+  const {
+    features: featureDefs,
+    creditSystems: creditSystemDefs,
+    plans: planDefs,
+  } = parsed.data;
   const db = c.get("db");
   const organizationId = c.get("organizationId");
 
@@ -108,6 +125,11 @@ app.post("/", async (c) => {
   const result = {
     success: true,
     features: {
+      created: [] as string[],
+      updated: [] as string[],
+      unchanged: [] as string[],
+    },
+    creditSystems: {
       created: [] as string[],
       updated: [] as string[],
       unchanged: [] as string[],
@@ -180,7 +202,68 @@ app.post("/", async (c) => {
   }
 
   // =========================================================================
-  // 2. Sync Plans
+  // 2. Sync Credit Systems
+  // =========================================================================
+  if (creditSystemDefs && creditSystemDefs.length > 0) {
+    for (const csDef of creditSystemDefs) {
+      const existing = await db.query.creditSystems.findFirst({
+        where: and(
+          eq(schema.creditSystems.organizationId, organizationId),
+          eq(schema.creditSystems.slug, csDef.slug),
+        ),
+      });
+
+      if (existing) {
+        const nameChanged = existing.name !== csDef.name;
+        const descChanged =
+          existing.description !== (csDef.description ?? null);
+
+        if (nameChanged || descChanged) {
+          await db
+            .update(schema.creditSystems)
+            .set({
+              name: csDef.name,
+              description: csDef.description ?? null,
+              updatedAt: Date.now(),
+            })
+            .where(eq(schema.creditSystems.id, existing.id));
+          result.creditSystems.updated.push(csDef.slug);
+        } else {
+          result.creditSystems.unchanged.push(csDef.slug);
+        }
+
+        // Sync credit system features
+        await reconcileCreditSystemFeatures(
+          db,
+          organizationId,
+          existing.id,
+          csDef.features,
+        );
+      } else {
+        // Create new credit system
+        const csId = crypto.randomUUID();
+        await db.insert(schema.creditSystems).values({
+          id: csId,
+          organizationId,
+          name: csDef.name,
+          slug: csDef.slug,
+          description: csDef.description ?? null,
+        });
+
+        // Sync credit system features
+        await reconcileCreditSystemFeatures(
+          db,
+          organizationId,
+          csId,
+          csDef.features,
+        );
+        result.creditSystems.created.push(csDef.slug);
+      }
+    }
+  }
+
+  // =========================================================================
+  // 3. Sync Plans
   // =========================================================================
   for (const planDef of planDefs) {
     const existing = await db.query.plans.findFirst({
@@ -435,6 +518,58 @@ async function reconcilePlanFeatures(
         planId,
         featureId: feature.id,
         ...values,
+      });
+    }
+  }
+}
+
+/**
+ * Reconcile credit system features — upsert credit_system_features entries.
+ * Links features to a credit system with their credit cost.
+ */
+async function reconcileCreditSystemFeatures(
+  db: any,
+  organizationId: string,
+  creditSystemId: string,
+  featureDefs: z.infer<typeof syncCreditSystemFeatureSchema>[],
+) {
+  // Load all features for this org to resolve slugs → IDs
+  const orgFeatures = await db.query.features.findMany({
+    where: eq(schema.features.organizationId, organizationId),
+  });
+  const featureBySlug = new Map<string, any>();
+  for (const f of orgFeatures) {
+    featureBySlug.set(f.slug, f);
+  }
+
+  // Load existing credit system features
+  const existingCsFeatures = await db.query.creditSystemFeatures.findMany({
+    where: eq(schema.creditSystemFeatures.creditSystemId, creditSystemId),
+  });
+  const existingByFeatureId = new Map<string, any>();
+  for (const csf of existingCsFeatures) {
+    existingByFeatureId.set(csf.featureId, csf);
+  }
+
+  for (const fd of featureDefs) {
+    const feature = featureBySlug.get(fd.feature);
+    if (!feature) continue;
+
+    const existing = existingByFeatureId.get(feature.id);
+
+    if (existing) {
+      if (existing.cost !== fd.creditCost) {
+        await db
+          .update(schema.creditSystemFeatures)
+          .set({ cost: fd.creditCost })
+          .where(eq(schema.creditSystemFeatures.id, existing.id));
+      }
+    } else {
+      await db.insert(schema.creditSystemFeatures).values({
+        id: crypto.randomUUID(),
+        creditSystemId,
+        featureId: feature.id,
+        cost: fd.creditCost,
       });
     }
   }

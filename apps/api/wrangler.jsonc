@@ -30,6 +30,10 @@
       "binding": "CACHE",
       "id": "ccc79669a6524e398a56e08d8ff82345",
     },
+    {
+      "binding": "CACHE_SHARED",
+      "id": "ccc79669a6524e398a56e08d8ff82345",
+    },
   ],
 
   // Durable Objects for usage metering
@@ -132,6 +136,7 @@
       "kv_namespaces": [
         { "binding": "API_KEYS", "id": "8b5d2500402943889b9f6817038fa2e1" },
         { "binding": "CACHE", "id": "8b5d2500402943889b9f6817038fa2e1" },
+        { "binding": "CACHE_SHARED", "id": "ccc79669a6524e398a56e08d8ff82345" },
       ],
       "queues": {
         "producers": [
@@ -173,6 +178,7 @@
       "kv_namespaces": [
         { "binding": "API_KEYS", "id": "dac98089fb1a48ceacd78e2380a5022f" },
         { "binding": "CACHE", "id": "dac98089fb1a48ceacd78e2380a5022f" },
+        { "binding": "CACHE_SHARED", "id": "ccc79669a6524e398a56e08d8ff82345" },
       ],
       "queues": {
         "producers": [

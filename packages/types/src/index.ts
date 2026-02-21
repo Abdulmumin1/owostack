@@ -660,7 +660,7 @@ export interface UsageRecord {
  */
 
 /** Union of all catalog entries passed to OwostackConfig.catalog */
-export type CatalogEntry = PlanDefinition;
+export type CatalogEntry = PlanDefinition | CreditSystemDefinition;
 
 /** Configuration for a metered feature within a plan */
 export interface MeteredFeatureConfig {
@@ -747,6 +747,33 @@ export interface PlanDefinition {
 
   /** Custom metadata */
   metadata?: Record<string, unknown>;
+}
+
+/** A feature entry within a credit system */
+export interface CreditSystemFeatureEntry {
+  /** Feature slug */
+  feature: string;
+
+  /** Credit cost per unit of this feature */
+  creditCost: number;
+}
+
+/** A credit system definition in the catalog */
+export interface CreditSystemDefinition {
+  /** @internal */
+  _type: "credit_system";
+
+  /** Credit system slug (used as unique identifier) */
+  slug: string;
+
+  /** Human-readable credit system name */
+  name: string;
+
+  /** Credit system description */
+  description?: string;
+
+  /** Features that consume credits from this system with their credit costs */
+  features: CreditSystemFeatureEntry[];
 }
 
 /**
@@ -930,6 +957,15 @@ export interface SyncPayload {
     type: "metered" | "boolean";
     name: string;
   }>;
+  creditSystems: Array<{
+    slug: string;
+    name: string;
+    description?: string;
+    features: Array<{
+      feature: string;
+      creditCost: number;
+    }>;
+  }>;
   plans: Array<{
     slug: string;
     name: string;
@@ -965,6 +1001,7 @@ export interface SyncChanges {
 export interface SyncResult {
   success: boolean;
   features: SyncChanges;
+  creditSystems: SyncChanges;
   plans: SyncChanges;
   warnings: string[];
 }
