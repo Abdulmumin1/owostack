@@ -1,7 +1,6 @@
 ---
 title: Credits
 description: Prepaid balance system for AI and complex billing
-icon: Coins
 ---
 
 # Credits
@@ -13,19 +12,42 @@ The Credits system allows you to implement prepaid billing models, often used fo
 Instead of simple counters (1 API call = 1 unit), you can abstract usage into **Credits**.
 Users purchase credit packs (e.g., $10 for 1000 credits), and features consume credits at different rates.
 
-## Credit Cost
+## Credit Systems
 
-You can assign a **Credit Cost** to each feature in a Plan.
+Owostack allows you to define **Credit Systems** that link multiple features to a single shared balance.
 
-| Feature         | Credit Cost |
-| :-------------- | :---------- |
-| `gpt-3.5-turbo` | 1 credit    |
-| `gpt-4`         | 20 credits  |
-| `image_gen`     | 50 credits  |
+```ts
+import { creditSystem, metered } from "@owostack/core";
+
+const gpt4 = metered("gpt-4");
+const dallE = metered("dall-e");
+
+// Define a system where different features cost different amounts of the same credits
+export const aiCredits = creditSystem("ai-credits", {
+  name: "AI Credits",
+  features: [
+    gpt4(20), // 1 GPT-4 call costs 20 credits
+    dallE(50), // 1 Dall-E generation costs 50 credits
+  ],
+});
+```
+
+## Assigning Credits to Plans
+
+Once defined, you can include credits in your plans:
+
+```ts
+plan("pro", {
+  // ...
+  features: [
+    aiCredits.credits(1000), // 1,000 credits included per month
+  ],
+});
+```
 
 ## Consuming Credits
 
-When you call `track()`, if the feature has a `credit_cost`, Owostack automatically deducts the calculated amount from the user's credit balance.
+When you call `track()`, if the feature belongs to a credit system, Owostack automatically deducts the calculated amount from the user's credit balance.
 
 ```ts
 // Tracking 1 unit of 'gpt-4' (Cost: 20 credits)
@@ -33,13 +55,20 @@ await owo.track({
   customer: "user_123",
   feature: "gpt-4",
 });
-// Deducts 20 credits from balance
+// Deducts 20 credits from 'ai-credits' balance
 ```
-
-## Adding credits
-
-Credits are typically added when a customer purchases a credit-pack add-on. Configure an add-on plan with a credit feature and Owostack will apply the balance when the payment succeeds.
 
 ## Monitoring balances
 
-Use `check()` to show remaining balances in your UI and `track()` to decrement credits for usage-based actions.
+Use `check()` to see if a user has enough credits remaining for an action.
+
+```ts
+const { allowed, remaining } = await owo.check({
+  customer: "user_123",
+  feature: "gpt-4",
+});
+
+if (!allowed) {
+  console.log("Not enough credits!");
+}
+```

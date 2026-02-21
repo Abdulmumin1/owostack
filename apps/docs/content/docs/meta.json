@@ -47,6 +47,11 @@
     "---Dashboard---",
     "dashboard/organizations",
     "dashboard/plans",
-    "dashboard/api-keys"
+    "dashboard/api-keys",
+
+    "---CLI Reference---",
+    "cli/index",
+    "cli/commands",
+    "cli/auth"
   ]
 }

@@ -19,16 +19,17 @@ This distinction drives conflict resolution and determines what sync touches.
 
 ## What sync does
 
-When you call `owo.sync()` (or `npx owostack sync`), the SDK:
+When you call `owo.sync()` (or `npx owo sync`), the SDK:
 
-1. **Extracts** unique features from all plans in your catalog
+1. **Extracts** unique features and credit systems from all plans in your catalog
 2. **Sends** the full catalog to `POST /api/sync`
-3. **Server reconciles** each feature and plan:
+3. **Server reconciles** each resource:
    - If it doesn't exist → **create** it (tagged `source: "sdk"`)
    - If it exists and properties changed → **update** it (tagged `source: "sdk"`)
    - If it exists and nothing changed → **leave it** (mark as `source: "sdk"` if not already)
 4. **Reconciles plan features** — adds/updates/removes the feature configs attached to each plan
-5. **Returns** a change report
+5. **Reconciles credit system features** — links features to their respective credit systems with specified costs
+6. **Returns** a change report
 
 ## What sync does NOT do
 
@@ -40,13 +41,13 @@ When you call `owo.sync()` (or `npx owostack sync`), the SDK:
 
 Sync follows a **code-wins** policy for resources it manages:
 
-| Scenario | What happens |
-|----------|-------------|
-| Feature exists only in code | Created on sync |
-| Feature exists only in dashboard | Untouched |
-| Feature exists in both, code changed | Code version wins, resource tagged `source: "sdk"` |
-| Feature exists in both, dashboard changed after last sync | Next sync overwrites with code version |
-| Feature removed from code but exists in API | Nothing — resource stays |
+| Scenario                                                  | What happens                                       |
+| --------------------------------------------------------- | -------------------------------------------------- |
+| Feature exists only in code                               | Created on sync                                    |
+| Feature exists only in dashboard                          | Untouched                                          |
+| Feature exists in both, code changed                      | Code version wins, resource tagged `source: "sdk"` |
+| Feature exists in both, dashboard changed after last sync | Next sync overwrites with code version             |
+| Feature removed from code but exists in API               | Nothing — resource stays                           |
 
 The dashboard shows a badge for SDK-managed resources: **"Managed by SDK"**. Editing an SDK-managed resource in the dashboard triggers a warning that it will be overwritten on next sync.
 

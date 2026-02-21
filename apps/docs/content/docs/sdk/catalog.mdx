@@ -1,6 +1,6 @@
 ---
 title: Catalog Builders
-description: "Reference: metered(), boolean(), plan() — define features and plans as code"
+description: "Reference: metered(), boolean(), creditSystem(), plan() — define features and plans as code"
 icon: Blocks
 ---
 
@@ -20,10 +20,10 @@ const apiCalls = metered("api-calls", { name: "API Calls" });
 
 ### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `slug` | `string` | Yes | Unique feature identifier |
-| `opts.name` | `string` | No | Human-readable name (auto-generated from slug if omitted) |
+| Parameter   | Type     | Required | Description                                               |
+| ----------- | -------- | -------- | --------------------------------------------------------- |
+| `slug`      | `string` | Yes      | Unique feature identifier                                 |
+| `opts.name` | `string` | No       | Human-readable name (auto-generated from slug if omitted) |
 
 ### Methods
 
@@ -32,27 +32,31 @@ const apiCalls = metered("api-calls", { name: "API Calls" });
 Create a plan feature entry with a specific limit.
 
 ```ts
-apiCalls.limit(1000)
-apiCalls.limit(50000, { reset: "daily" })
-apiCalls.limit(50000, { overage: "charge", overagePrice: 100, maxOverageUnits: 100000 })
+apiCalls.limit(1000);
+apiCalls.limit(50000, { reset: "daily" });
+apiCalls.limit(50000, {
+  overage: "charge",
+  overagePrice: 100,
+  maxOverageUnits: 100000,
+});
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `value` | `number` | — | Usage limit per period |
-| `config.reset` | `ResetInterval` | `"monthly"` | Reset schedule |
-| `config.overage` | `"block" \| "charge"` | `"block"` | What happens when limit is exceeded |
-| `config.overagePrice` | `number` | — | Price per overage unit (minor currency) |
-| `config.maxOverageUnits` | `number` | — | Hard cap on overage units per period |
-| `config.billingUnits` | `number` | `1` | Package size for billing |
-| `config.creditCost` | `number` | — | Cost in credits per unit |
+| Parameter                | Type                  | Default     | Description                             |
+| ------------------------ | --------------------- | ----------- | --------------------------------------- |
+| `value`                  | `number`              | —           | Usage limit per period                  |
+| `config.reset`           | `ResetInterval`       | `"monthly"` | Reset schedule                          |
+| `config.overage`         | `"block" \| "charge"` | `"block"`   | What happens when limit is exceeded     |
+| `config.overagePrice`    | `number`              | —           | Price per overage unit (minor currency) |
+| `config.maxOverageUnits` | `number`              | —           | Hard cap on overage units per period    |
+| `config.billingUnits`    | `number`              | `1`         | Package size for billing                |
+| `config.creditCost`      | `number`              | —           | Cost in credits per unit                |
 
 #### `.unlimited()`
 
 Create a plan feature entry with no limit.
 
 ```ts
-apiCalls.unlimited()
+apiCalls.unlimited();
 ```
 
 #### `.config(opts)`
@@ -60,7 +64,12 @@ apiCalls.unlimited()
 Create a plan feature entry with full config object.
 
 ```ts
-apiCalls.config({ limit: 50000, reset: "monthly", overage: "charge", overagePrice: 100 })
+apiCalls.config({
+  limit: 50000,
+  reset: "monthly",
+  overage: "charge",
+  overagePrice: 100,
+});
 ```
 
 #### `.check(customer, opts?)`
@@ -110,7 +119,7 @@ Same as `metered()`.
 Feature is included in this plan.
 
 ```ts
-analytics.on()
+analytics.on();
 ```
 
 #### `.off()`
@@ -118,7 +127,7 @@ analytics.on()
 Feature is NOT included in this plan.
 
 ```ts
-analytics.off()
+analytics.off();
 ```
 
 #### `.check(customer, opts?)`
@@ -137,6 +146,46 @@ Returns `Promise<CheckResult>`.
 
 ---
 
+## `creditSystem(slug, config)`
+
+Create a credit system definition. A credit system abstracts usage across multiple features into a single "credit" balance.
+
+```ts
+import { creditSystem, metered } from "@owostack/core";
+
+const gpt4 = metered("gpt-4");
+const dallE = metered("dall-e");
+
+const aiCredits = creditSystem("ai-credits", {
+  name: "AI Credits",
+  features: [
+    gpt4(20), // GPT-4 costs 20 credits per track()
+    dallE(50), // Dall-E costs 50 credits per track()
+  ],
+});
+```
+
+### Parameters
+
+| Parameter            | Type              | Required | Description                                     |
+| -------------------- | ----------------- | -------- | ----------------------------------------------- |
+| `slug`               | `string`          | Yes      | Unique credit system identifier                 |
+| `config.name`        | `string`          | No       | Human-readable name                             |
+| `config.description` | `string`          | No       | Description                                     |
+| `config.features`    | `FeatureHandle[]` | Yes      | Array of features that consume from this system |
+
+### Methods
+
+#### `.credits(amount, config?)`
+
+Include a specific amount of credits for this system in a plan.
+
+```ts
+aiCredits.credits(1000, { reset: "monthly", overage: "charge" });
+```
+
+---
+
 ## `plan(slug, config)`
 
 Create a plan definition for the catalog.
@@ -151,32 +200,33 @@ plan("pro", {
   interval: "monthly",
   features: [
     apiCalls.limit(50000, { overage: "charge", overagePrice: 100 }),
+    aiCredits.credits(1000),
     analytics.on(),
     seats.limit(20, { reset: "never" }),
   ],
-})
+});
 ```
 
 ### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `slug` | `string` | Yes | Unique plan identifier |
-| `config.name` | `string` | Yes | Human-readable plan name |
-| `config.price` | `number` | Yes | Price in minor currency units (e.g. kobo) |
-| `config.currency` | `Currency` | Yes | Currency code (`"NGN"`, `"GHS"`, `"ZAR"`, `"KES"`, `"USD"`) |
-| `config.interval` | `PlanInterval` | Yes | Billing interval (`"monthly"`, `"yearly"`, etc.) |
-| `config.features` | `PlanFeatureEntry[]` | Yes | Array of feature entries from `.limit()`, `.on()`, etc. |
-| `config.description` | `string` | No | Plan description |
-| `config.planGroup` | `string` | No | Group for upgrade/downgrade logic |
-| `config.trialDays` | `number` | No | Trial period in days |
-| `config.metadata` | `Record<string, unknown>` | No | Custom metadata |
+| Parameter            | Type                      | Required | Description                                                  |
+| -------------------- | ------------------------- | -------- | ------------------------------------------------------------ |
+| `slug`               | `string`                  | Yes      | Unique plan identifier                                       |
+| `config.name`        | `string`                  | Yes      | Human-readable plan name                                     |
+| `config.price`       | `number`                  | Yes      | Price in minor currency units (e.g. kobo)                    |
+| `config.currency`    | `Currency`                | Yes      | Currency code (`"NGN"`, `"GHS"`, `"ZAR"`, `"KES"`, `"USD"`)  |
+| `config.interval`    | `PlanInterval`            | Yes      | Billing interval (`"monthly"`, `"yearly"`, etc.)             |
+| `config.features`    | `PlanFeatureEntry[]`      | Yes      | Array of feature entries from `.limit()`, `.credits()`, etc. |
+| `config.description` | `string`                  | No       | Plan description                                             |
+| `config.planGroup`   | `string`                  | No       | Group for upgrade/downgrade logic                            |
+| `config.trialDays`   | `number`                  | No       | Trial period in days                                         |
+| `config.metadata`    | `Record<string, unknown>` | No       | Custom metadata                                              |
 
 ---
 
 ## `owo.sync()`
 
-Push the catalog to the API. Creates and updates features and plans.
+Push the catalog to the API. Creates and updates features, credit systems, and plans.
 
 ```ts
 const result = await owo.sync();
@@ -188,6 +238,7 @@ const result = await owo.sync();
 interface SyncResult {
   success: boolean;
   features: { created: string[]; updated: string[]; unchanged: string[] };
+  creditSystems: { created: string[]; updated: string[]; unchanged: string[] };
   plans: { created: string[]; updated: string[]; unchanged: string[] };
   warnings: string[];
 }
@@ -195,40 +246,48 @@ interface SyncResult {
 
 ---
 
-## CLI: `owostack sync`
+## CLI: `owo sync`
 
 Push a catalog from the command line.
 
 ```bash
-npx owostack sync [options]
+npx owo sync [options]
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--config <path>` | Path to config file (default: `./owo.config.ts`) |
-| `--dry-run` | Show what would change without applying |
+| Option            | Description                                           |
+| ----------------- | ----------------------------------------------------- |
+| `--config <path>` | Path to config file (default: `./owo.config.ts`)      |
+| `--dry-run`       | Show what would change without applying               |
 | `--key <api-key>` | API secret key (or set `OWOSTACK_SECRET_KEY` env var) |
-| `--url <api-url>` | API URL override |
+| `--url <api-url>` | API URL override                                      |
 
 ### Example config file
 
 ```ts
 // owo.config.ts
-import { Owostack, metered, boolean, plan } from "@owostack/core";
+import { Owostack, metered, boolean, creditSystem, plan } from "@owostack/core";
 
 const apiCalls = metered("api-calls");
-const analytics = boolean("analytics");
+const aiCredits = creditSystem("ai-credits", {
+  features: [apiCalls(1)],
+});
 
 export default new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY!,
   catalog: [
     plan("starter", {
-      name: "Starter", price: 0, currency: "NGN", interval: "monthly",
-      features: [apiCalls.limit(1000), analytics.off()],
+      name: "Starter",
+      price: 0,
+      currency: "NGN",
+      interval: "monthly",
+      features: [aiCredits.credits(1000)],
     }),
     plan("pro", {
-      name: "Pro", price: 500000, currency: "NGN", interval: "monthly",
-      features: [apiCalls.limit(50000), analytics.on()],
+      name: "Pro",
+      price: 500000,
+      currency: "NGN",
+      interval: "monthly",
+      features: [aiCredits.credits(50000)],
     }),
   ],
 });

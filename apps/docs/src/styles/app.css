@@ -114,7 +114,12 @@ body,
   font-family: var(--font-sans) !important;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--font-display) !important;
 }
 
@@ -146,11 +151,20 @@ article,
   background-color: var(--color-fd-background) !important;
   border-right: 1px solid var(--color-fd-border) !important;
   position: sticky !important;
-  top: 0 !important;
-  height: 100vh !important;
+  top: 2.5rem !important; /* height of header (h-10 = 40px) */
+  height: calc(100vh - 2.5rem) !important;
   z-index: 30;
   mask-image: none !important;
   -webkit-mask-image: none !important;
+}
+
+[data-fd-layout="docs"] {
+  padding-top: 0 !important;
+}
+
+.fd-toc {
+  top: 2.5rem !important;
+  height: calc(100vh - 2.5rem) !important;
 }
 
 /* TOC */
@@ -210,10 +224,33 @@ code {
   box-shadow: 3px 3px 0 0 var(--color-fd-border) !important;
 }
 
-/* Nav */
-.fd-nav {
-  background-color: var(--color-fd-background) !important;
-  border-bottom: 1px solid var(--color-fd-border) !important;
+@media screen and (min-width: 1024px) {
+  .fd-nav {
+    display: none !important;
+  }
+
+  [data-fd-layout="docs"] {
+    padding-top: 0 !important;
+  }
+
+  .fd-sidebar,
+  .fd-toc {
+    top: 0 !important;
+    height: 100vh !important;
+  }
+
+  .fd-sidebar-title {
+    display: none !important;
+  }
+}
+
+/* On mobile, we keep the default nav for search/burger, but hide the pill? */
+/* Or show the pill at the bottom? */
+@media screen and (max-width: 1023px) {
+  .fixed.top-6 {
+    top: auto !important;
+    bottom: 1.5rem !important;
+  }
 }
 
 /* Search */

@@ -1,0 +1,63 @@
+---
+title: Commands
+description: Reference for all Owostack CLI commands
+---
+
+# CLI Commands
+
+## `init`
+
+Initialize a new Owostack project in the current directory.
+
+```bash
+npx owo init
+```
+
+This creates a default `owo.config.ts` file and prompts you for basic setup.
+
+## `connect`
+
+Connect your local environment to an Owostack organization.
+
+```bash
+npx owo connect
+```
+
+This opens a browser for authentication and saves your credentials locally.
+
+## `sync`
+
+Push your local catalog configuration to the Owostack cloud.
+
+```bash
+npx owo sync
+```
+
+**Options:**
+
+- `--force`: Skip confirmation and apply changes immediately.
+- `--dry-run`: Show what would change without applying.
+
+## `pull`
+
+Pull the latest configuration from the cloud into your local project.
+
+```bash
+npx owo pull
+```
+
+## `diff`
+
+Show the difference between your local configuration and what's currently in the cloud.
+
+```bash
+npx owo diff
+```
+
+## `validate`
+
+Validate your local `owo.config.ts` for errors or missing fields.
+
+```bash
+npx owo validate
+```
