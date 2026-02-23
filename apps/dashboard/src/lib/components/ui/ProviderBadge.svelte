@@ -19,6 +19,8 @@
         return "bg-secondary-light text-secondary border-secondary/20";
       case "dodopayments":
         return "bg-info-bg text-info border-info/20";
+      case "polar":
+        return "bg-rose-100 text-rose-700 border-rose-300";
       case "stripe":
         return "bg-tertiary-light text-tertiary border-tertiary/20";
       default:

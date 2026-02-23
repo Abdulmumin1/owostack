@@ -144,10 +144,29 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
   // 5b. Invalidate cache so /check returns denied immediately
   if (cache) {
     try {
-      await Promise.all([
-        cache.invalidateCustomer(organizationId, email),
-        cache.invalidateSubscriptions(organizationId, dbCustomer.id),
-      ]);
+      const cacheAny = cache as any;
+      const dashboardInvalidate =
+        typeof cacheAny.invalidateDashboardCustomer === "function"
+          ? cacheAny.invalidateDashboardCustomer(dbCustomer.id)
+          : Promise.resolve();
+      if (typeof cacheAny.invalidateCustomerAliases === "function") {
+        await Promise.all([
+          cacheAny.invalidateCustomerAliases(organizationId, {
+            id: dbCustomer.id,
+            email: dbCustomer.email,
+            externalId: dbCustomer.externalId,
+          }),
+          cache.invalidateSubscriptions(organizationId, dbCustomer.id),
+          dashboardInvalidate,
+        ]);
+      } else {
+        await Promise.all([
+          cache.invalidateCustomer(organizationId, dbCustomer.id),
+          cache.invalidateCustomer(organizationId, email),
+          cache.invalidateSubscriptions(organizationId, dbCustomer.id),
+          dashboardInvalidate,
+        ]);
+      }
     } catch (e) {
       console.warn(`[WEBHOOK] Refund: cache invalidation failed:`, e);
     }

@@ -11,6 +11,7 @@ import { printBrand } from "./lib/brand.js";
 
 const program = new Command();
 
+printBrand();
 program
   .name("owostack")
   .description("CLI for Owostack billing infrastructure")

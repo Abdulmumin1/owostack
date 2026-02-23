@@ -98,6 +98,27 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     ],
     supportedCurrencies: ["USD", "EUR", "GBP", "INR"],
   },
+  {
+    id: "polar",
+    name: "Polar",
+    description: "Global billing and subscriptions for digital products",
+    color: "rose",
+    docsUrl: "https://docs.polar.sh",
+    fields: [
+      {
+        key: "secretKey",
+        label: "Access Token",
+        placeholder: "polar_pat_xxxxxxxxxxxxxxx",
+        secret: true,
+      },
+      {
+        key: "webhookSecret",
+        label: "Webhook Secret",
+        placeholder: "polar_whs_xxxxxxxxxxxxxxx",
+        secret: true,
+      },
+    ],
+  },
 ];
 
 /** Lookup map for quick access by provider ID. */

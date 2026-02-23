@@ -15,7 +15,6 @@ interface ValidateOptions {
 }
 
 export async function runValidate(options: ValidateOptions) {
-  printBrand();
   p.intro(pc.bgYellow(pc.black(" validate ")));
 
   const fullPath = resolveConfigPath(options.config);

@@ -247,10 +247,9 @@ export class BillingService {
         const invoiceId = crypto.randomUUID();
         const now = Date.now();
 
-        // Wrap invoice generation in transaction for atomicity
         const items: InvoiceLineItem[] = [];
-        await this.db.transaction(async (tx: any) => {
-          await tx.insert(schema.invoices).values({
+        const applyInvoiceWrites = async (executor: any) => {
+          await executor.insert(schema.invoices).values({
             id: invoiceId,
             organizationId,
             customerId,
@@ -274,7 +273,7 @@ export class BillingService {
             const itemId = crypto.randomUUID();
             const description = `${f.featureName}: ${f.billableQuantity} ${f.billingUnits > 1 ? `units (${f.billingUnits} per package)` : "units"}`;
 
-            await tx.insert(schema.invoiceItems).values({
+            await executor.insert(schema.invoiceItems).values({
               id: itemId,
               invoiceId,
               featureId: f.featureId,
@@ -298,7 +297,7 @@ export class BillingService {
               periodEnd: f.periodEnd,
             });
 
-            await tx
+            await executor
               .update(schema.usageRecords)
               .set({ invoiceId })
               .where(
@@ -312,7 +311,30 @@ export class BillingService {
                 ),
               );
           }
-        });
+        };
+
+        // Prefer transaction for atomicity, but fallback for D1 environments that
+        // disallow SQL BEGIN/SAVEPOINT from ORM transaction wrappers.
+        try {
+          await this.db.transaction(async (tx: any) => {
+            await applyInvoiceWrites(tx);
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const isD1TransactionUnsupported =
+            message.includes("state.storage.transaction") ||
+            message.includes("BEGIN TRANSACTION") ||
+            message.includes("SAVEPOINT");
+
+          if (!isD1TransactionUnsupported) {
+            throw error;
+          }
+
+          console.warn(
+            "[billing] DB transaction unsupported; generating invoice without transaction",
+          );
+          await applyInvoiceWrites(this.db);
+        }
 
         return {
           invoiceId,

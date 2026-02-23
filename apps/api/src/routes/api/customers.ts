@@ -321,10 +321,10 @@ app.post("/entities", async (c) => {
     // Use a transaction or rely on unique constraint for idempotency
     let finalCount = 0;
     try {
-      await db.transaction(async (tx: any) => {
+      const insertEntityWithLimitCheck = async (executor: any) => {
         // Count both active and pending_removal entities for billing accuracy
         // (pending_removal entities are still billed until period end)
-        const entityCount = await tx
+        const entityCount = await executor
           .select({ count: count() })
           .from(schema.entities)
           .where(
@@ -348,7 +348,7 @@ app.post("/entities", async (c) => {
         }
 
         // Create entity (will fail with unique constraint if race condition occurred)
-        await tx.insert(schema.entities).values({
+        await executor.insert(schema.entities).values({
           id: crypto.randomUUID(),
           customerId: customer.id,
           featureId: feature.id,
@@ -362,7 +362,28 @@ app.post("/entities", async (c) => {
         });
 
         finalCount = currentCount + 1;
-      });
+      };
+
+      try {
+        await db.transaction(async (tx: any) => {
+          await insertEntityWithLimitCheck(tx);
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const isD1TransactionUnsupported =
+          message.includes("state.storage.transaction") ||
+          message.includes("BEGIN TRANSACTION") ||
+          message.includes("SAVEPOINT");
+
+        if (!isD1TransactionUnsupported) {
+          throw error;
+        }
+
+        console.warn(
+          "[customers] DB transaction unsupported; adding entity without transaction",
+        );
+        await insertEntityWithLimitCheck(db);
+      }
     } catch (err: any) {
       // Check if it's a limit exceeded error we threw
       if (err.message?.includes("Limit exceeded")) {
@@ -380,6 +401,10 @@ app.post("/entities", async (c) => {
           },
           400,
         );
+      }
+
+      if (err.message?.includes("UNIQUE constraint")) {
+        return c.json({ success: false, error: "Entity already exists" }, 409);
       }
 
       // Re-throw other errors

@@ -192,7 +192,7 @@
   </div>
 
   {#if isLoading && customers.length === 0}
-    <div class="table-container">
+    <div class="table-container !overflow-visible">
       <table class="w-full text-left border-collapse">
         <thead>
           <tr class="bg-bg-secondary border-b border-border">
@@ -250,7 +250,7 @@
     </div>
   {:else}
     <!-- Table -->
-    <div class="table-container">
+    <div class="table-container !overflow-visible">
       <table class="w-full text-left border-collapse">
         <thead>
           <tr class="bg-bg-secondary border-b border-border">
@@ -265,8 +265,14 @@
         <tbody class="divide-y divide-border/50">
           {#each customers as customer}
             <tr
-              class="group hover:bg-bg-tertiary transition-colors cursor-pointer {selectedCustomerId === customer.id ? 'bg-bg-secondary' : ''}"
-              onclick={() => { selectedCustomerId = customer.id; openMenuId = null; }}
+              class="group hover:bg-bg-tertiary transition-colors cursor-pointer {selectedCustomerId ===
+              customer.id
+                ? 'bg-bg-secondary'
+                : ''} {openMenuId === customer.id ? 'relative z-20' : ''}"
+              onclick={() => {
+                selectedCustomerId = customer.id;
+                openMenuId = null;
+              }}
             >
               <td class="px-6 py-4">
                 <div class="flex items-center gap-3">
@@ -274,13 +280,17 @@
                     <Avatar name={customer.email} size={32} />
                   </div>
                   <div>
-                    <div class="text-sm font-bold text-text-primary">{customer.name || 'Anonymous'}</div>
-                    <div class="text-[10px] text-text-dim font-mono">{customer.email}</div>
+                    <div class="text-sm font-bold text-text-primary">
+                      {customer.name || "Anonymous"}
+                    </div>
+                    <div class="text-[10px] text-text-dim font-mono">
+                      {customer.email}
+                    </div>
                   </div>
                 </div>
               </td>
               <td class="px-6 py-4 text-xs font-mono text-text-dim">
-                {customer.externalId || '—'}
+                {customer.externalId || "—"}
               </td>
               <td class="px-6 py-4">
                 <ProviderBadge providerId={customer.providerId} />
@@ -289,7 +299,9 @@
                 {formatDate(customer.createdAt)}
               </td>
               <td class="px-6 py-4">
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-success-bg text-success border border-success">
+                <span
+                  class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-success-bg text-success border border-success"
+                >
                   Active
                 </span>
               </td>
@@ -299,33 +311,40 @@
                     class="p-1 text-text-dim hover:text-text-primary transition-colors"
                     onclick={(e) => {
                       e.stopPropagation();
-                      openMenuId = openMenuId === customer.id ? null : customer.id;
+                      openMenuId =
+                        openMenuId === customer.id ? null : customer.id;
                     }}
                   >
-                    <DotsThree   size={16}  weight="duotone" />
+                    <DotsThree size={16} weight="duotone" />
                   </button>
 
                   {#if openMenuId === customer.id}
-                      <div
-                        class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-50 py-1 rounded shadow-sm"
-                        transition:fade={{ duration: 100 }}
-                        onclick={(e) => e.stopPropagation()}
+                    <div
+                      class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-[100] py-1 rounded shadow-sm"
+                      transition:fade={{ duration: 100 }}
+                      onclick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        class="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary hover:text-text-primary flex items-center gap-2"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          copyId(customer.id);
+                        }}
                       >
-                        <button 
-                          class="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary hover:text-text-primary flex items-center gap-2"
-                          onclick={(e) => { e.stopPropagation(); copyId(customer.id); }}
-                        >
-                          <Copy size={14} weight="fill" />
-                          Copy ID
-                        </button>
-                        <button 
-                          class="w-full text-left px-4 py-2 text-xs text-error hover:bg-error-bg flex items-center gap-2"
-                          onclick={(e) => { e.stopPropagation(); deleteCustomer(customer.id); }}
-                        >
-                          <Trash size={14} weight="fill" />
-                          Delete
-                        </button>
-                      </div>
+                        <Copy size={14} weight="fill" />
+                        Copy ID
+                      </button>
+                      <button
+                        class="w-full text-left px-4 py-2 text-xs text-error hover:bg-error-bg flex items-center gap-2"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          deleteCustomer(customer.id);
+                        }}
+                      >
+                        <Trash size={14} weight="fill" />
+                        Delete
+                      </button>
+                    </div>
                   {/if}
                 </div>
               </td>

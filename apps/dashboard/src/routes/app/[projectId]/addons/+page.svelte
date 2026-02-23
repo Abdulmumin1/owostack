@@ -6,6 +6,7 @@
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import { Coins, Copy, DotsThree, FloppyDisk, Package, Pencil, Plus, Trash } from "phosphor-svelte";
   import CreateCreditPackModal from "$lib/components/addons/CreateCreditPackModal.svelte";
+  import EditCreditPackModal from "$lib/components/addons/EditCreditPackModal.svelte";
   import { defaultCurrency } from "$lib/stores/currency";
   import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
 
@@ -17,10 +18,9 @@
   // Create panel
   let showCreatePanel = $state(false);
 
-  // Edit form
-  let editingId = $state<string | null>(null);
-  let editForm = $state({ name: "", description: "", credits: 0, price: 0, currency: $defaultCurrency });
-  let isUpdating = $state(false);
+  // Edit panel
+  let showEditPanel = $state(false);
+  let selectedPack = $state<any>(null);
 
   const organizationId = $derived(page.params.projectId ?? "");
 
@@ -40,35 +40,16 @@
     if (pack) packs = [...packs, pack];
   }
 
-  function startEdit(pack: any) {
-    editingId = pack.id;
-    editForm = {
-      name: pack.name,
-      description: pack.description || "",
-      credits: pack.credits,
-      price: pack.price,
-      currency: pack.currency,
-    };
-    openMenuId = null;
+  function onPackUpdated(updatedPack: any) {
+    if (updatedPack) {
+      packs = packs.map((p) => (p.id === updatedPack.id ? updatedPack : p));
+    }
   }
 
-  async function savePack() {
-    if (!editingId) return;
-    isUpdating = true;
-    try {
-      const res = await apiFetch(`/api/dashboard/credit-packs/${editingId}`, {
-        method: "PATCH",
-        body: JSON.stringify(editForm),
-      });
-      if (res.data?.success) {
-        packs = packs.map((p) => (p.id === editingId ? res.data.data : p));
-        editingId = null;
-      }
-    } catch (e: any) {
-      error = e.message;
-    } finally {
-      isUpdating = false;
-    }
+  function startEdit(pack: any) {
+    selectedPack = pack;
+    showEditPanel = true;
+    openMenuId = null;
   }
 
   async function deletePack(id: string) {
@@ -153,7 +134,7 @@
   {/if}
 
   <!-- Packs Table -->
-  <div class="table-container">
+  <div class="table-container !overflow-visible">
     <table class="w-full text-left border-collapse">
       <thead>
         <tr>
@@ -191,56 +172,26 @@
           </tr>
         {:else}
           {#each packs as pack}
-            <tr class="group hover:bg-bg-tertiary transition-colors">
+            <tr
+              class="group hover:bg-bg-tertiary transition-colors {openMenuId ===
+              pack.id
+                ? 'relative z-20'
+                : ''}"
+            >
               <td class="px-6 py-4">
-                {#if editingId === pack.id}
-                  <input
-                    bind:value={editForm.name}
-                    class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-text-primary w-full focus:border-accent focus:outline-none"
-                  />
-                {:else}
-                  <div class="text-sm font-medium text-text-primary">{pack.name}</div>
-                  {#if pack.description}
-                    <div class="text-[10px] text-text-dim mt-0.5">{pack.description}</div>
-                  {/if}
+                <div class="text-sm font-medium text-text-primary">{pack.name}</div>
+                {#if pack.description}
+                  <div class="text-[10px] text-text-dim mt-0.5">{pack.description}</div>
                 {/if}
               </td>
               <td class="px-6 py-4">
                 <div class="text-[11px] font-mono text-text-dim">{pack.slug}</div>
               </td>
               <td class="px-6 py-4">
-                {#if editingId === pack.id}
-                  <input
-                    type="number"
-                    bind:value={editForm.credits}
-                    min="1"
-                    class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-text-primary w-20 focus:border-accent focus:outline-none"
-                  />
-                {:else}
-                  <div class="text-sm text-text-primary font-mono">{pack.credits}</div>
-                {/if}
+                <div class="text-sm text-text-primary font-mono">{pack.credits}</div>
               </td>
               <td class="px-6 py-4">
-                {#if editingId === pack.id}
-                  <div class="flex items-center gap-1">
-                    <input
-                      type="number"
-                      bind:value={editForm.price}
-                      min="0"
-                      class="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-text-primary w-20 focus:border-accent focus:outline-none"
-                    />
-                    <select
-                      bind:value={editForm.currency}
-                      class="bg-bg-primary border border-border rounded px-1 py-1 text-[10px] text-text-primary focus:border-accent focus:outline-none"
-                    >
-                      {#each COMMON_CURRENCIES as c}
-                        <option value={c.code}>{c.code}</option>
-                      {/each}
-                    </select>
-                  </div>
-                {:else}
-                  <div class="text-sm text-text-secondary">{formatPrice(pack.price, pack.currency)}</div>
-                {/if}
+                <div class="text-sm text-text-secondary">{formatPrice(pack.price, pack.currency)}</div>
               </td>
               <td class="px-6 py-4">
                 {#if pack.creditSystemId}
@@ -261,73 +212,51 @@
                 </span>
               </td>
               <td class="px-6 py-4 text-right">
-                {#if editingId === pack.id}
-                  <div class="flex items-center gap-2 justify-end">
-                    <button
-                      onclick={savePack}
-                      disabled={isUpdating}
-                      class="btn btn-primary btn-sm"
+                <div class="relative inline-block text-left dropdown-container">
+                  <button
+                    class="text-text-dim hover:text-text-primary transition-opacity {openMenuId === pack.id
+                      ? 'opacity-100'
+                      : 'opacity-0 group-hover:opacity-100'}"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      openMenuId = openMenuId === pack.id ? null : pack.id;
+                    }}
+                  >
+                    <DotsThree   size={16}  weight="duotone" />
+                  </button>
+                  {#if openMenuId === pack.id}
+                    <div
+                      class="absolute right-0 mt-2 w-44 bg-bg-card border border-border z-[100] py-1 rounded shadow-sm"
+                      transition:fade={{ duration: 100 }}
+                      onclick={(e) => e.stopPropagation()}
                     >
-                      {#if isUpdating}
-                        ...
-                      {:else}
-                        <FloppyDisk size={12} weight="fill" />
-                      {/if}
-                    </button>
-                    <button
-                      onclick={() => (editingId = null)}
-                      class="text-text-dim text-[10px]"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                {:else}
-                  <div class="relative inline-block text-left dropdown-container">
-                    <button
-                      class="text-text-dim hover:text-text-primary transition-opacity {openMenuId === pack.id
-                        ? 'opacity-100'
-                        : 'opacity-0 group-hover:opacity-100'}"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        openMenuId = openMenuId === pack.id ? null : pack.id;
-                      }}
-                    >
-                      <DotsThree   size={16}  weight="duotone" />
-                    </button>
-                    {#if openMenuId === pack.id}
-                      <div
-                        class="absolute right-0 mt-2 w-44 bg-bg-card border border-border z-50 py-1 rounded shadow-sm"
-                        transition:fade={{ duration: 100 }}
-                        onclick={(e) => e.stopPropagation()}
+                      <button
+                        class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+                        onclick={() => startEdit(pack)}
                       >
-                        <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
-                          onclick={() => startEdit(pack)}
-                        >
-                          <Pencil size={12} weight="duotone" /> Edit
-                        </button>
-                        <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
-                          onclick={() => copyText(pack.slug)}
-                        >
-                          <Copy size={12} weight="fill" /> Copy Slug
-                        </button>
-                        <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
-                          onclick={() => toggleActive(pack)}
-                        >
-                          {pack.isActive ? "Deactivate" : "Activate"}
-                        </button>
-                        <button
-                          class="w-full text-left px-4 py-2 text-[11px] text-error hover:bg-error-bg flex items-center gap-2"
-                          onclick={() => deletePack(pack.id)}
-                        >
-                          <Trash size={12} weight="fill" /> Delete
-                        </button>
-                      </div>
-                    {/if}
-                  </div>
-                {/if}
+                        <Pencil size={12} weight="duotone" /> Edit
+                      </button>
+                      <button
+                        class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+                        onclick={() => copyText(pack.slug)}
+                      >
+                        <Copy size={12} weight="fill" /> Copy Slug
+                      </button>
+                      <button
+                        class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+                        onclick={() => toggleActive(pack)}
+                      >
+                        {pack.isActive ? "Deactivate" : "Activate"}
+                      </button>
+                      <button
+                        class="w-full text-left px-4 py-2 text-[11px] text-error hover:bg-error-bg flex items-center gap-2"
+                        onclick={() => deletePack(pack.id)}
+                      >
+                        <Trash size={12} weight="fill" /> Delete
+                      </button>
+                    </div>
+                  {/if}
+                </div>
               </td>
             </tr>
           {/each}
@@ -356,4 +285,11 @@ const result = await owostack.addon(&#123;
   {organizationId}
   onclose={() => (showCreatePanel = false)}
   onsuccess={onPackCreated}
+/>
+
+<EditCreditPackModal
+  bind:isOpen={showEditPanel}
+  bind:pack={selectedPack}
+  onclose={() => (showEditPanel = false)}
+  onsuccess={onPackUpdated}
 />

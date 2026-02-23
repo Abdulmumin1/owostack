@@ -139,7 +139,6 @@ async function runSyncSingle(options: {
 }
 
 export async function runSync(options: SyncOptions) {
-  printBrand();
   p.intro(pc.bgYellow(pc.black(" sync ")));
 
   const configSettings = await loadConfigSettings(options.config);

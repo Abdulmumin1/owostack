@@ -164,7 +164,7 @@
 
             {#if openMenuId === plan.id}
               <div
-                class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-50 py-1 rounded shadow-sm"
+                class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-[100] py-1 rounded shadow-sm"
                 transition:fade={{ duration: 100 }}
                 onclick={(e) => e.stopPropagation()}
               >

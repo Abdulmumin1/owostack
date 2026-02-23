@@ -94,6 +94,53 @@ app.get("/", async (c) => {
   return c.json({ success: true, data: features });
 });
 
+const updateFeatureSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  unit: z.string().optional(),
+});
+
+app.patch("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const parsed = updateFeatureSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(zodErrorToResponse(parsed.error), 400);
+  }
+
+  const db = c.get("db");
+
+  try {
+    const [feature] = await db
+      .update(schema.features)
+      .set({
+        ...parsed.data,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.features.id, id))
+      .returning();
+
+    if (!feature) {
+      return c.json({ success: false, error: "Feature not found" }, 404);
+    }
+
+    // Invalidate cache
+    if (c.env.CACHE) {
+      const cache = new EntitlementCache(c.env.CACHE);
+      await Promise.all([
+        cache.invalidateFeature(feature.organizationId, feature.id),
+        cache.invalidateFeature(feature.organizationId, feature.slug),
+      ]);
+    }
+
+    return c.json({ success: true, data: feature });
+  } catch (e: any) {
+    console.error("Failed to update feature:", e);
+    return c.json({ success: false, error: e.message }, 500);
+  }
+});
+
 app.delete("/:id", async (c) => {
   const id = c.req.param("id");
   const db = c.get("db");

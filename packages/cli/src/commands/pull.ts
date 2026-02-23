@@ -17,7 +17,6 @@ interface PullOptions {
 }
 
 export async function runPull(options: PullOptions) {
-  printBrand();
   p.intro(pc.bgYellow(pc.black(" pull ")));
 
   const fullPath = resolveConfigPath(options.config);

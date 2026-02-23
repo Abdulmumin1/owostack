@@ -66,7 +66,7 @@
         }
       }
     } catch (e) {
-      enabledProviderIds = ["paystack"];
+      enabledProviderIds = SUPPORTED_PROVIDERS.map((p) => p.id);
     }
   }
 

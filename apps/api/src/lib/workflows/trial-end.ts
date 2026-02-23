@@ -142,19 +142,21 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
         .first<{ token: string; provider_id: string }>();
 
       const customer = await this.env.DB.prepare(
-        "SELECT email FROM customers WHERE id = ? LIMIT 1",
+        "SELECT email, provider_customer_id FROM customers WHERE id = ? LIMIT 1",
       )
         .bind(customerId)
-        .first<{ email: string | null }>();
+        .first<{ email: string | null; provider_customer_id: string | null }>();
 
       return {
         authCode: pm?.token || authorizationCode || null,
         email: customer?.email || email || null,
+        providerCustomerId: customer?.provider_customer_id || null,
       };
     });
 
     const resolvedAuthCode = latestAuth.authCode;
     const resolvedEmail = latestAuth.email;
+    const resolvedProviderCustomerId = latestAuth.providerCustomerId;
 
     // Step 3b: Branch — no card, missing charge data, or zero amount → expire
     if (!resolvedAuthCode || !resolvedEmail || !amount || amount <= 0) {
@@ -236,7 +238,10 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
 
           try {
             const chargeResult = await adapter.chargeAuthorization({
-              customer: { id: customerId, email: resolvedEmail },
+              customer: {
+                id: resolvedProviderCustomerId || customerId,
+                email: resolvedEmail,
+              },
               authorizationCode: resolvedAuthCode,
               amount: amount!,
               currency: currency || "USD",

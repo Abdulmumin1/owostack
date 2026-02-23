@@ -177,6 +177,74 @@ app.post("/wallet/setup", async (c) => {
   // to avoid "unsupported_currency" errors when the org default doesn't match the provider.
   const setupCurrency = adapter.defaultCurrency || orgDefaultCurrency || "USD";
 
+  const setupMetadata = {
+    type: "card_setup",
+    organization_id: organizationId,
+    customer_id: dbCustomer.id,
+    provider_id: selectedProviderId,
+  };
+
+  // Polar setup flow:
+  // - Ensure a provider customer exists
+  // - Create a customer session and return the hosted customer portal URL
+  if (selectedProviderId === "polar" && adapter.createCustomerSession) {
+    let providerCustomerId =
+      dbCustomer.providerId === selectedProviderId
+        ? dbCustomer.providerCustomerId
+        : null;
+
+    if (!providerCustomerId) {
+      const createCustomerResult = await adapter.createCustomer({
+        email: dbCustomer.email,
+        name: dbCustomer.name || undefined,
+        metadata: setupMetadata,
+        environment: selectedAccount.environment as "test" | "live",
+        account: selectedAccount,
+      });
+
+      if (createCustomerResult.isErr()) {
+        return c.json({ success: false, error: createCustomerResult.error.message }, 400);
+      }
+
+      providerCustomerId = createCustomerResult.value.id;
+
+      // Persist the provider customer reference for future off-session charging.
+      try {
+        await db
+          .update(schema.customers)
+          .set({
+            providerId: selectedProviderId,
+            providerCustomerId,
+            updatedAt: Date.now(),
+          })
+          .where(eq(schema.customers.id, dbCustomer.id));
+      } catch (error) {
+        console.error("[wallet] Failed to persist Polar customer reference:", error);
+        return c.json({ success: false, error: "Failed to save customer payment profile" }, 500);
+      }
+    }
+
+    const sessionResult = await adapter.createCustomerSession({
+      customer: {
+        id: providerCustomerId,
+        email: dbCustomer.email,
+      },
+      metadata: setupMetadata,
+      environment: selectedAccount.environment as "test" | "live",
+      account: selectedAccount,
+    });
+
+    if (sessionResult.isErr()) {
+      return c.json({ success: false, error: sessionResult.error.message }, 400);
+    }
+
+    c.header("Cache-Control", "no-store");
+    return c.json({
+      url: sessionResult.value.url,
+      reference: sessionResult.value.token || providerCustomerId,
+    });
+  }
+
   // For product-centric providers (e.g. Dodo) that don't support raw-amount
   // checkout, we use an on-demand subscription with mandate_only=true.
   // This authorizes the customer's card without charging them, and gives us
@@ -184,7 +252,7 @@ app.post("/wallet/setup", async (c) => {
   let lineItems: any[] | undefined;
   let onDemand: { mandateOnly: boolean } | undefined;
 
-  if (adapter.createPlan) {
+  if (selectedProviderId === "dodopayments" && adapter.createPlan) {
     // Dodo on-demand mandate requires a *subscription* product (recurring_price),
     // not a one-time product. Use createPlan to create a recurring product.
     const metaKey = `cardSetupSubProduct_v1_${selectedProviderId}`;
@@ -234,12 +302,7 @@ app.post("/wallet/setup", async (c) => {
     currency: setupCurrency,
     channels: ["card"],
     callbackUrl,
-    metadata: {
-      type: "card_setup",
-      organization_id: organizationId,
-      customer_id: dbCustomer.id,
-      provider_id: selectedProviderId,
-    },
+    metadata: setupMetadata,
     ...(lineItems ? { lineItems } : {}),
     ...(onDemand ? { onDemand } : {}),
     environment: selectedAccount.environment as "test" | "live",
@@ -250,6 +313,7 @@ app.post("/wallet/setup", async (c) => {
     return c.json({ success: false, error: result.error.message }, 400);
   }
 
+  c.header("Cache-Control", "no-store");
   return c.json({
     url: result.value.url,
     reference: result.value.reference,

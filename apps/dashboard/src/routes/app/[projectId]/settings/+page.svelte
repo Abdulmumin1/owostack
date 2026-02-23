@@ -191,7 +191,7 @@
       const res = await apiFetch(`/api/dashboard/providers/enabled`);
       if (res.data?.data) enabledProviderIds = res.data.data;
     } catch (e) {
-      enabledProviderIds = ["paystack", "dodopayments"];
+      enabledProviderIds = SUPPORTED_PROVIDERS.map((p) => p.id);
     }
   }
 

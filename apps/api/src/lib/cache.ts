@@ -39,6 +39,40 @@ export class EntitlementCache {
     await this.kv.delete(this.key("customer", orgId, customerId));
   }
 
+  async setCustomerAliases<T>(
+    orgId: string,
+    customer: { id?: string | null; email?: string | null; externalId?: string | null },
+    data: T,
+    ttl = DEFAULT_TTL,
+  ): Promise<void> {
+    const aliases = [
+      customer.id,
+      customer.email?.toLowerCase(),
+      customer.externalId,
+    ].filter((v): v is string => typeof v === "string" && v.length > 0);
+
+    if (aliases.length === 0) return;
+
+    const unique = [...new Set(aliases)];
+    await Promise.all(unique.map((alias) => this.setCustomer(orgId, alias, data, ttl)));
+  }
+
+  async invalidateCustomerAliases(
+    orgId: string,
+    customer: { id?: string | null; email?: string | null; externalId?: string | null },
+  ): Promise<void> {
+    const aliases = [
+      customer.id,
+      customer.email?.toLowerCase(),
+      customer.externalId,
+    ].filter((v): v is string => typeof v === "string" && v.length > 0);
+
+    if (aliases.length === 0) return;
+
+    const unique = [...new Set(aliases)];
+    await Promise.all(unique.map((alias) => this.invalidateCustomer(orgId, alias)));
+  }
+
   // ==========================================================================
   // Feature Cache
   // ==========================================================================
@@ -100,6 +134,14 @@ export class EntitlementCache {
 
   async invalidatePlanFeatures(orgId: string, cacheKey: string): Promise<void> {
     await this.kv.delete(this.key("planFeatures", orgId, cacheKey));
+  }
+
+  // ==========================================================================
+  // Dashboard Cache
+  // ==========================================================================
+
+  async invalidateDashboardCustomer(customerId: string): Promise<void> {
+    await this.kv.delete(`dashboard:customer:${customerId}`);
   }
 }
 

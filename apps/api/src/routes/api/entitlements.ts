@@ -19,6 +19,14 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
 
+function scheduleCacheOp(c: any, op: Promise<unknown>, label: string) {
+  c.executionCtx.waitUntil(
+    op.catch((error) => {
+      console.warn(`[entitlements] cache ${label} failed:`, error);
+    }),
+  );
+}
+
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
   const authHeader = c.req.header("Authorization");
@@ -251,7 +259,11 @@ app.post("/check", async (c) => {
       })) ?? null;
 
     if (feature && cache) {
-      cache.setFeature(organizationId, featureId, feature); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setFeature(organizationId, featureId, feature),
+        "setFeature(/check)",
+      );
     }
   }
 
@@ -323,7 +335,11 @@ app.post("/check", async (c) => {
     });
 
     if (subscriptions.length > 0 && cache) {
-      cache.setSubscriptions(organizationId, subsCacheKey, subscriptions); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setSubscriptions(organizationId, subsCacheKey, subscriptions),
+        "setSubscriptions(/check)",
+      );
     }
   }
 
@@ -371,7 +387,11 @@ app.post("/check", async (c) => {
   if (expiredTrialIds.length > 0 || expiredCancelIds.length > 0) {
     // Invalidate cache so next request gets fresh data
     if (cache) {
-      cache.invalidateSubscriptions(organizationId, subsCacheKey);
+      scheduleCacheOp(
+        c,
+        cache.invalidateSubscriptions(organizationId, subsCacheKey),
+        "invalidateSubscriptions(/check)",
+      );
     }
   }
 
@@ -411,7 +431,11 @@ app.post("/check", async (c) => {
     });
 
     if (planFeatures.length > 0 && cache) {
-      cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures),
+        "setPlanFeatures(/check)",
+      );
     }
   }
 
@@ -1167,7 +1191,11 @@ app.post("/track", async (c) => {
       })) ?? null;
 
     if (feature && cache) {
-      cache.setFeature(organizationId, featureId, feature); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setFeature(organizationId, featureId, feature),
+        "setFeature(/track)",
+      );
     }
   }
 
@@ -1243,7 +1271,11 @@ app.post("/track", async (c) => {
     });
 
     if (subscriptions.length > 0 && cache) {
-      cache.setSubscriptions(organizationId, subsCacheKey, subscriptions); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setSubscriptions(organizationId, subsCacheKey, subscriptions),
+        "setSubscriptions(/track)",
+      );
     }
   }
 
@@ -1287,7 +1319,11 @@ app.post("/track", async (c) => {
   }
   if (trackExpiredTrialIds.length > 0 || trackExpiredCancelIds.length > 0) {
     if (cache) {
-      cache.invalidateSubscriptions(organizationId, subsCacheKey);
+      scheduleCacheOp(
+        c,
+        cache.invalidateSubscriptions(organizationId, subsCacheKey),
+        "invalidateSubscriptions(/track)",
+      );
     }
   }
 
@@ -1332,7 +1368,11 @@ app.post("/track", async (c) => {
     });
 
     if (planFeatures.length > 0 && cache) {
-      cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures),
+        "setPlanFeatures(/track)",
+      );
     }
   }
 

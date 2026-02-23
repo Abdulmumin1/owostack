@@ -1058,12 +1058,11 @@ export async function provisionEntitlements(
     updatedAt: now,
   }));
 
-  // Wrap in transaction for atomicity - ensures deletes and inserts happen together
-  await db.transaction(async (tx: any) => {
+  const applyEntitlementChanges = async (executor: any) => {
     // Remove entitlements from the OLD plan (if switching) to avoid orphans
     if (oldPlanId && oldPlanFeatures.length > 0) {
       for (const opf of oldPlanFeatures) {
-        await tx
+        await executor
           .delete(schema.entitlements)
           .where(
             and(
@@ -1076,7 +1075,7 @@ export async function provisionEntitlements(
       // No old plan — just remove entitlements for features in the new plan (avoid duplicates)
       const featureIds = planFeatures.map((pf: any) => pf.featureId);
       for (const featureId of featureIds) {
-        await tx
+        await executor
           .delete(schema.entitlements)
           .where(
             and(
@@ -1089,9 +1088,32 @@ export async function provisionEntitlements(
 
     // Insert new entitlements
     if (entitlementValues.length > 0) {
-      await tx.insert(schema.entitlements).values(entitlementValues);
+      await executor.insert(schema.entitlements).values(entitlementValues);
     }
-  });
+  };
+
+  // Prefer transaction for atomicity, but D1 in some environments rejects SQL BEGIN/SAVEPOINT.
+  // Fallback to sequential writes so /attach keeps working.
+  try {
+    await db.transaction(async (tx: any) => {
+      await applyEntitlementChanges(tx);
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const isD1TransactionUnsupported =
+      message.includes("state.storage.transaction") ||
+      message.includes("BEGIN TRANSACTION") ||
+      message.includes("SAVEPOINT");
+
+    if (!isD1TransactionUnsupported) {
+      throw error;
+    }
+
+    console.warn(
+      "[plan-switch] DB transaction unsupported; applying entitlement updates without transaction",
+    );
+    await applyEntitlementChanges(db);
+  }
 }
 
 function intervalToMs(interval: string): number {

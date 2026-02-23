@@ -261,14 +261,26 @@ app.delete("/:id", async (c) => {
     // Invalidate cache
     if (customer && c.env.CACHE) {
       const cache = new EntitlementCache(c.env.CACHE);
+      const cacheAny = cache as any;
       await Promise.all([
-        cache.invalidateCustomer(customer.organizationId, customer.id),
-        cache.invalidateCustomer(customer.organizationId, customer.email),
-        customer.externalId
-          ? cache.invalidateCustomer(customer.organizationId, customer.externalId)
-          : Promise.resolve(),
+        typeof cacheAny.invalidateCustomerAliases === "function"
+          ? cacheAny.invalidateCustomerAliases(customer.organizationId, {
+              id: customer.id,
+              email: customer.email,
+              externalId: customer.externalId,
+            })
+          : Promise.all([
+              cache.invalidateCustomer(customer.organizationId, customer.id),
+              cache.invalidateCustomer(customer.organizationId, customer.email),
+              customer.externalId
+                ? cache.invalidateCustomer(
+                    customer.organizationId,
+                    customer.externalId,
+                  )
+                : Promise.resolve(),
+            ]),
         cache.invalidateSubscriptions(customer.organizationId, customer.id),
-        c.env.CACHE.delete(`dashboard:customer:${id}`),
+        cache.invalidateDashboardCustomer(id),
       ]);
     }
 

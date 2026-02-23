@@ -70,7 +70,7 @@ export type Env = {
   BETTER_AUTH_URL: string;
   ENCRYPTION_KEY: string;
   ENVIRONMENT?: string; // "test" | "live" | "development" — set per worker deployment
-  ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack" or "paystack,stripe"
+  ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack,dodopayments,polar"
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID?: string;
@@ -279,6 +279,12 @@ async function handleWebhookRequest(
   organizationId: string,
   providerId: string,
 ) {
+  const maskSecretForLog = (value: string | null | undefined) => {
+    if (!value) return "<empty>";
+    if (value.length <= 10) return `${value.slice(0, 2)}***`;
+    return `${value.slice(0, 6)}...${value.slice(-4)} (len=${value.length})`;
+  };
+
   console.log(
     `[WEBHOOK-ROUTE] Received webhook for org=${organizationId}, provider=${providerId}`,
   );
@@ -333,23 +339,36 @@ async function handleWebhookRequest(
 
   const workerEnv = c.env.ENVIRONMENT === "live" ? "live" : "test";
   let secret: string | null = null;
+  let secretSource: string | null = null;
 
   // 4a. Check provider account credentials for a webhook-specific secret
   // (e.g. Dodo Payments uses a separate webhookSecret, not the API key)
-  const providerAccounts = await db.query.providerAccounts.findMany({
+  const allProviderAccounts = await db.query.providerAccounts.findMany({
     where: and(
       eq(schema.providerAccounts.organizationId, organizationId),
       eq(schema.providerAccounts.providerId, providerId),
     ),
   });
-  for (const pa of providerAccounts) {
+  const providerAccounts = allProviderAccounts.filter((pa: any) => {
+    const env = pa?.environment;
+    return !env || env === workerEnv;
+  });
+  const scopedProviderAccounts =
+    providerAccounts.length > 0 ? providerAccounts : allProviderAccounts;
+  let secretAccountId: string | null = null;
+  for (const pa of scopedProviderAccounts) {
     const creds = (pa as any).credentials || {};
     if (
       typeof creds.webhookSecret === "string" &&
       creds.webhookSecret.length > 0
     ) {
       try {
-        secret = await decrypt(creds.webhookSecret, c.env.ENCRYPTION_KEY);
+        secret = (await decrypt(
+          creds.webhookSecret,
+          c.env.ENCRYPTION_KEY,
+        )).trim();
+        secretSource = "provider_account_webhook_secret_encrypted";
+        secretAccountId = pa.id;
         console.log(
           `[WEBHOOK-ROUTE] Using provider account webhookSecret for org=${organizationId}, provider=${providerId}`,
         );
@@ -357,6 +376,13 @@ async function handleWebhookRequest(
         console.warn(
           `[WEBHOOK-ROUTE] Failed to decrypt provider webhookSecret:`,
           e,
+        );
+        // Backward compatibility: older rows may have been stored as plaintext.
+        secret = creds.webhookSecret.trim();
+        secretSource = "provider_account_webhook_secret_plaintext";
+        secretAccountId = pa.id;
+        console.warn(
+          `[WEBHOOK-ROUTE] Falling back to raw provider webhookSecret for org=${organizationId}, provider=${providerId}`,
         );
       }
       break;
@@ -366,6 +392,9 @@ async function handleWebhookRequest(
   // 4b. Fallback: project-level webhookSecret
   if (!secret) {
     secret = project.webhookSecret;
+    if (secret) {
+      secretSource = "project_webhook_secret";
+    }
   }
 
   // 4c. Fallback: provider API secret key (e.g. Paystack uses this for HMAC)
@@ -378,12 +407,16 @@ async function handleWebhookRequest(
 
     if (encryptedKey) {
       try {
-        secret = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
+        secret = (await decrypt(encryptedKey, c.env.ENCRYPTION_KEY)).trim();
+        secretSource = `project_${workerEnv}_secret_key_encrypted`;
       } catch (e) {
         console.error(
           `[WEBHOOK-ROUTE] Failed to decrypt key for verification:`,
           e,
         );
+        // Backward compatibility: allow plaintext project secret keys.
+        secret = encryptedKey.trim();
+        secretSource = `project_${workerEnv}_secret_key_plaintext`;
       }
     }
   }
@@ -400,7 +433,7 @@ async function handleWebhookRequest(
   // can access webhook-id, webhook-timestamp, etc.
   const reqHeaders: Record<string, string> = {};
   c.req.raw.headers.forEach((value: string, key: string) => {
-    reqHeaders[key] = value;
+    reqHeaders[key.toLowerCase()] = value;
   });
 
   const verifyResult = await adapter.verifyWebhook({
@@ -414,6 +447,23 @@ async function handleWebhookRequest(
     console.error(
       `[WEBHOOK-ROUTE] Signature verification FAILED for org=${organizationId}, provider=${providerId}`,
     );
+    if (providerId === "polar") {
+      console.error("[WEBHOOK-ROUTE] Polar verification context", {
+        org: organizationId,
+        provider: providerId,
+        workerEnv,
+        secretSource,
+        secretAccountId,
+        providerAccountsTotal: allProviderAccounts.length,
+        providerAccountsScoped: scopedProviderAccounts.length,
+        secretPreview: maskSecretForLog(secret),
+        signatureHeaderPresent: !!signature,
+        signatureHeaderPreview: maskSecretForLog(signature),
+        webhookId: reqHeaders["webhook-id"] || null,
+        webhookTimestamp: reqHeaders["webhook-timestamp"] || null,
+        availableHeaders: Object.keys(reqHeaders),
+      });
+    }
     return c.json(
       errorToResponse(new WebhookError({ reason: "invalid_signature" })),
       401,
@@ -449,18 +499,21 @@ async function handleWebhookRequest(
   // 7. Build provider account for API calls (cancel sub, etc.)
   // Provider accounts are loaded from the DB — no legacy fallback.
   let providerAccount: ProviderAccount | undefined;
-  if (providerAccounts.length > 0) {
-    const pa = providerAccounts[0] as any;
+  if (scopedProviderAccounts.length > 0) {
+    const pa = scopedProviderAccounts[0] as any;
     const creds = { ...(pa.credentials || {}) };
     // Decrypt the secretKey for API calls
     if (typeof creds.secretKey === "string" && creds.secretKey.length > 0) {
       try {
-        creds.secretKey = await decrypt(creds.secretKey, c.env.ENCRYPTION_KEY);
+        creds.secretKey = (
+          await decrypt(creds.secretKey, c.env.ENCRYPTION_KEY)
+        ).trim();
       } catch (e) {
         console.warn(
           `[WEBHOOK-ROUTE] Failed to decrypt provider secretKey:`,
           e,
         );
+        creds.secretKey = creds.secretKey.trim();
       }
     }
     providerAccount = {

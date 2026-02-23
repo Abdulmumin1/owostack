@@ -268,6 +268,87 @@ describe("Webhook route pipeline behavior", () => {
     expect(handlerHandleMock).toHaveBeenCalledTimes(1);
   });
 
+  it("falls back to raw provider webhookSecret when decrypt fails", async () => {
+    mockDb.query.providerAccounts.findMany.mockResolvedValue([
+      {
+        id: "acct_1",
+        organizationId: "org_1",
+        providerId: "paystack",
+        credentials: { webhookSecret: "whsec_plain_secret", secretKey: "enc_provider_sk" },
+        environment: "test",
+      },
+    ]);
+
+    vi.mocked(decrypt).mockImplementation(async (input: string) => {
+      if (input === "whsec_plain_secret") {
+        throw new Error("decrypt failed");
+      }
+      return `dec_${input}`;
+    });
+
+    const res = await app.request(
+      "/webhooks/org_1",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-paystack-signature": "sig",
+        },
+        body: JSON.stringify({ event: "charge.success", data: {} }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const verifyArg = adapterMock.verifyWebhook.mock.calls[0]?.[0];
+    expect(verifyArg.secret).toBe("whsec_plain_secret");
+    expect(handlerHandleMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefers provider account matching worker environment when multiple accounts exist", async () => {
+    mockDb.query.providerAccounts.findMany.mockResolvedValue([
+      {
+        id: "acct_live",
+        organizationId: "org_1",
+        providerId: "paystack",
+        credentials: {
+          webhookSecret: "enc_live_ws",
+          secretKey: "enc_live_sk",
+        },
+        environment: "live",
+      },
+      {
+        id: "acct_test",
+        organizationId: "org_1",
+        providerId: "paystack",
+        credentials: {
+          webhookSecret: "enc_test_ws",
+          secretKey: "enc_test_sk",
+        },
+        environment: "test",
+      },
+    ]);
+
+    const res = await app.request(
+      "/webhooks/org_1",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-paystack-signature": "sig",
+        },
+        body: JSON.stringify({ event: "charge.success", data: {} }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const verifyArg = adapterMock.verifyWebhook.mock.calls[0]?.[0];
+    expect(verifyArg.secret).toBe("dec_enc_test_ws");
+    expect(vi.mocked(decrypt)).toHaveBeenCalledWith("enc_test_ws", "test_key");
+    expect(vi.mocked(decrypt)).not.toHaveBeenCalledWith("enc_live_ws", "test_key");
+  });
+
   it("falls back to project webhookSecret when provider account webhookSecret is absent", async () => {
     mockDb.query.providerAccounts.findMany.mockResolvedValue([
       {

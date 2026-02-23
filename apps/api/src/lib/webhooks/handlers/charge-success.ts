@@ -72,6 +72,39 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
       .where(eq(schema.customers.id, dbCustomer.id));
   }
 
+  if (ctx.cache) {
+    try {
+      const cacheAny = ctx.cache as any;
+      const dashboardInvalidate =
+        typeof cacheAny.invalidateDashboardCustomer === "function"
+          ? cacheAny.invalidateDashboardCustomer(dbCustomer.id)
+          : Promise.resolve();
+      if (typeof cacheAny.invalidateCustomerAliases === "function") {
+        await Promise.all([
+          cacheAny.invalidateCustomerAliases(organizationId, {
+            id: dbCustomer.id,
+            email: dbCustomer.email,
+            externalId: dbCustomer.externalId,
+          }),
+          dashboardInvalidate,
+        ]);
+      } else {
+        await Promise.all([
+          ctx.cache.invalidateCustomer(organizationId, dbCustomer.id),
+          dbCustomer.email
+            ? ctx.cache.invalidateCustomer(organizationId, dbCustomer.email)
+            : Promise.resolve(),
+          dashboardInvalidate,
+        ]);
+      }
+    } catch (e) {
+      console.warn(
+        `[WEBHOOK] charge.success customer cache invalidation failed:`,
+        e,
+      );
+    }
+  }
+
   // 1b. Upsert payment method if we have a chargeable token.
   // Only save as "card" when actual card details (last4) are present (Paystack).
   // For Dodo the authorization code is a subscription_id — those are stored as

@@ -21,7 +21,6 @@ interface InitOptions {
 }
 
 export async function runInit(options: InitOptions) {
-  printBrand();
   p.intro(pc.bgYellow(pc.black(" init ")));
 
   const fullPath = resolveConfigPath(options.config);

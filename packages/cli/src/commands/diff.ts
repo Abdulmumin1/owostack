@@ -17,7 +17,6 @@ interface DiffOptions {
 }
 
 export async function runDiff(options: DiffOptions) {
-  printBrand();
   p.intro(pc.bgYellow(pc.black(" diff ")));
 
   const fullPath = resolveConfigPath(options.config);

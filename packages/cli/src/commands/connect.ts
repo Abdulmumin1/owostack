@@ -15,7 +15,6 @@ interface ConnectOptions {
 }
 
 export async function runConnect(options: ConnectOptions) {
-  printBrand();
   p.intro(pc.bgYellow(pc.black(" connect ")));
 
   const configPath = "./owo.config.ts";

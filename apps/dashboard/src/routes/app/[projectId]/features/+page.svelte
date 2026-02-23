@@ -4,6 +4,7 @@
   import { fade } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
   import CreateFeatureModal from "$lib/components/features/CreateFeatureModal.svelte";
+  import EditFeatureModal from "$lib/components/features/EditFeatureModal.svelte";
   import CreateCreditSystemModal from "$lib/components/features/CreateCreditSystemModal.svelte";
   import EditCreditSystemModal from "$lib/components/features/EditCreditSystemModal.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
@@ -28,6 +29,8 @@
   let creditSystems = $state<any[]>([]);
   let isLoading = $state(true);
   let showCreateModal = $state(false);
+  let showEditFeatureModal = $state(false);
+  let editingFeature = $state<any>(null);
   let showCreateCSModal = $state(false);
   let showEditCSModal = $state(false);
   let editingCreditSystemId = $state<string>("");
@@ -103,6 +106,16 @@
 
   function handleFeatureCreated() {
     loadData();
+  }
+
+  function handleFeatureUpdated(updated: any) {
+    features = features.map(f => f.id === updated.id ? updated : f);
+  }
+
+  function startEditFeature(feature: any) {
+    editingFeature = feature;
+    showEditFeatureModal = true;
+    openFeatureMenuId = null;
   }
 
   function handleClickOutside(event: MouseEvent) {
@@ -189,7 +202,12 @@
             </tr>
           {:else}
             {#each features as feature}
-              <tr class="group hover:bg-bg-secondary transition-colors">
+              <tr
+                class="group hover:bg-bg-secondary transition-colors {openFeatureMenuId ===
+                feature.id
+                  ? 'relative z-20'
+                  : ''}"
+              >
                 <td class="px-6 py-4">
                   <div class="text-sm font-medium text-text-primary">
                     {feature.name}
@@ -245,10 +263,16 @@
                     </button>
                     {#if openFeatureMenuId === feature.id}
                       <div
-                        class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-50 py-1 rounded shadow-sm"
+                        class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-[100] py-1 rounded shadow-sm"
                         transition:fade={{ duration: 100 }}
                         onclick={(e) => e.stopPropagation()}
                       >
+                        <button
+                          class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+                          onclick={() => startEditFeature(feature)}
+                        >
+                          <Pencil size={12} weight="duotone" /> Edit
+                        </button>
                         <button
                           class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
                           onclick={() => copyFeatureText(feature.slug)}
@@ -337,7 +361,12 @@
             </tr>
           {:else}
             {#each creditSystems as system}
-              <tr class="group hover:bg-bg-secondary transition-colors">
+              <tr
+                class="group hover:bg-bg-secondary transition-colors {openCreditSystemMenuId ===
+                system.id
+                  ? 'relative z-20'
+                  : ''}"
+              >
                 <td class="px-6 py-4">
                   <div class="text-sm font-medium text-text-primary">
                     {system.name}
@@ -378,7 +407,7 @@
                     </button>
                     {#if openCreditSystemMenuId === system.id}
                       <div
-                        class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-50 py-1 rounded shadow-sm"
+                        class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-[100] py-1 rounded shadow-sm"
                         transition:fade={{ duration: 100 }}
                         onclick={(e) => e.stopPropagation()}
                       >
@@ -421,15 +450,19 @@
   isOpen={showCreateModal}
   {organizationId}
   onclose={() => (showCreateModal = false)}
-  onsuccess={handleFeatureCreated}
+onsuccess={handleFeatureCreated}
 />
 
-<CreateCreditSystemModal
-  isOpen={showCreateCSModal}
-  {organizationId}
-  onclose={() => (showCreateCSModal = false)}
-  onsuccess={handleFeatureCreated}
+<EditFeatureModal
+  bind:isOpen={showEditFeatureModal}
+  bind:feature={editingFeature}
+  onclose={() => {
+    showEditFeatureModal = false;
+    editingFeature = null;
+  }}
+  onsuccess={handleFeatureUpdated}
 />
+
 
 <EditCreditSystemModal
   isOpen={showEditCSModal}

@@ -10,6 +10,23 @@ export const supportCredits = creditSystem("support-credits", { name: "support c
 export const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY!,
   catalog: [
+    plan("test-trial-polar2", {
+      name: "test-trial-polar2",
+      price: 1000,
+      currency: "USD",
+      interval: "monthly",
+      trialDays: 1,
+      features: [thirdpen.limit(100, {"reset":"5min","overage":"charge"}), dearfutureself.limit(10, {"reset":"5min","overage":"charge"})]
+    }),
+    plan("test-trial-polar", {
+      name: "test-trial-polar",
+      price: 1000,
+      currency: "USD",
+      interval: "monthly",
+      planGroup: "sales",
+      trialDays: 3,
+      features: [supportCredits.credits(100, { reset: "monthly" })]
+    }),
     plan("wanssoawe", {
       name: "wanssoawe",
       price: 2000,

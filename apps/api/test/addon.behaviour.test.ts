@@ -306,4 +306,59 @@ describe("POST /v1/addon behavior", () => {
     expect(dodoAdapter.createCheckoutSession).toHaveBeenCalledTimes(1);
     expect(paystackAdapter.createCheckoutSession).not.toHaveBeenCalled();
   });
+
+  it("does not auto-create a customer from a non-email identifier", async () => {
+    mockDb.query.creditPacks.findFirst.mockResolvedValue({
+      id: "pack_1",
+      organizationId: "org_1",
+      slug: "credits-100",
+      name: "100 Credits",
+      credits: 100,
+      price: 2500,
+      currency: "USD",
+      providerId: "paystack",
+      creditSystemId: "cs_1",
+      isActive: true,
+    });
+
+    vi.mocked(loadProviderAccounts).mockResolvedValue([
+      {
+        id: "acct_paystack",
+        providerId: "paystack",
+        environment: "test",
+        credentials: { secretKey: "sk_test" },
+      },
+    ] as any);
+
+    vi.mocked(resolveOrCreateCustomer).mockResolvedValue(null);
+
+    const res = await app.request(
+      "/v1/addon",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer owo_sk_test",
+        },
+        body: JSON.stringify({
+          customer: "external-customer-123",
+          pack: "credits-100",
+          quantity: 1,
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Could not resolve customer");
+    expect(vi.mocked(resolveOrCreateCustomer)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: "external-customer-123",
+        customerData: undefined,
+      }),
+    );
+    expect(paystackAdapter.createCheckoutSession).not.toHaveBeenCalled();
+  });
 });

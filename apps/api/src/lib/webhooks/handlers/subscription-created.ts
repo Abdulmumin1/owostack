@@ -39,6 +39,36 @@ export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<vo
     dbCustomer = newCustomer;
   }
 
+  if (ctx.cache) {
+    try {
+      const cacheAny = ctx.cache as any;
+      const dashboardInvalidate =
+        typeof cacheAny.invalidateDashboardCustomer === "function"
+          ? cacheAny.invalidateDashboardCustomer(dbCustomer.id)
+          : Promise.resolve();
+      if (typeof cacheAny.invalidateCustomerAliases === "function") {
+        await Promise.all([
+          cacheAny.invalidateCustomerAliases(organizationId, {
+            id: dbCustomer.id,
+            email: dbCustomer.email,
+            externalId: dbCustomer.externalId,
+          }),
+          dashboardInvalidate,
+        ]);
+      } else {
+        await Promise.all([
+          dbCustomer.email
+            ? ctx.cache.invalidateCustomer(organizationId, dbCustomer.email)
+            : Promise.resolve(),
+          ctx.cache.invalidateCustomer(organizationId, dbCustomer.id),
+          dashboardInvalidate,
+        ]);
+      }
+    } catch (e) {
+      console.warn(`[WEBHOOK] subscription.created customer cache invalidation failed:`, e);
+    }
+  }
+
   if (!planCode) {
     console.warn(`[WEBHOOK] subscription.created without plan code for org ${organizationId}`);
     // Try to link the subscription code to an existing active sub for this customer
