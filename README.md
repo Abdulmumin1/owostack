@@ -86,6 +86,31 @@ pnpm build
 pnpm deploy
 ```
 
+## Optional: Cloudflare Analytics Engine
+
+`apps/api` now writes lightweight request and billing analytics to Workers Analytics Engine when an `ANALYTICS` dataset binding is present.
+
+- Local/dev dataset: `owostack_api_dev`
+- Test dataset: `owostack_api_test`
+- Live dataset: `owostack_api_live`
+
+You can query it with Cloudflare SQL API for latency trends, cache hit rates, and invoice flow outcomes without growing D1 with extra telemetry rows.
+
+Dashboard Events now read from Analytics Engine (instead of D1) and require:
+
+- `CF_ACCOUNT_ID`
+- `CF_ANALYTICS_READ_TOKEN` (Cloudflare API token with `Analytics:Read`)
+
+## Usage Ledger (Durable Object SQLite)
+
+High-volume usage metering now supports a per-organization Durable Object SQLite ledger (`USAGE_LEDGER`) for track/check/invoice paths.
+
+- Durable Object class: `UsageLedgerDO`
+- Binding: `USAGE_LEDGER`
+- Wrangler migration tag: `v2`
+
+This reduces reliance on D1 `usage_records` for overage and invoice-critical calculations while keeping fallback compatibility.
+
 ## License
 
 MIT

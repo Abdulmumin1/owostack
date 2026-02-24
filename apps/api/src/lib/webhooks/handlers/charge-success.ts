@@ -320,11 +320,40 @@ async function handleTrialCreation(
   const now = Date.now();
 
   // Compute trial end:
-  // 1. For native trials, prefer the provider's next billing date (most accurate)
-  // 2. Otherwise, compute from trialDays
-  // 3. Fallback: 30 days (native trial with no dates available)
+  // Priority:
+  // 1. Pre-calculated trial_ends_at from checkout metadata (most reliable)
+  // 2. Provider's trialEndDate (e.g., Polar's trial_end)
+  // 3. Provider's nextPaymentDate for native trials
+  // 4. Calculate from trialDays metadata
+  // 5. Fallback: 30 days
   let trialEndMs: number;
-  if (isNativeTrial && event.subscription?.nextPaymentDate) {
+  const preCalculatedTrialEnd = metadata.trial_ends_at as string | undefined;
+
+  if (preCalculatedTrialEnd) {
+    // Pre-calculated at checkout - most reliable
+    const parsedDate = safeParseDate(preCalculatedTrialEnd);
+    // Validate: must be between 1 minute from now and 2 years in the future
+    const minValidDate = now + 60 * 1000; // 1 minute
+    const maxValidDate = now + 730 * 24 * 60 * 60 * 1000; // 2 years
+    if (
+      parsedDate &&
+      parsedDate >= minValidDate &&
+      parsedDate <= maxValidDate
+    ) {
+      trialEndMs = parsedDate;
+    } else {
+      console.warn(
+        `[TRIAL-WEBHOOK] Invalid pre-calculated trial_ends_at: ${preCalculatedTrialEnd}, using fallback`,
+      );
+      trialEndMs = now + 30 * 24 * 60 * 60 * 1000;
+    }
+  } else if (isNativeTrial && event.subscription?.trialEndDate) {
+    // Provider sent actual trial end date (e.g., Polar's trial_end)
+    trialEndMs =
+      safeParseDate(event.subscription.trialEndDate) ||
+      now + 30 * 24 * 60 * 60 * 1000;
+  } else if (isNativeTrial && event.subscription?.nextPaymentDate) {
+    // Fallback: use next billing date for native trials without explicit trial_end
     trialEndMs =
       safeParseDate(event.subscription.nextPaymentDate) ||
       now + 30 * 24 * 60 * 60 * 1000;
@@ -336,6 +365,9 @@ async function handleTrialCreation(
   } else {
     trialEndMs = now + 30 * 24 * 60 * 60 * 1000;
   }
+
+  // Check if trial has already ended
+  const hasTrialEnded = trialEndMs < now;
 
   console.log(
     `[TRIAL-WEBHOOK] Card captured for trial: plan=${planId}, customer=${dbCustomer.id}, native=${isNativeTrial}, duration=${trialDays} ${trialUnitMeta || "days"}, trialEnds=${new Date(trialEndMs).toISOString()}`,
@@ -350,7 +382,8 @@ async function handleTrialCreation(
       : `trial-${crypto.randomUUID().slice(0, 8)}`;
 
   // Check if an active/trialing subscription already exists (skip canceled/refunded
-  // so customers can re-trial a plan they previously had)
+  // so customers can re-trial a plan they previously had).
+  // Also check by provider subscription code for native trials (idempotency).
   const existingSub = await db.query.subscriptions.findFirst({
     where: and(
       eq(schema.subscriptions.customerId, dbCustomer.id),
@@ -363,11 +396,30 @@ async function handleTrialCreation(
     ),
   });
 
+  // Additional check: for native trials, look up by provider subscription code
+  // to prevent duplicates when subscription.active arrives before charge.success
+  if (!existingSub && isNativeTrial && providerSubCode) {
+    const existingByProviderCode = await db.query.subscriptions.findFirst({
+      where: or(
+        eq(schema.subscriptions.providerSubscriptionCode, providerSubCode),
+        eq(schema.subscriptions.paystackSubscriptionCode, providerSubCode),
+      ),
+    });
+    if (existingByProviderCode) {
+      console.log(
+        `[TRIAL-WEBHOOK] Found existing subscription by provider code ${providerSubCode}, skipping creation`,
+      );
+      return;
+    }
+  }
+
   let trialSubId: string;
   if (!existingSub) {
     trialSubId = crypto.randomUUID();
+    // If trial has already ended, mark as "active" instead of "trialing"
+    const subscriptionStatus = hasTrialEnded ? "active" : "trialing";
     console.log(
-      `[TRIAL-WEBHOOK] Creating trial subscription: customer=${dbCustomer.id}, plan=${planId}`,
+      `[TRIAL-WEBHOOK] Creating trial subscription: customer=${dbCustomer.id}, plan=${planId}, status=${subscriptionStatus}${hasTrialEnded ? " (trial already ended)" : ""}`,
     );
     await db.insert(schema.subscriptions).values([
       {
@@ -379,7 +431,7 @@ async function handleTrialCreation(
         providerSubscriptionCode: trialSubscriptionCode,
         paystackSubscriptionCode:
           event.provider === "paystack" ? trialSubscriptionCode : null,
-        status: "trialing",
+        status: subscriptionStatus,
         currentPeriodStart: now,
         currentPeriodEnd: trialEndMs,
         metadata: {
@@ -392,9 +444,10 @@ async function handleTrialCreation(
     ]);
 
     // Dispatch trial-end workflow ONLY for non-native trials (e.g. Paystack).
-    // For native trials (Dodo), the provider manages billing — subscription.renewed
+    // For native trials (Dodo/Polar), the provider manages billing — subscription.renewed
     // fires when the trial ends and handleAutoRenewal transitions the sub to active.
-    if (!isNativeTrial && workflows.trialEnd) {
+    // Don't dispatch for already-ended trials.
+    if (!hasTrialEnded && !isNativeTrial && workflows.trialEnd) {
       try {
         await workflows.trialEnd.create({
           params: {
@@ -425,6 +478,10 @@ async function handleTrialCreation(
           wfErr,
         );
       }
+    } else if (hasTrialEnded) {
+      console.log(
+        `[TRIAL-WEBHOOK] Trial already ended, skipping workflow dispatch: subscription=${trialSubId}`,
+      );
     } else if (isNativeTrial) {
       console.log(
         `[TRIAL-WEBHOOK] Native trial — skipping workflow dispatch (provider handles billing): subscription=${trialSubId}`,
@@ -435,12 +492,14 @@ async function handleTrialCreation(
     // subscription.active event (arrived before this $0 payment). Update to
     // "trialing" with the correct trial period so /check reports the right status
     // and the trial guard works for subsequent subscription.active events.
+    // If the trial has already ended, keep as "active" instead.
     trialSubId = existingSub.id;
     if (existingSub.status === "active") {
+      const subscriptionStatus = hasTrialEnded ? "active" : "trialing";
       await db
         .update(schema.subscriptions)
         .set({
-          status: "trialing",
+          status: subscriptionStatus,
           currentPeriodStart: now,
           currentPeriodEnd: trialEndMs,
           providerSubscriptionId: trialSubscriptionCode,
@@ -457,7 +516,7 @@ async function handleTrialCreation(
         })
         .where(eq(schema.subscriptions.id, existingSub.id));
       console.log(
-        `[TRIAL-WEBHOOK] Updated existing active sub ${existingSub.id} to trialing (reordered events)`,
+        `[TRIAL-WEBHOOK] Updated existing active sub ${existingSub.id} to ${subscriptionStatus}${hasTrialEnded ? " (trial already ended)" : ""} (reordered events)`,
       );
     } else {
       console.log(

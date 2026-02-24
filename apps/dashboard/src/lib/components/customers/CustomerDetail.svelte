@@ -91,20 +91,23 @@
   }
 
   const maxUsage = $derived(
-    data?.featureUsageSummary?.length > 0
+    Array.isArray(data?.featureUsageSummary) && data.featureUsageSummary.length > 0
       ? Math.max(...data.featureUsageSummary.map((f: any) => f.totalUsage))
       : 1
   );
 
   const timeline = $derived.by(() => {
+    const events = Array.isArray(data?.events) ? data.events : [];
+    const recentUsage = Array.isArray(data?.recentUsage) ? data.recentUsage : [];
+
     const merged: { label: string; ts: number; icon: any; iconColor: string }[] = [
-      ...(data?.events || []).map((e: any) => ({
+      ...events.map((e: any) => ({
         label: eventLabel(e.type),
         ts: e.createdAt as number,
         icon: eventIcon(e.type),
         iconColor: "bg-info-bg text-info",
       })),
-      ...(data?.recentUsage || []).map((u: any) => ({
+      ...recentUsage.map((u: any) => ({
         label: `Used ${u.amount} ${u.unit || "units"} of ${u.featureName}`,
         ts: u.createdAt as number,
         icon: Pulse,
@@ -185,15 +188,15 @@
     <!-- Quick Stats -->
     <div class="grid grid-cols-3 gap-3">
       <div class="bg-bg-secondary rounded p-3 text-center">
-        <div class="text-lg font-bold text-text-primary">{data.subscriptions?.length || 0}</div>
+        <div class="text-lg font-bold text-text-primary">{(Array.isArray(data.subscriptions) ? data.subscriptions : []).length}</div>
         <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Subs</div>
       </div>
       <div class="bg-bg-secondary rounded p-3 text-center">
-        <div class="text-lg font-bold text-text-primary">{data.featureUsageSummary?.length || 0}</div>
+        <div class="text-lg font-bold text-text-primary">{(Array.isArray(data.featureUsageSummary) ? data.featureUsageSummary : []).length}</div>
         <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Features</div>
       </div>
       <div class="bg-bg-secondary rounded p-3 text-center">
-        <div class="text-lg font-bold text-text-primary">{data.events?.length || 0}</div>
+        <div class="text-lg font-bold text-text-primary">{(Array.isArray(data.events) ? data.events : []).length}</div>
         <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Events</div>
       </div>
     </div>
@@ -201,7 +204,7 @@
     <!-- Subscriptions -->
     <div>
       <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-3">Subscriptions</h4>
-      {#if data.subscriptions?.length > 0}
+      {#if Array.isArray(data.subscriptions) && data.subscriptions.length > 0}
         <div class="space-y-2">
           {#each data.subscriptions as sub}
             <div class="bg-bg-secondary rounded p-3">
@@ -227,7 +230,7 @@
     </div>
 
     <!-- Feature Usage -->
-    {#if data.featureUsageSummary?.length > 0}
+    {#if Array.isArray(data.featureUsageSummary) && data.featureUsageSummary.length > 0}
       <div>
         <div class="flex items-center justify-between mb-3">
           <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest">Feature Usage</h4>

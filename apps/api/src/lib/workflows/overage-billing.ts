@@ -6,10 +6,10 @@ import {
 import type { WorkflowEnv } from "./utils";
 import { getAdapter, resolveProviderAccount } from "./utils";
 import type { ProviderAccount } from "@owostack/adapters";
-import { createDb, schema } from "@owostack/db";
-import { eq, and, gte, lte, sql, isNull, inArray } from "drizzle-orm";
-import { getResetPeriod } from "../reset-period";
+import { createDb } from "@owostack/db";
 import { getMinimumChargeAmount } from "../provider-minimums";
+import { BillingService } from "../billing";
+import { markUsageInvoiced } from "../usage-ledger";
 
 // Serializable snapshot of ProviderAccount
 interface ResolvedAccount {
@@ -86,117 +86,22 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
     // Step 3: Calculate unbilled overage usage
     const unbilled = await step.do("calculate-unbilled-usage", async () => {
       const db = createDb(this.env.DB);
-
-      // Get customer + active subscription
-      const customer = await db.query.customers.findFirst({
-        where: eq(schema.customers.id, customerId),
+      const billingService = new BillingService(db, {
+        usageLedger: this.env.USAGE_LEDGER,
       });
-      if (!customer)
-        return { features: [], totalEstimated: 0, currency: "USD" };
+      const result = await billingService.getUnbilledUsage(
+        customerId,
+        organizationId,
+      );
 
-      const subscription = await db.query.subscriptions.findFirst({
-        where: and(
-          eq(schema.subscriptions.customerId, customerId),
-          inArray(schema.subscriptions.status, [
-            "active",
-            "canceled",
-            "pending_cancel",
-            "trialing",
-          ]),
-        ),
-        with: {
-          plan: {
-            with: {
-              planFeatures: {
-                with: { feature: true },
-              },
-            },
-          },
-        },
-      });
-
-      if (!subscription)
-        return { features: [], totalEstimated: 0, currency: "USD" };
-
-      const features: Array<{
-        featureId: string;
-        featureSlug: string;
-        featureName: string;
-        usageModel: string;
-        usage: number;
-        included: number | null;
-        billableQuantity: number;
-        pricePerUnit: number;
-        billingUnits: number;
-        estimatedAmount: number;
-        periodStart: number;
-        periodEnd: number;
-      }> = [];
-      let totalEstimated = 0;
-
-      for (const pf of subscription.plan.planFeatures) {
-        if (pf.usageModel !== "usage_based" && pf.overage !== "charge")
-          continue;
-
-        const { periodStart, periodEnd } = getResetPeriod(
-          pf.resetInterval,
-          subscription.currentPeriodStart,
-          subscription.currentPeriodEnd,
+      if (result.isErr()) {
+        console.warn(
+          `[OverageBilling] Failed to calculate unbilled usage: ${result.error.message}`,
         );
-
-        const usageResult = await db
-          .select({
-            total: sql<number>`COALESCE(SUM(${schema.usageRecords.amount}), 0)`,
-          })
-          .from(schema.usageRecords)
-          .where(
-            and(
-              eq(schema.usageRecords.customerId, customerId),
-              eq(schema.usageRecords.featureId, pf.featureId),
-              gte(schema.usageRecords.periodStart, periodStart),
-              lte(schema.usageRecords.periodEnd, periodEnd),
-              isNull(schema.usageRecords.invoiceId),
-            ),
-          );
-
-        const usage = Number(usageResult[0]?.total || 0);
-        if (usage === 0) continue;
-
-        let billableQuantity = usage;
-        const included = pf.limitValue;
-        if (pf.usageModel === "included" && pf.overage === "charge") {
-          billableQuantity = Math.max(0, usage - (included || 0));
-        }
-        if (billableQuantity === 0) continue;
-
-        const pricePerUnit = pf.pricePerUnit || pf.overagePrice || 0;
-        const billingUnits = pf.billingUnits || 1;
-        const packages = Math.ceil(billableQuantity / billingUnits);
-        const amount = packages * pricePerUnit;
-
-        features.push({
-          featureId: pf.featureId,
-          featureSlug: pf.feature.slug,
-          featureName: pf.feature.name,
-          usageModel: pf.usageModel || "included",
-          usage,
-          included,
-          billableQuantity,
-          pricePerUnit,
-          billingUnits,
-          estimatedAmount: amount,
-          periodStart,
-          periodEnd,
-        });
-
-        totalEstimated += amount;
+        return { features: [], totalEstimated: 0, currency: "USD" };
       }
 
-      return {
-        features,
-        totalEstimated,
-        currency: subscription.plan.currency || "USD",
-      };
+      return result.value;
     });
 
     if (unbilled.features.length === 0 || unbilled.totalEstimated === 0) {
@@ -344,20 +249,36 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             .run();
         }
 
-        // Stamp usage records as invoiced
-        await this.env.DB.prepare(
-          `UPDATE usage_records SET invoice_id = ?
-           WHERE customer_id = ? AND feature_id = ? AND period_start >= ? AND period_end <= ? AND invoice_id IS NULL AND created_at <= ?`,
-        )
-          .bind(
-            invoiceId,
+        const ledgerStamped = await markUsageInvoiced(
+          {
+            usageLedger: this.env.USAGE_LEDGER,
+            organizationId,
+          },
+          {
             customerId,
-            f.featureId,
-            f.periodStart,
-            f.periodEnd,
-            now,
+            featureId: f.featureId,
+            periodStart: f.periodStart,
+            periodEnd: f.periodEnd,
+            usageCutoffAt: now,
+            invoiceId,
+          },
+        );
+
+        if (ledgerStamped === null) {
+          await this.env.DB.prepare(
+            `UPDATE usage_records SET invoice_id = ?
+             WHERE customer_id = ? AND feature_id = ? AND period_start >= ? AND period_end <= ? AND invoice_id IS NULL AND created_at <= ?`,
           )
-          .run();
+            .bind(
+              invoiceId,
+              customerId,
+              f.featureId,
+              f.periodStart,
+              f.periodEnd,
+              now,
+            )
+            .run();
+        }
       }
 
       return {

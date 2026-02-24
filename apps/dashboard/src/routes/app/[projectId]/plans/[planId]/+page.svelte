@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowSquareOut, Calendar, CaretLeft, CircleNotch, Copy, Cube, FloppyDisk, Info, Lightning, LightningSlash, MagnifyingGlass, PencilSimple, Plus, Sliders, Trash, X } from "phosphor-svelte";
+  import { ArrowSquareOut, Calendar, CaretLeft, CircleNotch, Copy, Cube, FloppyDisk, FloppyDiskIcon, Info, Lightning, LightningSlash, MagnifyingGlass, PencilSimple, Plus, Sliders, Trash, X } from "phosphor-svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import { fade, slide, fly } from "svelte/transition";
@@ -344,7 +344,7 @@
             </button>
           </div>
 
-          <div class="bg-bg-card border border-border divide-y divide-border/50">
+          <div class="bg-bg-card border border-border divide-y divide-border/50 rounded">
             {#if plan.planFeatures && plan.planFeatures.length > 0}
               {#each plan.planFeatures as pf}
                 {@const cs = creditSystems.find((s: any) => s.id === pf.featureId)}
@@ -643,7 +643,7 @@
 <SidePanel open={showConfigModal && !!editingPlanFeature} title={`Configure ${editingPlanFeature?.feature?.name}`} onclose={() => (showConfigModal = false)} width="max-w-[450px]">
   <div class="text-sm h-full">
     <form 
-      class="flex flex-col h-full"
+      class="flex flex-col justify-between h-full"
       onsubmit={(e) => {
         e.preventDefault();
         const data = {
@@ -665,38 +665,38 @@
           <div class="space-y-3">
             <button
               type="button"
-              class="relative w-full p-4 text-left flex gap-4 transition-all {configUsageModel === 'included' ? 'bg-secondary-light border border-secondary' : 'bg-bg-card border border-border hover:border-border-light'}"
+              class="relative w-full p-4 text-left flex gap-4 rounded transition-all {configUsageModel === 'included' ? 'bg-accent-light border border-accent' : 'bg-bg-card border border-border hover:border-border-light'}"
               onclick={() => (configUsageModel = 'included')}
             >
-              <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0">
-                <Calendar size={18} class={configUsageModel === 'included' ? 'text-secondary' : 'text-text-dim'} weight="duotone" />
+              <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0 rounded">
+                <Calendar size={18} class={configUsageModel === 'included' ? 'text-accent' : 'text-text-dim'} weight="duotone" />
               </div>
               <div>
                 <div class="text-xs font-bold text-text-primary uppercase tracking-tight mb-0.5">Included</div>
                 <p class="text-[10px] font-bold text-text-dim uppercase tracking-widest leading-relaxed">Included usage limit.</p>
               </div>
               {#if configUsageModel === 'included'}
-                <div class="absolute top-4 right-4 w-4 h-4 border-2 border-secondary flex items-center justify-center">
-                  <div class="w-2 h-2 bg-secondary"></div>
+                <div class="absolute top-4 right-4 w-4 h-4 border-2 border-accent flex items-center justify-center rounded">
+                  <div class="w-2 h-2 bg-accent rounded"></div>
                 </div>
               {/if}
             </button>
 
             <button
               type="button"
-              class="relative w-full p-4 text-left flex gap-4 transition-all {configUsageModel === 'usage_based' ? 'bg-secondary-light border border-secondary' : 'bg-bg-card border border-border hover:border-border-light'}"
+              class="relative w-full p-4 text-left flex gap-4 rounded transition-all {configUsageModel === 'usage_based' ? 'bg-accent-light border border-accent' : 'bg-bg-card border border-border hover:border-border-light'}"
               onclick={() => (configUsageModel = 'usage_based')}
             >
-              <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0">
-                <Sliders size={18} class={configUsageModel === 'usage_based' ? 'text-secondary' : 'text-text-dim'} weight="duotone" />
+              <div class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0 rounded">
+                <Sliders size={18} class={configUsageModel === 'usage_based' ? 'text-accent' : 'text-text-dim'} weight="duotone" />
               </div>
               <div>
                 <div class="text-xs font-bold text-text-primary uppercase tracking-tight mb-0.5">Priced</div>
                 <p class="text-[10px] font-bold text-text-dim uppercase tracking-widest leading-relaxed">Charge for usage.</p>
               </div>
               {#if configUsageModel === 'usage_based'}
-                <div class="absolute top-4 right-4 w-4 h-4 border-2 border-secondary flex items-center justify-center">
-                  <div class="w-2 h-2 bg-secondary"></div>
+                <div class="absolute top-4 right-4 w-4 h-4 border-2 border-accent flex items-center justify-center rounded">
+                  <div class="w-2 h-2 bg-accent rounded"></div>
                 </div>
               {/if}
             </button>
@@ -797,7 +797,7 @@
               ] as opt}
                 <button 
                   type="button"
-                  class="py-2.5 text-[10px] font-bold uppercase tracking-widest border transition-all {configOverage === opt.value ? 'bg-accent text-accent-contrast border-accent' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-text-primary'}"
+                  class="py-2.5 text-[10px] font-bold uppercase tracking-widest border rounded transition-all {configOverage === opt.value ? 'bg-accent text-accent-contrast border-accent' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-text-primary'}"
                   onclick={() => (configOverage = opt.value as typeof configOverage)}
                 >
                   {opt.label}
@@ -868,7 +868,7 @@
             ] as int}
               <button 
                 type="button"
-                class="py-2.5 text-[10px] font-bold uppercase tracking-widest border transition-all {configResetInterval === int.value ? 'bg-accent text-accent-contrast border-accent' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-text-primary'}"
+                class="py-2.5 text-[10px] font-bold uppercase tracking-widest border rounded transition-all {configResetInterval === int.value ? 'bg-accent text-accent-contrast border-accent' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-text-primary'}"
                 onclick={() => (configResetInterval = int.value)}
               >
                 {int.label}
@@ -888,7 +888,7 @@
             <CircleNotch   size={16} class="animate-spin"  weight="duotone" />
             Saving...
           {:else}
-            FloppyDisk Configuration
+            <FloppyDiskIcon /> Configuration
           {/if}
         </button>
       </div>

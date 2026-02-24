@@ -341,6 +341,36 @@ export const usageRecords = sqliteTable(
   ],
 );
 
+export const usageDailySummaries = sqliteTable(
+  "usage_daily_summaries",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    featureId: text("feature_id")
+      .notNull()
+      .references(() => features.id, { onDelete: "cascade" }),
+    date: text("date").notNull(), // "YYYY-MM-DD"
+    amount: integer("amount").notNull().default(0),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("usage_summary_org_idx").on(table.organizationId),
+    index("usage_summary_customer_idx").on(table.customerId),
+    uniqueIndex("usage_summary_unique_idx").on(
+      table.customerId,
+      table.featureId,
+      table.date,
+    ),
+  ],
+);
+
 export const credits = sqliteTable(
   "credits",
   {

@@ -113,8 +113,8 @@
   }
 
   const timeline = $derived.by(() => {
-    if (!data?.events) return [];
-    return data.events.map((item: any) => ({
+    const events = Array.isArray(data?.events) ? data.events : [];
+    return events.map((item: any) => ({
       label: eventLabel(item.type),
       time: formatRelativeTime(item.createdAt),
       icon: eventIcon(item.type),

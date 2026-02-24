@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Calendar, Check, CircleNotch, Clock, CreditCard, Cube, Minus, Plus, X } from "phosphor-svelte";
+  import { Calendar, Check,  CircleNotchIcon, Clock, CreditCard, Cube, Minus, Plus, X } from "phosphor-svelte";
   import { fade, fly } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
   import { Result } from "better-result";
@@ -778,7 +778,7 @@
 
     <!-- Footer -->
     <div
-      class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card"
+      class="p-5  border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card"
     >
       <button
         class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
@@ -792,10 +792,10 @@
         disabled={!planName || (planType === "paid" && !price) || isCreating}
       >
         {#if isCreating}
-          <CircleNotch   size={12} class="animate-spin"  weight="duotone" />
+          <CircleNotchIcon   size={12} class="animate-spin"  />
           Creating...
         {:else}
-          Create plan <span class="bg-bg-secondary px-1 rounded ml-1 text-[10px]">
+          Create plan <span class=" px-1 rounded ml-1 text-[10px]">
             ⌘↵
           </span>
         {/if}

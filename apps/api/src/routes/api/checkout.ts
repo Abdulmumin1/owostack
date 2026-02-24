@@ -502,6 +502,13 @@ app.post("/attach", async (c) => {
     // Mark these so the trial-end workflow skips the charge (provider handles billing).
     const isNativeTrial = providerCtx.adapter.supportsNativeTrials === true;
 
+    // Pre-calculate trial end date for reliable downstream processing
+    const trialDurationMs =
+      trialUnit === "minutes"
+        ? trialDays * 60 * 1000
+        : trialDays * 24 * 60 * 60 * 1000;
+    const trialEndsAt = new Date(Date.now() + trialDurationMs).toISOString();
+
     const trialMetadata = {
       ...metadata,
       organization_id: keyRecord.organizationId,
@@ -513,6 +520,7 @@ app.post("/attach", async (c) => {
       provider_id: selectedProviderId,
       trial_days: trialDays,
       trial_unit: trialUnit,
+      trial_ends_at: trialEndsAt,
       is_trial: true,
       native_trial: isNativeTrial,
       amount: plan.price,

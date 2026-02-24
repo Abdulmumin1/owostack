@@ -1,9 +1,20 @@
 import { Hono } from "hono";
-import { eq, desc } from "drizzle-orm";
-import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
+import { listRecentEvents, getEventById } from "../../lib/analytics-engine";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 100;
+
+function clampInt(
+  value: string | undefined,
+  fallback: number,
+  { min = 0, max = Number.MAX_SAFE_INTEGER } = {},
+): number {
+  const n = Number.parseInt(value || "", 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
 
 app.get("/", async (c) => {
   const organizationId = c.req.query("organizationId");
@@ -11,42 +22,56 @@ app.get("/", async (c) => {
     return c.json({ error: "Organization ID required" }, 400);
   }
 
-  const limit = Number(c.req.query("limit")) || 20;
-  const offset = Number(c.req.query("offset")) || 0;
+  const limit = clampInt(c.req.query("limit"), DEFAULT_LIMIT, {
+    min: 1,
+    max: MAX_LIMIT,
+  });
+  const offset = clampInt(c.req.query("offset"), 0, { min: 0 });
 
-  const db = c.get("db");
-  const events = await db.query.events.findMany({
-    where: eq(schema.events.organizationId, organizationId),
-    orderBy: [desc(schema.events.createdAt)],
-    limit: limit,
-    offset: offset,
-    with: {
-      customer: true,
-    },
+  const result = await listRecentEvents(c.env, {
+    organizationId,
+    limit,
+    offset,
   });
 
-  // Get total count for pagination metadata if needed, usually nice to have but not strictly required for infinite scroll if we just check if return length < limit
-  // For now, simple array return is fine as per current contract
+  if (!result.success) {
+    // Analytics unavailable - return 503 Service Unavailable
+    return c.json(
+      {
+        success: false,
+        error: "Service unavailable",
+        message: result.message,
+      },
+      503,
+    );
+  }
 
-  return c.json({ success: true, data: events });
+  return c.json({ success: true, data: result.data });
 });
 
 app.get("/:id", async (c) => {
   const id = c.req.param("id");
-  const db = c.get("db");
+  const organizationId = c.req.query("organizationId");
 
-  const event = await db.query.events.findFirst({
-    where: eq(schema.events.id, id),
-    with: {
-      customer: true,
-    },
-  });
+  const result = await getEventById(c.env, id, organizationId);
 
-  if (!event) {
+  if (!result.success) {
+    // Analytics unavailable - return 503 Service Unavailable
+    return c.json(
+      {
+        success: false,
+        error: "Service unavailable",
+        message: result.message,
+      },
+      503,
+    );
+  }
+
+  if (!result.data) {
     return c.json({ success: false, error: "Event not found" }, 404);
   }
 
-  return c.json({ success: true, data: event });
+  return c.json({ success: true, data: result.data });
 });
 
 export default app;

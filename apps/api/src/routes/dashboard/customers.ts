@@ -3,10 +3,22 @@ import { z } from "zod";
 import { eq, and, desc, gte, sql, like, or } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { EntitlementCache } from "../../lib/cache";
+import {
+  featureUsageSummaryForCustomer,
+  listRecentUsageForCustomer,
+} from "../../lib/usage-ledger";
+import { listRecentEvents } from "../../lib/analytics-engine";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+type FeatureMetaRow = {
+  id: string;
+  name: string;
+  slug: string;
+  unit: string | null;
+};
 
 const createCustomerSchema = z.object({
   organizationId: z.string(),
@@ -127,98 +139,165 @@ app.get("/:id", async (c) => {
       return c.json({ success: false, error: "Customer not found" }, 404);
     }
 
-    // Run all detail queries in parallel
-    const [subscriptions, recentUsage, featureUsageSummary, events] =
-      await Promise.all([
-        // 2. Subscriptions with plan details
-        db
-          .select({
-            id: schema.subscriptions.id,
-            status: schema.subscriptions.status,
-            providerId: schema.subscriptions.providerId,
-            currentPeriodStart: schema.subscriptions.currentPeriodStart,
-            currentPeriodEnd: schema.subscriptions.currentPeriodEnd,
-            cancelAt: schema.subscriptions.cancelAt,
-            canceledAt: schema.subscriptions.canceledAt,
-            createdAt: schema.subscriptions.createdAt,
-            planId: schema.plans.id,
-            planName: schema.plans.name,
-            planSlug: schema.plans.slug,
-            planPrice: schema.plans.price,
-            planCurrency: schema.plans.currency,
-            planInterval: schema.plans.interval,
-          })
-          .from(schema.subscriptions)
-          .innerJoin(
-            schema.plans,
-            eq(schema.subscriptions.planId, schema.plans.id),
-          )
-          .where(eq(schema.subscriptions.customerId, id))
-          .orderBy(desc(schema.subscriptions.createdAt)),
+    // Run base detail queries in parallel
+    const [subscriptions, events] = await Promise.all([
+      // 2. Subscriptions with plan details
+      db
+        .select({
+          id: schema.subscriptions.id,
+          status: schema.subscriptions.status,
+          providerId: schema.subscriptions.providerId,
+          currentPeriodStart: schema.subscriptions.currentPeriodStart,
+          currentPeriodEnd: schema.subscriptions.currentPeriodEnd,
+          cancelAt: schema.subscriptions.cancelAt,
+          canceledAt: schema.subscriptions.canceledAt,
+          createdAt: schema.subscriptions.createdAt,
+          planId: schema.plans.id,
+          planName: schema.plans.name,
+          planSlug: schema.plans.slug,
+          planPrice: schema.plans.price,
+          planCurrency: schema.plans.currency,
+          planInterval: schema.plans.interval,
+        })
+        .from(schema.subscriptions)
+        .innerJoin(
+          schema.plans,
+          eq(schema.subscriptions.planId, schema.plans.id),
+        )
+        .where(eq(schema.subscriptions.customerId, id))
+        .orderBy(desc(schema.subscriptions.createdAt)),
 
-        // 3. Recent usage activity (last 20 records — sidebar view)
-        db
-          .select({
-            id: schema.usageRecords.id,
-            amount: schema.usageRecords.amount,
-            createdAt: schema.usageRecords.createdAt,
-            featureName: schema.features.name,
-            featureSlug: schema.features.slug,
-            unit: schema.features.unit,
-          })
-          .from(schema.usageRecords)
-          .innerJoin(
-            schema.features,
-            eq(schema.usageRecords.featureId, schema.features.id),
-          )
-          .where(eq(schema.usageRecords.customerId, id))
-          .orderBy(desc(schema.usageRecords.createdAt))
-          .limit(20),
+      // 3. Recent events for this customer (last 20)
+      listRecentEvents(c.env, { customerId: id, limit: 20 }),
+    ]);
 
-        // 4. Feature usage summary (current month)
-        db
-          .select({
-            featureId: schema.features.id,
-            featureName: schema.features.name,
-            featureSlug: schema.features.slug,
-            unit: schema.features.unit,
-            totalUsage: sql<number>`COALESCE(sum(${schema.usageRecords.amount}), 0)`,
-            recordCount: sql<number>`count(*)`,
-          })
-          .from(schema.usageRecords)
-          .innerJoin(
-            schema.features,
-            eq(schema.usageRecords.featureId, schema.features.id),
-          )
-          .where(
-            and(
-              eq(schema.usageRecords.customerId, id),
-              gte(
-                schema.usageRecords.createdAt,
-                new Date(
-                  new Date().getFullYear(),
-                  new Date().getMonth(),
-                  1,
-                ).getTime(),
-              ),
+    const monthStart = new Date(
+      new Date().getFullYear(),
+      new Date().getMonth(),
+      1,
+    ).getTime();
+
+    const [ledgerRecentUsage, ledgerFeatureSummary] = await Promise.all([
+      listRecentUsageForCustomer(
+        {
+          usageLedger: c.env.USAGE_LEDGER,
+          organizationId: customer.organizationId,
+        },
+        id,
+        20,
+      ),
+      featureUsageSummaryForCustomer(
+        {
+          usageLedger: c.env.USAGE_LEDGER,
+          organizationId: customer.organizationId,
+        },
+        id,
+        monthStart,
+      ),
+    ]);
+
+    const d1RecentUsageFallback = async () =>
+      db
+        .select({
+          id: schema.usageDailySummaries.id,
+          featureId: schema.usageDailySummaries.featureId,
+          amount: schema.usageDailySummaries.amount,
+          createdAt: schema.usageDailySummaries.updatedAt,
+        })
+        .from(schema.usageDailySummaries)
+        .where(eq(schema.usageDailySummaries.customerId, id))
+        .orderBy(desc(schema.usageDailySummaries.updatedAt))
+        .limit(20);
+
+    const d1FeatureSummaryFallback = async () =>
+      db
+        .select({
+          featureId: schema.features.id,
+          totalUsage: sql<number>`COALESCE(sum(${schema.usageDailySummaries.amount}), 0)`,
+          recordCount: sql<number>`count(*)`,
+        })
+        .from(schema.usageDailySummaries)
+        .innerJoin(
+          schema.features,
+          eq(schema.usageDailySummaries.featureId, schema.features.id),
+        )
+        .where(
+          and(
+            eq(schema.usageDailySummaries.customerId, id),
+            gte(
+              schema.usageDailySummaries.date,
+              new Date(monthStart).toISOString().split("T")[0],
             ),
-          )
-          .groupBy(schema.features.id)
-          .orderBy(sql`sum(${schema.usageRecords.amount}) DESC`),
+          ),
+        )
+        .groupBy(schema.features.id)
+        .orderBy(sql`sum(${schema.usageDailySummaries.amount}) DESC`);
 
-        // 5. Recent events for this customer (last 20)
-        db
-          .select({
-            id: schema.events.id,
-            type: schema.events.type,
-            data: schema.events.data,
-            createdAt: schema.events.createdAt,
-          })
-          .from(schema.events)
-          .where(eq(schema.events.customerId, id))
-          .orderBy(desc(schema.events.createdAt))
-          .limit(20),
-      ]);
+    const [baseRecentUsage, baseFeatureSummary] = await Promise.all([
+      ledgerRecentUsage ?? d1RecentUsageFallback(),
+      ledgerFeatureSummary ?? d1FeatureSummaryFallback(),
+    ]);
+
+    const allFeatureIds = [
+      ...new Set([
+        ...baseRecentUsage.map((row: any) => row.featureId),
+        ...baseFeatureSummary.map((row: any) => row.featureId),
+      ]),
+    ];
+
+    const featureMeta: FeatureMetaRow[] =
+      allFeatureIds.length === 0
+        ? []
+        : await db
+            .select({
+              id: schema.features.id,
+              name: schema.features.name,
+              slug: schema.features.slug,
+              unit: schema.features.unit,
+            })
+            .from(schema.features)
+            .where(
+              and(
+                eq(schema.features.organizationId, customer.organizationId),
+                sql`${schema.features.id} IN (${sql.join(
+                  allFeatureIds.map((fid) => sql`${fid}`),
+                  sql`, `,
+                )})`,
+              ),
+            );
+    const featureById = new Map<string, FeatureMetaRow>(
+      featureMeta.map((row: FeatureMetaRow) => [row.id, row]),
+    );
+
+    const recentUsage = baseRecentUsage
+      .map((row: any) => {
+        const meta = featureById.get(row.featureId);
+        if (!meta) return null;
+        return {
+          id: row.id,
+          amount: row.amount,
+          createdAt: row.createdAt,
+          featureName: meta.name,
+          featureSlug: meta.slug,
+          unit: meta.unit,
+        };
+      })
+      .filter((row: any): row is NonNullable<typeof row> => row !== null);
+
+    const featureUsageSummary = baseFeatureSummary
+      .map((row: any) => {
+        const meta = featureById.get(row.featureId);
+        if (!meta) return null;
+        return {
+          featureId: row.featureId,
+          featureName: meta.name,
+          featureSlug: meta.slug,
+          unit: meta.unit,
+          totalUsage: row.totalUsage,
+          recordCount: row.recordCount,
+        };
+      })
+      .filter((row: any): row is NonNullable<typeof row> => row !== null);
 
     const response = {
       success: true,

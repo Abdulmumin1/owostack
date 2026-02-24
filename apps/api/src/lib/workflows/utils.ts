@@ -5,6 +5,7 @@ import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
 import { decrypt } from "../encryption";
 import { getProviderRegistry } from "../providers";
 import { EntitlementCache } from "../cache";
+import type { UsageLedgerDO } from "../usage-ledger-do";
 
 // ---------------------------------------------------------------------------
 // Env subset that workflows need
@@ -14,6 +15,7 @@ export interface WorkflowEnv {
   DB: D1Database;
   DB_AUTH: D1Database;
   CACHE?: KVNamespace; // Optional cache for invalidation
+  USAGE_LEDGER?: DurableObjectNamespace<UsageLedgerDO>;
   ENCRYPTION_KEY: string;
   ENVIRONMENT?: string; // "test" | "live" | "development" — set per worker deployment
 }

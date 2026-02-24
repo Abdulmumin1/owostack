@@ -5,15 +5,46 @@
     Warning,
     Receipt,
     Paperclip,
-    X
+    X,
+    FastForward
   } from "phosphor-svelte";
-  import { tick } from "svelte";
+  import { tick, onMount } from "svelte";
 
   let billingMode = $state<'subscription' | 'pay-per-use'>('subscription');
   let planCredits = $state(40);
   let maxPlanCredits = 100;
   let addonCredits = $state(0);
   let unbilledAmount = $state(0);
+  let isExhausted = $derived(planCredits < maxPlanCredits);
+
+  // Timer State
+  let resetTimeTotal = 300; // 5 minutes in seconds
+  let resetTimeLeft = $state(300);
+  let resetProgress = $derived((resetTimeLeft / resetTimeTotal) * 100);
+  let timeLeftFormatted = $derived(
+    `${Math.floor(resetTimeLeft / 60)}:${(resetTimeLeft % 60).toString().padStart(2, '0')}`
+  );
+  
+  onMount(() => {
+    const interval = setInterval(() => {
+      const isExhausted = planCredits < maxPlanCredits;
+      if (isExhausted && resetTimeLeft > 0) {
+        resetTimeLeft -= 1;
+      } else if (isExhausted && resetTimeLeft <= 0) {
+        resetPlan();
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  });
+
+  function resetPlan() {
+    planCredits = maxPlanCredits;
+    resetTimeLeft = resetTimeTotal;
+  }
+
+  function fastForward() {
+    resetPlan();
+  }
   
   let messages = $state<{ role: "user" | "ai"; text: string }[]>([
     { role: "ai", text: "Switch billing modes to see how Owostack handles credits vs metered usage." }
@@ -170,7 +201,7 @@
         <div class="flex justify-center my-2">
           <div class="border border-error text-error px-3 py-1.5 text-xs flex items-center gap-2">
             <Warning size={14} weight="fill" />
-            <span>Credits exhausted</span>
+            <span>Credits exhausted — Reset in {timeLeftFormatted}</span>
           </div>
         </div>
       {/if}
@@ -277,6 +308,47 @@
           <button onclick={buyAddon} class="btn btn-primary w-full">
             Buy 50 Credits
           </button>
+
+          <div class="pt-2 flex items-center justify-between border-t border-border/50">
+            <div class="flex items-center gap-2">
+              <div class="relative w-4 h-4">
+                <svg viewBox="0 0 36 36" class="w-full h-full transform -rotate-90">
+                  <path
+                    class="text-border"
+                    stroke-width="4"
+                    stroke="currentColor"
+                    fill="transparent"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  />
+                  <path
+                    class="text-accent"
+                    stroke-width="4"
+                    stroke-dasharray="{isExhausted ? resetProgress : 100}, 100"
+                    stroke-linecap="round"
+                    stroke="currentColor"
+                    fill="transparent"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  />
+                </svg>
+              </div>
+              <span class="text-[9px] font-bold text-text-dim uppercase tracking-widest">
+                {#if isExhausted}
+                  Reset in {timeLeftFormatted}
+                {:else}
+                  Waiting for usage
+                {/if}
+              </span>
+            </div>
+            {#if isExhausted}
+              <button 
+                onclick={fastForward}
+                class="p-1 text-text-dim hover:text-accent transition-colors"
+                title="Fast forward to next cycle"
+              >
+                <FastForward size={14} weight="fill" />
+              </button>
+            {/if}
+          </div>
         </div>
       {:else}
         <div class="space-y-4">

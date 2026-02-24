@@ -11,15 +11,16 @@
   let organizations = $state<any[]>([]);
   let selectedOrgId = $state<string>("");
   let loading = $state(true);
-  let approving = $state(false);
-  let denying = $state(false);
-  let error = $state<string | null>(null);
-  let success = $state(false);
-  let denied = $state(false);
+  let sessionChecked = $state(false);
 
   $effect(() => {
-    if ($session.data && !$session.isLoading) {
+    if ($session.data) {
+      sessionChecked = true;
       loadOrganizations();
+    } else if ($session.data === null && !sessionChecked) {
+      // Session loaded but user is not authenticated
+      sessionChecked = true;
+      loading = false;
     }
   });
 
@@ -111,7 +112,7 @@
       </div>
 
       <div class="p-6">
-        {#if $session.isLoading || loading}
+        {#if !sessionChecked || loading}
           <div class="flex items-center justify-center py-8">
             <CircleNotch size={24} class="animate-spin text-accent" weight="duotone" />
           </div>

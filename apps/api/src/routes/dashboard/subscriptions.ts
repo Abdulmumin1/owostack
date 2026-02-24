@@ -2,9 +2,14 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { eq, desc, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
+import { listRecentEvents } from "../../lib/analytics-engine";
 import { previewSwitch, executeSwitch } from "../../lib/plan-switch";
 import type { ProviderContext } from "../../lib/plan-switch";
-import { getProviderRegistry, deriveProviderEnvironment, loadProviderAccounts } from "../../lib/providers";
+import {
+  getProviderRegistry,
+  deriveProviderEnvironment,
+  loadProviderAccounts,
+} from "../../lib/providers";
 import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
@@ -178,17 +183,10 @@ app.get("/:id", async (c) => {
         .where(eq(schema.entitlements.customerId, subscription.customerId)),
 
       // 3. Recent events for this customer
-      db
-        .select({
-          id: schema.events.id,
-          type: schema.events.type,
-          data: schema.events.data,
-          createdAt: schema.events.createdAt,
-        })
-        .from(schema.events)
-        .where(eq(schema.events.customerId, subscription.customerId))
-        .orderBy(desc(schema.events.createdAt))
-        .limit(30),
+      listRecentEvents(c.env, {
+        customerId: subscription.customerId,
+        limit: 30,
+      }).then((result) => (result.success ? result.data : [])),
 
       // 4. Available plans in the same group (for switch actions)
       subscription.plan.planGroup
@@ -389,7 +387,6 @@ app.post("/switch-plan", async (c) => {
   let providerCtx: ProviderContext | null = null;
   try {
     if (project) {
-
       const registry = getProviderRegistry();
 
       const providerAccounts = await loadProviderAccounts(
@@ -463,11 +460,7 @@ app.post("/cancel", async (c) => {
 
   // Cancel on provider if native sub
   const subCode = sub.providerSubscriptionCode || sub.paystackSubscriptionCode;
-  if (
-    subCode &&
-    subCode !== "one-time" &&
-    !subCode.startsWith("trial-")
-  ) {
+  if (subCode && subCode !== "one-time" && !subCode.startsWith("trial-")) {
     try {
       const project = await authDb.query.projects.findFirst({
         where: eq(schema.projects.organizationId, organizationId),

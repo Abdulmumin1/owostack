@@ -5,7 +5,8 @@ import { upsertPaymentMethod } from "../../payment-methods";
 import type { WebhookContext } from "../types";
 import { handleSubscriptionCreated } from "./subscription-created";
 
-const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
+// Note: We no longer enforce a maximum trial duration here.
+// Trial dates are validated at creation time in charge-success.ts.
 
 export function handleSubscriptionStatus(status: string) {
   return async (ctx: WebhookContext): Promise<void> => {
@@ -28,9 +29,13 @@ export function handleSubscriptionStatus(status: string) {
             token: subscriptionCode,
             type: "provider_managed",
           });
-          console.log(`[WEBHOOK] Card setup complete: stored on-demand sub ${subscriptionCode} as payment method for customer=${customerId}`);
+          console.log(
+            `[WEBHOOK] Card setup complete: stored on-demand sub ${subscriptionCode} as payment method for customer=${customerId}`,
+          );
         } catch (pmErr) {
-          console.warn(`[WEBHOOK] Failed to store card_setup payment method: ${pmErr}`);
+          console.warn(
+            `[WEBHOOK] Failed to store card_setup payment method: ${pmErr}`,
+          );
         }
       }
       return;
@@ -50,7 +55,9 @@ export function handleSubscriptionStatus(status: string) {
       // Our DB may not have a matching record yet (it was stored with session_id
       // or doesn't exist at all). Fall through to creation logic.
       if (status === "active") {
-        console.log(`[WEBHOOK] No existing sub for code=${subscriptionCode}, status=active — falling through to creation`);
+        console.log(
+          `[WEBHOOK] No existing sub for code=${subscriptionCode}, status=active — falling through to creation`,
+        );
         await handleSubscriptionCreated(ctx);
       }
       return;
@@ -61,17 +68,22 @@ export function handleSubscriptionStatus(status: string) {
     // Guard: if the subscription is currently trialing and the provider reports
     // "active" (e.g. Dodo sends subscription.active even during trial period),
     // preserve the "trialing" status as long as the trial hasn't ended yet.
+    // Guard: if the subscription is currently trialing and the provider reports
+    // "active" (e.g. Dodo sends subscription.active even during trial period),
+    // preserve the "trialing" status as long as the trial hasn't ended yet.
     if (status === "active" && sub.status === "trialing") {
       const trialEnd = sub.currentPeriodEnd;
-      const trialEndValid =
-        typeof trialEnd === "number" &&
-        trialEnd > 0 &&
-        trialEnd <= now + MAX_TRIAL_DURATION_MS;
+      // Check if trial end date is valid (positive number) and in the future
+      const trialEndValid = typeof trialEnd === "number" && trialEnd > 0;
       if (trialEndValid && trialEnd > now) {
-        console.log(`[WEBHOOK] Preserving trialing status for sub=${sub.id} (trial ends ${new Date(trialEnd).toISOString()})`);
+        console.log(
+          `[WEBHOOK] Preserving trialing status for sub=${sub.id} (trial ends ${new Date(trialEnd).toISOString()})`,
+        );
         return;
       }
-      console.warn(`[WEBHOOK] Trial end invalid/out of range for sub=${sub.id}; allowing status update to ${status}`);
+      console.warn(
+        `[WEBHOOK] Trial ended or invalid for sub=${sub.id}; allowing status update to ${status}`,
+      );
     }
 
     const updates: Record<string, unknown> = {
@@ -104,7 +116,9 @@ export function handleSubscriptionStatus(status: string) {
       });
       if (newPlan && newPlan.id !== sub.planId) {
         updates.planId = newPlan.id;
-        console.log(`[WEBHOOK] Plan changed: sub=${sub.id}, oldPlan=${sub.planId}, newPlan=${newPlan.id}`);
+        console.log(
+          `[WEBHOOK] Plan changed: sub=${sub.id}, oldPlan=${sub.planId}, newPlan=${newPlan.id}`,
+        );
 
         // Re-provision entitlements so the customer gets the new plan's features
         await provisionEntitlements(db, sub.customerId, newPlan.id, sub.planId);

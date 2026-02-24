@@ -36,12 +36,24 @@
     },
   ],
 
+  // Cloudflare Workers Analytics Engine (optional but recommended)
+  "analytics_engine_datasets": [
+    {
+      "binding": "ANALYTICS",
+      "dataset": "owostack_api_dev",
+    },
+  ],
+
   // Durable Objects for usage metering
   "durable_objects": {
     "bindings": [
       {
         "name": "USAGE_METER",
         "class_name": "UsageMeterDO",
+      },
+      {
+        "name": "USAGE_LEDGER",
+        "class_name": "UsageLedgerDO",
       },
     ],
   },
@@ -99,11 +111,16 @@
       "tag": "v1",
       "new_classes": ["UsageMeterDO"],
     },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["UsageLedgerDO"],
+    },
   ],
 
   // Environment variables (local dev)
   "vars": {
     "ENVIRONMENT": "development",
+    "ANALYTICS_DATASET": "owostack_api_dev",
     "BETTER_AUTH_URL": "http://localhost:8787/api/auth",
   },
 
@@ -117,6 +134,7 @@
       "name": "owostack-api-test",
       "vars": {
         "ENVIRONMENT": "test",
+        "ANALYTICS_DATASET": "owostack_api_test",
         "BETTER_AUTH_URL": "https://api-test.owostack.com",
       },
       "d1_databases": [
@@ -137,6 +155,9 @@
         { "binding": "API_KEYS", "id": "8b5d2500402943889b9f6817038fa2e1" },
         { "binding": "CACHE", "id": "8b5d2500402943889b9f6817038fa2e1" },
         { "binding": "CACHE_SHARED", "id": "ccc79669a6524e398a56e08d8ff82345" },
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "ANALYTICS", "dataset": "owostack_api_test" },
       ],
       "queues": {
         "producers": [
@@ -159,6 +180,7 @@
       "name": "owostack-api-live",
       "vars": {
         "ENVIRONMENT": "live",
+        "ANALYTICS_DATASET": "owostack_api_live",
         "BETTER_AUTH_URL": "https://api.owostack.com",
       },
       "d1_databases": [
@@ -179,6 +201,9 @@
         { "binding": "API_KEYS", "id": "dac98089fb1a48ceacd78e2380a5022f" },
         { "binding": "CACHE", "id": "dac98089fb1a48ceacd78e2380a5022f" },
         { "binding": "CACHE_SHARED", "id": "ccc79669a6524e398a56e08d8ff82345" },
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "ANALYTICS", "dataset": "owostack_api_live" },
       ],
       "queues": {
         "producers": [
@@ -204,4 +229,6 @@
   // BETTER_AUTH_SECRET
   // GOOGLE_CLIENT_ID
   // GOOGLE_CLIENT_SECRET
+  // CF_ACCOUNT_ID
+  // CF_ANALYTICS_READ_TOKEN (Analytics:Read)
 }

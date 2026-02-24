@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { schema } from "@owostack/db";
+import { listRecentEvents } from "../../lib/analytics-engine";
 import type { Env, Variables } from "../../index";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -20,10 +21,18 @@ function parseTransactionId(id: string): {
     };
   }
   if (id.startsWith("addon:")) {
-    return { source: "addon", rawId: id.slice("addon:".length), explicit: true };
+    return {
+      source: "addon",
+      rawId: id.slice("addon:".length),
+      explicit: true,
+    };
   }
   if (id.startsWith("invoice:")) {
-    return { source: "invoice", rawId: id.slice("invoice:".length), explicit: true };
+    return {
+      source: "invoice",
+      rawId: id.slice("invoice:".length),
+      explicit: true,
+    };
   }
 
   // Backward compatibility for old IDs from the subscriptions table.
@@ -82,18 +91,10 @@ function transactionLabel(type: string) {
   }
 }
 
-async function getCustomerEvents(db: any, customerId: string) {
-  return db
-    .select({
-      id: schema.events.id,
-      type: schema.events.type,
-      data: schema.events.data,
-      createdAt: schema.events.createdAt,
-    })
-    .from(schema.events)
-    .where(eq(schema.events.customerId, customerId))
-    .orderBy(desc(schema.events.createdAt))
-    .limit(20);
+async function getCustomerEvents(env: Env, customerId: string) {
+  const result = await listRecentEvents(env, { customerId, limit: 20 });
+  if (!result.success) return [];
+  return result.data;
 }
 
 // =============================================================================
@@ -139,7 +140,10 @@ app.get("/", async (c) => {
           )
           .leftJoin(
             (schema as any).creditPacks,
-            eq((schema as any).creditPurchases.creditPackId, (schema as any).creditPacks.id),
+            eq(
+              (schema as any).creditPurchases.creditPackId,
+              (schema as any).creditPacks.id,
+            ),
           )
           .where(eq(schema.customers.organizationId, organizationId));
       } catch (e: any) {
@@ -305,7 +309,10 @@ app.get("/:id", async (c) => {
 
       if (!subscription) {
         if (explicit) {
-          return c.json({ success: false, error: "Transaction not found" }, 404);
+          return c.json(
+            { success: false, error: "Transaction not found" },
+            404,
+          );
         }
       } else {
         const type = classifyTransaction(subscription, subscription.plan);
@@ -349,7 +356,7 @@ app.get("/:id", async (c) => {
           )
           .where(eq(schema.planFeatures.planId, subscription.planId));
 
-        const events = await getCustomerEvents(db, subscription.customerId);
+        const events = await getCustomerEvents(c.env, subscription.customerId);
 
         return c.json({
           success: true,
@@ -405,7 +412,10 @@ app.get("/:id", async (c) => {
           )
           .leftJoin(
             (schema as any).creditPacks,
-            eq((schema as any).creditPurchases.creditPackId, (schema as any).creditPacks.id),
+            eq(
+              (schema as any).creditPurchases.creditPackId,
+              (schema as any).creditPacks.id,
+            ),
           )
           .where(eq((schema as any).creditPurchases.id, rawId))
           .limit(1);
@@ -421,7 +431,7 @@ app.get("/:id", async (c) => {
       }
 
       if (row) {
-        const events = await getCustomerEvents(db, row.customer.id);
+        const events = await getCustomerEvents(c.env, row.customer.id);
 
         return c.json({
           success: true,
@@ -469,7 +479,10 @@ app.get("/:id", async (c) => {
         customer: schema.customers,
       })
       .from(schema.invoices)
-      .innerJoin(schema.customers, eq(schema.invoices.customerId, schema.customers.id))
+      .innerJoin(
+        schema.customers,
+        eq(schema.invoices.customerId, schema.customers.id),
+      )
       .where(eq(schema.invoices.id, rawId))
       .limit(1);
 
@@ -489,7 +502,7 @@ app.get("/:id", async (c) => {
         where: eq(schema.paymentAttempts.invoiceId, row.invoice.id),
         orderBy: [desc(schema.paymentAttempts.createdAt)],
       }),
-      getCustomerEvents(db, row.customer.id),
+      getCustomerEvents(c.env, row.customer.id),
     ]);
 
     return c.json({

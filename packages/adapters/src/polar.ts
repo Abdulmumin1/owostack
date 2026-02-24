@@ -64,7 +64,10 @@ class PolarClient {
         for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+            const timeoutId = setTimeout(
+              () => controller.abort(),
+              this.timeout,
+            );
 
             const response = await fetch(`${this.baseUrl}${path}`, {
               method,
@@ -117,7 +120,10 @@ class PolarClient {
   getCheckoutSession(
     checkoutId: string,
   ): Promise<ProviderResult<Record<string, unknown>>> {
-    return this.request("GET", `/v1/checkouts/${encodeURIComponent(checkoutId)}`);
+    return this.request(
+      "GET",
+      `/v1/checkouts/${encodeURIComponent(checkoutId)}`,
+    );
   }
 
   confirmCheckoutSessionFromClient(
@@ -131,27 +137,33 @@ class PolarClient {
     );
   }
 
-  createCustomer(params: Record<string, unknown>): Promise<ProviderResult<{
-    id: string;
-    email: string;
-  }>> {
+  createCustomer(params: Record<string, unknown>): Promise<
+    ProviderResult<{
+      id: string;
+      email: string;
+    }>
+  > {
     return this.request("POST", "/v1/customers", params);
   }
 
-  createCustomerSession(params: Record<string, unknown>): Promise<ProviderResult<{
-    token?: string;
-    customer_portal_url?: string;
-    customer_portal?: {
-      url?: string;
-    };
-  }>> {
+  createCustomerSession(params: Record<string, unknown>): Promise<
+    ProviderResult<{
+      token?: string;
+      customer_portal_url?: string;
+      customer_portal?: {
+        url?: string;
+      };
+    }>
+  > {
     return this.request("POST", "/v1/customer-sessions", params);
   }
 
-  createProduct(params: Record<string, unknown>): Promise<ProviderResult<{
-    id: string;
-    name?: string;
-  }>> {
+  createProduct(params: Record<string, unknown>): Promise<
+    ProviderResult<{
+      id: string;
+      name?: string;
+    }>
+  > {
     return this.request("POST", "/v1/products", params);
   }
 
@@ -166,7 +178,9 @@ class PolarClient {
     );
   }
 
-  getSubscription(subscriptionId: string): Promise<ProviderResult<Record<string, unknown>>> {
+  getSubscription(
+    subscriptionId: string,
+  ): Promise<ProviderResult<Record<string, unknown>>> {
     return this.request(
       "GET",
       `/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
@@ -184,14 +198,18 @@ class PolarClient {
     );
   }
 
-  revokeSubscription(subscriptionId: string): Promise<ProviderResult<Record<string, unknown>>> {
+  revokeSubscription(
+    subscriptionId: string,
+  ): Promise<ProviderResult<Record<string, unknown>>> {
     return this.request(
       "DELETE",
       `/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
     );
   }
 
-  createRefund(params: Record<string, unknown>): Promise<ProviderResult<Record<string, unknown>>> {
+  createRefund(
+    params: Record<string, unknown>,
+  ): Promise<ProviderResult<Record<string, unknown>>> {
     return this.request("POST", "/v1/refunds", params);
   }
 }
@@ -365,6 +383,7 @@ function extractSubscriptionData(
   planCode: string | null;
   startDate: string | null;
   nextPaymentDate: string | null;
+  trialEndDate: string | null;
 } {
   const nestedSub = asRecord(data.subscription);
   const id =
@@ -373,13 +392,10 @@ function extractSubscriptionData(
     (options?.allowDataIdFallback ? asString(data.id) : null);
 
   const status =
-    asString(nestedSub?.status) ||
-    asString(data.status) ||
-    "active";
+    asString(nestedSub?.status) || asString(data.status) || "active";
 
   const planCode =
-    extractPrimaryProductId(nestedSub || {}) ||
-    extractPrimaryProductId(data);
+    extractPrimaryProductId(nestedSub || {}) || extractPrimaryProductId(data);
 
   const startDate =
     asString(nestedSub?.current_period_start) ||
@@ -392,7 +408,10 @@ function extractSubscriptionData(
     asString(data.current_period_end) ||
     asString(data.next_billing_date);
 
-  return { id, status, planCode, startDate, nextPaymentDate };
+  const trialEndDate =
+    asString(nestedSub?.trial_end) || asString(data.trial_end) || null;
+
+  return { id, status, planCode, startDate, nextPaymentDate, trialEndDate };
 }
 
 function extractPaymentAmount(data: Record<string, unknown>): number {
@@ -404,7 +423,9 @@ function extractPaymentAmount(data: Record<string, unknown>): number {
   );
 }
 
-function extractMetadata(data: Record<string, unknown>): Record<string, unknown> {
+function extractMetadata(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
   const raw = data.metadata;
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     return raw as Record<string, unknown>;
@@ -474,9 +495,8 @@ function maskValue(value: string, start = 6, end = 4): string {
 }
 
 async function sha256Hex(input: string | Uint8Array): Promise<string> {
-  const bytes = typeof input === "string"
-    ? new TextEncoder().encode(input)
-    : input;
+  const bytes =
+    typeof input === "string" ? new TextEncoder().encode(input) : input;
   // Clone into a plain Uint8Array so TS sees an ArrayBuffer-backed BufferSource.
   const normalized = new Uint8Array(bytes);
   const digest = await crypto.subtle.digest("SHA-256", normalized);
@@ -492,13 +512,8 @@ async function verifyStandardWebhook(params: {
   payload: string;
   secret: string;
 }): Promise<{ valid: boolean; diagnostics: Record<string, unknown> }> {
-  const {
-    webhookId,
-    webhookTimestamp,
-    webhookSignature,
-    payload,
-    secret,
-  } = params;
+  const { webhookId, webhookTimestamp, webhookSignature, payload, secret } =
+    params;
 
   const normalizedTimestamp = webhookTimestamp.trim();
   const timestamp = Number.parseInt(normalizedTimestamp, 10);
@@ -554,7 +569,12 @@ async function verifyStandardWebhook(params: {
   const secretStrategies: Array<{ name: string; key: Uint8Array }> = [];
   const pushSecretStrategy = (name: string, key: Uint8Array | null) => {
     if (!key || key.length === 0) return;
-    if (secretStrategies.some((s) => s.key.length === key.length && s.key.every((v, i) => v === key[i]))) {
+    if (
+      secretStrategies.some(
+        (s) =>
+          s.key.length === key.length && s.key.every((v, i) => v === key[i]),
+      )
+    ) {
       return;
     }
     secretStrategies.push({ name, key });
@@ -567,7 +587,10 @@ async function verifyStandardWebhook(params: {
     pushSecretStrategy("raw_utf8_stripped", toUtf8Bytes(strippedSecret));
   }
   pushSecretStrategy("base64_decoded_stripped", decodeSecret(normalizedSecret));
-  pushSecretStrategy("base64_decoded_full", decodeBase64Flexible(normalizedSecret));
+  pushSecretStrategy(
+    "base64_decoded_full",
+    decodeBase64Flexible(normalizedSecret),
+  );
 
   let matchedStrategy: string | null = null;
   let computedForMatched: string | null = null;
@@ -629,7 +652,9 @@ async function verifyStandardWebhook(params: {
       skewSeconds,
       signatureHeaderLength: webhookSignature.length,
       signatureCandidatesCount: candidates.length,
-      signatureCandidatesPreview: candidates.slice(0, 5).map((c) => maskValue(c)),
+      signatureCandidatesPreview: candidates
+        .slice(0, 5)
+        .map((c) => maskValue(c)),
       matchedStrategy,
       computedSignature: computedForMatched,
       computedSignaturePreview: computedForMatched
@@ -682,7 +707,9 @@ function toTrialIntervalCount(days: number): number {
   return Math.max(1, Math.floor(days));
 }
 
-function resolveExternalCustomerId(customer: ProviderCustomerRef): string | null {
+function resolveExternalCustomerId(
+  customer: ProviderCustomerRef,
+): string | null {
   const id = asString(customer.id);
   if (!id) return null;
   if (id === customer.email) return null;
@@ -699,7 +726,11 @@ function buildChargeProductName(metadata?: Record<string, unknown>): string {
 
 function isCheckoutTerminalFailure(status: string): boolean {
   const normalized = status.toLowerCase();
-  return normalized === "failed" || normalized === "expired" || normalized === "canceled";
+  return (
+    normalized === "failed" ||
+    normalized === "expired" ||
+    normalized === "canceled"
+  );
 }
 
 function isCheckoutSuccess(status: string): boolean {
@@ -714,7 +745,9 @@ export const polarAdapter: ProviderAdapter = {
   supportsNativeTrials: true,
   defaultCurrency: "USD",
 
-  async createCheckoutSession(params): Promise<ProviderResult<CheckoutSession>> {
+  async createCheckoutSession(
+    params,
+  ): Promise<ProviderResult<CheckoutSession>> {
     const clientResult = resolveClient(params.account, params.environment);
     if (clientResult.isErr()) return clientResult;
 
@@ -855,8 +888,7 @@ export const polarAdapter: ProviderAdapter = {
     if (!providerCustomerId) {
       return Result.err({
         code: "invalid_request",
-        message:
-          "Polar customer session requires a provider customer ID",
+        message: "Polar customer session requires a provider customer ID",
         providerId: PROVIDER_ID,
       });
     }
@@ -870,8 +902,7 @@ export const polarAdapter: ProviderAdapter = {
 
     const portal = asRecord(response.value.customer_portal);
     const url =
-      asString(response.value.customer_portal_url) ||
-      asString(portal?.url);
+      asString(response.value.customer_portal_url) || asString(portal?.url);
 
     if (!url) {
       return Result.err({
@@ -955,7 +986,10 @@ export const polarAdapter: ProviderAdapter = {
       return Result.ok({ updated: true });
     }
 
-    const response = await clientResult.value.updateProduct(params.planId, body);
+    const response = await clientResult.value.updateProduct(
+      params.planId,
+      body,
+    );
     if (response.isErr()) return response;
 
     return Result.ok({ updated: true });
@@ -1001,7 +1035,8 @@ export const polarAdapter: ProviderAdapter = {
     const response = await clientResult.value.revokeSubscription(
       params.subscription.id,
     );
-    if (response.isErr()) return response as ProviderResult<{ canceled: boolean }>;
+    if (response.isErr())
+      return response as ProviderResult<{ canceled: boolean }>;
 
     return Result.ok({ canceled: true });
   },
@@ -1020,8 +1055,7 @@ export const polarAdapter: ProviderAdapter = {
     if (!providerCustomerId) {
       return Result.err({
         code: "invalid_request",
-        message:
-          "Polar off-session charge requires the provider customer ID",
+        message: "Polar off-session charge requires the provider customer ID",
         providerId: PROVIDER_ID,
       });
     }
@@ -1029,7 +1063,8 @@ export const polarAdapter: ProviderAdapter = {
     if (!params.authorizationCode) {
       return Result.err({
         code: "invalid_request",
-        message: "Polar off-session charge requires a saved payment method token",
+        message:
+          "Polar off-session charge requires a saved payment method token",
         providerId: PROVIDER_ID,
       });
     }
@@ -1079,7 +1114,8 @@ export const polarAdapter: ProviderAdapter = {
     if (!checkoutId || !clientSecret) {
       return Result.err({
         code: "request_failed",
-        message: "Polar checkout response missing id/client_secret for off-session charge",
+        message:
+          "Polar checkout response missing id/client_secret for off-session charge",
         providerId: PROVIDER_ID,
       });
     }
@@ -1150,7 +1186,9 @@ export const polarAdapter: ProviderAdapter = {
       }
 
       if (attempt < 4) {
-        await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 300));
+        await new Promise((resolve) =>
+          setTimeout(resolve, (attempt + 1) * 300),
+        );
       }
     }
 
@@ -1173,12 +1211,15 @@ export const polarAdapter: ProviderAdapter = {
       },
     );
 
-    if (response.isErr()) return response as ProviderResult<{ changed: boolean }>;
+    if (response.isErr())
+      return response as ProviderResult<{ changed: boolean }>;
 
     return Result.ok({ changed: true });
   },
 
-  async refundCharge(params): Promise<ProviderResult<{ refunded: boolean; reference: string }>> {
+  async refundCharge(
+    params,
+  ): Promise<ProviderResult<{ refunded: boolean; reference: string }>> {
     const clientResult = resolveClient(params.account, params.environment);
     if (clientResult.isErr()) return clientResult;
 
@@ -1207,7 +1248,8 @@ export const polarAdapter: ProviderAdapter = {
       params.subscriptionId,
     );
 
-    if (response.isErr()) return response as ProviderResult<ProviderSubscriptionDetail>;
+    if (response.isErr())
+      return response as ProviderResult<ProviderSubscriptionDetail>;
 
     const sub = response.value;
     const subRecord = asRecord(sub) || {};
@@ -1216,7 +1258,8 @@ export const polarAdapter: ProviderAdapter = {
     const status = asString(subRecord.status) || "unknown";
 
     const product = asRecord(subRecord.product);
-    const planCode = asString(product?.id) || asString(subRecord.product_id) || undefined;
+    const planCode =
+      asString(product?.id) || asString(subRecord.product_id) || undefined;
 
     return Result.ok({
       id: subId,
@@ -1244,12 +1287,15 @@ export const polarAdapter: ProviderAdapter = {
         params.signature || headers["webhook-signature"] || "";
 
       if (!webhookId || !webhookTimestamp || !webhookSignature) {
-        console.error("[POLAR] Webhook verification failed: missing standard webhook headers", {
-          hasWebhookId: !!webhookId,
-          hasWebhookTimestamp: !!webhookTimestamp,
-          hasWebhookSignature: !!webhookSignature,
-          headerKeys: Object.keys(headers),
-        });
+        console.error(
+          "[POLAR] Webhook verification failed: missing standard webhook headers",
+          {
+            hasWebhookId: !!webhookId,
+            hasWebhookTimestamp: !!webhookTimestamp,
+            hasWebhookSignature: !!webhookSignature,
+            headerKeys: Object.keys(headers),
+          },
+        );
         return Result.ok(false);
       }
 
@@ -1262,7 +1308,10 @@ export const polarAdapter: ProviderAdapter = {
       });
 
       if (!verification.valid) {
-        console.error("[POLAR] Webhook signature mismatch", verification.diagnostics);
+        console.error(
+          "[POLAR] Webhook signature mismatch",
+          verification.diagnostics,
+        );
       }
 
       return Result.ok(verification.valid);
@@ -1338,6 +1387,7 @@ export const polarAdapter: ProviderAdapter = {
                 planCode: subscription.planCode || undefined,
                 startDate: subscription.startDate || undefined,
                 nextPaymentDate: subscription.nextPaymentDate || undefined,
+                trialEndDate: subscription.trialEndDate || undefined,
               }
             : undefined,
           plan: primaryProductId
@@ -1408,6 +1458,7 @@ export const polarAdapter: ProviderAdapter = {
             planCode: subscription.planCode || undefined,
             startDate: subscription.startDate || undefined,
             nextPaymentDate: subscription.nextPaymentDate || undefined,
+            trialEndDate: subscription.trialEndDate || undefined,
           },
           plan: subscription.planCode
             ? { providerPlanCode: subscription.planCode }
@@ -1426,6 +1477,7 @@ export const polarAdapter: ProviderAdapter = {
             planCode: subscription.planCode || undefined,
             startDate: subscription.startDate || undefined,
             nextPaymentDate: subscription.nextPaymentDate || undefined,
+            trialEndDate: subscription.trialEndDate || undefined,
           },
           plan: subscription.planCode
             ? { providerPlanCode: subscription.planCode }
@@ -1443,6 +1495,7 @@ export const polarAdapter: ProviderAdapter = {
             planCode: subscription.planCode || undefined,
             startDate: subscription.startDate || undefined,
             nextPaymentDate: subscription.nextPaymentDate || undefined,
+            trialEndDate: subscription.trialEndDate || undefined,
           },
           plan: subscription.planCode
             ? { providerPlanCode: subscription.planCode }
@@ -1460,6 +1513,7 @@ export const polarAdapter: ProviderAdapter = {
             planCode: subscription.planCode || undefined,
             startDate: subscription.startDate || undefined,
             nextPaymentDate: subscription.nextPaymentDate || undefined,
+            trialEndDate: subscription.trialEndDate || undefined,
           },
           plan: subscription.planCode
             ? { providerPlanCode: subscription.planCode }
@@ -1477,6 +1531,7 @@ export const polarAdapter: ProviderAdapter = {
             planCode: subscription.planCode || undefined,
             startDate: subscription.startDate || undefined,
             nextPaymentDate: subscription.nextPaymentDate || undefined,
+            trialEndDate: subscription.trialEndDate || undefined,
           },
           plan: subscription.planCode
             ? { providerPlanCode: subscription.planCode }
@@ -1494,6 +1549,7 @@ export const polarAdapter: ProviderAdapter = {
             planCode: subscription.planCode || undefined,
             startDate: subscription.startDate || undefined,
             nextPaymentDate: subscription.nextPaymentDate || undefined,
+            trialEndDate: subscription.trialEndDate || undefined,
           },
           plan: subscription.planCode
             ? { providerPlanCode: subscription.planCode }
@@ -1528,6 +1584,7 @@ export const polarAdapter: ProviderAdapter = {
             planCode: subscription.planCode || undefined,
             startDate: subscription.startDate || undefined,
             nextPaymentDate: subscription.nextPaymentDate || undefined,
+            trialEndDate: subscription.trialEndDate || undefined,
           },
           plan: subscription.planCode
             ? { providerPlanCode: subscription.planCode }

@@ -7,6 +7,7 @@ import { auth } from "./lib/auth";
 import { WebhookHandler } from "./lib/webhooks";
 import { WebhookError, errorToResponse } from "./lib/errors";
 import { decrypt } from "./lib/encryption";
+import { trackHttpMetric } from "./lib/analytics-engine";
 import type { ProviderAccount } from "@owostack/adapters";
 import { getProviderRegistry } from "./lib/providers";
 
@@ -41,7 +42,8 @@ import cliAuth from "./routes/cli-auth";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
-export { UsageMeterDO };
+import { UsageLedgerDO } from "./lib/usage-ledger-do";
+export { UsageMeterDO, UsageLedgerDO };
 
 // Workflows
 import { TrialEndWorkflow } from "./lib/workflows/trial-end";
@@ -60,7 +62,9 @@ export type Env = {
   DB_AUTH: D1Database; // Shared auth data (users, sessions, orgs, projects)
   CACHE: KVNamespace; // Per-environment cache
   CACHE_SHARED: KVNamespace; // Shared cache across all environments (CLI auth, etc.)
+  ANALYTICS?: AnalyticsEngineDataset; // Optional Cloudflare Analytics Engine dataset
   USAGE_METER: DurableObjectNamespace<UsageMeterDO>;
+  USAGE_LEDGER?: DurableObjectNamespace<UsageLedgerDO>;
   TRIAL_END_WORKFLOW: Workflow;
   DOWNGRADE_WORKFLOW: Workflow;
   PLAN_UPGRADE_WORKFLOW: Workflow;
@@ -70,6 +74,9 @@ export type Env = {
   BETTER_AUTH_URL: string;
   ENCRYPTION_KEY: string;
   ENVIRONMENT?: string; // "test" | "live" | "development" — set per worker deployment
+  CF_ACCOUNT_ID?: string; // Cloudflare account ID used for Analytics Engine SQL reads
+  CF_ANALYTICS_READ_TOKEN?: string; // API token with Analytics:Read for SQL queries
+  ANALYTICS_DATASET?: string; // Optional override dataset name for SQL reads
   ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack,dodopayments,polar"
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_WEBHOOK_SECRET: string;
@@ -128,6 +135,40 @@ app.use("*", async (c, next) => {
   c.set("db", db);
   c.set("authDb", authDb);
   await next();
+});
+
+// Lightweight request analytics for capacity planning and debugging.
+app.use("*", async (c, next) => {
+  const start = Date.now();
+  let threw = false;
+
+  try {
+    await next();
+  } catch (error) {
+    threw = true;
+    throw error;
+  } finally {
+    const webhookMatch = c.req.path.match(/^\/webhooks\/([^/]+)(?:\/([^/]+))?$/);
+    let organizationId: string | null = null;
+
+    try {
+      organizationId = (c.get("organizationId") as string | undefined) ?? null;
+    } catch {
+      organizationId = null;
+    }
+
+    organizationId = organizationId || c.req.query("organizationId") || webhookMatch?.[1] || null;
+    const providerId = webhookMatch ? webhookMatch[2] || "paystack" : null;
+
+    trackHttpMetric(c.env, {
+      method: c.req.method,
+      path: c.req.path,
+      status: c.res?.status ?? (threw ? 500 : 0),
+      durationMs: Date.now() - start,
+      organizationId,
+      providerId,
+    });
+  }
 });
 
 app.get("/api/auth/debug-routes", (c) => {
@@ -536,6 +577,10 @@ async function handleWebhookRequest(
     trialEndWorkflow: c.env.TRIAL_END_WORKFLOW,
     planUpgradeWorkflow: c.env.PLAN_UPGRADE_WORKFLOW,
     cache: c.env.CACHE,
+    analyticsEnv: {
+      ANALYTICS: c.env.ANALYTICS,
+      ENVIRONMENT: c.env.ENVIRONMENT,
+    },
   });
 
   const handleResult = await handler.handle(normalizedEvent);

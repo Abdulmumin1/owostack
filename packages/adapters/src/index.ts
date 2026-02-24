@@ -131,6 +131,7 @@ export interface NormalizedWebhookEvent {
     planCode?: string;
     startDate?: string;
     nextPaymentDate?: string;
+    trialEndDate?: string;
   };
   payment?: {
     amount: number;
@@ -272,7 +273,10 @@ export interface ProviderAdapter {
   changePlan?(params: {
     subscriptionId: string;
     newPlanId: string;
-    prorationMode?: "prorated_immediately" | "full_immediately" | "difference_immediately";
+    prorationMode?:
+      | "prorated_immediately"
+      | "full_immediately"
+      | "difference_immediately";
     quantity?: number;
     metadata?: Record<string, unknown>;
     environment: ProviderEnvironment;

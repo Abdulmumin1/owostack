@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowRight, ArrowsClockwise, CheckCircle, CircleNotch, Clock, CreditCard, Funnel, MagnifyingGlass, WarningCircle } from "phosphor-svelte";
+  import { ArrowRight, ArrowsClockwise, ArrowsClockwiseIcon, CheckCircle, CircleNotch, Clock, CreditCard, Funnel, MagnifyingGlass, MagnifyingGlassIcon, WarningCircle } from "phosphor-svelte";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import { formatCurrency } from "$lib/utils/currency";
@@ -79,7 +79,7 @@
       class="btn btn-secondary gap-2 text-xs uppercase tracking-wider font-bold"
       onclick={loadSubscriptions}
     >
-      <ArrowsClockwise size={14} class={isLoading ? "animate-spin" : ""} weight="fill" />
+      <ArrowsClockwiseIcon size={14} class={isLoading ? "animate-spin" : ""} weight="fill" />
       Refresh
     </button>
   </div>
@@ -87,13 +87,13 @@
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-4 mb-6">
     <div class="input-icon-wrapper max-w-sm">
-      <MagnifyingGlass
+      <MagnifyingGlassIcon
         size={14}
         class="input-icon-left text-text-dim"
         weight="fill" />
       <input
         type="text"
-        placeholder="MagnifyingGlass by customer or plan..."
+        placeholder="by customer or plan..."
         bind:value={searchQuery}
         class="input input-has-icon-left"
       />

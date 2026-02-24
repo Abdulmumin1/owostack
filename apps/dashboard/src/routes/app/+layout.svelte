@@ -12,6 +12,7 @@
   import Logo from "$lib/components/ui/Logo.svelte";
   import { getProviderConfig } from "$lib/providers";
   import { defaultCurrency } from "$lib/stores/currency";
+  import Avatar from "$components/ui/Avatar.svelte";
 
   let { children } = $props();
 
@@ -406,7 +407,7 @@
         </div>
         <div class="relative project-dropdown-container">
           <button
-            class="w-full flex items-center justify-between p-3 bg-bg-card border border-border text-left hover:border-text-dim transition-colors shadow-sm"
+            class="w-full flex items-center justify-between p-3 bg-bg-card border rounded border-border text-left hover:border-text-dim transition-colors"
             onclick={() => (showProjectDropdown = !showProjectDropdown)}
           >
             <span class="font-medium truncate text-text-primary">{currentProject.name}</span>
@@ -415,7 +416,7 @@
 
           {#if showProjectDropdown}
             <div
-              class="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border shadow-xl z-50"
+              class="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded z-50"
               onclick={(e) => e.stopPropagation()}
             >
               {#each projects as project}
@@ -471,7 +472,7 @@
               <a
                 {href}
                 class="flex items-center gap-3 px-3 py-2 transition-all duration-200 border-l-2 border-transparent {active
-                  ? 'border-accent bg-bg-card text-text-primary'
+                  ? 'border-accent bg-bg-card rounded text-text-primary'
                   : 'text-text-secondary hover:text-text-primary'}"
               >
                 <item.icon weight={active ? 'fill' : 'duotone'} size={16} class={item.color} />
@@ -515,9 +516,7 @@
         >
           <!-- Sharp Identity Square -->
           <div class="relative shrink-0">
-            <div class="w-9 h-9 bg-accent-light border border-accent flex items-center justify-center text-xs font-bold text-accent uppercase">
-              {($session.data.user.name || $session.data.user.email)[0]}
-            </div>
+            <Avatar name={$session.data.user.name} style="micah" size={14}/>
           </div>
           
           <!-- User Details -->
