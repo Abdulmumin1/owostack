@@ -62,7 +62,7 @@ const upsertSchema = z.object({
 });
 
 app.put("/", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = upsertSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -143,7 +143,7 @@ const customerLimitSchema = z.object({
 });
 
 app.put("/customer-limits", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = customerLimitSchema.safeParse(body);
 
   if (!parsed.success) {
