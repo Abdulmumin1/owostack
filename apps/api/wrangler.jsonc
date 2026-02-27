@@ -321,6 +321,10 @@
     },
   },
 
+  "observability": {
+		"enabled": true
+	}
+
   // Secrets (set via: wrangler secret put <NAME> [--env test|live])
   // ENCRYPTION_KEY
   // BETTER_AUTH_SECRET
