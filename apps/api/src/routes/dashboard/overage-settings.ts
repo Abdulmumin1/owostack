@@ -53,21 +53,29 @@ app.get("/", async (c) => {
 // ---------------------------------------------------------------------------
 const upsertSchema = z.object({
   organizationId: z.string(),
-  billingInterval: z.enum(["end_of_period", "daily", "weekly", "monthly", "threshold"]).default("end_of_period"),
+  billingInterval: z
+    .enum(["end_of_period", "daily", "weekly", "monthly", "threshold"])
+    .default("end_of_period"),
   thresholdAmount: z.number().nullable().optional(),
   autoCollect: z.boolean().default(false),
   gracePeriodHours: z.number().min(0).default(0),
 });
 
 app.put("/", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = upsertSchema.safeParse(body);
 
   if (!parsed.success) {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { organizationId, billingInterval, thresholdAmount, autoCollect, gracePeriodHours } = parsed.data;
+  const {
+    organizationId,
+    billingInterval,
+    thresholdAmount,
+    autoCollect,
+    gracePeriodHours,
+  } = parsed.data;
   const db = c.get("db");
   const now = Date.now();
 
@@ -96,7 +104,10 @@ app.get("/customer-limits", async (c) => {
   const customerId = c.req.query("customerId");
   const organizationId = c.get("organizationId");
   if (!customerId || !organizationId) {
-    return c.json({ success: false, error: "customerId and organizationId required" }, 400);
+    return c.json(
+      { success: false, error: "customerId and organizationId required" },
+      400,
+    );
   }
 
   const db = c.get("db");
@@ -105,7 +116,10 @@ app.get("/customer-limits", async (c) => {
     const limit = await (db.query as any).customerOverageLimits?.findFirst?.({
       where: and(
         eq((schema as any).customerOverageLimits.customerId, customerId),
-        eq((schema as any).customerOverageLimits.organizationId, organizationId),
+        eq(
+          (schema as any).customerOverageLimits.organizationId,
+          organizationId,
+        ),
       ),
     });
 
@@ -129,14 +143,15 @@ const customerLimitSchema = z.object({
 });
 
 app.put("/customer-limits", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = customerLimitSchema.safeParse(body);
 
   if (!parsed.success) {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { customerId, organizationId, maxOverageAmount, onLimitReached } = parsed.data;
+  const { customerId, organizationId, maxOverageAmount, onLimitReached } =
+    parsed.data;
   const db = c.get("db");
   const now = Date.now();
 
