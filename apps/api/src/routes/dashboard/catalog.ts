@@ -16,26 +16,31 @@ app.get("/export", async (c) => {
 
   const db = c.get("db");
 
-  const [features, plans, creditSystemRows, creditPackRows, overageSettingsRow]: any[] =
-    await Promise.all([
-      db.query.features.findMany({
-        where: eq(schema.features.organizationId, organizationId),
-      }),
-      db.query.plans.findMany({
-        where: eq(schema.plans.organizationId, organizationId),
-        with: { planFeatures: true },
-      }),
-      db.query.creditSystems.findMany({
-        where: eq(schema.creditSystems.organizationId, organizationId),
-        with: { features: true },
-      }),
-      (db.query as any).creditPacks?.findMany({
-        where: eq(schema.creditPacks.organizationId, organizationId),
-      }) ?? Promise.resolve([]),
-      (db.query as any).overageSettings?.findFirst({
-        where: eq(schema.overageSettings.organizationId, organizationId),
-      }) ?? Promise.resolve(null),
-    ]);
+  const [
+    features,
+    plans,
+    creditSystemRows,
+    creditPackRows,
+    overageSettingsRow,
+  ]: any[] = await Promise.all([
+    db.query.features.findMany({
+      where: eq(schema.features.organizationId, organizationId),
+    }),
+    db.query.plans.findMany({
+      where: eq(schema.plans.organizationId, organizationId),
+      with: { planFeatures: true },
+    }),
+    db.query.creditSystems.findMany({
+      where: eq(schema.creditSystems.organizationId, organizationId),
+      with: { features: true },
+    }),
+    (db.query as any).creditPacks?.findMany({
+      where: eq(schema.creditPacks.organizationId, organizationId),
+    }) ?? Promise.resolve([]),
+    (db.query as any).overageSettings?.findFirst({
+      where: eq(schema.overageSettings.organizationId, organizationId),
+    }) ?? Promise.resolve(null),
+  ]);
 
   return c.json({
     success: true,
@@ -125,7 +130,7 @@ app.get("/export", async (c) => {
 // Import catalog — upserts catalog data (skip existing by slug)
 // =============================================================================
 app.post("/import", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const { organizationId, catalog } = body;
 
   if (!organizationId || !catalog) {
@@ -261,9 +266,7 @@ app.post("/import", async (c) => {
 
         // Still check for missing plan_features on existing plans
         const existingPfByFeature = new Set(
-          ((existing as any).planFeatures || []).map(
-            (pf: any) => pf.featureId,
-          ),
+          ((existing as any).planFeatures || []).map((pf: any) => pf.featureId),
         );
 
         for (const pf of p.planFeatures || []) {

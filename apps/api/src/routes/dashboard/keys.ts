@@ -39,7 +39,7 @@ const createKeySchema = z.object({
 });
 
 app.post("/", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = createKeySchema.safeParse(body);
 
   if (!parsed.success) {

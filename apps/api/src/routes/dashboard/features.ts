@@ -42,7 +42,7 @@ const createFeatureSchema = z.object({
 });
 
 app.post("/", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = createFeatureSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -116,7 +116,7 @@ const updateFeatureSchema = z.object({
 
 app.patch("/:id", async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = updateFeatureSchema.safeParse(body);
 
   if (!parsed.success) {
