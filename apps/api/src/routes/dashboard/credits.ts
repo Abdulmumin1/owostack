@@ -21,7 +21,7 @@ const createCreditSystemSchema = z.object({
 });
 
 app.post("/", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = createCreditSystemSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -228,7 +228,7 @@ const updateCreditSystemSchema = z.object({
 
 app.put("/:id", async (c) => {
   const id = c.req.param("id");
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = updateCreditSystemSchema.safeParse(body);
 
   if (!parsed.success) {

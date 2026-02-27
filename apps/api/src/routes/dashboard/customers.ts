@@ -28,7 +28,7 @@ const createCustomerSchema = z.object({
 });
 
 app.post("/", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = createCustomerSchema.safeParse(body);
 
   if (!parsed.success) {

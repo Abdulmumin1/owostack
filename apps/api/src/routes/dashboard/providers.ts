@@ -94,21 +94,17 @@ app.get("/enabled", async (c) => {
 });
 
 app.post("/accounts", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = providerAccountSchema.safeParse(body);
 
   if (!parsed.success) {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const {
-    organizationId,
-    providerId,
-    environment,
-    displayName,
-    credentials,
-    metadata,
-  } = parsed.data;
+  const { providerId, environment, displayName, credentials, metadata } =
+    parsed.data;
+  // Use resolved organization ID from context (middleware resolves slug to UUID)
+  const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
 
   // Reject non-enabled providers
   const enabled = getEnabledProviders(c.env);
@@ -242,15 +238,16 @@ app.get("/rules", async (c) => {
 });
 
 app.post("/rules", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = providerRuleSchema.safeParse(body);
 
   if (!parsed.success) {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { organizationId, providerId, priority, isDefault, conditions } =
-    parsed.data;
+  const { providerId, priority, isDefault, conditions } = parsed.data;
+  // Use resolved organization ID from context (middleware resolves slug to UUID)
+  const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
   const db = c.get("db");
 
   const [rule] = await db
@@ -283,14 +280,16 @@ const updateAccountSchema = z.object({
 
 app.patch("/accounts/:id", async (c) => {
   const id = c.req.param("id");
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = updateAccountSchema.safeParse(body);
 
   if (!parsed.success) {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { organizationId, displayName, credentials, metadata } = parsed.data;
+  const { displayName, credentials, metadata } = parsed.data;
+  // Use resolved organization ID from context (middleware resolves slug to UUID)
+  const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
   const db = c.get("db");
 
   const existing = await db.query.providerAccounts.findFirst({
@@ -398,7 +397,7 @@ const updateRuleSchema = z.object({
 
 app.patch("/rules/:id", async (c) => {
   const id = c.req.param("id");
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = updateRuleSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -471,7 +470,7 @@ app.delete("/rules/:id", async (c) => {
 // =============================================================================
 
 app.post("/accounts/decrypt", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const { id, organizationId } = body;
   if (!id || !organizationId) {
     return c.json(
@@ -520,7 +519,7 @@ app.post("/accounts/decrypt", async (c) => {
 // =============================================================================
 
 app.post("/sync-plans", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const { organizationId, accountId } = body;
 
   if (!organizationId || !accountId) {
