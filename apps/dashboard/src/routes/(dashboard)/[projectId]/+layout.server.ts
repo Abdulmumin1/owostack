@@ -10,6 +10,10 @@ import { error, redirect } from "@sveltejs/kit";
  * 3. Returns org data to the client
  */
 
+
+import { PUBLIC_API_URL_LIVE, PUBLIC_API_URL_TEST } from '$env/static/public';
+
+
 export const load: LayoutServerLoad = async ({
   params,
   locals,
@@ -27,7 +31,7 @@ export const load: LayoutServerLoad = async ({
   }
 
   // Get the API URL
-  const apiUrl = process.env.API_URL || "http://localhost:8787";
+  const apiUrl = PUBLIC_API_URL_LIVE || PUBLIC_API_URL_TEST || "http://localhost:8787";
 
   // Forward the original request cookies to Better Auth
   const cookieHeader = request.headers.get("cookie") || "";
