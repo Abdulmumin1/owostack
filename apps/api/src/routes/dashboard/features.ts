@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
@@ -92,10 +92,17 @@ app.get("/", async (c) => {
     return c.json({ error: "Organization ID required" }, 400);
   }
 
+  const excludeBoolean = c.req.query("excludeBoolean") === "true";
   const db = c.get("db");
+
   const features = await db.query.features.findMany({
-    where: eq(schema.features.organizationId, organizationId),
-    orderBy: (f, { desc }) => [desc(f.createdAt)],
+    where: excludeBoolean
+      ? and(
+          eq(schema.features.organizationId, organizationId),
+          ne(schema.features.type, "boolean"),
+        )
+      : eq(schema.features.organizationId, organizationId),
+    orderBy: (f: any, { desc }: any) => [desc(f.createdAt)],
   });
 
   return c.json({ success: true, data: features });

@@ -86,7 +86,7 @@
   async function loadFilterOptions() {
     try {
       const featRes = await apiFetch(
-        `/api/dashboard/features?organizationId=${organizationId}`,
+        `/api/dashboard/features?organizationId=${organizationId}&excludeBoolean=true`,
       );
       if (featRes.data?.data) {
         featureOptions = featRes.data.data.map((f: any) => ({
