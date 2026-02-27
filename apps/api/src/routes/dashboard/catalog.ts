@@ -130,8 +130,10 @@ app.get("/export", async (c) => {
 // Import catalog — upserts catalog data (skip existing by slug)
 // =============================================================================
 app.post("/import", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
-  const { organizationId, catalog } = body;
+  const body = await c.req.json();
+  const { catalog } = body;
+  // Use resolved organization ID from context (middleware resolves slug to UUID)
+  const organizationId = c.get("organizationId") ?? body.organizationId;
 
   if (!organizationId || !catalog) {
     return c.json(

@@ -39,14 +39,16 @@ const createKeySchema = z.object({
 });
 
 app.post("/", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = createKeySchema.safeParse(body);
 
   if (!parsed.success) {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { organizationId, name } = parsed.data;
+  const { name } = parsed.data;
+  // Use resolved organization ID from context (middleware resolves slug to UUID)
+  const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
   const db = c.get("authDb");
 
   // Generate Key

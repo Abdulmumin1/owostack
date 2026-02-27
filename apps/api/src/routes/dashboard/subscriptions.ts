@@ -57,7 +57,7 @@ const createSubscriptionSchema = z.object({
 });
 
 app.post("/", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = createSubscriptionSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -342,7 +342,7 @@ const previewSwitchSchema = z.object({
 });
 
 app.post("/preview-switch", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = previewSwitchSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -371,14 +371,16 @@ const switchPlanSchema = z.object({
 });
 
 app.post("/switch-plan", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = switchPlanSchema.safeParse(body);
 
   if (!parsed.success) {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { customerId, newPlanId, organizationId } = parsed.data;
+  const { customerId, newPlanId } = parsed.data;
+  // Use resolved organization ID from context (middleware resolves slug to UUID)
+  const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
   const db = c.get("db");
   const authDb = c.get("authDb");
 
@@ -447,14 +449,16 @@ const cancelSchema = z.object({
 });
 
 app.post("/cancel", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = cancelSchema.safeParse(body);
 
   if (!parsed.success) {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { subscriptionId, organizationId, immediate } = parsed.data;
+  const { subscriptionId, immediate } = parsed.data;
+  // Use resolved organization ID from context (middleware resolves slug to UUID)
+  const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
   const db = c.get("db");
   const authDb = c.get("authDb");
   const now = Date.now();
@@ -758,8 +762,7 @@ app.post("/:id/checkout", async (c) => {
     }
 
     // 3. Generate activation link (our public API GET route)
-    const cachedBody = c.get("parsedBody");
-    const body = cachedBody ?? (await c.req.json().catch(() => ({})));
+    const body = await c.req.json().catch(() => ({}));
     const callbackUrl = body?.callbackUrl;
 
     // Use URL from request to build the activation link

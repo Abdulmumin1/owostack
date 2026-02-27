@@ -72,7 +72,7 @@ app.get("/", async (c) => {
 
 // POST / — Create a credit pack
 app.post("/", async (c) => {
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = createPackSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -159,7 +159,7 @@ app.post("/", async (c) => {
 // PATCH /:id — Update a credit pack
 app.patch("/:id", async (c) => {
   const id = c.req.param("id");
-  const body = c.get("parsedBody") ?? (await c.req.json());
+  const body = await c.req.json();
   const parsed = updatePackSchema.safeParse(body);
 
   if (!parsed.success) {

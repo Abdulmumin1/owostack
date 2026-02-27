@@ -103,7 +103,6 @@ export type Variables = {
   session: any | null;
   token: any | null;
   organizationId?: string; // Set by API key auth middleware
-  parsedBody?: any; // Cached request body for downstream handlers
 };
 
 export const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -254,8 +253,6 @@ dashboardRoutes.use("*", async (c, next) => {
     try {
       const body = await c.req.json();
       organizationId = body?.organizationId;
-      // Cache parsed body so downstream handlers don't need to re-read
-      c.set("parsedBody", body);
     } catch {}
   }
 
