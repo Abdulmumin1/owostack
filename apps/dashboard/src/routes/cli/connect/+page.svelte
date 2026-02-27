@@ -12,13 +12,18 @@
   let selectedOrgId = $state<string>("");
   let loading = $state(true);
   let sessionChecked = $state(false);
+  let success = $state(false);
+  let denied = $state(false);
+  let approving = $state(false);
+  let denying = $state(false);
+  let error = $state<string | null>(null);
 
   $effect(() => {
     if ($session.data) {
       sessionChecked = true;
       loadOrganizations();
-    } else if ($session.data === null && !sessionChecked) {
-      // Session loaded but user is not authenticated
+    } else if (!$session.data && $session.isPending === false && !sessionChecked) {
+      // Session check completed but user is not authenticated
       sessionChecked = true;
       loading = false;
     }
