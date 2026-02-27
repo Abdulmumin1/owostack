@@ -13,8 +13,16 @@ import type {
   InvoiceResult,
   InvoicesParams,
   InvoicesResult,
+  PayInvoiceParams,
+  PayInvoiceResult,
   OwostackConfig,
   SyncResult,
+  WalletResult,
+  WalletSetupResult,
+  WalletRemoveResult,
+  PlansParams,
+  PlansResult,
+  PublicPlan,
 } from "@owostack/types";
 
 import { bindFeatureHandles, buildSyncPayload } from "./catalog.js";
@@ -37,10 +45,15 @@ export class Owostack {
   /** Billing: unbilled usage, invoices, and invoice generation */
   readonly billing: BillingNamespace;
 
+  /** Wallet: payment methods — callable + namespace */
+  readonly wallet: WalletFn;
+
   constructor(config: OwostackConfig) {
     this._config = config;
     this.apiUrl = config.apiUrl || "https://api.owostack.dev";
     this.billing = new BillingNamespace(this);
+    this.wallet = buildWalletFn(this);
+    this.plans = buildPlansFn(this);
 
     // Bind all registered feature handles to this client
     if (config.catalog && config.catalog.length > 0) {
@@ -191,6 +204,26 @@ export class Owostack {
   }
 
   /**
+   * plans() - List Plans
+   *
+   * Returns all active plans for the organization. Useful for building
+   * pricing pages and plan selection UIs.
+   *
+   * @example
+   * ```ts
+   * const { plans } = await owo.plans();
+   * plans.forEach(p => console.log(p.name, p.price));
+   *
+   * // Filter by group
+   * const { plans: support } = await owo.plans({ group: 'support' });
+   *
+   * // Get a single plan by slug
+   * const plan = await owo.plans.get('pro');
+   * ```
+   */
+  readonly plans: PlansFn;
+
+  /**
    * Internal POST request handler
    * @internal
    */
@@ -238,6 +271,69 @@ export class Owostack {
 
     return response.json();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Plans — callable + .get(slug)
+//
+// owo.plans()                  → PlansResult
+// owo.plans({ group: '...' })  → PlansResult (filtered)
+// owo.plans.get('pro')         → PublicPlan
+// ---------------------------------------------------------------------------
+
+type PlansFn = {
+  (params?: PlansParams): Promise<PlansResult>;
+  get(slug: string): Promise<PublicPlan>;
+};
+
+function buildPlansFn(client: Owostack): PlansFn {
+  const fn = ((params?: PlansParams) => {
+    const query: Record<string, string> = {};
+    if (params?.group) query.group = params.group;
+    if (params?.interval) query.interval = params.interval;
+    if (params?.currency) query.currency = params.currency;
+    if (params?.includeInactive) query.includeInactive = "true";
+    return client.get("/plans", query) as Promise<PlansResult>;
+  }) as PlansFn;
+
+  fn.get = async (slug: string) => {
+    const response = await client.get(`/plans/${encodeURIComponent(slug)}`);
+    return (response as any).plan as PublicPlan;
+  };
+
+  return fn;
+}
+
+// ---------------------------------------------------------------------------
+// Wallet — callable + namespace
+//
+// owo.wallet("user@email.com")           → WalletResult
+// owo.wallet.setup("user@email.com", {}) → WalletSetupResult
+// owo.wallet.list("user@email.com")      → { methods: PaymentMethodInfo[] }
+// owo.wallet.remove("user@email.com", id)→ WalletRemoveResult
+// ---------------------------------------------------------------------------
+
+type WalletFn = {
+  (customer: string): Promise<WalletResult>;
+  setup(customer: string, opts?: { callbackUrl?: string; provider?: string }): Promise<WalletSetupResult>;
+  list(customer: string): Promise<WalletResult>;
+  remove(customer: string, id: string): Promise<WalletRemoveResult>;
+};
+
+function buildWalletFn(client: Owostack): WalletFn {
+  const fn = ((customer: string) =>
+    client.get("/wallet", { customer })) as WalletFn;
+
+  fn.setup = (customer: string, opts?: { callbackUrl?: string; provider?: string }) =>
+    client.post("/wallet/setup", { customer, ...opts }) as Promise<WalletSetupResult>;
+
+  fn.list = (customer: string) =>
+    client.get("/wallet", { customer }) as Promise<WalletResult>;
+
+  fn.remove = (customer: string, id: string) =>
+    client.post("/wallet/remove", { customer, id }) as Promise<WalletRemoveResult>;
+
+  return fn;
 }
 
 /**
@@ -298,6 +394,29 @@ class BillingNamespace {
     });
     return response as InvoicesResult;
   }
+
+  /**
+   * pay() - Pay an Invoice
+   *
+   * Attempts to auto-charge the customer's saved payment method.
+   * If no card on file or charge fails, returns a checkout URL instead.
+   *
+   * @example
+   * ```ts
+   * const result = await owo.billing.pay({ invoiceId: 'inv_xxx' });
+   * if (!result.paid) {
+   *   // Redirect customer to checkout
+   *   window.location.href = result.checkoutUrl!;
+   * }
+   * ```
+   */
+  async pay(params: PayInvoiceParams): Promise<PayInvoiceResult> {
+    const response = await this.client.post(
+      `/billing/invoice/${encodeURIComponent(params.invoiceId)}/pay`,
+      { callbackUrl: params.callbackUrl },
+    );
+    return response as PayInvoiceResult;
+  }
 }
 
 /**
@@ -338,6 +457,8 @@ export type {
   InvoicesResult,
   Invoice,
   InvoiceLineItem,
+  PayInvoiceParams,
+  PayInvoiceResult,
   OwostackConfig,
   CustomerData,
   ResponseDetails,
@@ -351,4 +472,13 @@ export type {
   SyncPayload,
   SyncResult,
   SyncChanges,
+  CardInfo,
+  PaymentMethodInfo,
+  WalletResult,
+  WalletSetupResult,
+  WalletRemoveResult,
+  PlansParams,
+  PlansResult,
+  PublicPlan,
+  PublicPlanFeature,
 } from "@owostack/types";

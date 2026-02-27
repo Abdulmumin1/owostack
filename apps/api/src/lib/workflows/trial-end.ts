@@ -31,6 +31,7 @@ export interface TrialEndParams {
   amount?: number;
   currency?: string;
   planSlug?: string;
+  nativeTrial?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
       email,
       amount,
       currency,
+      nativeTrial,
     } = event.payload;
 
     // Step 1: Sleep until trial ends
@@ -88,14 +90,47 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
       return;
     }
 
-    // Step 3: Branch — no card, missing charge data, or zero amount → expire
-    if (!authorizationCode || !email || !amount || amount <= 0) {
+    // Step 2b: Native trial — provider (e.g. Dodo) manages billing automatically.
+    // Just activate the subscription; the provider's webhook will confirm the charge.
+    if (nativeTrial) {
+      await step.do("activate-native-trial", async () => {
+        const now = Date.now();
+        await this.env.DB.prepare(
+          "UPDATE subscriptions SET status = 'active', updated_at = ? WHERE id = ? AND status = 'trialing'",
+        ).bind(now, subscriptionId).run();
+        console.log(`[TrialEndWorkflow] Native trial ended, activated: subscription=${subscriptionId} (provider handles billing)`);
+      });
+      return;
+    }
+
+    // Step 3: Re-fetch latest auth from payment_methods table.
+    // The customer may have updated their card since the trial started.
+    const latestAuth = await step.do("fetch-latest-auth", async () => {
+      const pm = await this.env.DB.prepare(
+        "SELECT token, provider_id FROM payment_methods WHERE customer_id = ? AND is_valid = 1 AND is_default = 1 LIMIT 1",
+      ).bind(customerId).first<{ token: string; provider_id: string }>();
+
+      const customer = await this.env.DB.prepare(
+        "SELECT email FROM customers WHERE id = ? LIMIT 1",
+      ).bind(customerId).first<{ email: string | null }>();
+
+      return {
+        authCode: pm?.token || authorizationCode || null,
+        email: customer?.email || email || null,
+      };
+    });
+
+    const resolvedAuthCode = latestAuth.authCode;
+    const resolvedEmail = latestAuth.email;
+
+    // Step 3b: Branch — no card, missing charge data, or zero amount → expire
+    if (!resolvedAuthCode || !resolvedEmail || !amount || amount <= 0) {
       await step.do("expire-subscription", async () => {
         const now = Date.now();
         await this.env.DB.prepare(
           "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ?",
         ).bind(now, subscriptionId).run();
-        console.log(`[TrialEndWorkflow] Expired (no card): subscription=${subscriptionId}`);
+        console.log(`[TrialEndWorkflow] Expired (no card/data): subscription=${subscriptionId}, authCode=${!!resolvedAuthCode}, email=${!!resolvedEmail}, amount=${amount}`);
       });
       return;
     }
@@ -128,22 +163,26 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
       return;
     }
 
-    // Step 5: Charge the saved card via adapter (with retries)
+    // Step 5: Charge the saved card via adapter.
+    // IMPORTANT: Never throw from inside step.do for provider errors — Cloudflare
+    // Workflows treats exhausted retries as a terminal workflow failure, bypassing
+    // JavaScript try/catch. Instead, return a result object and handle failures
+    // gracefully so the expire fallback always runs.
+    const MAX_CHARGE_ATTEMPTS = 3;
     let chargeSucceeded = false;
-    try {
-      await step.do(
-        "charge-card",
-        {
-          retries: { limit: 3, delay: "30 seconds", backoff: "exponential" },
-          timeout: "30 seconds",
-        },
-        async () => {
-          const adapter = getAdapter(providerId);
-          if (!adapter) throw new Error(`No adapter registered for provider: ${providerId}`);
+    let lastChargeError = "";
 
-          const result = await adapter.chargeAuthorization({
-            customer: { id: customerId, email: email! },
-            authorizationCode: authorizationCode!,
+    for (let attempt = 0; attempt < MAX_CHARGE_ATTEMPTS; attempt++) {
+      const result = await step.do(`charge-card-attempt-${attempt}`, async () => {
+        const adapter = getAdapter(providerId);
+        if (!adapter) {
+          return { success: false as const, error: `No adapter for provider: ${providerId}`, retryable: false };
+        }
+
+        try {
+          const chargeResult = await adapter.chargeAuthorization({
+            customer: { id: customerId, email: resolvedEmail },
+            authorizationCode: resolvedAuthCode,
             amount: amount!,
             currency: currency || "USD",
             metadata: {
@@ -157,17 +196,46 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
             account: accountData as unknown as ProviderAccount,
           });
 
-          if (result.isErr()) {
-            throw new Error(`Charge failed: ${result.error.message}`);
+          if (chargeResult.isErr()) {
+            const errMsg = chargeResult.error.message || JSON.stringify(chargeResult.error);
+            // Determine if the error is retryable.
+            // Authorization/validation errors are permanent — retrying won't help.
+            const permanent = /invalid_authorization|validation_error|invalid_request|authorization.*(invalid|expired|not found)/i.test(errMsg);
+            console.error(`[TrialEndWorkflow] Charge attempt ${attempt} failed: ${errMsg} (permanent=${permanent})`);
+            return { success: false as const, error: errMsg, retryable: !permanent };
           }
 
-          console.log(`[TrialEndWorkflow] Charge succeeded: subscription=${subscriptionId}, ref=${result.value.reference}`);
-          return { reference: result.value.reference };
-        },
-      );
-      chargeSucceeded = true;
-    } catch (chargeErr) {
-      console.error(`[TrialEndWorkflow] Charge exhausted retries: subscription=${subscriptionId}`, chargeErr);
+          console.log(`[TrialEndWorkflow] Charge succeeded: subscription=${subscriptionId}, ref=${chargeResult.value.reference}`);
+          return { success: true as const, reference: chargeResult.value.reference };
+        } catch (networkErr: any) {
+          // Network/timeout errors are retryable
+          console.error(`[TrialEndWorkflow] Charge attempt ${attempt} threw: ${networkErr.message}`);
+          return { success: false as const, error: networkErr.message, retryable: true };
+        }
+      });
+
+      if (result.success) {
+        chargeSucceeded = true;
+        break;
+      }
+
+      lastChargeError = result.error;
+
+      // Don't retry permanent errors
+      if (!result.retryable) {
+        console.log(`[TrialEndWorkflow] Permanent charge error — skipping remaining attempts`);
+        break;
+      }
+
+      // Wait before retrying (exponential backoff: 30s, 60s)
+      if (attempt < MAX_CHARGE_ATTEMPTS - 1) {
+        const delayMs = 30_000 * Math.pow(2, attempt);
+        await step.sleep(`charge-retry-wait-${attempt}`, delayMs);
+      }
+    }
+
+    if (!chargeSucceeded) {
+      console.error(`[TrialEndWorkflow] All charge attempts failed: subscription=${subscriptionId}, lastError=${lastChargeError}`);
     }
 
     if (chargeSucceeded) {
@@ -207,7 +275,14 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
       // (we already charged the first cycle via chargeAuthorization).
       let providerSubCode: string | null = null;
 
-      if (isRecurring && providerPlanCode && customerCode && authorizationCode) {
+      // Skip provider subscription creation for providers with native trial/subscription
+      // management (supportsNativeTrials). For these providers, the subscription already
+      // exists from the initial checkout — calling createSubscription would create a new
+      // checkout session requiring user interaction.
+      const trialAdapter = getAdapter(providerId);
+      const skipProviderSub = trialAdapter?.supportsNativeTrials === true;
+
+      if (isRecurring && providerPlanCode && customerCode && resolvedAuthCode && !skipProviderSub) {
         try {
           const subResult = await step.do("create-provider-subscription", async () => {
             const adapter = getAdapter(providerId);
@@ -218,7 +293,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<WorkflowEnv, TrialEndPa
             const result = await adapter.createSubscription({
               customer: { id: customerCode!, email: email || customer!.email },
               plan: { id: providerPlanCode! },
-              authorizationCode,
+              authorizationCode: resolvedAuthCode,
               startDate: startDate.toISOString(),
               environment: accountData.environment as "test" | "live",
               account: accountData as unknown as ProviderAccount,

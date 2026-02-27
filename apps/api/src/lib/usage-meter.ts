@@ -159,7 +159,12 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
 
     const intervalMs = this.getIntervalMs(config.resetInterval);
     console.log(`[UsageMeter] maybeReset(${featureId}): interval=${config.resetInterval}, intervalMs=${intervalMs}, lastReset=${new Date(state.lastReset).toISOString()}, nextReset=${new Date(state.lastReset + intervalMs).toISOString()}, now=${new Date().toISOString()}, usage=${state.usage}, balance=${state.balance}`);
+    
     if (intervalMs === 0) return;
+
+        const currentAlarm = await this.ctx.storage.getAlarm();
+
+console.log("current alarm (s)", Math.round((currentAlarm - Date.now()) / 1000), 's');
 
     const nextReset = state.lastReset + intervalMs;
     if (Date.now() >= nextReset) {
@@ -366,7 +371,10 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
    */
   private async scheduleResetAlarm(): Promise<void> {
     // Find the soonest reset time across all features
+
+    console.log('SOMEONE WANTS TO SCHEDULE')
     let soonestReset = Infinity;
+
 
     for (const [featureId, config] of this.featureConfigs) {
       if (config.resetInterval === "none") continue;
@@ -382,14 +390,23 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
       }
     }
 
-    // Only set alarm if we have a valid reset time
-    if (soonestReset !== Infinity && soonestReset > Date.now()) {
-      const currentAlarm = await this.ctx.storage.getAlarm();
+    if (soonestReset === Infinity) return;
 
-      // Only set if no alarm or this one is sooner
-      if (!currentAlarm || soonestReset < currentAlarm) {
-        await this.ctx.storage.setAlarm(soonestReset);
-      }
+console.log("soonest (s)", Math.round((soonestReset - Date.now()) / 1000), 's');
+
+    // If the reset time is in the past, schedule immediately so the alarm
+    // fires ASAP instead of silently dropping it (fixes missed alarm chain)
+    const alarmTime = soonestReset > Date.now() ? soonestReset : Date.now() + 1000;
+
+    const currentAlarm = await this.ctx.storage.getAlarm();
+
+console.log("current alarm (s)", Math.round((alarmTime - Date.now()) / 1000), 's');
+console.log("current alarm time (s)", Math.round((currentAlarm - Date.now()) / 1000), 's');
+// console.log(currentAlarm)
+
+    // Set alarm if: no alarm exists, this one is sooner, or the existing alarm is stale (past)
+    if (!currentAlarm || alarmTime < currentAlarm || currentAlarm <= Date.now()) {
+      await this.ctx.storage.setAlarm(alarmTime);
     }
   }
 
@@ -398,7 +415,7 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
    * Called by Cloudflare when the scheduled alarm fires
    */
   async alarm(): Promise<void> {
-    await this.init();
+    await this.init()
     console.log(`[UsageMeter] ⏰ Alarm fired at ${new Date().toISOString()}`);
 
     const now = Date.now();
@@ -406,7 +423,7 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
     // Check all features for reset
     for (const [featureId, state] of this.featureUsage) {
       const config = this.featureConfigs.get(featureId);
-
+      console.log({config})
       if (config && config.resetInterval !== "none") {
         const intervalMs = this.getIntervalMs(config.resetInterval);
         const nextReset = state.lastReset + intervalMs;

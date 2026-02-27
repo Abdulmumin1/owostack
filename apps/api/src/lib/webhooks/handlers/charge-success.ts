@@ -1,0 +1,787 @@
+import { schema } from "@owostack/db";
+import { eq, and, or, sql } from "drizzle-orm";
+import { provisionEntitlements } from "../../plan-switch";
+import { topUpScopedBalance } from "../../addon-credits";
+import { upsertPaymentMethod } from "../../payment-methods";
+import type { WebhookContext } from "../types";
+import { safeParseDate, intervalToMs } from "../types";
+
+export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
+  const { db, organizationId, event } = ctx;
+  const { metadata } = event;
+  const reference = event.payment?.reference || "";
+  console.log(`[WEBHOOK] handleChargeSuccess called, reference=${reference}`);
+
+  // Guard: cannot process without a customer email
+  if (!event.customer.email) {
+    console.warn(`[WEBHOOK] charge.success with no customer email — skipping. ref=${reference}, provider=${event.provider}`);
+    return;
+  }
+
+  // 1. Find or Create Customer
+  let dbCustomer = await db.query.customers.findFirst({
+    where: and(
+      eq(schema.customers.email, event.customer.email.toLowerCase()),
+      eq(schema.customers.organizationId, organizationId),
+    ),
+  });
+
+  if (!dbCustomer) {
+    const [newCustomer] = await db
+      .insert(schema.customers)
+      .values({
+        id: crypto.randomUUID(),
+        organizationId,
+        email: event.customer.email.toLowerCase(),
+        providerId: event.provider,
+        providerCustomerId: event.customer.providerCustomerId,
+        providerAuthorizationCode: event.authorization?.reusable
+          ? event.authorization.code
+          : null,
+        paystackCustomerId: event.provider === "paystack" ? event.customer.providerCustomerId : null,
+        paystackAuthorizationCode: event.provider === "paystack" && event.authorization?.reusable
+          ? event.authorization.code
+          : null,
+      })
+      .returning();
+    dbCustomer = newCustomer;
+  } else if (event.authorization?.reusable && event.authorization.code) {
+    // Update authorization code if we got a new reusable one
+    await db
+      .update(schema.customers)
+      .set({
+        providerId: event.provider,
+        providerCustomerId: event.customer.providerCustomerId,
+        providerAuthorizationCode: event.authorization.code,
+        paystackAuthorizationCode: event.provider === "paystack" ? event.authorization.code : dbCustomer.paystackAuthorizationCode,
+        paystackCustomerId: event.provider === "paystack" ? event.customer.providerCustomerId : dbCustomer.paystackCustomerId,
+        updatedAt: Date.now(),
+      })
+      .where(eq(schema.customers.id, dbCustomer.id));
+  }
+
+  // 1b. Upsert payment method if we have a chargeable token.
+  // Only save as "card" when actual card details (last4) are present (Paystack).
+  // For Dodo the authorization code is a subscription_id — those are stored as
+  // "provider_managed" by the subscription.created handler instead.
+  if (event.authorization?.reusable && event.authorization.code && event.authorization.last4) {
+    try {
+      await upsertPaymentMethod(db, {
+        customerId: dbCustomer.id,
+        organizationId,
+        providerId: event.provider,
+        token: event.authorization.code,
+        type: "card",
+        cardLast4: event.authorization.last4,
+        cardBrand: event.authorization.cardType,
+        cardExpMonth: event.authorization.expMonth,
+        cardExpYear: event.authorization.expYear,
+      });
+    } catch (pmErr) {
+      console.warn(`[WEBHOOK] Failed to upsert payment method: ${pmErr}`);
+    }
+  }
+
+  // Parse trial flags once — reused by both auto-refund (1c) and trial handling (2).
+  const isCardSetup = metadata.type === "card_setup";
+  const isTrial = metadata.is_trial === true || metadata.is_trial === "true";
+  const isNativeTrial = metadata.native_trial === true || metadata.native_trial === "true";
+  const isAuthCaptureTrial = isTrial && !isNativeTrial;
+
+  // 1c. Auto-refund auth capture charges (card_setup or non-native trial).
+  // These are small verification charges — refund them so the customer isn't billed.
+  // Fire-and-forget: refund failure should never block the main flow.
+  const refundFn = ctx.adapter?.refundCharge?.bind(ctx.adapter);
+  if ((isCardSetup || isAuthCaptureTrial) && reference && refundFn && ctx.providerAccount) {
+    // Truly fire-and-forget — don't block the webhook response for a non-critical refund.
+    const account = ctx.providerAccount;
+    const refundType = isCardSetup ? "card_setup" : "trial";
+    refundFn({
+      reference,
+      reason: isCardSetup ? "Card setup verification refund" : "Trial card verification refund",
+      environment: account.environment as "test" | "live",
+      account,
+    }).then((result) => {
+      if (result.isErr()) {
+        console.warn(`[WEBHOOK] Auto-refund failed for ref=${reference}: ${result.error.message}`);
+      } else {
+        console.log(`[WEBHOOK] Auto-refunded auth capture: ref=${reference}, type=${refundType}`);
+      }
+    }).catch((err) => {
+      console.warn(`[WEBHOOK] Auto-refund error for ref=${reference}: ${err}`);
+    });
+  }
+
+  // 2. Handle TRIAL subscriptions (is_trial in metadata)
+  const trialDays = Number(metadata.trial_days) || 0;
+  const trialUnitMeta = metadata.trial_unit as string | undefined;
+
+  // For native trials (e.g. Dodo $0 payment) where our checkout metadata may not
+  // survive the round-trip, resolve plan_id from the provider plan code on the event.
+  if (isTrial && !metadata.plan_id && event.plan?.providerPlanCode) {
+    const resolvedPlan = await db.query.plans.findFirst({
+      where: and(
+        or(
+          eq(schema.plans.providerPlanId, event.plan.providerPlanCode),
+          eq(schema.plans.paystackPlanId, event.plan.providerPlanCode),
+        ),
+        eq(schema.plans.organizationId, organizationId),
+      ),
+    });
+    if (resolvedPlan) {
+      metadata.plan_id = resolvedPlan.id;
+      metadata.plan_slug = resolvedPlan.slug;
+      if (!metadata.amount) metadata.amount = resolvedPlan.price;
+      if (!metadata.currency) metadata.currency = resolvedPlan.currency;
+    }
+  }
+
+  console.log(`[WEBHOOK] Trial check: is_trial=${JSON.stringify(metadata.is_trial)} (resolved=${isTrial}), native=${isNativeTrial}, plan_id=${metadata.plan_id}, trial_days=${metadata.trial_days} (resolved=${trialDays})`);
+
+  // For native trials, trialDays may be 0 (metadata lost). Allow entry if native_trial flag is set.
+  if (isTrial && metadata.plan_id && (trialDays > 0 || isNativeTrial)) {
+    await handleTrialCreation(ctx, dbCustomer, trialDays, trialUnitMeta);
+    return;
+  }
+
+  // 2b. Trial conversion charges (from trial-end workflow's chargeAuthorization)
+  // The workflow handles subscription activation — skip to avoid creating a duplicate.
+  const isTrialConversion = metadata.trial_conversion === true || metadata.trial_conversion === "true";
+  if (isTrialConversion) {
+    console.log(`[WEBHOOK] Trial conversion charge for customer=${dbCustomer.id}, plan=${metadata.plan_id} — workflow handles activation`);
+    return;
+  }
+
+  // 2c. Handle INVOICE PAYMENT (from billing.pay() checkout or auto-charge webhook)
+  if (metadata.type === "invoice_payment" && metadata.invoice_id) {
+    const invoiceId = String(metadata.invoice_id);
+    console.log(`[WEBHOOK] Invoice payment received: invoice=${invoiceId}, ref=${reference}`);
+    try {
+      await db
+        .update(schema.invoices)
+        .set({
+          status: "paid",
+          amountPaid: event.payment?.amount || 0,
+          amountDue: 0,
+          paidAt: Date.now(),
+          updatedAt: Date.now(),
+        })
+        .where(eq(schema.invoices.id, invoiceId));
+    } catch (e) {
+      console.warn(`[WEBHOOK] Failed to mark invoice ${invoiceId} as paid:`, e);
+    }
+    return;
+  }
+
+  // 3. Handle PLAN UPGRADE (checkout-based upgrade flow)
+  if (metadata.type === "plan_upgrade") {
+    await handlePlanUpgrade(ctx, dbCustomer);
+    return;
+  }
+
+  // 4. Handle CREDIT PACK PURCHASE (checkout-based add-on credits)
+  if (metadata.type === "credit_purchase" && metadata.credits) {
+    await handleCreditPurchase(ctx, dbCustomer, reference);
+    return;
+  }
+
+  // 5. Handle ONE-TIME PURCHASE
+  if (metadata.type === "one_time_purchase" && metadata.plan_id) {
+    await handleOneTimePurchase(ctx, dbCustomer);
+    return;
+  }
+
+  // 6. Handle regular Subscription / Plan Assignment
+  if (metadata.plan_id) {
+    await handleSubscriptionPayment(ctx, dbCustomer);
+  }
+
+  // 6b. Fallback for auto-renewals: provider fires charge.success with
+  // subscription_code but NO metadata.plan_id. Look up the subscription by
+  // provider code and advance its billing period so usage pools reset.
+  if (!metadata.plan_id && event.subscription?.providerCode) {
+    await handleAutoRenewal(ctx, dbCustomer);
+  }
+
+  // 7. Handle Credits (if applicable)
+  // metadata.credits may be a number (Paystack) or string (Dodo/others)
+  const creditsAmount = Number(metadata.credits);
+  if (metadata.credits != null && !isNaN(creditsAmount) && creditsAmount > 0) {
+    const existingCredits = await db.query.credits.findFirst({
+      where: eq(schema.credits.customerId, dbCustomer.id),
+    });
+
+    if (existingCredits) {
+      // Atomic increment to avoid read-then-write race under concurrent webhooks
+      await db
+        .update(schema.credits)
+        .set({
+          balance: sql`${schema.credits.balance} + ${creditsAmount}`,
+          updatedAt: Date.now(),
+        })
+        .where(eq(schema.credits.id, existingCredits.id));
+    } else {
+      await db.insert(schema.credits).values({
+        id: crypto.randomUUID(),
+        customerId: dbCustomer.id,
+        balance: creditsAmount,
+      });
+    }
+  }
+}
+
+// =============================================================================
+// Sub-handlers
+// =============================================================================
+
+async function handleTrialCreation(
+  ctx: WebhookContext,
+  dbCustomer: any,
+  trialDays: number,
+  trialUnitMeta: string | undefined,
+): Promise<void> {
+  const { db, organizationId, event, workflows } = ctx;
+  const { metadata } = event;
+  const planId = metadata.plan_id as string;
+  const isNativeTrial = metadata.native_trial === true || metadata.native_trial === "true";
+  const now = Date.now();
+
+  // Compute trial end:
+  // 1. For native trials, prefer the provider's next billing date (most accurate)
+  // 2. Otherwise, compute from trialDays
+  // 3. Fallback: 30 days (native trial with no dates available)
+  let trialEndMs: number;
+  if (isNativeTrial && event.subscription?.nextPaymentDate) {
+    trialEndMs = safeParseDate(event.subscription.nextPaymentDate) || (now + 30 * 24 * 60 * 60 * 1000);
+  } else if (trialDays > 0) {
+    trialEndMs = trialUnitMeta === "minutes"
+      ? now + trialDays * 60 * 1000
+      : now + trialDays * 24 * 60 * 60 * 1000;
+  } else {
+    trialEndMs = now + 30 * 24 * 60 * 60 * 1000;
+  }
+
+  console.log(`[TRIAL-WEBHOOK] Card captured for trial: plan=${planId}, customer=${dbCustomer.id}, native=${isNativeTrial}, duration=${trialDays} ${trialUnitMeta || 'days'}, trialEnds=${new Date(trialEndMs).toISOString()}`);
+
+  // For native trials, use the provider's subscription code directly (not a synthetic trial-xxx code)
+  // so subsequent subscription.active events can find and link to this subscription.
+  const providerSubCode = event.subscription?.providerCode;
+  const trialSubscriptionCode = (isNativeTrial && providerSubCode) ? providerSubCode : `trial-${crypto.randomUUID().slice(0, 8)}`;
+
+  // Check if an active/trialing subscription already exists (skip canceled/refunded
+  // so customers can re-trial a plan they previously had)
+  const existingSub = await db.query.subscriptions.findFirst({
+    where: and(
+      eq(schema.subscriptions.customerId, dbCustomer.id),
+      eq(schema.subscriptions.planId, planId),
+      or(
+        eq(schema.subscriptions.status, "active"),
+        eq(schema.subscriptions.status, "trialing"),
+        eq(schema.subscriptions.status, "pending_cancel"),
+      ),
+    ),
+  });
+
+  let trialSubId: string;
+  if (!existingSub) {
+    trialSubId = crypto.randomUUID();
+    console.log(`[TRIAL-WEBHOOK] Creating trial subscription: customer=${dbCustomer.id}, plan=${planId}`);
+    await db.insert(schema.subscriptions).values([
+      {
+        id: trialSubId,
+        customerId: dbCustomer.id,
+        planId: planId,
+        providerId: (metadata.provider_id as string) || event.provider,
+        providerSubscriptionId: trialSubscriptionCode,
+        providerSubscriptionCode: trialSubscriptionCode,
+        paystackSubscriptionCode: event.provider === "paystack" ? trialSubscriptionCode : null,
+        status: "trialing",
+        currentPeriodStart: now,
+        currentPeriodEnd: trialEndMs,
+        metadata: {
+          ...event.raw,
+          trial: true,
+          trial_ends_at: trialEndMs,
+          authorization_code: event.authorization?.code,
+        },
+      },
+    ]);
+
+    // Dispatch trial-end workflow ONLY for non-native trials (e.g. Paystack).
+    // For native trials (Dodo), the provider manages billing — subscription.renewed
+    // fires when the trial ends and handleAutoRenewal transitions the sub to active.
+    if (!isNativeTrial && workflows.trialEnd) {
+      try {
+        await workflows.trialEnd.create({
+          params: {
+            subscriptionId: trialSubId,
+            customerId: dbCustomer.id,
+            planId,
+            organizationId,
+            providerId: (metadata.provider_id as string) || event.provider,
+            environment: (metadata.environment as string) || "test",
+            trialEndMs,
+            authorizationCode: event.authorization?.reusable ? event.authorization.code : undefined,
+            email: event.customer.email,
+            amount: Number(metadata.amount) || 0,
+            currency: (metadata.currency as string) || event.payment?.currency || "USD",
+            planSlug: metadata.plan_slug as string,
+            nativeTrial: false,
+          },
+        });
+        console.log(`[TRIAL-WEBHOOK] Trial end workflow dispatched: subscription=${trialSubId}, trialEnds=${new Date(trialEndMs).toISOString()}`);
+      } catch (wfErr) {
+        console.error(`[TRIAL-WEBHOOK] Failed to dispatch trial end workflow for subscription=${trialSubId}:`, wfErr);
+      }
+    } else if (isNativeTrial) {
+      console.log(`[TRIAL-WEBHOOK] Native trial — skipping workflow dispatch (provider handles billing): subscription=${trialSubId}`);
+    }
+  } else {
+    // Existing sub found — it may have been created as "active" by a reordered
+    // subscription.active event (arrived before this $0 payment). Update to
+    // "trialing" with the correct trial period so /check reports the right status
+    // and the trial guard works for subsequent subscription.active events.
+    trialSubId = existingSub.id;
+    if (existingSub.status === "active") {
+      await db
+        .update(schema.subscriptions)
+        .set({
+          status: "trialing",
+          currentPeriodStart: now,
+          currentPeriodEnd: trialEndMs,
+          providerSubscriptionId: trialSubscriptionCode,
+          providerSubscriptionCode: trialSubscriptionCode,
+          metadata: {
+            ...(typeof existingSub.metadata === "object" && existingSub.metadata ? existingSub.metadata as Record<string, unknown> : {}),
+            trial: true,
+            trial_ends_at: trialEndMs,
+            authorization_code: event.authorization?.code,
+          },
+          updatedAt: now,
+        })
+        .where(eq(schema.subscriptions.id, existingSub.id));
+      console.log(`[TRIAL-WEBHOOK] Updated existing active sub ${existingSub.id} to trialing (reordered events)`);
+    } else {
+      console.log(`[TRIAL-WEBHOOK] Existing trialing sub ${existingSub.id} found, skipping creation`);
+    }
+  }
+
+  // Provision entitlements so trial users can access features
+  await provisionEntitlements(db, dbCustomer.id, planId);
+
+  // Invalidate cache so /check sees the trial subscription immediately
+  if (ctx.cache) {
+    try {
+      await ctx.cache.invalidateSubscriptions(organizationId, dbCustomer.id);
+    } catch (e) {
+      console.warn(`[TRIAL-WEBHOOK] Cache invalidation failed:`, e);
+    }
+  }
+
+  console.log(`[TRIAL-WEBHOOK] Trial subscription flow complete for customer=${dbCustomer.id}`);
+}
+
+async function handlePlanUpgrade(ctx: WebhookContext, dbCustomer: any): Promise<void> {
+  const { db, organizationId, event, workflows } = ctx;
+  const { metadata } = event;
+  const newPlanId = metadata.new_plan_id as string;
+  const oldSubId = metadata.old_subscription_id as string;
+  const oldPlanId = metadata.old_plan_id as string | undefined;
+  const upgradeProviderId = (metadata.provider_id as string) || event.provider;
+
+  let oldProviderSubCode: string | undefined;
+  if (oldSubId) {
+    const oldSub = await db.query.subscriptions.findFirst({
+      where: eq(schema.subscriptions.id, oldSubId),
+    });
+    if (oldSub) {
+      oldProviderSubCode = oldSub.providerSubscriptionCode || oldSub.paystackSubscriptionCode || undefined;
+    }
+  }
+
+  if (workflows.planUpgrade) {
+    try {
+      await workflows.planUpgrade.create({
+        params: {
+          customerId: dbCustomer.id,
+          oldSubscriptionId: oldSubId,
+          oldPlanId,
+          newPlanId,
+          organizationId,
+          providerId: upgradeProviderId,
+          environment: (metadata.environment as string) || "test",
+          oldProviderSubscriptionCode: oldProviderSubCode,
+          paidAt: event.payment?.paidAt,
+          amount: event.payment?.amount,
+          currency: event.payment?.currency || "USD",
+        },
+      });
+      console.log(`[WEBHOOK] Plan upgrade workflow dispatched: customer=${dbCustomer.id}, newPlan=${newPlanId}`);
+    } catch (wfErr) {
+      console.error(`[WEBHOOK] Failed to dispatch plan upgrade workflow:`, wfErr);
+      await handlePlanUpgradeInline(ctx, dbCustomer, oldSubId, oldPlanId, newPlanId, upgradeProviderId);
+    }
+  } else {
+    await handlePlanUpgradeInline(ctx, dbCustomer, oldSubId, oldPlanId, newPlanId, upgradeProviderId);
+  }
+}
+
+async function handleCreditPurchase(
+  ctx: WebhookContext,
+  dbCustomer: any,
+  reference: string,
+): Promise<void> {
+  const { db, event } = ctx;
+  const { metadata } = event;
+  const creditPackId = metadata.credit_pack_id as string | undefined;
+
+  // Quantity may have been adjusted by user on provider checkout page.
+  const metaQuantity = Number(metadata.quantity) || 1;
+  const creditsPerPack = Number(metadata.credits_per_pack) || 0;
+
+  // If we have per-pack info, recalculate total from quantity
+  const eventQuantity = event.checkout?.lineItems?.[0]?.quantity;
+  const resolvedQuantity = typeof eventQuantity === "number" && eventQuantity > 0
+    ? eventQuantity
+    : metaQuantity;
+
+  const creditsAmount = creditsPerPack > 0
+    ? creditsPerPack * resolvedQuantity
+    : Number(metadata.credits);
+
+  if (isNaN(creditsAmount) || creditsAmount <= 0) {
+    console.error(`[WEBHOOK] Invalid credits amount: credits=${metadata.credits}, perPack=${creditsPerPack}, qty=${resolvedQuantity}`);
+    return;
+  }
+
+  // Every add-on must be attached to a credit system
+  const creditSystemId = metadata.credit_system_id as string | undefined;
+  if (!creditSystemId) {
+    console.error(`[WEBHOOK] Credit purchase missing credit_system_id: pack=${creditPackId}`);
+    return;
+  }
+
+  // Dedup: if this payment reference was already processed, skip to avoid double credits
+  if (reference) {
+    const existingPurchase = await (db as any).query.creditPurchases?.findFirst?.({
+      where: eq((schema as any).creditPurchases.paymentReference, reference),
+    });
+    if (existingPurchase) {
+      console.log(`[WEBHOOK] Credit purchase already processed: ref=${reference}, skipping`);
+      return;
+    }
+  }
+
+  // Atomic upsert into credit_system_balances (uses UNIQUE index)
+  await topUpScopedBalance(db, dbCustomer.id, creditSystemId, creditsAmount);
+
+  // Record the purchase in the ledger
+  await (db as any).insert((schema as any).creditPurchases).values({
+    id: crypto.randomUUID(),
+    customerId: dbCustomer.id,
+    creditPackId: creditPackId || null,
+    creditSystemId,
+    credits: creditsAmount,
+    quantity: resolvedQuantity,
+    price: event.payment?.amount || 0,
+    currency: event.payment?.currency || "USD",
+    paymentReference: reference || null,
+    providerId: event.provider,
+    metadata: event.raw,
+  });
+
+  console.log(`[WEBHOOK] Credit purchase: customer=${dbCustomer.id}, credits=${creditsAmount}, qty=${resolvedQuantity}, pack=${creditPackId || "manual"}, system=${creditSystemId}`);
+}
+
+async function handleOneTimePurchase(ctx: WebhookContext, dbCustomer: any): Promise<void> {
+  const { db, event } = ctx;
+  const { metadata } = event;
+  const planId = metadata.plan_id as string;
+  const now = Date.now();
+
+  const existingPurchase = await db.query.subscriptions.findFirst({
+    where: and(
+      eq(schema.subscriptions.customerId, dbCustomer.id),
+      eq(schema.subscriptions.planId, planId),
+      or(
+        eq(schema.subscriptions.status, "active"),
+        eq(schema.subscriptions.status, "trialing"),
+      ),
+    ),
+  });
+
+  if (!existingPurchase) {
+    await db.insert(schema.subscriptions).values([
+      {
+        id: crypto.randomUUID(),
+        customerId: dbCustomer.id,
+        planId: planId,
+        providerId: (metadata.provider_id as string) || event.provider,
+        providerSubscriptionId: "one-time",
+        providerSubscriptionCode: "one-time",
+        paystackSubscriptionCode: event.provider === "paystack" ? "one-time" : null,
+        status: "active",
+        currentPeriodStart: now,
+        currentPeriodEnd: now,
+        metadata: { ...event.raw, billing_type: "one_time" },
+      },
+    ]);
+  }
+
+  await provisionEntitlements(db, dbCustomer.id, planId);
+
+  // Invalidate cache so /check sees the one-time purchase immediately
+  if (ctx.cache) {
+    try {
+      await ctx.cache.invalidateSubscriptions(ctx.organizationId, dbCustomer.id);
+    } catch (e) {
+      console.warn(`[WEBHOOK] One-time purchase cache invalidation failed:`, e);
+    }
+  }
+}
+
+async function handleSubscriptionPayment(ctx: WebhookContext, dbCustomer: any): Promise<void> {
+  const { db, organizationId, event, cache } = ctx;
+  const { metadata } = event;
+  const planId = metadata.plan_id as string;
+
+  const existingSub = await db.query.subscriptions.findFirst({
+    where: and(
+      eq(schema.subscriptions.customerId, dbCustomer.id),
+      eq(schema.subscriptions.planId, planId),
+      or(
+        eq(schema.subscriptions.status, "active"),
+        eq(schema.subscriptions.status, "trialing"),
+      ),
+    ),
+  });
+
+  const plan = await db.query.plans.findFirst({
+    where: eq(schema.plans.id, planId),
+  });
+  const periodMs = plan ? intervalToMs(plan.interval) : 30 * 24 * 60 * 60 * 1000;
+  const startMs = safeParseDate(event.payment?.paidAt) || Date.now();
+
+  if (!existingSub) {
+    await db.insert(schema.subscriptions).values([
+      {
+        id: crypto.randomUUID(),
+        customerId: dbCustomer.id,
+        planId: planId,
+        providerId: (metadata.provider_id as string) || event.provider,
+        providerSubscriptionId: event.payment?.reference || "charge",
+        providerSubscriptionCode: event.payment?.reference || "charge",
+        paystackSubscriptionCode: event.provider === "paystack" ? (event.payment?.reference || "charge") : null,
+        status: "active",
+        currentPeriodStart: startMs,
+        currentPeriodEnd: startMs + periodMs,
+        metadata: event.raw,
+      },
+    ]);
+  } else {
+    // Renewal: advance billing period so usage pools (credit systems, metered features) reset correctly
+    await db
+      .update(schema.subscriptions)
+      .set({
+        status: "active",
+        currentPeriodStart: startMs,
+        currentPeriodEnd: startMs + periodMs,
+        updatedAt: Date.now(),
+      })
+      .where(eq(schema.subscriptions.id, existingSub.id));
+  }
+
+  await provisionEntitlements(db, dbCustomer.id, planId);
+
+  // Invalidate cached subscriptions so /check and /track see the updated period
+  if (cache) {
+    try {
+      await cache.invalidateSubscriptions(organizationId, dbCustomer.id);
+    } catch (e) {
+      console.warn(`[WEBHOOK] Cache invalidation after subscription update failed:`, e);
+    }
+  }
+}
+
+async function handleAutoRenewal(ctx: WebhookContext, _dbCustomer: any): Promise<void> {
+  const { db, organizationId, event, cache } = ctx;
+  const subCode = event.subscription?.providerCode;
+  if (!subCode) return;
+
+  const existingSub = await db.query.subscriptions.findFirst({
+    where: or(
+      eq(schema.subscriptions.providerSubscriptionCode, subCode),
+      eq(schema.subscriptions.paystackSubscriptionCode, subCode),
+    ),
+    with: { plan: true },
+  });
+
+  if (existingSub && existingSub.plan) {
+    const periodMs = intervalToMs(existingSub.plan.interval);
+    const startMs = safeParseDate(event.payment?.paidAt) || Date.now();
+    // Prefer provider's next billing date over calculated period (more accurate for variable-length months)
+    const endMs = safeParseDate(event.subscription?.nextPaymentDate) || (startMs + periodMs);
+
+    await db
+      .update(schema.subscriptions)
+      .set({
+        status: "active",
+        currentPeriodStart: startMs,
+        currentPeriodEnd: endMs,
+        updatedAt: Date.now(),
+      })
+      .where(eq(schema.subscriptions.id, existingSub.id));
+
+    console.log(`[WEBHOOK] Auto-renewal: advanced period for sub ${existingSub.id} (code=${subCode}), newEnd=${new Date(endMs).toISOString()}`);
+
+    // Invalidate cache so /check and /track see updated period
+    if (cache) {
+      try {
+        await cache.invalidateSubscriptions(organizationId, existingSub.customerId);
+      } catch (e) {
+        console.warn(`[WEBHOOK] Auto-renewal cache invalidation failed:`, e);
+      }
+    }
+  }
+}
+
+async function handlePlanUpgradeInline(
+  ctx: WebhookContext,
+  dbCustomer: any,
+  oldSubId: string,
+  oldPlanId: string | undefined,
+  newPlanId: string,
+  upgradeProviderId: string,
+): Promise<void> {
+  const { db, event, adapter, providerAccount, cache, organizationId } = ctx;
+  const now = Date.now();
+
+  // Cancel old subscription (fetch once, reuse for billing cycle below)
+  let oldSub: any = null;
+  if (oldSubId) {
+    oldSub = await db.query.subscriptions.findFirst({
+      where: eq(schema.subscriptions.id, oldSubId),
+    });
+
+    if (oldSub) {
+      const subCode = oldSub.providerSubscriptionCode || oldSub.paystackSubscriptionCode;
+      if (
+        adapter &&
+        providerAccount &&
+        subCode &&
+        subCode !== "one-time" &&
+        !subCode.startsWith("trial-") &&
+        !subCode.startsWith("charge")
+      ) {
+        try {
+          await adapter.cancelSubscription({
+            subscription: { id: subCode, status: oldSub.status || "active" },
+            environment: providerAccount.environment,
+            account: providerAccount,
+          });
+        } catch (e) {
+          console.warn(`Webhook inline upgrade: provider cancel threw for ${subCode}:`, e);
+        }
+      }
+
+      await db
+        .update(schema.subscriptions)
+        .set({ status: "canceled", canceledAt: now, updatedAt: now })
+        .where(eq(schema.subscriptions.id, oldSubId));
+    }
+  }
+
+  // Create new subscription
+  const newPlan = await db.query.plans.findFirst({
+    where: eq(schema.plans.id, newPlanId),
+  });
+  const periodMs = newPlan ? intervalToMs(newPlan.interval) : 30 * 24 * 60 * 60 * 1000;
+  const startMs = safeParseDate(event.payment?.paidAt) || now;
+
+  // Idempotency: check for existing active/trialing sub before inserting
+  const existingUpgradedSub = await db.query.subscriptions.findFirst({
+    where: and(
+      eq(schema.subscriptions.customerId, dbCustomer.id),
+      eq(schema.subscriptions.planId, newPlanId),
+      or(
+        eq(schema.subscriptions.status, "active"),
+        eq(schema.subscriptions.status, "trialing"),
+      ),
+    ),
+  });
+
+  // Preserve old billing cycle end (reuses oldSub fetched above)
+  const endMs = oldSub?.currentPeriodEnd || (startMs + periodMs);
+
+  let newSubId: string | undefined;
+  if (!existingUpgradedSub) {
+    newSubId = crypto.randomUUID();
+    await db.insert(schema.subscriptions).values([
+      {
+        id: newSubId,
+        customerId: dbCustomer.id,
+        planId: newPlanId,
+        providerId: upgradeProviderId,
+        providerSubscriptionId: "upgrade",
+        providerSubscriptionCode: "upgrade",
+        paystackSubscriptionCode: event.provider === "paystack" ? "upgrade" : null,
+        status: "active",
+        currentPeriodStart: startMs,
+        currentPeriodEnd: endMs,
+        metadata: { ...event.raw, switch_type: "upgrade" },
+      },
+    ]);
+  } else {
+    newSubId = existingUpgradedSub.id;
+  }
+
+  // Attempt to create provider subscription for recurring billing.
+  // Skip for providers with native trials / checkout-based subscriptions —
+  // createSubscription would create a checkout session, not a real subscription.
+  const providerPlanCode = newPlan?.providerPlanId || newPlan?.paystackPlanId;
+  const authCode = dbCustomer.providerAuthorizationCode || dbCustomer.paystackAuthorizationCode;
+  const skipProviderSub = adapter?.supportsNativeTrials === true;
+  if (
+    adapter &&
+    providerAccount &&
+    newPlan?.billingType === "recurring" &&
+    providerPlanCode &&
+    authCode &&
+    !skipProviderSub
+  ) {
+    try {
+      const result = await adapter.createSubscription({
+        customer: { id: dbCustomer.email, email: dbCustomer.email },
+        plan: { id: providerPlanCode },
+        authorizationCode: authCode,
+        startDate: new Date(endMs).toISOString(),
+        environment: providerAccount.environment,
+        account: providerAccount,
+      });
+      if (result.isOk() && newSubId) {
+        await db
+          .update(schema.subscriptions)
+          .set({
+            providerSubscriptionId: result.value.id,
+            providerSubscriptionCode: result.value.id,
+            paystackSubscriptionCode: event.provider === "paystack" ? result.value.id : null,
+            updatedAt: Date.now(),
+          })
+          .where(eq(schema.subscriptions.id, newSubId));
+      }
+    } catch (e) {
+      console.warn(`[WEBHOOK] Inline upgrade: provider createSubscription failed:`, e);
+    }
+  }
+
+  await provisionEntitlements(db, dbCustomer.id, newPlanId, oldPlanId);
+
+  // Invalidate cache so /check and /track see the new subscription
+  if (cache) {
+    try {
+      await cache.invalidateSubscriptions(organizationId, dbCustomer.id);
+    } catch (e) {
+      console.warn(`[WEBHOOK] Inline upgrade cache invalidation failed:`, e);
+    }
+  }
+}

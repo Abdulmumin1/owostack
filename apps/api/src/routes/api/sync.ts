@@ -3,6 +3,11 @@ import { z } from "zod";
 import { schema } from "@owostack/db";
 import { eq, and, or } from "drizzle-orm";
 import { verifyApiKey } from "../../lib/api-keys";
+import {
+  getProviderRegistry,
+  deriveProviderEnvironment,
+  loadProviderAccounts,
+} from "../../lib/providers";
 import type { Env, Variables } from "../../index";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -196,6 +201,52 @@ app.post("/", async (c) => {
         if (existing.source === "dashboard") {
           result.warnings.push(`Plan '${planDef.slug}' was managed by dashboard — now managed by SDK.`);
         }
+
+        // Sync price/name changes with payment provider
+        if (existing.providerPlanId && existing.providerId) {
+          try {
+            const registry = getProviderRegistry();
+            const adapter = registry.get(existing.providerId);
+            const authDb = c.get("authDb");
+            const project = await authDb.query.projects.findFirst({
+              where: eq(schema.projects.organizationId, organizationId),
+            });
+            const providerEnv = deriveProviderEnvironment(
+              c.env.ENVIRONMENT,
+              project?.activeEnvironment,
+            );
+            const providerAccounts = await loadProviderAccounts(
+              db,
+              organizationId,
+              c.env.ENCRYPTION_KEY,
+            );
+            const account = providerAccounts.find(
+              (a) => a.providerId === existing.providerId,
+            );
+
+            if (adapter?.updatePlan && account) {
+              const updateResult = await adapter.updatePlan({
+                planId: existing.providerPlanId,
+                name: planDef.name,
+                amount: planDef.price,
+                interval: planDef.interval,
+                currency: planDef.currency,
+                description: planDef.description ?? null,
+                environment: providerEnv,
+                account,
+              });
+
+              if (updateResult.isOk()) {
+                console.log(`[sync] Updated plan on ${existing.providerId}: ${existing.providerPlanId}`);
+              } else {
+                console.warn(`[sync] Failed to update plan on ${existing.providerId}:`, updateResult.error);
+              }
+            }
+          } catch (e) {
+            console.warn("[sync] Provider sync error during plan update:", e);
+          }
+        }
+
         result.plans.updated.push(planDef.slug);
       } else {
         // Mark as SDK-managed

@@ -172,7 +172,12 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<WorkflowEnv, PlanUpg
     const isRecurring = plan?.billing_type === "recurring";
     let providerSubCode: string | null = null;
 
-    if (isRecurring && providerPlanCode && authCode && customer) {
+    // Skip provider subscription creation for providers with native subscription
+    // management (supportsNativeTrials) — createSubscription would create a checkout, not a real sub.
+    const upgradeAdapter = getAdapter(providerId);
+    const skipProviderSub = upgradeAdapter?.supportsNativeTrials === true;
+
+    if (isRecurring && providerPlanCode && authCode && customer && !skipProviderSub) {
       try {
         const subResult = await step.do("create-provider-subscription", async () => {
           const account = await resolveProviderAccount(this.env, organizationId, providerId);

@@ -1,33 +1,49 @@
 {
   "pages": [
     "index",
-    "---Tutorials---",
-    "quickstart",
-    "---How-to Guides---",
+
+    "---Getting Started---",
     "installation",
+    "quickstart",
     "webhook-setup",
+
+    "---Guides---",
     "guides/checkout",
+    "guides/pricing-page",
     "guides/plan-switching",
+    "guides/trials",
+    "guides/usage-billing",
+    "guides/credit-packs",
+    "guides/seat-pricing",
+    "guides/wallet",
     "guides/webhooks-and-events",
     "guides/catalog-sync",
-    "dashboard/organizations",
-    "dashboard/plans",
-    "dashboard/api-keys",
-    "---Explanation---",
+
+    "---Concepts---",
     "concepts/how-it-works",
-    "concepts/entitlements-and-features",
     "concepts/plans-and-products",
+    "concepts/entitlements-and-features",
     "concepts/providers-and-accounts",
     "concepts/catalog-sync",
     "concepts/data-model",
     "features/entitlements",
     "features/metering",
     "features/credits",
-    "---Reference---",
-    "sdk/catalog",
+
+    "---SDK Reference---",
     "sdk/attach",
+    "sdk/plans",
     "sdk/check",
     "sdk/track",
-    "api-reference/index"
+    "sdk/addon",
+    "sdk/wallet",
+    "sdk/billing",
+    "sdk/catalog",
+    "api-reference/index",
+
+    "---Dashboard---",
+    "dashboard/organizations",
+    "dashboard/plans",
+    "dashboard/api-keys"
   ]
 }

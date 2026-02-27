@@ -36,8 +36,8 @@ Example Plan Configuration:
 You check entitlements using the `check()` method in the SDK. This method automatically resolves the customer's active subscription, looks up the plan, and verifies the feature configuration.
 
 ```ts
-const { allowed, code, remaining } = await owo.check({
-  customer: "user@example.com",
+const { allowed, code, balance } = await owo.check({
+  customer: "user_123",
   feature: "api_calls_monthly",
 });
 

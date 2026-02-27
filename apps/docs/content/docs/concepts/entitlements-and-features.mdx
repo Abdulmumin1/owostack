@@ -27,14 +27,14 @@ In Owostack, **features** are the capabilities in your product and **entitlement
 Use `check()` to decide whether to allow an action.
 
 ```ts
-const { allowed, code, remaining } = await owo.check({
-  customer: "user@example.com",
+const { allowed, code, balance } = await owo.check({
+  customer: "user_123",
   feature: "api_calls_monthly",
 });
 ```
 
 - `allowed` is the main signal you should gate on.
-- `remaining` is useful for UX (show usage).
+- `balance` is useful for UX (show usage).
 - `code` helps you decide *why* access was denied (upgrade, top-up, etc.).
 
 ## Usage tracking
@@ -43,9 +43,9 @@ If a feature is metered, call `track()` to record usage.
 
 ```ts
 await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api_calls_monthly",
-  amount: 1,
+  value: 1,
 });
 ```
 

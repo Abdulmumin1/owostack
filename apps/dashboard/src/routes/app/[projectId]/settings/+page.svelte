@@ -261,7 +261,7 @@
     } catch (e) {
       console.error("Failed to load enabled providers", e);
       // Fallback: show paystack only
-      enabledProviderIds = ["paystack"];
+      enabledProviderIds = ["paystack", "dodopayments"];
     }
   }
 

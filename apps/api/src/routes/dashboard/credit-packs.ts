@@ -14,6 +14,7 @@ const createPackSchema = z.object({
   price: z.number().int().min(0),
   currency: z.string().min(3).default("USD"),
   creditSystemId: z.string().min(1, "Credit system is required"),
+  providerId: z.string().min(1, "Provider is required"),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -24,6 +25,7 @@ const updatePackSchema = z.object({
   price: z.number().int().min(0).optional(),
   currency: z.string().min(3).optional(),
   creditSystemId: z.string().optional().nullable(),
+  providerId: z.string().optional(),
   isActive: z.boolean().optional(),
   metadata: z.record(z.string(), z.unknown()).optional().nullable(),
 });
@@ -74,7 +76,7 @@ app.post("/", async (c) => {
     return c.json({ success: false, error: "Invalid input", details: parsed.error.flatten() }, 400);
   }
 
-  const { organizationId, name, description, credits, price, currency, creditSystemId, metadata } = parsed.data;
+  const { organizationId, name, description, credits, price, currency, creditSystemId, providerId, metadata } = parsed.data;
   const db = c.get("db");
 
   const slug = name
@@ -108,6 +110,7 @@ app.post("/", async (c) => {
         price,
         currency,
         creditSystemId: creditSystemId || null,
+        providerId,
         metadata: metadata || null,
       })
       .returning();

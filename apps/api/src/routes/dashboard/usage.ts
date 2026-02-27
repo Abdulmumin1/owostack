@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { eq, sql, desc, and, gte } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
+import { convertMrrTotal } from "../../lib/exchange-rates";
 
 const USAGE_CACHE_TTL = 60; // seconds
 const FEATURE_CONSUMPTION_LIMIT = 10;
@@ -133,22 +134,38 @@ app.get("/", async (c) => {
 
   // Derive active subscriptions count and MRR from the per-plan breakdown
   let activeSubscriptions = 0;
-  let mrr = 0;
+  const mrrByCurrency: Record<string, number> = {};
   for (const plan of customersPerPlanResult) {
     activeSubscriptions += plan.count;
     const monthlyPrice =
       plan.interval === "yearly" ? plan.price / 12 :
       plan.interval === "quarterly" ? plan.price / 3 :
       plan.price;
-    mrr += monthlyPrice * plan.count;
+    const cur = (plan.currency || "USD").toUpperCase();
+    mrrByCurrency[cur] = (mrrByCurrency[cur] || 0) + monthlyPrice * plan.count;
   }
+  const mrr = Object.entries(mrrByCurrency).map(([currency, amount]) => ({
+    currency,
+    amount: Math.round(amount),
+  }));
+
+  // Resolve org default currency for converted total
+  const org = await db.query.organizations.findFirst({
+    where: eq(schema.organizations.id, organizationId),
+    columns: { metadata: true },
+  });
+  const orgMeta = (org?.metadata as Record<string, unknown>) || {};
+  const defaultCurrency = (orgMeta.defaultCurrency as string) || mrr[0]?.currency || "USD";
+
+  const mrrTotal = await convertMrrTotal(mrr, defaultCurrency, c.env.CACHE);
 
   const response = {
     success: true,
     data: {
       totalCustomers,
       activeSubscriptions,
-      mrr: Math.round(mrr),
+      mrr,
+      mrrTotal,
       subscriptionsByStatus: subscriptionsByStatusResult,
       customersPerPlan: customersPerPlanResult,
       featureConsumption: featureConsumptionResult,

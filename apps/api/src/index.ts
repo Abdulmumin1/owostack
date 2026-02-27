@@ -33,6 +33,8 @@ import apiEntitlements from "./routes/api/entitlements";
 import apiBilling from "./routes/api/billing";
 import apiAddon from "./routes/api/addon";
 import apiSync from "./routes/api/sync";
+import apiWallet from "./routes/api/wallet";
+import apiPlans from "./routes/api/plans";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
@@ -54,6 +56,7 @@ export type Env = {
   DOWNGRADE_WORKFLOW: Workflow;
   PLAN_UPGRADE_WORKFLOW: Workflow;
   OVERAGE_BILLING_WORKFLOW: Workflow;
+  OVERAGE_BILLING_QUEUE: Queue;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   ENCRYPTION_KEY: string;
@@ -239,6 +242,8 @@ v1Routes.route("/", apiEntitlements);
 v1Routes.route("/", apiAddon);
 v1Routes.route("/billing", apiBilling);
 v1Routes.route("/sync", apiSync);
+v1Routes.route("/", apiWallet);
+v1Routes.route("/plans", apiPlans);
 
 apiRoutes.route("/v1", v1Routes);
 
@@ -303,9 +308,35 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   }
 
   const workerEnv = c.env.ENVIRONMENT === "live" ? "live" : "test";
-  let secret: string | null = project.webhookSecret;
+  let secret: string | null = null;
 
-  // Fallback: provider uses the API secret key for webhook signatures
+  // 4a. Check provider account credentials for a webhook-specific secret
+  // (e.g. Dodo Payments uses a separate webhookSecret, not the API key)
+  const providerAccounts = await db.query.providerAccounts.findMany({
+    where: and(
+      eq(schema.providerAccounts.organizationId, organizationId),
+      eq(schema.providerAccounts.providerId, providerId),
+    ),
+  });
+  for (const pa of providerAccounts) {
+    const creds = (pa as any).credentials || {};
+    if (typeof creds.webhookSecret === "string" && creds.webhookSecret.length > 0) {
+      try {
+        secret = await decrypt(creds.webhookSecret, c.env.ENCRYPTION_KEY);
+        console.log(`[WEBHOOK-ROUTE] Using provider account webhookSecret for org=${organizationId}, provider=${providerId}`);
+      } catch (e) {
+        console.warn(`[WEBHOOK-ROUTE] Failed to decrypt provider webhookSecret:`, e);
+      }
+      break;
+    }
+  }
+
+  // 4b. Fallback: project-level webhookSecret
+  if (!secret) {
+    secret = project.webhookSecret;
+  }
+
+  // 4c. Fallback: provider API secret key (e.g. Paystack uses this for HMAC)
   if (!secret) {
     const encryptedKey =
       workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
@@ -326,10 +357,18 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   }
 
   // 5. Verify signature via adapter
+  // Pass all request headers so providers using Standard Webhooks (e.g. Dodo)
+  // can access webhook-id, webhook-timestamp, etc.
+  const reqHeaders: Record<string, string> = {};
+  c.req.raw.headers.forEach((value: string, key: string) => {
+    reqHeaders[key] = value;
+  });
+
   const verifyResult = await adapter.verifyWebhook({
     signature,
     payload: rawBody,
     secret,
+    headers: reqHeaders,
   });
 
   if (verifyResult.isErr() || !verifyResult.value) {
@@ -363,21 +402,30 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   console.log(`[WEBHOOK-ROUTE] Event: ${normalizedEvent.type}, provider=${normalizedEvent.provider}, ref=${normalizedEvent.payment?.reference || "n/a"}`);
 
   // 7. Build provider account for API calls (cancel sub, etc.)
+  // Provider accounts are loaded from the DB — no legacy fallback.
   let providerAccount: ProviderAccount | undefined;
-  const encKey = workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
-  if (encKey) {
-    try {
-      const apiSecretKey = await decrypt(encKey, c.env.ENCRYPTION_KEY);
-      providerAccount = {
-        id: `webhook-${organizationId}`,
-        organizationId,
-        providerId,
-        environment: workerEnv,
-        credentials: { secretKey: apiSecretKey },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-    } catch { /* already logged above */ }
+  if (providerAccounts.length > 0) {
+    const pa = providerAccounts[0] as any;
+    const creds = { ...(pa.credentials || {}) };
+    // Decrypt the secretKey for API calls
+    if (typeof creds.secretKey === "string" && creds.secretKey.length > 0) {
+      try {
+        creds.secretKey = await decrypt(creds.secretKey, c.env.ENCRYPTION_KEY);
+      } catch (e) {
+        console.warn(`[WEBHOOK-ROUTE] Failed to decrypt provider secretKey:`, e);
+      }
+    }
+    providerAccount = {
+      id: pa.id,
+      organizationId: pa.organizationId,
+      providerId: pa.providerId,
+      environment: pa.environment || workerEnv,
+      displayName: pa.displayName,
+      credentials: creds,
+      metadata: pa.metadata,
+      createdAt: pa.createdAt,
+      updatedAt: pa.updatedAt,
+    };
   }
 
   // 8. Handle via provider-agnostic WebhookHandler
@@ -413,9 +461,19 @@ app.post("/webhooks/:organizationId/:provider", async (c) => {
 // and kicks off OverageBillingWorkflow for each customer with active subs.
 // =============================================================================
 
+// Queue message shape for overage billing dispatch
+interface OverageBillingQueueMessage {
+  organizationId: string;
+  targetInterval: string;
+  scheduledTime: number;
+}
+
 export default {
   fetch: app.fetch,
 
+  // -------------------------------------------------------------------------
+  // Cron → enqueue org-level messages (lightweight, stays well within 30s)
+  // -------------------------------------------------------------------------
   async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
     console.log(`[CRON] Triggered at ${new Date(event.scheduledTime).toISOString()}, cron=${event.cron}`);
 
@@ -429,21 +487,48 @@ export default {
     if (event.cron === "0 0 * * 1") {
       targetInterval = "weekly";
     } else {
-      // Daily cron or any other → process "daily"
       targetInterval = "daily";
     }
 
     try {
-      // Find all orgs with this billing interval
       const orgs = await db
         .select()
         .from((schema as any).overageSettings)
         .where(eq((schema as any).overageSettings.billingInterval, targetInterval));
 
-      console.log(`[CRON] Found ${orgs.length} orgs with interval=${targetInterval}`);
+      console.log(`[CRON] Found ${orgs.length} orgs with interval=${targetInterval}, enqueuing...`);
 
-      for (const org of orgs) {
-        // Find all customers with active subscriptions in this org
+      // Enqueue one message per org — the queue consumer handles the heavy lifting
+      const messages: { body: OverageBillingQueueMessage }[] = orgs.map((org: any) => ({
+        body: {
+          organizationId: org.organizationId,
+          targetInterval,
+          scheduledTime: event.scheduledTime,
+        },
+      }));
+
+      // Queue.sendBatch accepts up to 100 messages per call
+      const QUEUE_BATCH_LIMIT = 100;
+      for (let i = 0; i < messages.length; i += QUEUE_BATCH_LIMIT) {
+        await env.OVERAGE_BILLING_QUEUE.sendBatch(messages.slice(i, i + QUEUE_BATCH_LIMIT));
+      }
+
+      console.log(`[CRON] Enqueued ${messages.length} org messages to queue`);
+    } catch (e) {
+      console.error("[CRON] Overage billing cron failed:", e);
+    }
+  },
+
+  // -------------------------------------------------------------------------
+  // Queue consumer — each message = one org. Query customers, dispatch workflows.
+  // Each consumer invocation gets its own 30s CPU budget.
+  // -------------------------------------------------------------------------
+  async queue(batch: MessageBatch<OverageBillingQueueMessage>, env: Env, _ctx: ExecutionContext) {
+    const db = createDb(env.DB);
+
+    for (const msg of batch.messages) {
+      const { organizationId, scheduledTime } = msg.body;
+      try {
         const customers = await db
           .select({ id: schema.customers.id })
           .from(schema.customers)
@@ -454,26 +539,37 @@ export default {
               eq(schema.subscriptions.status, "active"),
             ),
           )
-          .where(eq(schema.customers.organizationId, (org as any).organizationId));
+          .where(eq(schema.customers.organizationId, organizationId));
 
-        for (const customer of customers) {
-          try {
-            await env.OVERAGE_BILLING_WORKFLOW.create({
-              id: `overage-cron-${customer.id}-${event.scheduledTime}`,
-              params: {
-                organizationId: (org as any).organizationId,
-                customerId: customer.id,
-                trigger: "cron",
-              },
-            });
-          } catch (e) {
-            // Duplicate workflow ID is fine (idempotent)
-            console.warn(`[CRON] Failed to create workflow for customer=${customer.id}:`, e);
-          }
+        // Deduplicate — a customer with multiple active subs appears multiple times
+        const uniqueIds = [...new Set(customers.map((c: { id: string }) => c.id))];
+        console.log(`[QUEUE] Org ${organizationId}: dispatching ${uniqueIds.length} workflows`);
+
+        // Dispatch in parallel batches
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+          const chunk = uniqueIds.slice(i, i + BATCH_SIZE);
+          await Promise.allSettled(
+            chunk.map(customerId =>
+              env.OVERAGE_BILLING_WORKFLOW.create({
+                id: `overage-cron-${customerId}-${scheduledTime}`,
+                params: {
+                  organizationId,
+                  customerId,
+                  trigger: "cron" as const,
+                },
+              }).catch(e => {
+                console.warn(`[QUEUE] Failed to create workflow for customer=${customerId}:`, e);
+              }),
+            ),
+          );
         }
+
+        msg.ack();
+      } catch (e) {
+        console.error(`[QUEUE] Failed to process org=${organizationId}:`, e);
+        msg.retry();
       }
-    } catch (e) {
-      console.error("[CRON] Overage billing cron failed:", e);
     }
   },
 };

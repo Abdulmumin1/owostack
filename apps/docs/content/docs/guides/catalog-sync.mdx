@@ -110,16 +110,16 @@ Once features are defined, use them directly for access checks and usage trackin
 import { apiCalls, analytics } from "./billing/features";
 
 // Check access
-const access = await apiCalls.check("user@example.com");
+const access = await apiCalls.check("user_123");
 if (!access.allowed) {
-  return res.status(403).json({ error: access.code });
+  console.log("Access denied:", access.code);
 }
 
 // Track usage
-await apiCalls.track("user@example.com", 1);
+await apiCalls.track("user_123", 1);
 
 // Boolean features — no .track()
-const { allowed } = await analytics.check("user@example.com");
+const { allowed } = await analytics.check("user_123");
 ```
 
 ## What sync does

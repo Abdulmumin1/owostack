@@ -1,0 +1,116 @@
+---
+title: Sell credit packs
+description: Let customers purchase prepaid credit top-ups
+icon: Coins
+---
+
+# How to sell credit packs
+
+This guide shows how to create credit packs that customers can buy to top up a prepaid balance, then consume those credits through usage tracking.
+
+## Set up a credit system
+
+Credits are scoped to a **credit system**. A credit system groups related features that share a balance (e.g. "AI Credits").
+
+1. In the dashboard, go to **Credit Systems** and create one (e.g. "AI Credits").
+2. Attach features to plans with a `creditCost` so usage deducts from the balance:
+
+```ts
+const aiTokens = metered("ai-tokens", { name: "AI Tokens" });
+
+plan("pro", {
+  name: "Pro",
+  price: 2000,
+  currency: "USD",
+  interval: "monthly",
+  features: [
+    aiTokens.limit(5000, { creditCost: 1 }),
+  ],
+});
+```
+
+Each call to `track()` for `ai-tokens` deducts 1 credit from the customer's balance in that credit system.
+
+## Create a credit pack
+
+In the dashboard, go to **Add-ons → Credit Packs** and create a pack:
+
+| Field | Value |
+|-------|-------|
+| Name | 500 AI Credits |
+| Credits | 500 |
+| Price | 1000 (minor currency units) |
+| Credit System | AI Credits |
+| Provider | Your payment provider |
+
+The pack is now available for purchase.
+
+## Let customers buy credits
+
+Use `addon()` to initiate a credit pack purchase:
+
+```ts
+const result = await owo.addon({
+  customer: "user_123",
+  pack: "500-ai-credits", // credit pack slug
+  quantity: 1,
+});
+
+if (result.requiresCheckout) {
+  // Redirect to payment
+  console.log(result.checkoutUrl);
+} else {
+  // Credits applied immediately (card on file was charged)
+  console.log("New balance:", result.balance);
+}
+```
+
+If the customer has a payment method on file, the charge happens immediately and credits are added to their balance. Otherwise, a checkout URL is returned.
+
+## Adjust quantity
+
+Customers can buy multiple packs at once:
+
+```ts
+const result = await owo.addon({
+  customer: "user_123",
+  pack: "500-ai-credits",
+  quantity: 3, // 1500 credits total
+});
+```
+
+## Check the balance
+
+Use `check()` on a feature in the credit system to see the remaining balance:
+
+```ts
+const access = await owo.check({
+  customer: "user_123",
+  feature: "ai-tokens",
+});
+
+console.log("Credits remaining:", access.balance);
+```
+
+## Consume credits
+
+`track()` deducts credits automatically based on the feature's `creditCost`:
+
+```ts
+await owo.track({
+  customer: "user_123",
+  feature: "ai-tokens",
+  value: 1, // deducts creditCost (1) from balance
+});
+```
+
+For features with variable cost, multiply:
+
+```ts
+// GPT-4 costs 20 credits per call
+await owo.track({
+  customer: "user_123",
+  feature: "gpt-4-calls"
+});
+```
+

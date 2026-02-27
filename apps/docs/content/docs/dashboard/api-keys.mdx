@@ -40,7 +40,7 @@ owo_sk_xxxxxxxxxxxxxxxxxxxx
 import { Owostack } from "@owostack/core";
 
 const owo = new Owostack({
-  apiKey: process.env.OWOSTACK_API_KEY,
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
 });
 ```
 
@@ -50,7 +50,7 @@ const owo = new Owostack({
 curl https://api.owostack.dev/v1/check \
   -H "Authorization: Bearer owo_sk_your_key_here" \
   -H "Content-Type: application/json" \
-  -d '{"customer": "user@example.com", "feature": "premium"}'
+  -d '{"customer": "user_123", "feature": "premium"}'
 ```
 
 ## Key Management

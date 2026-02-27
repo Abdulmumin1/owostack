@@ -19,6 +19,7 @@ export interface ProviderConfig {
   color: string;
   docsUrl: string;
   fields: ProviderField[];
+  supportedCurrencies?: string[];
 }
 
 export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
@@ -32,6 +33,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
       { key: "secretKey", label: "Secret Key", placeholder: "sk_test_xxxxxxxxxxxxxxx", secret: true },
       { key: "publicKey", label: "Public Key", placeholder: "pk_test_xxxxxxxxxxxxxxx", secret: false },
     ],
+    supportedCurrencies: ["NGN", "GHS", "ZAR", "USD", "KES", "EGP", "RWF", "XOF"],
   },
   {
     id: "stripe",
@@ -47,12 +49,14 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
   {
     id: "dodopayments",
     name: "Dodo Payments",
-    description: "Simple payment processing",
+    description: "Global payment processing for digital products",
     color: "violet",
-    docsUrl: "https://dodopayments.com/docs",
+    docsUrl: "https://docs.dodopayments.com",
     fields: [
-      { key: "secretKey", label: "API Key", placeholder: "dodo_sk_xxxxxxxxxxxxxxx", secret: true },
+      { key: "secretKey", label: "API Key", placeholder: "your_dodo_api_key", secret: true },
+      { key: "webhookSecret", label: "Webhook Secret", placeholder: "whsec_xxxxxxxxxxxxxxx", secret: true },
     ],
+    supportedCurrencies: ["USD", "EUR", "GBP", "INR"],
   },
 ];
 

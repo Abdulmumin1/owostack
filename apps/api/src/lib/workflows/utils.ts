@@ -29,9 +29,6 @@ export function getAdapter(providerId: string): ProviderAdapter | undefined {
 //
 // The billing DB is environment-scoped (test worker → test DB, live worker →
 // live DB), so provider accounts in it already belong to the correct env.
-// The only shared resource is DB_AUTH (legacy project keys with both
-// test_secret_key and live_secret_key) — for that fallback we use
-// env.ENVIRONMENT to pick the right column.
 // ---------------------------------------------------------------------------
 
 export async function resolveProviderAccount(
@@ -43,12 +40,14 @@ export async function resolveProviderAccount(
   const workerEnv = deriveEnvironment(env.ENVIRONMENT);
 
   // 1. Try provider_accounts table (new multi-provider system)
-  //    The billing DB is already scoped to this worker's environment,
-  //    so all accounts in it belong to the correct env.
+  //    Filter by environment to avoid using a live secret key with a test
+  //    authorization code (or vice-versa) — auth codes are scoped to the
+  //    specific Paystack integration / secret key.
   const accounts = await db.query.providerAccounts.findMany({
     where: and(
       eq(schema.providerAccounts.organizationId, organizationId),
       eq(schema.providerAccounts.providerId, providerId),
+      eq(schema.providerAccounts.environment, workerEnv),
     ),
   });
 
@@ -77,34 +76,7 @@ export async function resolveProviderAccount(
     };
   }
 
-  // 2. Fallback: legacy project keys (raw D1 — projects live in shared DB_AUTH)
-  //    Both test and live keys are stored in the same row, so we pick based
-  //    on this worker's ENVIRONMENT.
-  const project = await env.DB_AUTH.prepare(
-    `SELECT test_secret_key, live_secret_key FROM projects WHERE organization_id = ? LIMIT 1`,
-  ).bind(organizationId).first<{ test_secret_key: string | null; live_secret_key: string | null }>();
-
-  if (!project) return null;
-
-  const encryptedKey = workerEnv === "live" ? project.live_secret_key : project.test_secret_key;
-  if (!encryptedKey) return null;
-
-  let secretKey: string;
-  try {
-    secretKey = await decrypt(encryptedKey, env.ENCRYPTION_KEY);
-  } catch {
-    return null;
-  }
-
-  return {
-    id: `legacy-${organizationId}`,
-    organizationId,
-    providerId: "paystack",
-    environment: workerEnv,
-    credentials: { secretKey },
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
+  return null;
 }
 
 /** Derive "test" | "live" from the worker's ENVIRONMENT var */

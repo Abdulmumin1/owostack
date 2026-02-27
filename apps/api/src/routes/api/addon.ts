@@ -3,9 +3,7 @@ import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { resolveOrCreateCustomer } from "../../lib/customers";
-import { decrypt } from "../../lib/encryption";
 import { verifyApiKey } from "../../lib/api-keys";
-import { getPaystackEnvironment, selectPaystackKey, type PaystackEnvironment } from "../../lib/environment";
 import { resolveProvider } from "@owostack/adapters";
 import type { ProviderAccount } from "@owostack/adapters";
 import {
@@ -18,7 +16,7 @@ import {
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 import { ensureCreditPackSynced } from "../../lib/credit-pack-sync";
-import { topUpScopedBalance } from "../../lib/addon-credits";
+
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -87,11 +85,6 @@ app.post("/addon", async (c) => {
       500,
     );
   }
-
-  const activeEnv = getPaystackEnvironment(
-    c.env.ENVIRONMENT,
-    project.activeEnvironment,
-  );
 
   // Parse Body
   const body = await c.req.json();
@@ -179,7 +172,7 @@ app.post("/addon", async (c) => {
     );
   }
 
-  return handleAddonPurchase(c, db, keyRecord, project, activeEnv, creditPack, {
+  return handleAddonPurchase(c, db, keyRecord, project, creditPack, {
     customer, quantity, currency, metadata, callbackUrl, provider, region,
   });
 });
@@ -189,7 +182,6 @@ async function handleAddonPurchase(
   db: any,
   keyRecord: any,
   project: any,
-  activeEnv: PaystackEnvironment,
   creditPack: any,
   opts: {
     customer: string;
@@ -225,7 +217,8 @@ async function handleAddonPurchase(
   );
 
   // ---------- Provider Resolution ----------
-  const explicitProvider = provider || null;
+  // Prefer: explicit request param > pack's stored provider > rules/fallback
+  const explicitProvider = provider || creditPack.providerId || null;
   let selectedProviderId: string | null = explicitProvider;
   let selectedAccount: ProviderAccount | undefined;
 
@@ -265,48 +258,6 @@ async function handleAddonPurchase(
     if (defaultAccount) {
       selectedProviderId = defaultAccount.providerId;
       selectedAccount = defaultAccount;
-    }
-  }
-
-  // 4. Legacy fallback: synthetic Paystack account
-  if (!selectedAccount) {
-    selectedProviderId = selectedProviderId || "paystack";
-
-    if (selectedProviderId === "paystack") {
-      let secretKey: string | null = null;
-      const encryptedKey = selectPaystackKey(
-        activeEnv,
-        project.testSecretKey,
-        project.liveSecretKey,
-      );
-
-      if (encryptedKey) {
-        try {
-          secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-        } catch (e) {
-          return c.json(
-            { success: false, error: "Failed to decrypt provider key" },
-            500,
-          );
-        }
-      }
-
-      if (!secretKey) {
-        return c.json(
-          { success: false, error: `Payment provider ${activeEnv} mode not configured` },
-          400,
-        );
-      }
-
-      selectedAccount = {
-        id: `legacy-${project.id}`,
-        organizationId: keyRecord.organizationId,
-        providerId: "paystack",
-        environment: providerEnv,
-        credentials: { secretKey },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      } as ProviderAccount;
     }
   }
 
@@ -358,68 +309,12 @@ async function handleAddonPurchase(
     provider_id: selectedProviderId,
   };
 
-  // Try to charge saved card directly
-  const authCode =
-    customerRecord.providerAuthorizationCode ||
-    customerRecord.paystackAuthorizationCode;
   const customerRef =
     customerRecord.providerCustomerId ||
     customerRecord.paystackCustomerId ||
     customerRecord.email;
 
-  if (authCode) {
-    const chargeResult = await resolvedAdapter.chargeAuthorization({
-      customer: { id: customerRef, email: customerRecord.email },
-      authorizationCode: authCode,
-      amount: totalPrice,
-      currency: currency || creditPack.currency || "USD",
-      metadata: purchaseMetadata,
-      environment: selectedAccount.environment,
-      account: selectedAccount,
-    });
-
-    if (chargeResult.isOk()) {
-      // Charge succeeded — credit immediately via atomic upsert
-      const updatedBalance = await topUpScopedBalance(
-        db,
-        customerRecord.id,
-        creditPack.creditSystemId,
-        totalCredits,
-      );
-
-      // Record the purchase in ledger
-      await (db as any).insert((schema as any).creditPurchases).values({
-        id: crypto.randomUUID(),
-        customerId: customerRecord.id,
-        creditPackId: creditPack.id,
-        creditSystemId: creditPack.creditSystemId,
-        credits: totalCredits,
-        quantity,
-        price: totalPrice,
-        currency: currency || creditPack.currency || "USD",
-        paymentReference: chargeResult.value.reference || null,
-        providerId: selectedProviderId,
-        metadata: purchaseMetadata,
-      });
-
-      return c.json({
-        success: true,
-        requiresCheckout: false,
-        quantity,
-        credits: totalCredits,
-        balance: updatedBalance,
-        creditSystemId: creditPack.creditSystemId,
-        message: `${totalCredits} credits added (${quantity}x ${creditPack.name})`,
-      });
-    }
-
-    // Charge failed — fall through to checkout
-    console.warn(
-      `[ADDON] Direct charge failed for customer=${customerRecord.id}, pack=${creditPack.slug}: ${chargeResult.error.message}`,
-    );
-  }
-
-  // No saved card or charge failed — create checkout session
+  // Always use checkout for credit pack purchases (auto-charge reserved for overages only)
   // Try to sync credit pack to provider for native line-item checkout
   const syncResult = await ensureCreditPackSynced(db, creditPack, resolvedAdapter, selectedAccount);
 

@@ -762,6 +762,45 @@ export const overageSettings = sqliteTable(
   ],
 );
 
+export const paymentMethods = sqliteTable(
+  "payment_methods",
+  {
+    id: text("id").primaryKey(),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    providerId: text("provider_id").notNull(),
+    token: text("token").notNull(),
+    type: text("type").notNull().default("card"), // card, provider_managed
+    cardLast4: text("card_last4"),
+    cardBrand: text("card_brand"),
+    cardExpMonth: text("card_exp_month"),
+    cardExpYear: text("card_exp_year"),
+    isDefault: integer("is_default", { mode: "boolean" }).notNull().default(true),
+    isValid: integer("is_valid", { mode: "boolean" }).notNull().default(true),
+    verifiedAt: integer("verified_at"),
+    invalidatedAt: integer("invalidated_at"),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("pm_customer_idx").on(table.customerId),
+    index("pm_org_idx").on(table.organizationId),
+    uniqueIndex("pm_customer_provider_token_uniq").on(
+      table.customerId,
+      table.providerId,
+      table.token,
+    ),
+  ],
+);
+
 export const customerOverageLimits = sqliteTable(
   "customer_overage_limits",
   {

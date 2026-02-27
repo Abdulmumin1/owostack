@@ -2,9 +2,6 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { eq, desc, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
-import { decrypt } from "../../lib/encryption";
-import { getPaystackEnvironment, selectPaystackKey } from "../../lib/environment";
-import type { ProviderAccount } from "@owostack/adapters";
 import { previewSwitch, executeSwitch } from "../../lib/plan-switch";
 import type { ProviderContext } from "../../lib/plan-switch";
 import { getProviderRegistry, deriveProviderEnvironment, loadProviderAccounts } from "../../lib/providers";
@@ -377,30 +374,24 @@ app.post("/switch-plan", async (c) => {
     where: eq(schema.projects.organizationId, organizationId),
   });
 
-  const activeEnv = getPaystackEnvironment(
+  const providerEnv = deriveProviderEnvironment(
     c.env.ENVIRONMENT,
     project?.activeEnvironment,
   );
 
-  // Build provider context — try DB-stored provider accounts first, then legacy keys
+  // Build provider context from DB-stored provider accounts
   let providerCtx: ProviderContext | null = null;
   try {
     if (project) {
-      const providerEnv = deriveProviderEnvironment(
-        c.env.ENVIRONMENT,
-        project.activeEnvironment,
-      );
 
       const registry = getProviderRegistry();
 
-      // Try provider accounts from DB
       const providerAccounts = await loadProviderAccounts(
         db,
         organizationId,
         c.env.ENCRYPTION_KEY,
       );
 
-      // Find a suitable account (prefer the first one matching environment)
       const dbAccount = providerAccounts.find(
         (a) => a.environment === providerEnv,
       );
@@ -409,32 +400,6 @@ app.post("/switch-plan", async (c) => {
         const adapter = registry.get(dbAccount.providerId);
         if (adapter) {
           providerCtx = { adapter, account: dbAccount };
-        }
-      }
-
-      // Fall back to legacy Paystack keys
-      if (!providerCtx) {
-        const encryptedKey = selectPaystackKey(
-          activeEnv,
-          project.testSecretKey,
-          project.liveSecretKey,
-        );
-
-        if (encryptedKey) {
-          const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-          const account: ProviderAccount = {
-            id: `legacy-${project.id}`,
-            organizationId,
-            providerId: "paystack",
-            environment: providerEnv,
-            credentials: { secretKey },
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-          const legacyAdapter = registry.get("paystack");
-          if (legacyAdapter) {
-            providerCtx = { adapter: legacyAdapter, account };
-          }
         }
       }
     }
@@ -446,7 +411,7 @@ app.post("/switch-plan", async (c) => {
     const result = await executeSwitch(db, customerId, newPlanId, providerCtx, {
       downgradeWorkflow: c.env.DOWNGRADE_WORKFLOW,
       organizationId,
-      environment: activeEnv,
+      environment: providerEnv,
     });
 
     if (!result.success) {
@@ -525,31 +490,6 @@ app.post("/cancel", async (c) => {
               a.providerId === resolvedProviderId &&
               a.environment === providerEnv,
           );
-
-          // Fall back to legacy Paystack keys
-          if (!account && resolvedProviderId === "paystack") {
-            const activeEnv = getPaystackEnvironment(
-              c.env.ENVIRONMENT,
-              project.activeEnvironment,
-            );
-            const encryptedKey = selectPaystackKey(
-              activeEnv,
-              project.testSecretKey,
-              project.liveSecretKey,
-            );
-            if (encryptedKey) {
-              const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-              account = {
-                id: `legacy-${project.id}`,
-                organizationId,
-                providerId: "paystack",
-                environment: providerEnv,
-                credentials: { secretKey },
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-              };
-            }
-          }
 
           if (account) {
             await adapter.cancelSubscription({

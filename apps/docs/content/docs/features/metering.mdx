@@ -20,9 +20,9 @@ Use the `track()` method to increment usage.
 
 ```ts
 await owo.track({
-  customer: "user@example.com",
+  customer: "user_123",
   feature: "api_calls",
-  amount: 1, // Default is 1
+  value: 1, // Default is 1
 });
 ```
 
@@ -56,7 +56,10 @@ Allow unused usage to carry over to the next period.
 ### Usage model
 
 - `included`: Usage up to the limit is included in the plan base price.
-- `overage`: (Coming Soon) Usage beyond the limit is charged extra.
+- `usage_based`: All usage is billable (no included allowance).
+- `prepaid`: Usage consumes from a prepaid credit balance.
+
+Overages are controlled separately via the `overage` setting on the plan feature (`block` or `charge`).
 
 ## Lazy configuration
 

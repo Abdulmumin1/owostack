@@ -15,20 +15,19 @@ export interface OverageGuardResult {
 }
 
 /**
- * Check if a customer has a stored payment method (card on file).
- * No card = no overage. Period.
+ * Check if a customer has a stored payment method (card on file or provider-managed).
+ * Queries the payment_methods table — works for all providers.
  */
 export async function hasPaymentMethod(
   db: any,
   customerId: string,
 ): Promise<boolean> {
   const result = await (db as any).run(
-    sql`SELECT provider_authorization_code, paystack_authorization_code
-        FROM customers WHERE id = ${customerId} LIMIT 1`,
+    sql`SELECT 1 FROM payment_methods
+        WHERE customer_id = ${customerId} AND is_valid = 1
+        LIMIT 1`,
   );
-  const row = result?.results?.[0];
-  if (!row) return false;
-  return !!(row.provider_authorization_code || row.paystack_authorization_code);
+  return !!result?.results?.[0];
 }
 
 /**
@@ -74,7 +73,7 @@ export async function getUnbilledOverageAmount(
                pf.limit_value,
                pf.usage_model
         FROM usage_records ur
-        JOIN subscriptions s ON s.customer_id = ur.customer_id AND s.status = 'active'
+        JOIN subscriptions s ON s.customer_id = ur.customer_id AND s.status IN ('active', 'canceled', 'pending_cancel')
         JOIN plan_features pf ON pf.plan_id = s.plan_id AND pf.feature_id = ur.feature_id
         WHERE ur.customer_id = ${customerId}
           AND ur.invoice_id IS NULL

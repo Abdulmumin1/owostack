@@ -1,0 +1,137 @@
+---
+title: wallet
+description: Manage payment methods on file
+icon: Wallet
+---
+
+# wallet
+
+Query, add, and remove payment methods for a customer. Payment methods are used for overage billing, credit pack purchases, and trial conversions.
+
+## `owo.wallet(customer)`
+
+Shorthand for `owo.wallet.list()`. Returns the customer's saved payment methods.
+
+```ts
+const wallet = await owo.wallet("user_123");
+```
+
+### Returns `Promise<WalletResult>`
+
+```ts
+interface WalletResult {
+  hasCard: boolean;
+  card: CardInfo | null;
+  methods: PaymentMethodInfo[];
+}
+
+interface CardInfo {
+  last4: string;
+  brand: string;
+  expMonth: string;
+  expYear: string;
+}
+
+interface PaymentMethodInfo {
+  id: string;
+  providerId: string;
+  type: "card" | "provider_managed";
+  cardLast4?: string | null;
+  cardBrand?: string | null;
+  cardExpMonth?: string | null;
+  cardExpYear?: string | null;
+  isDefault: boolean;
+  createdAt: number;
+}
+```
+
+---
+
+## `owo.wallet.list(customer)`
+
+List all saved payment methods for a customer.
+
+```ts
+const result = await owo.wallet.list("user_123");
+
+for (const method of result.methods) {
+  console.log(method.cardBrand, `**** ${method.cardLast4}`);
+}
+```
+
+### Parameters
+
+| Parameter  | Type     | Required | Description                         |
+| ---------- | -------- | -------- | ----------------------------------- |
+| `customer` | `string` | Yes      | Your internal user ID               |
+
+### Returns `Promise<WalletResult>`
+
+Same shape as `owo.wallet()`.
+
+---
+
+## `owo.wallet.setup(customer, opts?)`
+
+Initiate card authorization. Returns a URL where the customer completes the setup flow on the provider's page.
+
+```ts
+const setup = await owo.wallet.setup("user_123", {
+  callbackUrl: "https://yourapp.com/billing",
+  provider: "paystack",
+});
+
+if (setup.url) {
+  // Redirect customer to authorize their card
+  console.log(setup.url);
+}
+```
+
+### Parameters
+
+| Parameter          | Type     | Required | Description                                    |
+| ------------------ | -------- | -------- | ---------------------------------------------- |
+| `customer`         | `string` | Yes      | Your internal user ID                          |
+| `opts.callbackUrl` | `string` | No       | URL to redirect customer to after authorization |
+| `opts.provider`    | `string` | No       | Provider ID (e.g. `"paystack"`, `"dodopayments"`) |
+
+### Returns `Promise<WalletSetupResult>`
+
+```ts
+interface WalletSetupResult {
+  url: string;
+  reference: string;
+}
+```
+
+### Notes
+
+- For **Paystack**, a small verification charge is made and auto-refunded
+- For **Dodo Payments**, an on-demand subscription mandate is created (no charge)
+- After the customer completes the flow, the provider sends a webhook and Owostack stores the payment method automatically
+
+---
+
+## `owo.wallet.remove(customer, id)`
+
+Remove a saved payment method.
+
+```ts
+const result = await owo.wallet.remove("user_123", "pm_abc123");
+console.log(result.success); // true
+```
+
+### Parameters
+
+| Parameter  | Type     | Required | Description                         |
+| ---------- | -------- | -------- | ----------------------------------- |
+| `customer` | `string` | Yes      | Your internal user ID               |
+| `id`       | `string` | Yes      | Payment method ID to remove         |
+
+### Returns `Promise<WalletRemoveResult>`
+
+```ts
+interface WalletRemoveResult {
+  success: boolean;
+}
+```

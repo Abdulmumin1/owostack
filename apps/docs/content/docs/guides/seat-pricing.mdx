@@ -1,0 +1,103 @@
+---
+title: Sell seat & org plans
+description: Implement per-seat and per-organization pricing with entity-scoped metering
+icon: Users
+---
+
+# Sell seat & org plans
+
+Owostack supports per-seat and per-organization pricing through **entity-scoped metering**. You model seats and credits as metered features, then scope usage with the `entity` field.
+
+This guide shows a common setup:
+
+- **Plan includes 5 seats**
+- **Each seat gets 1000 AI credits per month**
+
+## 1. Define features
+
+```ts
+import { metered, plan, Owostack } from "@owostack/core";
+
+export const seats = metered("seats", { name: "Team Seats" });
+export const aiCredits = metered("ai-credits", { name: "AI Credits" });
+```
+
+## 2. Create the plan
+
+```ts
+export default new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  catalog: [
+    plan("team", {
+      name: "Team",
+      price: 2000,
+      currency: "USD",
+      interval: "monthly",
+      features: [
+        seats.limit(5, { reset: "monthly", overage: "block" }),
+        aiCredits.limit(1000, { reset: "monthly" }),
+      ],
+    }),
+  ],
+});
+```
+
+## 3. Start the subscription
+
+```ts
+const attach = await owo.attach({
+  customer: "user_123",
+  product: "team",
+  customerData: { email: "user@example.com" },
+});
+```
+
+## 4. Reserve a seat (org-level limit)
+
+Use `entity = orgId` so all seat usage rolls into **one org bucket**.
+
+```ts
+const seatReserve = await owo.check({
+  customer: "user_123",
+  feature: "seats",
+  value: 1,
+  entity: "org_acme",
+  sendEvent: true,
+});
+
+if (!seatReserve.allowed) {
+  throw new Error("Seat limit reached");
+}
+```
+
+`sendEvent: true` atomically checks **and** increments seat usage when allowed.
+
+## 5. Track AI credits per seat
+
+Use `entity = seatId` so each seat gets its **own 1000‑credit bucket**.
+
+```ts
+await owo.track({
+  customer: "user_123",
+  feature: "ai-credits",
+  value: 20,
+  entity: "seat_456",
+});
+```
+
+To show remaining credits for a seat:
+
+```ts
+const credits = await owo.check({
+  customer: "user_123",
+  feature: "ai-credits",
+  entity: "seat_456",
+});
+
+console.log("Credits remaining:", credits.balance);
+```
+
+## Notes & limitations
+
+- Seat removal isn’t supported yet (no negative tracking). Use `sendEvent` only when a seat is created.
+- For **org‑wide credits** (one shared pool), use `entity = orgId` instead of a seat ID.

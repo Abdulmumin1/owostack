@@ -134,8 +134,13 @@ export class DowngradeWorkflow extends WorkflowEntrypoint<WorkflowEnv, Downgrade
     }
 
     // Step 5: Fetch new plan details + create subscription on provider if applicable
+    // Skip for providers with native subscription management (supportsNativeTrials) —
+    // createSubscription would create a checkout session, not a real subscription.
+    const downgradeAdapter = getAdapter(providerId);
+    const skipProviderSub = downgradeAdapter?.supportsNativeTrials === true;
+
     const newProviderSubCode = await step.do("create-provider-subscription", async () => {
-      if (!newPlanProviderCode || !customerEmail || !customerAuthorizationCode) {
+      if (skipProviderSub || !newPlanProviderCode || !customerEmail || !customerAuthorizationCode) {
         return null;
       }
 

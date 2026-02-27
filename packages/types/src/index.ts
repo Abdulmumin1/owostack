@@ -66,7 +66,7 @@ export interface AttachParams {
 
 export interface AttachResult {
   /** Checkout URL to redirect user */
-  url: string;
+  checkoutUrl: string;
 
   /** Payment reference for tracking */
   reference: string;
@@ -383,6 +383,32 @@ export interface InvoiceResult {
 }
 
 /**
+ * billing.pay() - Pay an Invoice
+ */
+
+export interface PayInvoiceParams {
+  /** Invoice ID */
+  invoiceId: string;
+
+  /** URL to redirect to after checkout payment (used when auto-charge fails) */
+  callbackUrl?: string;
+}
+
+export interface PayInvoiceResult {
+  /** Whether the request succeeded */
+  success: boolean;
+
+  /** Whether the invoice was auto-charged (true) or needs manual checkout (false) */
+  paid: boolean;
+
+  /** Checkout URL — present when paid=false (customer must pay manually) */
+  checkoutUrl?: string;
+
+  /** The invoice */
+  invoice: Invoice;
+}
+
+/**
  * billing.invoices() - List Invoices
  */
 
@@ -686,6 +712,180 @@ export interface PlanDefinition {
 
   /** Custom metadata */
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * wallet() - Payment Methods
+ */
+
+export interface CardInfo {
+  /** Card ID (payment method ID) */
+  id: string;
+
+  /** Last 4 digits */
+  last4: string;
+
+  /** Card brand (visa, mastercard, verve) */
+  brand: string;
+
+  /** Expiry as "MM/YY" */
+  exp: string;
+
+  /** Provider that captured this card */
+  provider: string;
+}
+
+export interface PaymentMethodInfo {
+  /** Payment method ID */
+  id: string;
+
+  /** Type: card (Paystack/Stripe) or provider_managed (Dodo) */
+  type: "card" | "provider_managed";
+
+  /** Provider ID */
+  provider: string;
+
+  /** Whether this is the default payment method */
+  isDefault: boolean;
+
+  /** Whether the token is still valid for charging */
+  isValid: boolean;
+
+  /** Card details (null for provider_managed) */
+  card: CardInfo | null;
+}
+
+export interface WalletResult {
+  /** Whether the customer has a chargeable payment method */
+  hasCard: boolean;
+
+  /** Default card details (shortcut for the default method's card) */
+  card: CardInfo | null;
+
+  /** All stored payment methods */
+  methods: PaymentMethodInfo[];
+}
+
+export interface WalletSetupParams {
+  /** Customer ID or email */
+  customer: string;
+
+  /** Optional: Redirect URL after card setup */
+  callbackUrl?: string;
+
+  /** Optional: Override provider */
+  provider?: string;
+}
+
+export interface WalletSetupResult {
+  /** Checkout URL to redirect user for card capture */
+  url: string;
+
+  /** Payment reference */
+  reference: string;
+}
+
+export interface WalletRemoveResult {
+  /** Whether the removal succeeded */
+  success: boolean;
+}
+
+/**
+ * plans() - List Plans
+ */
+
+export interface PlansParams {
+  /** Optional: Filter by plan group */
+  group?: string;
+
+  /** Optional: Filter by billing interval */
+  interval?: PlanInterval;
+
+  /** Optional: Filter by currency */
+  currency?: string;
+
+  /** Optional: Include inactive plans (default: false) */
+  includeInactive?: boolean;
+}
+
+/** A plan feature as returned by the public API */
+export interface PublicPlanFeature {
+  /** Feature slug */
+  slug: string;
+
+  /** Human-readable feature name */
+  name: string;
+
+  /** Feature type */
+  type: "metered" | "boolean" | "static";
+
+  /** Whether this feature is enabled in this plan */
+  enabled: boolean;
+
+  /** Usage limit (null = unlimited) */
+  limit: number | null;
+
+  /** Reset interval */
+  resetInterval: string | null;
+
+  /** Unit label (e.g. "call", "message", "GB") */
+  unit: string | null;
+
+  /** Overage behavior */
+  overage?: "block" | "charge";
+
+  /** Overage price per unit in minor currency units */
+  overagePrice?: number | null;
+}
+
+/** A plan as returned by the public API — safe for client-side consumption */
+export interface PublicPlan {
+  /** Plan ID */
+  id: string;
+
+  /** URL-safe slug */
+  slug: string;
+
+  /** Human-readable name */
+  name: string;
+
+  /** Description */
+  description: string | null;
+
+  /** Price in minor currency units */
+  price: number;
+
+  /** Currency code */
+  currency: string;
+
+  /** Billing interval */
+  interval: PlanInterval;
+
+  /** "free" or "paid" */
+  type: string;
+
+  /** Whether this is a recurring or one-time plan */
+  billingType: string;
+
+  /** Whether this is an add-on plan */
+  isAddon: boolean;
+
+  /** Plan group (for upgrade/downgrade) */
+  planGroup: string | null;
+
+  /** Trial period in days (0 = no trial) */
+  trialDays: number;
+
+  /** Features included in this plan */
+  features: PublicPlanFeature[];
+}
+
+export interface PlansResult {
+  /** Whether the request succeeded */
+  success: boolean;
+
+  /** List of plans */
+  plans: PublicPlan[];
 }
 
 /** Serialized catalog sent to POST /api/sync */

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createHmac } from "crypto";
 import { Result } from "better-result";
-import app from "../src/index";
+import { app } from "../src/index";
 
 // =============================================================================
 // Mocks
@@ -22,6 +22,8 @@ const mockDb = {
   insert: vi.fn().mockReturnThis(),
   values: vi.fn().mockResolvedValue([]),
   query: {
+    organizations: { findFirst: vi.fn().mockResolvedValue({ id: "org-123" }) },
+    providerAccounts: { findMany: vi.fn().mockResolvedValue([]) },
     customers: { findFirst: vi.fn() },
     plans: { findFirst: vi.fn() },
     projects: { findFirst: vi.fn().mockResolvedValue(mockProject) },
@@ -32,6 +34,8 @@ vi.mock("@owostack/db", () => ({
   createDb: () => mockDb,
   schema: {
     events: {},
+    organizations: { id: {}, organizationId: {} },
+    providerAccounts: { organizationId: {}, providerId: {} },
     customers: {},
     plans: {},
     subscriptions: {},

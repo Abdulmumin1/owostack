@@ -12,9 +12,16 @@ Subscribe a customer to a subscription plan. If payment is required, Owostack re
 
 ```ts
 await owo.attach({
-  customer: string,    // Customer identifier (email or ID)
-  plan: string,        // Plan slug from your dashboard
+  customer: string,    // Your internal user ID
+  product: string,     // Plan slug or ID
+  customerData?: {     // Optional: auto-create customer
+    email: string,
+    name?: string,
+    metadata?: Record<string, unknown>,
+  },
   metadata?: object,   // Optional metadata to attach
+  provider?: string,   // Optional provider override
+  callbackUrl?: string,
 }): Promise<AttachResult>
 ```
 
@@ -22,23 +29,23 @@ await owo.attach({
 
 | Parameter  | Type     | Required | Description                               |
 | ---------- | -------- | -------- | ----------------------------------------- |
-| `customer` | `string` | ✅       | Customer email or unique identifier       |
-| `plan`     | `string` | ✅       | Plan slug as defined in your dashboard    |
-| `metadata` | `object` | -        | Custom data to attach to the subscription |
+| `customer` | `string` | ✅       | Your internal user ID                      |
+| `product`  | `string` | ✅       | Plan slug or ID                            |
+| `customerData` | `object` | -    | Auto-create customer payload               |
+| `metadata` | `object` | -        | Custom data to attach to the subscription  |
+| `provider` | `string` | -        | Optional provider override                 |
+| `callbackUrl` | `string` | -     | Redirect URL after payment                 |
 
 ## Response
 
 ```ts
 interface AttachResult {
   success: boolean;
-  subscription?: {
-    id: string;
-    status: "pending" | "active" | "canceled";
-    plan: string;
-    currentPeriodEnd: string;
-  };
-  checkoutUrl?: string; // Provider checkout URL (for new subscriptions)
-  error?: string;
+  type: "new" | "upgrade" | "downgrade" | "lateral";
+  requiresCheckout: boolean;
+  checkoutUrl?: string;
+  subscriptionId?: string;
+  message: string;
 }
 ```
 
@@ -49,18 +56,19 @@ interface AttachResult {
 ```ts
 import { Owostack } from "@owostack/core";
 
-const owo = new Owostack({ apiKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
 
 // Subscribe a customer to the "pro" plan
 const result = await owo.attach({
-  customer: "user@example.com",
-  plan: "pro-monthly",
+  customer: "user_123",
+  product: "pro-monthly",
+  customerData: { email: "user@example.com" },
 });
 
 if (result.checkoutUrl) {
   // Redirect customer to complete payment
-  res.redirect(result.checkoutUrl);
-} else if (result.subscription?.status === "active") {
+  console.log(result.checkoutUrl);
+} else if (!result.requiresCheckout) {
   // Already subscribed
   console.log("Subscription active!");
 }
@@ -70,39 +78,13 @@ if (result.checkoutUrl) {
 
 ```ts
 const result = await owo.attach({
-  customer: "user@example.com",
-  plan: "enterprise",
+  customer: "user_123",
+  product: "enterprise",
   metadata: {
     companyName: "Acme Corp",
     seats: 10,
     referralCode: "FRIEND20",
   },
-});
-```
-
-### Express.js Example
-
-```ts
-app.post("/api/subscribe", async (req, res) => {
-  const { email, plan } = req.body;
-
-  try {
-    const result = await owo.attach({
-      customer: email,
-      plan: plan,
-    });
-
-    if (result.checkoutUrl) {
-      res.json({ redirect: result.checkoutUrl });
-    } else {
-      res.json({
-        success: true,
-        subscription: result.subscription,
-      });
-    }
-  } catch (error) {
-    res.status(500).json({ error: "Subscription failed" });
-  }
 });
 ```
 

@@ -154,6 +154,16 @@ class PaystackClient {
     return this.request("POST", "/plan", params);
   }
 
+  updatePlan(planCode: string, params: {
+    name?: string;
+    amount?: number;
+    interval?: string;
+    description?: string;
+    currency?: string;
+  }): Promise<ProviderResult<Record<string, unknown>>> {
+    return this.request("PUT", `/plan/${encodeURIComponent(planCode)}`, params);
+  }
+
   createSubscription(params: {
     customer: string;
     plan: string;
@@ -194,6 +204,15 @@ class PaystackClient {
       amount: String(params.amount),
     });
   }
+
+  createRefund(params: {
+    transaction: string;
+    amount?: number;
+    currency?: string;
+    merchant_note?: string;
+  }): Promise<ProviderResult<{ status: string; transaction: number; id: number }>> {
+    return this.request("POST", "/refund", params);
+  }
 }
 
 function getSecretKey(account: ProviderAccount): string | null {
@@ -219,6 +238,8 @@ export const paystackAdapter: ProviderAdapter = {
   id: "paystack",
   displayName: "Paystack",
   signatureHeaderName: "x-paystack-signature",
+  supportsNativeTrials: false,
+  defaultCurrency: "NGN",
 
   async createCheckoutSession(params): Promise<ProviderResult<CheckoutSession>> {
     const clientResult = resolveClient(params.account);
@@ -282,6 +303,23 @@ export const paystackAdapter: ProviderAdapter = {
     });
   },
 
+  async updatePlan(params): Promise<ProviderResult<{ updated: boolean }>> {
+    const clientResult = resolveClient(params.account);
+    if (clientResult.isErr()) return clientResult;
+
+    const updateBody: Record<string, unknown> = {};
+    if (params.name !== undefined) updateBody.name = params.name;
+    if (params.amount !== undefined) updateBody.amount = params.amount;
+    if (params.interval !== undefined) updateBody.interval = params.interval;
+    if (params.currency !== undefined) updateBody.currency = params.currency;
+    if (params.description !== undefined) updateBody.description = params.description;
+
+    const response = await clientResult.value.updatePlan(params.planId, updateBody);
+    if (response.isErr()) return response;
+
+    return Result.ok({ updated: true });
+  },
+
   async createSubscription(
     params,
   ): Promise<ProviderResult<ProviderSubscriptionRef>> {
@@ -343,6 +381,21 @@ export const paystackAdapter: ProviderAdapter = {
     if (response.isErr()) return response;
 
     return Result.ok({ reference: response.value.reference });
+  },
+
+  async refundCharge(params): Promise<ProviderResult<{ refunded: boolean; reference: string }>> {
+    const clientResult = resolveClient(params.account);
+    if (clientResult.isErr()) return clientResult;
+
+    const response = await clientResult.value.createRefund({
+      transaction: params.reference,
+      amount: params.amount,
+      currency: params.currency,
+      merchant_note: params.reason,
+    });
+
+    if (response.isErr()) return response;
+    return Result.ok({ refunded: true, reference: params.reference });
   },
 
   async fetchSubscription(

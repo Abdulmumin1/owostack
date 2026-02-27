@@ -354,12 +354,69 @@ async function handleUpgrade(
   const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
   const planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
 
+  // ---------------------------------------------------------------------------
+  // Native plan change — providers like Dodo handle proration internally.
+  // This skips the manual charge→cancel→create flow entirely.
+  // ---------------------------------------------------------------------------
+  const providerSubCode = existingSub.providerSubscriptionCode || existingSub.paystackSubscriptionCode;
+  const isRealProviderSub =
+    providerSubCode &&
+    providerSubCode !== "one-time" &&
+    providerSubCode !== "upgrade" &&
+    providerSubCode !== "downgrade" &&
+    providerSubCode !== "charge" &&
+    !providerSubCode.startsWith("trial-");
+
+  if (provider && typeof provider.adapter.changePlan === "function" && planRef && isRealProviderSub) {
+    const changeResult = await provider.adapter.changePlan({
+      subscriptionId: providerSubCode,
+      newPlanId: planRef,
+      prorationMode: "prorated_immediately",
+      metadata: { old_plan_id: existingSub.plan.id, new_plan_id: newPlan.id, ...options.metadata },
+      environment: provider.account.environment,
+      account: provider.account,
+    });
+
+    if (changeResult.isOk()) {
+      // Update local DB immediately so /check sees the new plan right away.
+      // The subscription.plan_changed webhook will also fire and confirm.
+      await db
+        .update(schema.subscriptions)
+        .set({
+          planId: newPlan.id,
+          metadata: {
+            ...(typeof existingSub.metadata === "object" ? existingSub.metadata : {}),
+            switched_from: existingSub.plan.id,
+            switch_type: "upgrade",
+            native_plan_change: true,
+          },
+          updatedAt: now,
+        })
+        .where(eq(schema.subscriptions.id, existingSub.id));
+
+      await provisionEntitlements(db, customer.id, newPlan.id, existingSub.plan.id);
+
+      return {
+        success: true,
+        type: "upgrade",
+        requiresCheckout: false,
+        subscriptionId: existingSub.id,
+        message: `Upgraded to ${newPlan.name} (provider-managed proration)`,
+      };
+    }
+
+    // Native change failed — fall through to manual flow
+    console.warn(`[plan-switch] Native changePlan failed: ${changeResult.error.message}, falling back`);
+  }
+
   // If prorated amount is 0 or negative (near end of period), just switch directly
   if (proratedAmount <= 0) {
     await cancelSubscription(db, existingSub, provider);
 
-    let providerSubCode: string | undefined;
-    if (provider && planRef && authCode) {
+    let newProviderSubCode: string | undefined;
+    // Skip createSubscription for checkout-based providers (supportsNativeTrials) — already handled above
+    const skipDirectSub = provider?.adapter.supportsNativeTrials === true;
+    if (provider && planRef && authCode && !skipDirectSub) {
       const subResult = await provider.adapter.createSubscription({
         customer: { id: customerRef, email: customer.email },
         plan: { id: planRef },
@@ -368,7 +425,7 @@ async function handleUpgrade(
         account: provider.account,
       });
       if (subResult.isOk()) {
-        providerSubCode = subResult.value.id;
+        newProviderSubCode = subResult.value.id;
       }
     }
 
@@ -379,10 +436,10 @@ async function handleUpgrade(
         id: crypto.randomUUID(),
         customerId: customer.id,
         planId: newPlan.id,
-        paystackSubscriptionCode: providerId === "paystack" ? (providerSubCode || null) : null,
+        paystackSubscriptionCode: providerId === "paystack" ? (newProviderSubCode || null) : null,
         providerId,
-        providerSubscriptionId: providerSubCode || null,
-        providerSubscriptionCode: providerSubCode || null,
+        providerSubscriptionId: newProviderSubCode || null,
+        providerSubscriptionCode: newProviderSubCode || null,
         status: "active",
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
@@ -406,87 +463,7 @@ async function handleUpgrade(
     };
   }
 
-  // If customer has a saved card and provider is configured, charge directly
-  if (provider && authCode && proratedAmount > 0) {
-    const chargeResult = await provider.adapter.chargeAuthorization({
-      customer: { id: customerRef, email: customer.email },
-      authorizationCode: authCode,
-      amount: proratedAmount,
-      currency: newPlan.currency || "USD",
-      metadata: {
-        type: "plan_upgrade_proration",
-        old_plan_id: existingSub.plan.id,
-        new_plan_id: newPlan.id,
-        customer_id: customer.id,
-        ...options.metadata,
-      },
-      environment: provider.account.environment,
-      account: provider.account,
-    });
-
-    if (chargeResult.isErr()) {
-      // Charge failed — fall through to checkout
-      return createUpgradeCheckout(
-        db, customer, existingSub, newPlan, provider, proratedAmount, options,
-      );
-    }
-
-    // Charge succeeded — cancel old sub and create new one
-    await cancelSubscription(db, existingSub, provider);
-
-    // Create new subscription via provider API if plan has a provider plan code.
-    // Use startDate = current period end so the provider doesn't charge immediately
-    // (we already charged the prorated amount for the remaining current period).
-    let providerSubCode: string | undefined;
-    if (planRef && authCode) {
-      const subResult = await provider.adapter.createSubscription({
-        customer: { id: customerRef, email: customer.email },
-        plan: { id: planRef },
-        authorizationCode: authCode,
-        startDate: new Date(existingSub.currentPeriodEnd).toISOString(),
-        environment: provider.account.environment,
-        account: provider.account,
-      });
-      if (subResult.isOk()) {
-        providerSubCode = subResult.value.id;
-      }
-    }
-
-    const periodEnd = existingSub.currentPeriodEnd; // Keep the same billing cycle
-    const [sub] = await db
-      .insert(schema.subscriptions)
-      .values({
-        id: crypto.randomUUID(),
-        customerId: customer.id,
-        planId: newPlan.id,
-        paystackSubscriptionCode: providerId === "paystack" ? (providerSubCode || null) : null,
-        providerId,
-        providerSubscriptionId: providerSubCode || null,
-        providerSubscriptionCode: providerSubCode || null,
-        status: "active",
-        currentPeriodStart: now,
-        currentPeriodEnd: periodEnd,
-        metadata: {
-          switched_from: existingSub.plan.id,
-          switch_type: "upgrade",
-          prorated_amount: proratedAmount,
-          ...options.metadata,
-        },
-      })
-      .returning();
-
-    await provisionEntitlements(db, customer.id, newPlan.id, existingSub.plan.id);
-
-    return {
-      success: true,
-      type: "upgrade",
-      requiresCheckout: false,
-      subscriptionId: sub.id,
-      message: `Upgraded to ${newPlan.name}. Prorated charge: ${proratedAmount}`,
-    };
-  }
-
-  // No saved card — return checkout URL
+  // Always use checkout for upgrade proration (auto-charge reserved for overages only)
   return createUpgradeCheckout(
     db, customer, existingSub, newPlan, provider, proratedAmount, options,
   );
@@ -696,63 +673,9 @@ async function handleOneTimePurchase(
     };
   }
 
-  const authCode = customer.providerAuthorizationCode || customer.paystackAuthorizationCode;
   const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
 
-  // Card on file → charge directly
-  if (provider && authCode) {
-    const chargeResult = await provider.adapter.chargeAuthorization({
-      customer: { id: customerRef, email: customer.email },
-      authorizationCode: authCode,
-      amount: plan.price,
-      currency: plan.currency || "USD",
-      metadata: {
-        type: "one_time_purchase",
-        plan_id: plan.id,
-        plan_slug: plan.slug,
-        customer_id: customer.id,
-        ...options.metadata,
-      },
-      environment: provider.account.environment,
-      account: provider.account,
-    });
-
-    if (chargeResult.isOk()) {
-      const [sub] = await db
-        .insert(schema.subscriptions)
-        .values({
-          id: crypto.randomUUID(),
-          customerId: customer.id,
-          planId: plan.id,
-          paystackSubscriptionCode: providerId === "paystack" ? "one-time" : null,
-          providerId,
-          providerSubscriptionId: "one-time",
-          providerSubscriptionCode: "one-time",
-          status: "active",
-          currentPeriodStart: now,
-          currentPeriodEnd: now,
-          metadata: {
-            ...options.metadata,
-            billing_type: "one_time",
-            payment_reference: chargeResult.value.reference,
-          },
-        })
-        .returning();
-
-      await provisionEntitlements(db, customer.id, plan.id);
-
-      return {
-        success: true,
-        type: "new",
-        requiresCheckout: false,
-        subscriptionId: sub.id,
-        message: `${plan.name} purchased (one-time)`,
-      };
-    }
-    // Fall through to checkout if charge failed
-  }
-
-  // No card or charge failed → checkout
+  // Always use checkout for one-time purchases (auto-charge reserved for overages only)
   if (!provider) {
     return {
       success: false,
@@ -762,9 +685,13 @@ async function handleOneTimePurchase(
     };
   }
 
+  // Pass the provider plan ID if available — providers like Dodo require a
+  // product ID for every checkout (they don't support raw-amount checkouts).
+  const planRef = plan.providerPlanId || plan.paystackPlanId;
+
   const result = await provider.adapter.createCheckoutSession({
     customer: { id: customerRef, email: customer.email },
-    plan: null,
+    plan: planRef ? { id: planRef } : null,
     amount: plan.price,
     currency: plan.currency || "USD",
     callbackUrl: options.callbackUrl,
@@ -809,8 +736,13 @@ async function handleNewSubscription(
   const customerRef = customer.providerCustomerId || customer.paystackCustomerId || customer.email;
   const planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
 
-  // If card on file and provider available, create subscription directly
-  if (provider && authCode && planRef) {
+  // If card on file and provider available, create subscription directly.
+  // Skip for providers that use checkout-based subscriptions (supportsNativeTrials) —
+  // createSubscription returns a checkout URL, not a real subscription. Marking the
+  // sub as active before the user completes checkout would give free access.
+  const skipDirectSub = provider?.adapter.supportsNativeTrials === true;
+
+  if (provider && authCode && planRef && !skipDirectSub) {
     const subResult = await provider.adapter.createSubscription({
       customer: { id: customerRef, email: customer.email },
       plan: { id: planRef },

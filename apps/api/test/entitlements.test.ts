@@ -18,6 +18,14 @@ describe("Entitlements Engine (Check & Track)", () => {
   const customerId = "cus_test";
   const featureIdMetered = "feat_metered";
   const featureIdBoolean = "feat_boolean";
+  let mockEnv = {
+    CACHE: undefined,
+    USAGE_METER: undefined,
+  } as any;
+  const mockExecutionCtx = {
+    waitUntil: vi.fn(),
+    passThroughOnException: vi.fn(),
+  } as any;
 
   let usageTotal = 0;
   let mockDb: any;
@@ -25,6 +33,10 @@ describe("Entitlements Engine (Check & Track)", () => {
 
   beforeEach(() => {
     usageTotal = 0;
+    mockEnv = {
+      CACHE: undefined,
+      USAGE_METER: undefined,
+    } as any;
 
     const subscription = {
       id: "sub_test",
@@ -52,11 +64,16 @@ describe("Entitlements Engine (Check & Track)", () => {
         },
         subscriptions: {
           findFirst: vi.fn().mockResolvedValue(subscription),
+          findMany: vi.fn().mockResolvedValue([subscription]),
         },
         planFeatures: {
           findFirst: vi.fn().mockImplementation(async ({ where }: any) => {
             void where;
             return null;
+          }),
+          findMany: vi.fn().mockImplementation(async ({ where }: any) => {
+            void where;
+            return [];
           }),
         },
         credits: {
@@ -100,12 +117,14 @@ describe("Entitlements Engine (Check & Track)", () => {
       slug: "sso",
       type: "boolean",
     });
-    mockDb.query.planFeatures.findFirst.mockResolvedValueOnce({
-      planId: "plan_test",
-      featureId: featureIdBoolean,
-      limitValue: null,
-      creditCost: null,
-    });
+    mockDb.query.planFeatures.findMany.mockResolvedValueOnce([
+      {
+        planId: "plan_test",
+        featureId: featureIdBoolean,
+        limitValue: null,
+        creditCost: null,
+      },
+    ]);
 
     const res = await app.request(
       "/check",
@@ -113,10 +132,12 @@ describe("Entitlements Engine (Check & Track)", () => {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          customerId,
-          featureId: featureIdBoolean,
+          customer: customerId,
+          feature: featureIdBoolean,
         }),
       },
+      mockEnv,
+      mockExecutionCtx,
     );
 
     expect(res.status).toBe(200);
@@ -131,12 +152,15 @@ describe("Entitlements Engine (Check & Track)", () => {
       slug: "api-calls",
       type: "metered",
     });
-    mockDb.query.planFeatures.findFirst.mockResolvedValueOnce({
-      planId: "plan_test",
-      featureId: featureIdMetered,
-      limitValue: 100,
-      creditCost: null,
-    });
+    mockDb.query.planFeatures.findMany.mockResolvedValueOnce([
+      {
+        planId: "plan_test",
+        featureId: featureIdMetered,
+        limitValue: 100,
+        creditCost: null,
+        resetInterval: "monthly",
+      },
+    ]);
 
     const res = await app.request(
       "/check",
@@ -144,16 +168,18 @@ describe("Entitlements Engine (Check & Track)", () => {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          customerId,
-          featureId: featureIdMetered,
+          customer: customerId,
+          feature: featureIdMetered,
         }),
       },
+      mockEnv,
+      mockExecutionCtx,
     );
 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.allowed).toBe(true);
-    expect(body.remaining).toBe(100);
+    expect(body.balance).toBe(100);
   });
 
   it("should track usage", async () => {
@@ -171,19 +197,25 @@ describe("Entitlements Engine (Check & Track)", () => {
         type: "metered",
       });
 
-    mockDb.query.planFeatures.findFirst
-      .mockResolvedValueOnce({
-        planId: "plan_test",
-        featureId: featureIdMetered,
-        limitValue: 100,
-        creditCost: null,
-      })
-      .mockResolvedValueOnce({
-        planId: "plan_test",
-        featureId: featureIdMetered,
-        limitValue: 100,
-        creditCost: null,
-      });
+    mockDb.query.planFeatures.findMany
+      .mockResolvedValueOnce([
+        {
+          planId: "plan_test",
+          featureId: featureIdMetered,
+          limitValue: 100,
+          creditCost: null,
+          resetInterval: "monthly",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          planId: "plan_test",
+          featureId: featureIdMetered,
+          limitValue: 100,
+          creditCost: null,
+          resetInterval: "monthly",
+        },
+      ]);
 
     const res = await app.request(
       "/track",
@@ -191,11 +223,13 @@ describe("Entitlements Engine (Check & Track)", () => {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          customerId,
-          featureId: featureIdMetered,
+          customer: customerId,
+          feature: featureIdMetered,
           value: 50,
         }),
       },
+      mockEnv,
+      mockExecutionCtx,
     );
     expect(res.status).toBe(200);
 
@@ -206,13 +240,126 @@ describe("Entitlements Engine (Check & Track)", () => {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          customerId,
-          featureId: featureIdMetered,
+          customer: customerId,
+          feature: featureIdMetered,
         }),
       },
+      mockEnv,
+      mockExecutionCtx,
     );
     const body = await check.json();
     expect(body.allowed).toBe(true);
-    expect(body.remaining).toBe(50);
+    expect(body.balance).toBe(50);
+  });
+
+  it("track persists usage record via waitUntil and scopes by entity when provided", async () => {
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: featureIdMetered,
+      organizationId: "org_test",
+      slug: "api-calls",
+      type: "metered",
+    });
+    mockDb.query.planFeatures.findMany.mockResolvedValueOnce([
+      {
+        planId: "plan_test",
+        featureId: featureIdMetered,
+        limitValue: 100,
+        creditCost: null,
+        resetInterval: "monthly",
+      },
+    ]);
+
+    const res = await app.request(
+      "/track",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: featureIdMetered,
+          value: 50,
+          entity: "workspace_1",
+        }),
+      },
+      mockEnv,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.success).toBe(true);
+    expect(body.allowed).toBe(true);
+    expect(body.code).toBe("tracked");
+
+    expect(mockExecutionCtx.waitUntil).toHaveBeenCalled();
+    expect(mockDb.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId,
+        featureId: featureIdMetered,
+        entityId: "workspace_1",
+        amount: 50,
+        periodStart: expect.any(Number),
+        periodEnd: expect.any(Number),
+      }),
+    );
+  });
+
+  it("track filters expired trialing subscriptions, schedules cleanup, and invalidates subscription cache", async () => {
+    const kv = {
+      get: vi.fn(async () => null),
+      put: vi.fn(async () => null),
+      delete: vi.fn(async () => null),
+    } as any;
+    mockEnv = {
+      ...mockEnv,
+      CACHE: kv,
+    };
+
+    mockDb.query.subscriptions.findMany.mockResolvedValueOnce([
+      {
+        id: "sub_trial_expired",
+        customerId,
+        planId: "plan_test",
+        status: "trialing",
+        currentPeriodStart: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        currentPeriodEnd: Date.now() - 60 * 1000,
+        plan: { name: "Trial" },
+      },
+    ]);
+
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: featureIdMetered,
+      organizationId: "org_test",
+      slug: "api-calls",
+      type: "metered",
+    });
+
+    const res = await app.request(
+      "/track",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: featureIdMetered,
+          value: 1,
+        }),
+      },
+      mockEnv,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.success).toBe(false);
+    expect(body.code).toBe("no_active_subscription");
+
+    expect(mockExecutionCtx.waitUntil).toHaveBeenCalled();
+    expect(mockDb.set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "expired" }),
+    );
+    expect(kv.delete).toHaveBeenCalledWith(
+      expect.stringContaining(`org:org_test:subscriptions:${customerId}`),
+    );
   });
 });

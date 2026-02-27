@@ -3,10 +3,9 @@ import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { resolveOrCreateCustomer } from "../../lib/customers";
-import { decrypt } from "../../lib/encryption";
 import { verifyApiKey } from "../../lib/api-keys";
-import { getPaystackEnvironment, selectPaystackKey } from "../../lib/environment";
 import { executeSwitch, provisionEntitlements } from "../../lib/plan-switch";
+import { hasPaymentMethod } from "../../lib/overage-guards";
 import type { ProviderContext } from "../../lib/plan-switch";
 import { ensurePlanSynced } from "../../lib/plan-sync";
 import { resolveProvider } from "@owostack/adapters";
@@ -94,12 +93,6 @@ app.post("/attach", async (c) => {
     );
   }
 
-  // Determine environment from worker's ENVIRONMENT var or project config
-  const activeEnv = getPaystackEnvironment(
-    c.env.ENVIRONMENT,
-    project.activeEnvironment,
-  );
-
   // Parse Body
   const body = await c.req.json();
   const parsed = attachSchema.safeParse(body);
@@ -176,7 +169,17 @@ app.post("/attach", async (c) => {
       }
     }
 
-    // 2. Try rules-based resolution
+    // 2. Plan's own provider — use the provider the plan was created on
+    if (!selectedAccount && plan.providerId) {
+      selectedAccount = providerAccounts.find(
+        (a) => a.providerId === plan.providerId && a.environment === providerEnv,
+      );
+      if (selectedAccount) {
+        selectedProviderId = plan.providerId;
+      }
+    }
+
+    // 3. Try rules-based resolution
     if (!selectedAccount && providerRules.length > 0) {
       const selectionResult = resolveProvider(registry, {
         organizationId: keyRecord.organizationId,
@@ -199,49 +202,6 @@ app.post("/attach", async (c) => {
       if (defaultAccount) {
         selectedProviderId = defaultAccount.providerId;
         selectedAccount = defaultAccount;
-      }
-    }
-
-    // 4. Legacy fallback: synthetic account from project Paystack keys
-    if (!selectedAccount) {
-      selectedProviderId = selectedProviderId || "paystack";
-
-      if (selectedProviderId === "paystack") {
-        let secretKey: string | null = null;
-
-        const encryptedKey = selectPaystackKey(
-          activeEnv,
-          project.testSecretKey,
-          project.liveSecretKey,
-        );
-
-        if (encryptedKey) {
-          try {
-            secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-          } catch (e) {
-            return c.json(
-              { success: false, error: "Failed to decrypt Paystack key" },
-              500,
-            );
-          }
-        }
-
-        if (!secretKey) {
-          return c.json(
-            { success: false, error: `Paystack ${activeEnv} mode not configured` },
-            400,
-          );
-        }
-
-        selectedAccount = {
-          id: `legacy-${project.id}`,
-          organizationId: keyRecord.organizationId,
-          providerId: "paystack",
-          environment: providerEnv,
-          credentials: { secretKey },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        } as ProviderAccount;
       }
     }
 
@@ -327,7 +287,7 @@ app.post("/attach", async (c) => {
             planId: plan.id,
             organizationId: keyRecord.organizationId,
             providerId: selectedProviderId,
-            environment: activeEnv,
+            environment: providerEnv,
             trialEndMs,
             email,
             amount: plan.price,
@@ -360,7 +320,20 @@ app.post("/attach", async (c) => {
     }
   }
 
-  // 5. Handle trial with card required — checkout for card capture
+  // 5a. Lazy plan sync — ensure the plan exists on the provider before any checkout
+  if (providerCtx && !plan.providerPlanId && plan.type === "paid" && plan.billingType === "recurring") {
+    try {
+      const syncedId = await ensurePlanSynced(db, plan, providerCtx.adapter, providerCtx.account);
+      if (syncedId) {
+        (plan as any).providerPlanId = syncedId;
+        if (providerCtx.adapter.id === "paystack") (plan as any).paystackPlanId = syncedId;
+      }
+    } catch (e) {
+      console.warn(`[checkout] Lazy plan sync failed for ${plan.id}:`, e);
+    }
+  }
+
+  // 5b. Handle trial with card required — checkout for card capture
   if (trialDays > 0 && trialCardRequired) {
     if (!providerCtx) {
       return c.json(
@@ -368,7 +341,82 @@ app.post("/attach", async (c) => {
         400,
       );
     }
+
+    // If the customer already has a valid payment method (e.g. from wallet.setup()
+    // or a previous purchase), skip the card capture checkout entirely — just create
+    // the trialing subscription directly. This is the elegant composition:
+    // wallet.setup() + attach() work together without redundant charges.
+    const alreadyHasCard = await hasPaymentMethod(db, customerRecord.id);
+    if (alreadyHasCard) {
+      console.log(`[TRIAL] Customer ${customerRecord.id} already has card — skipping auth capture, creating trial directly`);
+      try {
+        const now = Date.now();
+        const trialEndMs = trialUnit === "minutes"
+          ? now + trialDays * 60 * 1000
+          : now + trialDays * 24 * 60 * 60 * 1000;
+
+        const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
+        const [subscription] = await db
+          .insert(schema.subscriptions)
+          .values({
+            id: crypto.randomUUID(),
+            customerId: customerRecord.id,
+            planId: plan.id,
+            providerId: selectedProviderId,
+            providerSubscriptionId: trialCode,
+            providerSubscriptionCode: trialCode,
+            paystackSubscriptionCode: selectedProviderId === "paystack" ? trialCode : null,
+            status: "trialing",
+            currentPeriodStart: now,
+            currentPeriodEnd: trialEndMs,
+            metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
+          })
+          .returning();
+
+        try {
+          await c.env.TRIAL_END_WORKFLOW.create({
+            params: {
+              subscriptionId: subscription.id,
+              customerId: customerRecord.id,
+              planId: plan.id,
+              organizationId: keyRecord.organizationId,
+              providerId: selectedProviderId,
+              environment: providerEnv,
+              trialEndMs,
+              email,
+              amount: plan.price,
+              currency: plan.currency,
+              planSlug: plan.slug,
+            },
+          });
+        } catch (wfErr) {
+          console.error(`[TRIAL] Failed to dispatch trial end workflow:`, wfErr);
+        }
+
+        await provisionEntitlements(db, customerRecord.id, plan.id);
+
+        return c.json({
+          success: true,
+          trial: true,
+          trial_days: trialDays,
+          message: trialUnit === "minutes" ? `${trialDays}-minute trial activated` : `${trialDays}-day trial activated`,
+          subscription_id: subscription.id,
+          customer_id: customerRecord.id,
+          trial_ends_at: new Date(trialEndMs).toISOString(),
+        });
+      } catch (e: any) {
+        return c.json(
+          { success: false, error: e.message || "Failed to create trial subscription" },
+          500,
+        );
+      }
+    }
+
     console.log(`[TRIAL] Initiating card-required trial checkout: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}`);
+    // Providers like Dodo handle trials natively via subscription_data.trial_period_days.
+    // Mark these so the trial-end workflow skips the charge (provider handles billing).
+    const isNativeTrial = providerCtx.adapter.supportsNativeTrials === true;
+
     const trialMetadata = {
       ...metadata,
       organization_id: keyRecord.organizationId,
@@ -376,25 +424,40 @@ app.post("/attach", async (c) => {
       plan_id: plan.id,
       plan_slug: plan.slug,
       customer_id: customerRecord.id,
-      environment: activeEnv,
+      environment: providerEnv,
       provider_id: selectedProviderId,
       trial_days: trialDays,
       trial_unit: trialUnit,
       is_trial: true,
+      native_trial: isNativeTrial,
       amount: plan.price,
       currency: plan.currency,
     };
 
     try {
       const customerRef = customerRecord.providerCustomerId || customerRecord.paystackCustomerId || email;
+      // Only pass the plan for providers with native trial support.
+      // For auth-capture providers (Paystack), plan: null ensures the checkout
+      // charges the small auth amount instead of the full subscription price.
+      const trialPlanRef = isNativeTrial
+        ? (plan.providerPlanId || plan.paystackPlanId)
+        : null;
+
+      // Convert trial duration to days for providers that support native trials (Dodo).
+      // Minute-based trials (used for testing) round up to at least 1 day.
+      const trialDaysForProvider = trialUnit === "minutes"
+        ? Math.max(1, Math.ceil(trialDays / 1440))
+        : trialDays;
+
       const result = await providerCtx.adapter.createCheckoutSession({
         customer: { id: customerRef, email },
-        plan: null,
-        amount: 10000, // 100 NGN/GHS minimum for card verification
+        plan: trialPlanRef ? { id: trialPlanRef } : null,
+        amount: 10000, // 100 NGN/GHS minimum for card verification (Paystack)
         currency: currency || plan.currency,
         channels,
         callbackUrl,
         metadata: trialMetadata,
+        trialDays: trialDaysForProvider,
         environment: providerCtx.account.environment,
         account: providerCtx.account,
       });
@@ -419,20 +482,7 @@ app.post("/attach", async (c) => {
     }
   }
 
-  // 6. Lazy plan sync — ensure the plan exists on the provider before checkout
-  if (providerCtx && !plan.providerPlanId && plan.type === "paid" && plan.billingType === "recurring") {
-    try {
-      const syncedId = await ensurePlanSynced(db, plan, providerCtx.adapter, providerCtx.account);
-      if (syncedId) {
-        (plan as any).providerPlanId = syncedId;
-        if (providerCtx.adapter.id === "paystack") (plan as any).paystackPlanId = syncedId;
-      }
-    } catch (e) {
-      console.warn(`[checkout] Lazy plan sync failed for ${plan.id}:`, e);
-    }
-  }
-
-  // 7. Plan switching (handles free, upgrade, downgrade, lateral, new)
+  // 6. Plan switching (handles free, upgrade, downgrade, lateral, new)
   //    Uses the unified executeSwitch logic which:
   //    - Detects if customer has an active sub in the same planGroup
   //    - Upgrades: prorates and charges immediately (or returns checkout URL)
@@ -446,12 +496,12 @@ app.post("/attach", async (c) => {
         ...metadata,
         organization_id: keyRecord.organizationId,
         project_id: project.id,
-        environment: activeEnv,
+        environment: providerEnv,
         provider_id: selectedProviderId,
       },
       downgradeWorkflow: c.env.DOWNGRADE_WORKFLOW,
       organizationId: keyRecord.organizationId,
-      environment: activeEnv,
+      environment: providerEnv,
     });
 
     if (!result.success) {

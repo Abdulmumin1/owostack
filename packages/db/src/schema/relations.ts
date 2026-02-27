@@ -28,6 +28,7 @@ import {
   paymentAttempts,
   overageSettings,
   customerOverageLimits,
+  paymentMethods,
 } from "./billing";
 
 /**
@@ -189,6 +190,20 @@ export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
     references: [plans.id],
   }),
 }));
+
+export const paymentMethodsRelations = relations(
+  paymentMethods,
+  ({ one }) => ({
+    customer: one(customers, {
+      fields: [paymentMethods.customerId],
+      references: [customers.id],
+    }),
+    organization: one(organizations, {
+      fields: [paymentMethods.organizationId],
+      references: [organizations.id],
+    }),
+  }),
+);
 
 export const providerAccountsRelations = relations(
   providerAccounts,

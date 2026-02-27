@@ -1,8 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
-import { PaystackClient } from "../../lib/paystack";
-import { decrypt } from "../../lib/encryption";
 import { resolveProvider } from "@owostack/adapters";
 import {
   getProviderRegistry,
@@ -61,6 +59,7 @@ const createPlanSchema = z.object({
   isAddon: z.boolean().default(false),
   autoEnable: z.boolean().default(false),
   planGroup: z.string().optional(),
+  providerId: z.string().optional(),
 });
 
 const updatePlanSchema = z.object({
@@ -107,6 +106,7 @@ app.post("/", async (c) => {
     isAddon,
     autoEnable,
     planGroup,
+    providerId: requestedProviderId,
   } = parsed.data;
   const db = c.get("db");
 
@@ -137,7 +137,7 @@ app.post("/", async (c) => {
   // Sync plan with payment provider
   // ===========================================================================
   let paystackPlanId: string | null = null;
-  let providerId: string | null = null;
+  let providerId: string | null = requestedProviderId || null;
   let providerPlanId: string | null = null;
 
   // Only sync if it's a paid, recurring plan
@@ -153,80 +153,82 @@ app.post("/", async (c) => {
         c.env.ENVIRONMENT,
         project?.activeEnvironment,
       );
-      const providerRules = await loadProviderRules(db, organizationId);
       const providerAccounts = await loadProviderAccounts(
         db,
         organizationId,
         c.env.ENCRYPTION_KEY,
       );
-      const providerContext = buildProviderContext({
-        currency,
-      });
 
-      const selectionResult = resolveProvider(registry, {
-        organizationId,
-        environment: providerEnv,
-        context: providerContext,
-        rules: providerRules,
-        accounts: providerAccounts,
-      });
-
-      if (selectionResult.isOk()) {
-        providerId = selectionResult.value.adapter.id;
-
-        // Use the adapter's createPlan (provider-agnostic)
-        const planResult = await selectionResult.value.adapter.createPlan({
-          name,
-          amount: price,
-          interval: interval as any,
-          currency,
-          description: description || undefined,
-          environment: providerEnv,
-          account: selectionResult.value.account,
-        });
-
-        if (planResult.isOk()) {
-          providerPlanId = planResult.value.id;
-          if (providerId === "paystack") paystackPlanId = planResult.value.id;
-          console.log(`[plans] Created plan on ${providerId}: ${planResult.value.id}`);
-        } else {
-          console.warn(`[plans] Failed to create plan on ${providerId}:`, planResult.error);
-        }
-      } else if (providerAccounts.length > 0) {
-        console.warn(
-          "Provider rules exist but no provider matched for plan creation",
+      // If dashboard explicitly specified a provider, use it directly
+      if (requestedProviderId) {
+        const adapter = registry.get(requestedProviderId);
+        const account = providerAccounts.find(
+          (a) => a.providerId === requestedProviderId,
         );
-      }
 
-      // Legacy fallback: create on Paystack using project-level keys
-      if (!providerPlanId && project) {
-        const activeEnv = project.activeEnvironment || "test";
-        const encryptedKey =
-          activeEnv === "live" ? project.liveSecretKey : project.testSecretKey;
-
-        if (encryptedKey) {
-          const secretKey = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
-          const paystack = new PaystackClient({ secretKey });
-
-          const result = await paystack.createPlan({
+        if (adapter && account) {
+          const planResult = await adapter.createPlan({
             name,
             amount: price,
             interval: interval as any,
-            description: description || undefined,
             currency,
+            description: description || undefined,
+            environment: providerEnv,
+            account,
           });
 
-          if (result.isOk()) {
-            paystackPlanId = result.value.plan_code;
-            providerPlanId = result.value.plan_code;
-            if (!providerId) providerId = "paystack";
+          if (planResult.isOk()) {
+            providerPlanId = planResult.value.id;
+            if (requestedProviderId === "paystack") paystackPlanId = planResult.value.id;
+            console.log(`[plans] Created plan on ${requestedProviderId}: ${planResult.value.id}`);
           } else {
-            console.warn("Legacy Paystack plan creation failed:", result.error);
+            console.warn(`[plans] Failed to create plan on ${requestedProviderId}:`, planResult.error);
           }
+        } else {
+          console.warn(`[plans] Provider ${requestedProviderId} not found or no account configured`);
         }
+      } else {
+        // Fallback: resolve provider via routing rules
+        const providerRules = await loadProviderRules(db, organizationId);
+        const providerContext = buildProviderContext({ currency });
+
+        const selectionResult = resolveProvider(registry, {
+          organizationId,
+          environment: providerEnv,
+          context: providerContext,
+          rules: providerRules,
+          accounts: providerAccounts,
+        });
+
+        if (selectionResult.isOk()) {
+          providerId = selectionResult.value.adapter.id;
+
+          const planResult = await selectionResult.value.adapter.createPlan({
+            name,
+            amount: price,
+            interval: interval as any,
+            currency,
+            description: description || undefined,
+            environment: providerEnv,
+            account: selectionResult.value.account,
+          });
+
+          if (planResult.isOk()) {
+            providerPlanId = planResult.value.id;
+            if (providerId === "paystack") paystackPlanId = planResult.value.id;
+            console.log(`[plans] Created plan on ${providerId}: ${planResult.value.id}`);
+          } else {
+            console.warn(`[plans] Failed to create plan on ${providerId}:`, planResult.error);
+          }
+        } else if (providerAccounts.length > 0) {
+          console.warn(
+            "Provider rules exist but no provider matched for plan creation",
+          );
+        }
+
       }
     } catch (e) {
-      console.warn("Paystack sync error:", e);
+      console.warn("Provider sync error:", e);
     }
   }
 
@@ -345,6 +347,57 @@ app.patch("/:id", async (c) => {
 
     if (!updated) {
       return c.json({ error: "Plan not found" }, 404);
+    }
+
+    // =========================================================================
+    // Sync plan update with payment provider
+    // =========================================================================
+    const providerFields = ["name", "price", "interval", "currency", "description"] as const;
+    const hasProviderChange = providerFields.some((f) => parsed.data[f] !== undefined);
+
+    if (hasProviderChange && updated.providerPlanId && updated.providerId) {
+      try {
+        const authDb = c.get("authDb");
+        const project = await authDb.query.projects.findFirst({
+          where: eq(schema.projects.organizationId, updated.organizationId),
+        });
+
+        const registry = getProviderRegistry();
+        const adapter = registry.get(updated.providerId);
+        const providerEnv = deriveProviderEnvironment(
+          c.env.ENVIRONMENT,
+          project?.activeEnvironment,
+        );
+        const providerAccounts = await loadProviderAccounts(
+          db,
+          updated.organizationId,
+          c.env.ENCRYPTION_KEY,
+        );
+        const account = providerAccounts.find(
+          (a) => a.providerId === updated.providerId,
+        );
+
+        if (adapter?.updatePlan && account) {
+          const result = await adapter.updatePlan({
+            planId: updated.providerPlanId,
+            name: updated.name,
+            amount: updated.price,
+            interval: updated.interval,
+            currency: updated.currency,
+            description: updated.description,
+            environment: providerEnv,
+            account,
+          });
+
+          if (result.isOk()) {
+            console.log(`[plans] Updated plan on ${updated.providerId}: ${updated.providerPlanId}`);
+          } else {
+            console.warn(`[plans] Failed to update plan on ${updated.providerId}:`, result.error);
+          }
+        }
+      } catch (e) {
+        console.warn("[plans] Provider sync error during update:", e);
+      }
     }
 
     return c.json({ success: true, data: updated });
