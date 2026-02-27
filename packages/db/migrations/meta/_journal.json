@@ -5,85 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1770392602461,
-      "tag": "0000_living_scarlet_witch",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1770402147738,
-      "tag": "0001_add-entity-id",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1770466992301,
-      "tag": "0002_first_santa_claus",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1770548165779,
-      "tag": "0003_add-provider-accounts-unique-index",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1770556584319,
-      "tag": "0004_glorious_the_anarchist",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1770557791799,
-      "tag": "0005_scoped-credit-balances",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1770558419089,
-      "tag": "0006_unique-csb-index",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1770570642582,
-      "tag": "0007_strange_mad_thinker",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1770581389026,
-      "tag": "0008_fine_hex",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1770751739118,
-      "tag": "0009_glamorous_monster_badoon",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "6",
-      "when": 1771227053547,
-      "tag": "0010_fluffy_justice",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "6",
-      "when": 1771921082104,
-      "tag": "0011_flawless_skin",
+      "when": 1772207012872,
+      "tag": "0000_far_gargoyle",
       "breakpoints": true
     }
   ]

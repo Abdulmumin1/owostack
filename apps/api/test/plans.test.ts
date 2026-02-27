@@ -1,5 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 let app: typeof import("../src/index").app;
+
+interface ProviderContext {
+  currency?: string;
+}
 
 const hoisted = vi.hoisted(() => {
   return {
@@ -8,16 +12,19 @@ const hoisted = vi.hoisted(() => {
     deriveProviderEnvironmentMock: vi.fn(() => "test"),
     loadProviderAccountsMock: vi.fn(),
     loadProviderRulesMock: vi.fn(),
-    buildProviderContextMock: vi.fn((ctx: any) => ctx),
+    buildProviderContextMock: vi.fn((ctx: ProviderContext) => ctx),
   };
 });
 
 const resolveProviderMock = hoisted.resolveProviderMock;
 vi.mock("@owostack/adapters", async () => {
-  const actual = await vi.importActual<any>("@owostack/adapters");
+  const actual =
+    await vi.importActual<typeof import("@owostack/adapters")>(
+      "@owostack/adapters",
+    );
   return {
     ...actual,
-    resolveProvider: (...args: any[]) => resolveProviderMock(...args),
+    resolveProvider: (...args: unknown[]) => resolveProviderMock(...args),
   };
 });
 
@@ -28,15 +35,19 @@ const loadProviderRulesMock = hoisted.loadProviderRulesMock;
 const buildProviderContextMock = hoisted.buildProviderContextMock;
 
 vi.mock("../src/lib/providers", async () => {
-  const actual = await vi.importActual<any>("../src/lib/providers");
+  const actual = await vi.importActual<typeof import("../src/lib/providers")>(
+    "../src/lib/providers",
+  );
   return {
     ...actual,
     getProviderRegistry: () => getProviderRegistryMock(),
-    deriveProviderEnvironment: (...args: any[]) =>
+    deriveProviderEnvironment: (...args: unknown[]) =>
       deriveProviderEnvironmentMock(...args),
-    loadProviderAccounts: (...args: any[]) => loadProviderAccountsMock(...args),
-    loadProviderRules: (...args: any[]) => loadProviderRulesMock(...args),
-    buildProviderContext: (...args: any[]) => buildProviderContextMock(...args),
+    loadProviderAccounts: (...args: unknown[]) =>
+      loadProviderAccountsMock(...args),
+    loadProviderRules: (...args: unknown[]) => loadProviderRulesMock(...args),
+    buildProviderContext: (...args: unknown[]) =>
+      buildProviderContextMock(...args),
   };
 });
 
@@ -52,7 +63,27 @@ vi.mock("../src/lib/auth", () => ({
   }),
 }));
 
-let mockReturningPlan: any;
+interface Plan {
+  id: string;
+  organizationId: string;
+  name: string;
+  price: number;
+  interval: string;
+  currency: string;
+  type: string;
+  billingModel: string;
+  billingType: string;
+  slug: string;
+  trialDays?: number;
+  trialCardRequired?: boolean;
+  description?: string | null;
+  providerId?: string | null;
+  providerPlanId?: string | null;
+  paystackPlanId?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+let mockReturningPlan: Plan | undefined;
 
 const insertReturningMock = vi.fn(async () => [mockReturningPlan]);
 const insertValuesMock = vi.fn(() => ({
@@ -62,14 +93,29 @@ const insertMock = vi.fn(() => ({
   values: insertValuesMock,
 }));
 
-const mockDb: any = {
+interface MockDb {
+  insert: Mock;
+  query: {
+    organizations: { findFirst: Mock };
+    projects: { findFirst: Mock };
+    providerAccounts: { findMany: Mock };
+    providerRules: { findMany: Mock };
+    plans: { findFirst: Mock; findMany: Mock };
+  };
+  update?: Mock;
+}
+
+const mockDb: MockDb = {
   insert: insertMock,
   query: {
     organizations: {
       findFirst: vi.fn(async () => ({ id: "org_123" })),
     },
     projects: {
-      findFirst: vi.fn(async () => ({ id: "proj_123", activeEnvironment: "test" })),
+      findFirst: vi.fn(async () => ({
+        id: "proj_123",
+        activeEnvironment: "test",
+      })),
     },
     providerAccounts: {
       findMany: vi.fn(async () => []),
@@ -84,39 +130,41 @@ const mockDb: any = {
   },
 };
 
-vi.mock("@owostack/db", () => ({
-  createDb: () => mockDb,
-  schema: {
-    organizations: { id: "id" },
-    projects: { organizationId: "organizationId" },
-    providerAccounts: { organizationId: "organizationId" },
-    providerRules: { organizationId: "organizationId" },
-    plans: {
-      id: "id",
-      organizationId: "organizationId",
-      slug: "slug",
-      createdAt: "createdAt",
-    },
-  },
-}));
+vi.mock("@owostack/db", async () => {
+  const actual =
+    await vi.importActual<typeof import("@owostack/db")>("@owostack/db");
+  return {
+    ...actual,
+    createDb: () => mockDb,
+  };
+});
 
-const env = {
+interface Env {
+  DB: unknown;
+  BETTER_AUTH_SECRET: string;
+  BETTER_AUTH_URL: string;
+  ENCRYPTION_KEY: string;
+  PAYSTACK_SECRET_KEY: string;
+  PAYSTACK_WEBHOOK_SECRET: string;
+}
+
+const env: Env = {
   DB: {},
   BETTER_AUTH_SECRET: "secret",
   BETTER_AUTH_URL: "http://localhost",
   ENCRYPTION_KEY: "test_key",
   PAYSTACK_SECRET_KEY: "sk_test",
   PAYSTACK_WEBHOOK_SECRET: "wh_secret",
-} as any;
+};
 
 describe("Plans API", () => {
-  const ok = <T,>(value: T) => ({
+  const ok = <T>(value: T) => ({
     isOk: () => true,
     isErr: () => false,
     value,
   });
 
-  const err = <E,>(error: E) => ({
+  const err = <E>(error: E) => ({
     isOk: () => false,
     isErr: () => true,
     error,
@@ -293,19 +341,28 @@ describe("Plans API", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = (await res.json()) as { success: boolean };
     expect(body.success).toBe(true);
 
     expect(resolveProviderMock).not.toHaveBeenCalled();
     expect(paystackAdapter.createPlan).toHaveBeenCalledTimes(1);
 
-    const createArg = paystackAdapter.createPlan.mock.calls[0]?.[0] as any;
+    const createArg = paystackAdapter.createPlan.mock.calls[0]?.[0] as {
+      amount: number;
+      currency: string;
+      environment: string;
+      account: { id: string };
+    };
     expect(createArg.amount).toBe(8000);
     expect(createArg.currency).toBe("USD");
     expect(createArg.environment).toBe("test");
     expect(createArg.account.id).toBe("acct_paystack");
 
-    const inserted = insertValuesMock.mock.calls[0]?.[0] as any;
+    const inserted = insertValuesMock.mock.calls[0]?.[0] as {
+      providerId: string;
+      providerPlanId: string;
+      paystackPlanId: string | null;
+    };
     expect(inserted.providerId).toBe("paystack");
     expect(inserted.providerPlanId).toBe("prov_plan_paystack_1");
     expect(inserted.paystackPlanId).toBe("prov_plan_paystack_1");
@@ -313,7 +370,10 @@ describe("Plans API", () => {
 
   it("syncs paid recurring plan via provider rules when provider is not explicitly requested", async () => {
     resolveProviderMock.mockReturnValue(
-      ok({ adapter: dodoAdapter, account: { id: "acct_dodo", providerId: "dodopayments" } }),
+      ok({
+        adapter: dodoAdapter,
+        account: { id: "acct_dodo", providerId: "dodopayments" },
+      }),
     );
 
     mockReturningPlan = {
@@ -350,7 +410,7 @@ describe("Plans API", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = (await res.json()) as { success: boolean };
     expect(body.success).toBe(true);
 
     expect(buildProviderContextMock).toHaveBeenCalledWith({ currency: "USD" });
@@ -358,7 +418,11 @@ describe("Plans API", () => {
     expect(dodoAdapter.createPlan).toHaveBeenCalledTimes(1);
     expect(paystackAdapter.createPlan).not.toHaveBeenCalled();
 
-    const inserted = insertValuesMock.mock.calls[0]?.[0] as any;
+    const inserted = insertValuesMock.mock.calls[0]?.[0] as {
+      providerId: string;
+      providerPlanId: string;
+      paystackPlanId: string | null;
+    };
     expect(inserted.providerId).toBe("dodopayments");
     expect(inserted.providerPlanId).toBe("prov_plan_dodo_1");
     expect(inserted.paystackPlanId).toBe(null);
@@ -400,7 +464,7 @@ describe("Plans API", () => {
 
     expect(res.status).toBe(200);
     expect(mockDb.query.plans.findFirst).toHaveBeenCalledTimes(2);
-    const inserted = insertValuesMock.mock.calls[0]?.[0] as any;
+    const inserted = insertValuesMock.mock.calls[0]?.[0] as { slug: string };
     expect(inserted.slug).toBe("pro-plan-1");
   });
 
@@ -443,7 +507,12 @@ describe("Plans API", () => {
 
     expect(res.status).toBe(200);
     expect(paystackAdapter.updatePlan).toHaveBeenCalledTimes(1);
-    const arg = paystackAdapter.updatePlan.mock.calls[0]?.[0] as any;
+    const arg = paystackAdapter.updatePlan.mock.calls[0]?.[0] as {
+      planId: string;
+      amount: number;
+      environment: string;
+      account: { id: string };
+    };
     expect(arg.planId).toBe("prov_plan_paystack_1");
     expect(arg.amount).toBe(5000);
     expect(arg.environment).toBe("test");

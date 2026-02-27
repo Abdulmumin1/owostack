@@ -71,6 +71,8 @@
   let configBillingUnits = $state<string>("1");
   let configOverage = $state<"block" | "charge">("block");
   let configMaxOverageUnits = $state<string>("");
+  let configRolloverEnabled = $state<boolean>(false);
+  let configRolloverMaxBalance = $state<string>("");
 
   let featureSearchQuery = $state<string>("");
 
@@ -97,6 +99,10 @@
       configOverage = editingPlanFeature.overage || "block";
       configMaxOverageUnits = editingPlanFeature.maxOverageUnits
         ? String(editingPlanFeature.maxOverageUnits)
+        : "";
+      configRolloverEnabled = editingPlanFeature.rolloverEnabled || false;
+      configRolloverMaxBalance = editingPlanFeature.rolloverMaxBalance
+        ? String(editingPlanFeature.rolloverMaxBalance)
         : "";
     }
   });
@@ -942,6 +948,11 @@
             String(configMaxOverageUnits).trim() === ""
               ? null
               : Number(configMaxOverageUnits),
+          rolloverEnabled: configRolloverEnabled,
+          rolloverMaxBalance:
+            String(configRolloverMaxBalance).trim() === ""
+              ? null
+              : Number(configRolloverMaxBalance),
         };
         handleUpdateFeatureConfig(data);
       }}
@@ -1267,6 +1278,52 @@
             {/each}
           </div>
         </div>
+
+        <!-- Rollover -->
+        {#if configResetInterval !== "none"}
+          <div class="space-y-4">
+            <div class="flex items-center gap-3">
+              <input
+                id="configRolloverEnabled"
+                type="checkbox"
+                bind:checked={configRolloverEnabled}
+                class="w-4 h-4 border border-border rounded bg-bg-primary text-accent focus:ring-accent"
+              />
+              <label
+                for="configRolloverEnabled"
+                class="text-[10px] font-bold text-text-primary uppercase tracking-widest cursor-pointer"
+              >
+                Rollover unused balance
+              </label>
+            </div>
+            <p
+              class="text-[9px] font-bold text-text-dim uppercase tracking-widest leading-relaxed"
+            >
+              Carry unused quota to the next period.
+            </p>
+
+            {#if configRolloverEnabled}
+              <div class="p-4 bg-bg-card border border-border rounded space-y-2">
+                <label
+                  for="rolloverMaxBalance"
+                  class="text-[10px] font-bold text-text-dim uppercase tracking-widest"
+                >
+                  Max Rollover Balance
+                </label>
+                <input
+                  id="rolloverMaxBalance"
+                  type="number"
+                  placeholder="Leave empty for no cap"
+                  class="input font-bold"
+                  bind:value={configRolloverMaxBalance}
+                />
+                <p class="text-[9px] text-text-dim/60 font-bold uppercase">
+                  Cap on how much unused balance can accumulate. Empty = no cap.
+                </p>
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
 
       <div class="p-6 border-t border-border bg-bg-card sticky bottom-0">

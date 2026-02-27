@@ -164,7 +164,9 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
 
         const currentAlarm = await this.ctx.storage.getAlarm();
 
-console.log("current alarm (s)", Math.round((currentAlarm - Date.now()) / 1000), 's');
+if (currentAlarm !== null) {
+  console.log("current alarm (s)", Math.round((currentAlarm - Date.now()) / 1000), 's');
+}
 
     const nextReset = state.lastReset + intervalMs;
     if (Date.now() >= nextReset) {
@@ -401,7 +403,9 @@ console.log("soonest (s)", Math.round((soonestReset - Date.now()) / 1000), 's');
     const currentAlarm = await this.ctx.storage.getAlarm();
 
 console.log("current alarm (s)", Math.round((alarmTime - Date.now()) / 1000), 's');
-console.log("current alarm time (s)", Math.round((currentAlarm - Date.now()) / 1000), 's');
+if (currentAlarm !== null) {
+  console.log("current alarm time (s)", Math.round((currentAlarm - Date.now()) / 1000), 's');
+}
 // console.log(currentAlarm)
 
     // Set alarm if: no alarm exists, this one is sooner, or the existing alarm is stale (past)
