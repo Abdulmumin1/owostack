@@ -49,8 +49,8 @@ const liveClient = new Owostack({
 
 ### Mode-Based API URLs
 
-- **sandbox**: `https://api-sandbox.owostack.dev`
-- **live**: `https://api.owostack.dev`
+- **sandbox**: `https://sandbox.owostack.com`
+- **live**: `https://api.owostack.com`
 
 ## Custom API URL
 
@@ -70,7 +70,7 @@ The SDK resolves the API URL in this order:
 
 1. **Explicit `apiUrl`** (highest priority)
 2. **Mode-based URL** (sandbox/live)
-3. **Default URL** (`https://api.owostack.dev`)
+3. **Default URL** (`https://api.owostack.com`)
 
 ## Debug Mode
 
@@ -123,7 +123,7 @@ const owo = new Owostack({
 
 // Switch to sandbox mode
 owo.setSecretKey(process.env.OWOSTACK_SANDBOX_SECRET_KEY);
-owo.setApiUrl("https://api-sandbox.owostack.dev");
+owo.setApiUrl("https://sandbox.owostack.com");
 ```
 
 ## Best Practices

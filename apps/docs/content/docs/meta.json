@@ -42,7 +42,6 @@
     "sdk/wallet",
     "sdk/billing",
     "sdk/catalog",
-    "api-reference/index",
 
     "---Dashboard---",
     "dashboard/organizations",
