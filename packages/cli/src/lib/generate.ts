@@ -65,6 +65,7 @@ function slugToIdentifier(slug: string, used: Set<string>): string {
 export function generateConfig(
   plans: any[],
   creditSystems: any[] = [],
+  defaultProvider?: string,
 ): string {
   // Build a map of credit systems by slug
   const creditSystemSlugs = new Set(creditSystems.map((cs) => cs.slug));
@@ -165,6 +166,8 @@ export function generateConfig(
       configLines.push(`planGroup: ${JSON.stringify(plan.planGroup)}`);
     if (plan.trialDays && plan.trialDays > 0)
       configLines.push(`trialDays: ${plan.trialDays}`);
+    if (plan.provider)
+      configLines.push(`provider: ${JSON.stringify(plan.provider)}`);
 
     const featureEntries: string[] = [];
     for (const pf of plan.features || []) {
@@ -200,9 +203,16 @@ export function generateConfig(
       }
 
       if (pf.enabled === false) {
-        featureEntries.push(
-          `{ _type: "plan_feature", slug: ${JSON.stringify(pf.slug)}, featureType: "metered", name: ${JSON.stringify(pf.name || pf.slug)}, enabled: false }`,
-        );
+        // Preserve config for disabled metered features
+        const config: Record<string, unknown> = { enabled: false };
+        if (pf.limit !== undefined) config.limit = pf.limit;
+        if (pf.resetInterval || pf.reset)
+          config.reset = pf.resetInterval || pf.reset;
+        if (pf.overage) config.overage = pf.overage;
+        if (pf.overagePrice !== undefined)
+          config.overagePrice = pf.overagePrice;
+
+        featureEntries.push(`${varName}.config(${JSON.stringify(config)})`);
         continue;
       }
 
@@ -235,6 +245,9 @@ export function generateConfig(
   }
 
   const hasCreditSystems = creditSystemLines.length > 0;
+  const providerLine = defaultProvider
+    ? `  provider: ${JSON.stringify(defaultProvider)},\n`
+    : "";
 
   return [
     `import { Owostack, metered, boolean, creditSystem, plan } from "@owostack/core";`,
@@ -244,6 +257,7 @@ export function generateConfig(
     ``,
     `export const owo = new Owostack({`,
     `  secretKey: process.env.OWOSTACK_SECRET_KEY!,`,
+    providerLine,
     `  catalog: [`,
     `    ${planLines.join(",\n    ")}`,
     `  ],`,

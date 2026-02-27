@@ -6,6 +6,9 @@ export interface OwostackConfig {
   /** API secret key */
   secretKey: string;
 
+  /** Optional: Default provider for all plans (e.g., "paystack", "dodo") */
+  provider?: string;
+
   /** Optional: Environment mode (sandbox or live) */
   mode?: "sandbox" | "live";
 
@@ -682,8 +685,11 @@ export interface MeteredFeatureConfig {
   /** Billing units for overage */
   billingUnits?: number;
 
-  /** Credit cost per unit (for credit system features) */
+  /** Credit cost for credit systems */
   creditCost?: number;
+
+  /** Whether feature is enabled (default: true) */
+  enabled?: boolean;
 }
 
 /** Configuration for a boolean feature within a plan */
@@ -744,6 +750,9 @@ export interface PlanDefinition {
 
   /** Trial period in days */
   trialDays?: number;
+
+  /** Provider for this plan (overrides default) */
+  provider?: string;
 
   /** Custom metadata */
   metadata?: Record<string, unknown>;
@@ -952,6 +961,8 @@ export interface PlansResult {
 
 /** Serialized catalog sent to POST /api/sync */
 export interface SyncPayload {
+  /** Optional: Default provider for all plans */
+  defaultProvider?: string;
   features: Array<{
     slug: string;
     type: "metered" | "boolean";
@@ -975,6 +986,7 @@ export interface SyncPayload {
     interval: PlanInterval;
     planGroup?: string;
     trialDays?: number;
+    provider?: string;
     metadata?: Record<string, unknown>;
     features: Array<{
       slug: string;

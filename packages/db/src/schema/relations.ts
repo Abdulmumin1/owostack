@@ -116,8 +116,8 @@ export const invitationsRelations = relations(invitations, ({ one }) => ({
     fields: [invitations.organizationId],
     references: [organizations.id],
   }),
-  invitedByUser: one(users, {
-    fields: [invitations.invitedBy],
+  inviter: one(users, {
+    fields: [invitations.inviterId],
     references: [users.id],
   }),
 }));
@@ -191,19 +191,16 @@ export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
   }),
 }));
 
-export const paymentMethodsRelations = relations(
-  paymentMethods,
-  ({ one }) => ({
-    customer: one(customers, {
-      fields: [paymentMethods.customerId],
-      references: [customers.id],
-    }),
-    organization: one(organizations, {
-      fields: [paymentMethods.organizationId],
-      references: [organizations.id],
-    }),
+export const paymentMethodsRelations = relations(paymentMethods, ({ one }) => ({
+  customer: one(customers, {
+    fields: [paymentMethods.customerId],
+    references: [customers.id],
   }),
-);
+  organization: one(organizations, {
+    fields: [paymentMethods.organizationId],
+    references: [organizations.id],
+  }),
+}));
 
 export const providerAccountsRelations = relations(
   providerAccounts,
@@ -263,31 +260,37 @@ export const creditPacksRelations = relations(creditPacks, ({ one, many }) => ({
   purchases: many(creditPurchases),
 }));
 
-export const creditPurchasesRelations = relations(creditPurchases, ({ one }) => ({
-  customer: one(customers, {
-    fields: [creditPurchases.customerId],
-    references: [customers.id],
+export const creditPurchasesRelations = relations(
+  creditPurchases,
+  ({ one }) => ({
+    customer: one(customers, {
+      fields: [creditPurchases.customerId],
+      references: [customers.id],
+    }),
+    creditPack: one(creditPacks, {
+      fields: [creditPurchases.creditPackId],
+      references: [creditPacks.id],
+    }),
+    creditSystem: one(creditSystems, {
+      fields: [creditPurchases.creditSystemId],
+      references: [creditSystems.id],
+    }),
   }),
-  creditPack: one(creditPacks, {
-    fields: [creditPurchases.creditPackId],
-    references: [creditPacks.id],
-  }),
-  creditSystem: one(creditSystems, {
-    fields: [creditPurchases.creditSystemId],
-    references: [creditSystems.id],
-  }),
-}));
+);
 
-export const creditSystemBalancesRelations = relations(creditSystemBalances, ({ one }) => ({
-  customer: one(customers, {
-    fields: [creditSystemBalances.customerId],
-    references: [customers.id],
+export const creditSystemBalancesRelations = relations(
+  creditSystemBalances,
+  ({ one }) => ({
+    customer: one(customers, {
+      fields: [creditSystemBalances.customerId],
+      references: [customers.id],
+    }),
+    creditSystem: one(creditSystems, {
+      fields: [creditSystemBalances.creditSystemId],
+      references: [creditSystems.id],
+    }),
   }),
-  creditSystem: one(creditSystems, {
-    fields: [creditSystemBalances.creditSystemId],
-    references: [creditSystems.id],
-  }),
-}));
+);
 
 export const eventsRelations = relations(events, ({ one }) => ({
   organization: one(organizations, {
@@ -382,27 +385,36 @@ export const invoiceItemsRelations = relations(invoiceItems, ({ one }) => ({
   }),
 }));
 
-export const paymentAttemptsRelations = relations(paymentAttempts, ({ one }) => ({
-  invoice: one(invoices, {
-    fields: [paymentAttempts.invoiceId],
-    references: [invoices.id],
+export const paymentAttemptsRelations = relations(
+  paymentAttempts,
+  ({ one }) => ({
+    invoice: one(invoices, {
+      fields: [paymentAttempts.invoiceId],
+      references: [invoices.id],
+    }),
   }),
-}));
+);
 
-export const overageSettingsRelations = relations(overageSettings, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [overageSettings.organizationId],
-    references: [organizations.id],
+export const overageSettingsRelations = relations(
+  overageSettings,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [overageSettings.organizationId],
+      references: [organizations.id],
+    }),
   }),
-}));
+);
 
-export const customerOverageLimitsRelations = relations(customerOverageLimits, ({ one }) => ({
-  customer: one(customers, {
-    fields: [customerOverageLimits.customerId],
-    references: [customers.id],
+export const customerOverageLimitsRelations = relations(
+  customerOverageLimits,
+  ({ one }) => ({
+    customer: one(customers, {
+      fields: [customerOverageLimits.customerId],
+      references: [customers.id],
+    }),
+    organization: one(organizations, {
+      fields: [customerOverageLimits.organizationId],
+      references: [organizations.id],
+    }),
   }),
-  organization: one(organizations, {
-    fields: [customerOverageLimits.organizationId],
-    references: [organizations.id],
-  }),
-}));
+);

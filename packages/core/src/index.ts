@@ -77,15 +77,15 @@ export class Owostack {
 
     // Mode-based URLs
     if (config.mode === "sandbox") {
-      return "https://api-sandbox.owostack.dev";
+      return "https://sandbox.owostack.com";
     }
 
     if (config.mode === "live") {
-      return "https://api.owostack.dev";
+      return "https://api.owostack.com";
     }
 
     // Default fallback
-    return "https://api.owostack.dev";
+    return "https://api.owostack.com";
   }
 
   /**
@@ -129,7 +129,10 @@ export class Owostack {
       };
     }
 
-    const payload = buildSyncPayload(this._config.catalog);
+    const payload = buildSyncPayload(
+      this._config.catalog,
+      this._config.provider,
+    );
     const response = await this.post("/sync", payload);
     return response as SyncResult;
   }
@@ -355,10 +358,11 @@ export class Owostack {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const resp = await response.json();
+      const errorData = resp.error || resp;
       throw new OwostackError(
-        error.code || "unknown_error",
-        error.message || error.error || "Request failed",
+        errorData.code || "unknown_error",
+        errorData.message || errorData.error || "Request failed",
       );
     }
 
@@ -389,10 +393,11 @@ export class Owostack {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const resp = await response.json();
+      const errorData = resp.error || resp;
       throw new OwostackError(
-        error.code || "unknown_error",
-        error.message || error.error || "Request failed",
+        errorData.code || "unknown_error",
+        errorData.message || errorData.error || "Request failed",
       );
     }
 

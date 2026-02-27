@@ -13,7 +13,7 @@ export interface GlobalConfig {
 
 export function getApiUrl(configUrl?: string): string {
   return (
-    process.env.OWOSTACK_API_URL || configUrl || "https://api.owostack.dev"
+    process.env.OWOSTACK_API_URL || configUrl || "https://api.owostack.com"
   );
 }
 
@@ -21,7 +21,7 @@ export function getTestApiUrl(configUrl?: string): string {
   return (
     process.env.OWOSTACK_API_TEST_URL ||
     configUrl ||
-    "https://api-test.owostack.dev"
+    "https://sandbox.owostack.com"
   );
 }
 
@@ -29,7 +29,7 @@ export function getDashboardUrl(configUrl?: string): string {
   return (
     process.env.OWOSTACK_DASHBOARD_URL ||
     configUrl ||
-    "https://dashboard.owostack.com"
+    "https://app.owostack.com"
   );
 }
 

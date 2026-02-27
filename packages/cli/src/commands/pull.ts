@@ -53,7 +53,18 @@ export async function runPull(options: PullOptions) {
     const creditSystems = await fetchCreditSystems(apiKey, `${liveUrl}/api/v1`);
     s.stop(`Fetched ${creditSystems.length} credit systems`);
 
-    const configContent = generateConfig(livePlans, creditSystems);
+    // Detect common provider for default
+    const providers = new Set(
+      livePlans.map((p: any) => p.provider).filter(Boolean),
+    );
+    const defaultProvider =
+      providers.size === 1 ? Array.from(providers)[0] : undefined;
+
+    const configContent = generateConfig(
+      livePlans,
+      creditSystems,
+      defaultProvider,
+    );
 
     if (options.dryRun) {
       p.note(configContent, "Generated Config (Dry Run)");
@@ -82,7 +93,14 @@ export async function runPull(options: PullOptions) {
     const creditSystems = await fetchCreditSystems(apiKey, `${baseUrl}/api/v1`);
     s.stop(`Fetched ${creditSystems.length} credit systems`);
 
-    const configContent = generateConfig(plans, creditSystems);
+    // Detect common provider for default
+    const providers = new Set(
+      plans.map((p: any) => p.provider).filter(Boolean),
+    );
+    const defaultProvider =
+      providers.size === 1 ? Array.from(providers)[0] : undefined;
+
+    const configContent = generateConfig(plans, creditSystems, defaultProvider);
 
     if (options.dryRun) {
       p.note(configContent, "Generated Config (Dry Run)");

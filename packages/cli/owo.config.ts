@@ -1,21 +1,33 @@
 import { Owostack, metered, boolean, creditSystem, plan } from "@owostack/core";
 
+export const sso = boolean("sso", { name: "sso" });
 export const thirdpen = metered("thirdpen", { name: "Thirdpen" });
 export const dearfutureself = metered("dearfutureself", { name: "dearfutureself" });
 export const apiRequests = metered("api-requests", { name: "api requests" });
 export const dfs = metered("dfs", { name: "dfs" });
 
 export const supportCredits = creditSystem("support-credits", { name: "support credits", features: [dfs(20), apiRequests(10), dearfutureself(1)] });
+export const thirdpenCredits = creditSystem("thirdpen-credits", { name: "thirdpen-credits", features: [thirdpen(3)] });
 
 export const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY!,
+
   catalog: [
+    plan("money-man", {
+      name: "money man",
+      price: 100000,
+      currency: "NGN",
+      interval: "monthly",
+      provider: "paystack",
+      features: [sso.off(), supportCredits.credits(100, { reset: "monthly" })]
+    }),
     plan("test-trial-polar2", {
       name: "test-trial-polar2",
       price: 1000,
       currency: "USD",
       interval: "monthly",
       trialDays: 1,
+      provider: "polar",
       features: [thirdpen.limit(100, {"reset":"5min","overage":"charge"}), dearfutureself.limit(10, {"reset":"5min","overage":"charge"})]
     }),
     plan("test-trial-polar", {
@@ -25,6 +37,7 @@ export const owo = new Owostack({
       interval: "monthly",
       planGroup: "sales",
       trialDays: 3,
+      provider: "polar",
       features: [supportCredits.credits(100, { reset: "monthly" })]
     }),
     plan("wanssoawe", {
@@ -33,7 +46,8 @@ export const owo = new Owostack({
       currency: "USD",
       interval: "monthly",
       planGroup: "support",
-      features: [thirdpen.limit(100, {"reset":"monthly"}), dearfutureself.config({"limit":null,"reset":"monthly"})]
+      provider: "dodopayments",
+      features: [thirdpen.limit(100, {"reset":"monthly"}), dearfutureself.config({"enabled":false,"limit":null,"reset":"monthly"})]
     }),
     plan("dry", {
       name: "dry",
@@ -41,7 +55,8 @@ export const owo = new Owostack({
       price: 1400,
       currency: "USD",
       interval: "monthly",
-      features: [supportCredits.credits(100, { reset: "5min", overage: "charge" }), thirdpen.config({"limit":null,"reset":"monthly"})]
+      provider: "dodopayments",
+      features: [supportCredits.credits(100, { reset: "5min", overage: "charge" }), thirdpen.config({"enabled":false,"limit":null,"reset":"monthly"})]
     }),
     plan("test-trial-dodod", {
       name: "test-trial-dodod",
@@ -49,6 +64,7 @@ export const owo = new Owostack({
       currency: "USD",
       interval: "monthly",
       trialDays: 2,
+      provider: "dodopayments",
       features: [thirdpen.limit(100, {"reset":"monthly"}), supportCredits.credits(100, { reset: "monthly", overage: "charge" }), dearfutureself.limit(10, {"reset":"5min","overage":"charge"})]
     }),
     plan("test-trial-dodo-1", {
@@ -57,6 +73,7 @@ export const owo = new Owostack({
       currency: "USD",
       interval: "monthly",
       trialDays: 15,
+      provider: "dodopayments",
       features: [supportCredits.credits(100, { reset: "monthly" })]
     }),
     plan("test-trial-dodo", {
@@ -65,6 +82,7 @@ export const owo = new Owostack({
       currency: "USD",
       interval: "monthly",
       trialDays: 3,
+      provider: "dodopayments",
       features: [thirdpen.limit(100, {"reset":"monthly"})]
     }),
     plan("test-trial-stack", {
@@ -73,13 +91,15 @@ export const owo = new Owostack({
       currency: "NGN",
       interval: "monthly",
       trialDays: 3,
-      features: [thirdpen.limit(100, {"reset":"monthly"})]
+      provider: "paystack",
+      features: [thirdpenCredits.credits(100, { reset: "monthly" }), dearfutureself.config({"enabled":false,"limit":null,"reset":"monthly","overage":"charge"})]
     }),
     plan("masterxx", {
       name: "masterxx",
       price: 100000,
       currency: "USD",
       interval: "monthly",
+      provider: "dodopayments",
       features: [supportCredits.credits(100, { reset: "5min" })]
     }),
     plan("teast", {
@@ -96,6 +116,7 @@ export const owo = new Owostack({
       currency: "NGN",
       interval: "monthly",
       trialDays: 4,
+      provider: "paystack",
       features: [dearfutureself.limit(100, {"reset":"monthly"}), apiRequests.limit(100, {"reset":"monthly"})]
     }),
     plan("masterx", {
@@ -104,6 +125,7 @@ export const owo = new Owostack({
       currency: "NGN",
       interval: "monthly",
       trialDays: 4,
+      provider: "paystack",
       features: [apiRequests.limit(100, {"reset":"monthly"}), thirdpen.limit(100, {"reset":"monthly"})]
     }),
     plan("master2", {
@@ -112,6 +134,7 @@ export const owo = new Owostack({
       currency: "NGN",
       interval: "monthly",
       trialDays: 4,
+      provider: "paystack",
       features: [apiRequests.limit(100, {"reset":"monthly"})]
     }),
     plan("master", {
@@ -120,6 +143,7 @@ export const owo = new Owostack({
       currency: "NGN",
       interval: "monthly",
       trialDays: 4,
+      provider: "paystack",
       features: [apiRequests.limit(100, {"reset":"monthly"})]
     }),
     plan("credit-plan", {
@@ -127,13 +151,14 @@ export const owo = new Owostack({
       price: 10000,
       currency: "NGN",
       interval: "monthly",
-      features: [thirdpen.limit(10, {"reset":"5min","overage":"charge"}), dearfutureself.limit(10, {"reset":"5min","overage":"charge"}), dfs.config({"limit":null,"reset":"5min"})]
+      features: [thirdpen.limit(10, {"reset":"5min","overage":"charge"}), dearfutureself.limit(10, {"reset":"5min","overage":"charge"}), dfs.config({"enabled":false,"limit":null,"reset":"5min"})]
     }),
     plan("pro-plan", {
       name: "pro plan",
       price: 3000000,
       currency: "NGN",
       interval: "monthly",
+      provider: "paystack",
       features: [thirdpen.limit(200, {"reset":"5min"}), apiRequests.limit(200, {"reset":"5min"})]
     }),
     plan("basic", {
@@ -141,6 +166,7 @@ export const owo = new Owostack({
       price: 100000,
       currency: "NGN",
       interval: "monthly",
+      provider: "paystack",
       features: [apiRequests.limit(100, {"reset":"monthly"})]
     })
   ],

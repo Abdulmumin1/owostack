@@ -189,12 +189,14 @@ export function metered(slug: string, opts?: { name?: string }): MeteredHandle {
     },
 
     config(configOpts: MeteredFeatureConfig): PlanFeatureEntry {
+      // Allow explicit enabled: false in config, default to true
+      const isEnabled = configOpts.enabled !== false;
       return {
         _type: "plan_feature",
         slug,
         featureType: "metered",
         name: opts?.name,
-        enabled: true,
+        enabled: isEnabled,
         config: { reset: "monthly", overage: "block", ...configOpts },
       };
     },
@@ -309,6 +311,7 @@ export function plan(
     features: PlanFeatureEntry[];
     planGroup?: string;
     trialDays?: number;
+    provider?: string;
     metadata?: Record<string, unknown>;
   },
 ): PlanDefinition {
@@ -329,7 +332,10 @@ function slugToName(slug: string): string {
 /**
  * Extract SyncPayload from catalog.
  */
-export function buildSyncPayload(catalog: CatalogEntry[]): SyncPayload {
+export function buildSyncPayload(
+  catalog: CatalogEntry[],
+  defaultProvider?: string,
+): SyncPayload {
   const featureMap = new Map<
     string,
     { slug: string; type: "metered" | "boolean"; name: string }
@@ -385,21 +391,35 @@ export function buildSyncPayload(catalog: CatalogEntry[]): SyncPayload {
       interval: p.interval,
       planGroup: p.planGroup ?? undefined,
       trialDays: p.trialDays ?? undefined,
+      provider: p.provider ?? undefined,
       metadata: p.metadata ?? undefined,
       features: p.features.map((f: PlanFeatureEntry) => ({
         slug: f.slug,
         enabled: f.enabled,
-        limit: f.config?.limit ?? null,
-        reset: f.config?.reset || "monthly",
-        overage: f.config?.overage || "block",
-        overagePrice: f.config?.overagePrice ?? undefined,
-        maxOverageUnits: f.config?.maxOverageUnits ?? undefined,
-        billingUnits: f.config?.billingUnits ?? 1,
-        creditCost: f.config?.creditCost ?? 0,
+        // Boolean features have no limit concept (null), metered features use limit from config
+        limit: f.featureType === "boolean" ? null : (f.config?.limit ?? null),
+        // Boolean features have no reset interval
+        ...(f.featureType !== "boolean" && {
+          reset: f.config?.reset || "monthly",
+        }),
+        ...(f.config?.overage && { overage: f.config.overage }),
+        ...(f.config?.overagePrice !== undefined && {
+          overagePrice: f.config.overagePrice,
+        }),
+        ...(f.config?.maxOverageUnits !== undefined && {
+          maxOverageUnits: f.config.maxOverageUnits,
+        }),
+        ...(f.config?.billingUnits !== undefined && {
+          billingUnits: f.config.billingUnits,
+        }),
+        ...(f.config?.creditCost !== undefined && {
+          creditCost: f.config.creditCost,
+        }),
       })),
     }));
 
   return {
+    defaultProvider,
     features: Array.from(featureMap.values()),
     creditSystems,
     plans,

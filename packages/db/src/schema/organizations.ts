@@ -45,8 +45,8 @@ export const invitations = sqliteTable("invitations", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
   role: text("role").notNull().default("member"),
-  status: text("status").notNull().default("pending"), // pending, accepted, expired
-  invitedBy: text("invited_by")
+  status: text("status").notNull().default("pending"), // pending, accepted, expired, canceled
+  inviterId: text("inviter_id")
     .notNull()
     .references(() => users.id),
   expiresAt: integer("expires_at").notNull(),
