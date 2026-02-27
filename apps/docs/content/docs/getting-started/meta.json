@@ -1,0 +1,6 @@
+{
+  "title": "Getting Started",
+  "icon": "Rocket",
+  "defaultOpen": true,
+  "pages": ["installation", "quickstart", "webhook-setup"]
+}

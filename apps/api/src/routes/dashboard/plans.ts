@@ -12,6 +12,7 @@ import {
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
+import { getMinimumChargeAmount } from "../../lib/provider-minimums";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -142,6 +143,22 @@ app.post("/", async (c) => {
 
   // Only sync if it's a paid, recurring plan
   if (type === "paid" && billingType === "recurring") {
+    // Validate minimum charge amount for the provider/currency
+    // Use requested provider or check against a default provider
+    const providerToCheck = requestedProviderId || "paystack"; // Default to paystack if not specified
+    const minimumAmount = getMinimumChargeAmount(providerToCheck, currency);
+
+    if (minimumAmount > 0 && price < minimumAmount) {
+      const minDisplay = minimumAmount / 100;
+      return c.json(
+        {
+          success: false,
+          error: `Plan price ${price / 100} ${currency} is below the minimum charge amount of ${minDisplay} ${currency} for ${providerToCheck}. Please increase the price or choose a different currency.`,
+        },
+        400,
+      );
+    }
+
     try {
       const authDb = c.get("authDb");
       const project = await authDb.query.projects.findFirst({
@@ -179,13 +196,21 @@ app.post("/", async (c) => {
 
           if (planResult.isOk()) {
             providerPlanId = planResult.value.id;
-            if (requestedProviderId === "paystack") paystackPlanId = planResult.value.id;
-            console.log(`[plans] Created plan on ${requestedProviderId}: ${planResult.value.id}`);
+            if (requestedProviderId === "paystack")
+              paystackPlanId = planResult.value.id;
+            console.log(
+              `[plans] Created plan on ${requestedProviderId}: ${planResult.value.id}`,
+            );
           } else {
-            console.warn(`[plans] Failed to create plan on ${requestedProviderId}:`, planResult.error);
+            console.warn(
+              `[plans] Failed to create plan on ${requestedProviderId}:`,
+              planResult.error,
+            );
           }
         } else {
-          console.warn(`[plans] Provider ${requestedProviderId} not found or no account configured`);
+          console.warn(
+            `[plans] Provider ${requestedProviderId} not found or no account configured`,
+          );
         }
       } else {
         // Fallback: resolve provider via routing rules
@@ -216,16 +241,20 @@ app.post("/", async (c) => {
           if (planResult.isOk()) {
             providerPlanId = planResult.value.id;
             if (providerId === "paystack") paystackPlanId = planResult.value.id;
-            console.log(`[plans] Created plan on ${providerId}: ${planResult.value.id}`);
+            console.log(
+              `[plans] Created plan on ${providerId}: ${planResult.value.id}`,
+            );
           } else {
-            console.warn(`[plans] Failed to create plan on ${providerId}:`, planResult.error);
+            console.warn(
+              `[plans] Failed to create plan on ${providerId}:`,
+              planResult.error,
+            );
           }
         } else if (providerAccounts.length > 0) {
           console.warn(
             "Provider rules exist but no provider matched for plan creation",
           );
         }
-
       }
     } catch (e) {
       console.warn("Provider sync error:", e);
@@ -255,7 +284,8 @@ app.post("/", async (c) => {
         paystackPlanId, // Now populated!
         providerId: providerId || (paystackPlanId ? "paystack" : null),
         providerPlanId: providerPlanId || paystackPlanId,
-        metadata: trialUnit === "minutes" ? { trialUnit: "minutes" } : undefined,
+        metadata:
+          trialUnit === "minutes" ? { trialUnit: "minutes" } : undefined,
       })
       .returning();
 
@@ -267,7 +297,7 @@ app.post("/", async (c) => {
 });
 
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
@@ -277,6 +307,7 @@ app.get("/", async (c) => {
     where: eq(schema.plans.organizationId, organizationId),
     orderBy: [desc(schema.plans.createdAt)],
     with: {
+      subscriptions: true,
       planFeatures: {
         with: {
           feature: true,
@@ -328,11 +359,15 @@ app.patch("/:id", async (c) => {
     // If trialUnit was provided, merge it into existing metadata
     let metadataUpdate: Record<string, unknown> | undefined;
     if (trialUnit !== undefined) {
-      const existing = await db.query.plans.findFirst({ where: eq(schema.plans.id, id) });
-      const existingMeta = (existing?.metadata as Record<string, unknown>) || {};
-      metadataUpdate = trialUnit === "minutes"
-        ? { ...existingMeta, trialUnit: "minutes" }
-        : { ...existingMeta, trialUnit: undefined };
+      const existing = await db.query.plans.findFirst({
+        where: eq(schema.plans.id, id),
+      });
+      const existingMeta =
+        (existing?.metadata as Record<string, unknown>) || {};
+      metadataUpdate =
+        trialUnit === "minutes"
+          ? { ...existingMeta, trialUnit: "minutes" }
+          : { ...existingMeta, trialUnit: undefined };
     }
 
     const [updated] = await db
@@ -352,10 +387,38 @@ app.patch("/:id", async (c) => {
     // =========================================================================
     // Sync plan update with payment provider
     // =========================================================================
-    const providerFields = ["name", "price", "interval", "currency", "description"] as const;
-    const hasProviderChange = providerFields.some((f) => parsed.data[f] !== undefined);
+    const providerFields = [
+      "name",
+      "price",
+      "interval",
+      "currency",
+      "description",
+    ] as const;
+    const hasProviderChange = providerFields.some(
+      (f) => parsed.data[f] !== undefined,
+    );
 
     if (hasProviderChange && updated.providerPlanId && updated.providerId) {
+      // Validate minimum charge amount if price is being updated
+      if (parsed.data.price !== undefined) {
+        const minimumAmount = getMinimumChargeAmount(
+          updated.providerId,
+          parsed.data.currency || updated.currency,
+        );
+
+        if (minimumAmount > 0 && parsed.data.price < minimumAmount) {
+          const minDisplay = minimumAmount / 100;
+          const currency = parsed.data.currency || updated.currency;
+          return c.json(
+            {
+              success: false,
+              error: `Plan price ${parsed.data.price / 100} ${currency} is below the minimum charge amount of ${minDisplay} ${currency} for ${updated.providerId}. Please increase the price or choose a different currency.`,
+            },
+            400,
+          );
+        }
+      }
+
       try {
         const authDb = c.get("authDb");
         const project = await authDb.query.projects.findFirst({
@@ -390,9 +453,14 @@ app.patch("/:id", async (c) => {
           });
 
           if (result.isOk()) {
-            console.log(`[plans] Updated plan on ${updated.providerId}: ${updated.providerPlanId}`);
+            console.log(
+              `[plans] Updated plan on ${updated.providerId}: ${updated.providerPlanId}`,
+            );
           } else {
-            console.warn(`[plans] Failed to update plan on ${updated.providerId}:`, result.error);
+            console.warn(
+              `[plans] Failed to update plan on ${updated.providerId}:`,
+              result.error,
+            );
           }
         }
       } catch (e) {

@@ -1,0 +1,11 @@
+{
+  "title": "Concepts",
+  "icon": "BookOpen",
+  "pages": [
+    "how-it-works",
+    "data-model",
+    "plans-and-products",
+    "entitlements-and-features",
+    "providers-and-accounts"
+  ]
+}

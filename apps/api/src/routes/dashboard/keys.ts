@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { schema } from "@owostack/db";
-import { apiKeyAuth, generateApiKey, hashApiKey } from "../../lib/api-keys";
+import { generateApiKey, hashApiKey } from "../../lib/api-keys";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 
@@ -83,7 +83,7 @@ app.post("/", async (c) => {
 });
 
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
@@ -91,7 +91,7 @@ app.get("/", async (c) => {
   const db = c.get("authDb");
   const keys = await db.query.apiKeys.findMany({
     where: eq(schema.apiKeys.organizationId, organizationId),
-    orderBy: (keys, { desc }) => [desc(keys.createdAt)],
+    orderBy: (keys: any, { desc }: any) => [desc(keys.createdAt)],
     columns: {
       id: true,
       name: true,
@@ -103,6 +103,36 @@ app.get("/", async (c) => {
   });
 
   return c.json({ success: true, data: keys });
+});
+
+app.delete("/:id", async (c) => {
+  const id = c.req.param("id");
+  const organizationId = c.get("organizationId");
+
+  if (!organizationId) {
+    return c.json({ success: false, error: "Organization ID required" }, 400);
+  }
+
+  const db = c.get("authDb");
+
+  try {
+    await db
+      .delete(schema.apiKeys)
+      .where(
+        and(
+          eq(schema.apiKeys.id, id),
+          eq(schema.apiKeys.organizationId, organizationId),
+        ),
+      );
+
+    return c.json({ success: true });
+  } catch (e: any) {
+    console.error("Failed to delete key:", e);
+    return c.json(
+      { success: false, error: e.message || "Database error" },
+      500,
+    );
+  }
 });
 
 export default app;

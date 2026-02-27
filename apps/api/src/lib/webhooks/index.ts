@@ -1,8 +1,12 @@
 import { Result } from "better-result";
-import { schema } from "@owostack/db";
-import type { ProviderAdapter, ProviderAccount, NormalizedWebhookEvent } from "@owostack/adapters";
+import type {
+  ProviderAdapter,
+  ProviderAccount,
+  NormalizedWebhookEvent,
+} from "@owostack/adapters";
 import { EntitlementCache } from "../cache";
 import { DatabaseError } from "../errors";
+import { trackWebhookEvent } from "../analytics-engine";
 import type { DB, WebhookContext, WebhookHandlerFn } from "./types";
 
 // Handlers
@@ -39,6 +43,10 @@ export class WebhookHandler {
   private trialEndWorkflow: any | null;
   private planUpgradeWorkflow: any | null;
   private cache: EntitlementCache | null;
+  private analyticsEnv: {
+    ANALYTICS?: AnalyticsEngineDataset;
+    ENVIRONMENT?: string;
+  } | null;
 
   constructor(
     private db: DB,
@@ -49,6 +57,10 @@ export class WebhookHandler {
       trialEndWorkflow?: any;
       planUpgradeWorkflow?: any;
       cache?: KVNamespace;
+      analyticsEnv?: {
+        ANALYTICS?: AnalyticsEngineDataset;
+        ENVIRONMENT?: string;
+      };
     },
   ) {
     this.adapter = opts?.adapter || null;
@@ -56,6 +68,7 @@ export class WebhookHandler {
     this.trialEndWorkflow = opts?.trialEndWorkflow || null;
     this.planUpgradeWorkflow = opts?.planUpgradeWorkflow || null;
     this.cache = opts?.cache ? new EntitlementCache(opts.cache) : null;
+    this.analyticsEnv = opts?.analyticsEnv || null;
   }
 
   /**
@@ -67,14 +80,23 @@ export class WebhookHandler {
   ): Promise<Result<boolean, DatabaseError>> {
     return Result.tryPromise({
       try: async () => {
-        // 1. Log event for audit trail
-        await this.db.insert(schema.events).values({
-          id: crypto.randomUUID(),
-          organizationId: this.organizationId,
-          type: event.type,
-          data: event.raw,
-          processed: false,
-        });
+        const eventId = crypto.randomUUID();
+        const createdAt = Date.now();
+
+        // 1. Log event for audit trail (via Analytics Engine now)
+        if (this.analyticsEnv) {
+          trackWebhookEvent(this.analyticsEnv, {
+            id: eventId,
+            organizationId: this.organizationId,
+            type: event.type,
+            providerId: event.provider,
+            customerEmail: event.customer?.email || null,
+            customerId: event.customer?.providerCustomerId || null,
+            processed: false,
+            payload: event.raw,
+            createdAt,
+          });
+        }
 
         console.log(JSON.stringify(event, null, 2));
 
@@ -97,7 +119,9 @@ export class WebhookHandler {
         if (handler) {
           await handler(ctx);
         } else if (event.type === "refund.failed") {
-          console.log(`[WEBHOOK] Refund failed for org=${this.organizationId}, ref=${event.refund?.reference}`);
+          console.log(
+            `[WEBHOOK] Refund failed for org=${this.organizationId}, ref=${event.refund?.reference}`,
+          );
         }
 
         return true;

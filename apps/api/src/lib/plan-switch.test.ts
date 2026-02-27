@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { calculateProration, detectSwitchType } from "./plan-switch";
+import { describe, expect, it, vi } from "vitest";
+import {
+  calculateProration,
+  detectSwitchType,
+  provisionEntitlements,
+} from "./plan-switch";
 
 describe("detectSwitchType", () => {
   it("returns new when there is no current plan", () => {
@@ -95,5 +99,48 @@ describe("calculateProration", () => {
     );
 
     expect(result).toBe(0);
+  });
+});
+
+describe("provisionEntitlements", () => {
+  it("falls back when db.transaction is unsupported in D1", async () => {
+    const whereMock = vi.fn(async () => []);
+    const deleteMock = vi.fn(() => ({ where: whereMock }));
+    const valuesMock = vi.fn(async () => []);
+    const insertMock = vi.fn(() => ({ values: valuesMock }));
+
+    const db: any = {
+      query: {
+        planFeatures: {
+          findMany: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                featureId: "feat_new_1",
+                limitValue: 100,
+                resetInterval: "monthly",
+                resetOnEnable: true,
+                feature: { id: "feat_new_1" },
+              },
+            ])
+            .mockResolvedValueOnce([{ featureId: "feat_old_1" }]),
+        },
+      },
+      transaction: vi.fn(async () => {
+        throw new Error(
+          "D1_ERROR: To execute a transaction, please use the state.storage.transaction() APIs instead of SQL BEGIN TRANSACTION.",
+        );
+      }),
+      delete: deleteMock,
+      insert: insertMock,
+    };
+
+    await provisionEntitlements(db, "cus_1", "plan_new", "plan_old");
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(deleteMock).toHaveBeenCalledTimes(1);
+    expect(whereMock).toHaveBeenCalledTimes(1);
+    expect(insertMock).toHaveBeenCalledTimes(1);
+    expect(valuesMock).toHaveBeenCalledTimes(1);
   });
 });

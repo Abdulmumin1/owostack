@@ -2,16 +2,22 @@
   import { Result } from "better-result";
   import { apiFetch } from "$lib/auth-client";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
-  import { Loader2, Check } from "lucide-svelte";
+  import {
+    Check,
+    CheckCircle,
+    CircleNotch,
+    Coins,
+    Plus,
+  } from "phosphor-svelte";
   import { defaultCurrency } from "$lib/stores/currency";
   import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
   import { SUPPORTED_PROVIDERS } from "$lib/providers";
 
-  let { 
-    isOpen = $bindable(false), 
+  let {
+    isOpen = $bindable(false),
     organizationId,
-    onclose = () => {}, 
-    onsuccess = (data?: any) => {} 
+    onclose = () => {},
+    onsuccess = (data?: any) => {},
   }: {
     isOpen: boolean;
     organizationId: string;
@@ -32,7 +38,9 @@
   let isCreating = $state(false);
   let error = $state("");
 
-  let uniqueProviderIds = $derived([...new Set(connectedProviders.map((p: any) => p.providerId))]);
+  let uniqueProviderIds = $derived([
+    ...new Set(connectedProviders.map((p: any) => p.providerId)),
+  ]);
 
   let selectedProviderConfig = $derived(
     SUPPORTED_PROVIDERS.find((p) => p.id === selectedProviderId),
@@ -67,7 +75,9 @@
     try {
       const [credRes, provRes] = await Promise.all([
         apiFetch(`/api/dashboard/credits?organizationId=${organizationId}`),
-        apiFetch(`/api/dashboard/providers/accounts?organizationId=${organizationId}`),
+        apiFetch(
+          `/api/dashboard/providers/accounts?organizationId=${organizationId}`,
+        ),
       ]);
       if (credRes.data?.success) creditSystems = credRes.data.data || [];
       if (Array.isArray(provRes.data?.data)) {
@@ -76,7 +86,9 @@
           selectedProviderId = connectedProviders[0].providerId;
         }
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     loadingSystems = false;
   }
 
@@ -88,7 +100,6 @@
     price = 500;
     currency = $defaultCurrency;
     creditSystemId = "";
-    selectedProviderId = connectedProviders.length > 0 ? connectedProviders[0].providerId : "";
     error = "";
     onclose?.();
   }
@@ -111,7 +122,8 @@
       return;
     }
     if (!creditSystemId) {
-      error = "Credit system is required — every add-on pack must be attached to a credit system";
+      error =
+        "Credit system is required — every add-on pack must be attached to a credit system";
       return;
     }
     if (!selectedProviderId) {
@@ -160,12 +172,19 @@
   }
 </script>
 
-<SidePanel open={isOpen} title="Create Credit Pack" onclose={close} width="max-w-md">
-  <div class="text-sm">
+<SidePanel
+  open={isOpen}
+  title="Create Credit Pack"
+  onclose={close}
+  width="max-w-md"
+>
+  <div class="text-sm flex h-full flex-col justify-between">
     <div class="p-5 space-y-6">
       {#if error}
         <div class="bg-red-500/10 p-4 border border-red-500/20">
-          <p class="text-xs font-medium text-red-500">{error}</p>
+          <p class="text-xs font-medium text-red-600 dark:text-red-500">
+            {error}
+          </p>
         </div>
       {/if}
 
@@ -173,32 +192,46 @@
         <!-- Provider Selection -->
         {#if uniqueProviderIds.length > 1}
           <div>
-            <div class="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">
-              Payment Provider <span class="normal-case text-red-400">*</span>
+            <div
+              class="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2"
+            >
+              Payment Provider <span class="normal-case text-red-500">*</span>
             </div>
-            <div class="grid grid-cols-{Math.min(uniqueProviderIds.length, 3)} gap-2">
+            <div
+              class="grid grid-cols-{Math.min(
+                uniqueProviderIds.length,
+                3,
+              )} gap-2"
+            >
               {#each uniqueProviderIds as pid}
-                {@const provConfig = SUPPORTED_PROVIDERS.find((p) => p.id === pid)}
+                {@const provConfig = SUPPORTED_PROVIDERS.find(
+                  (p) => p.id === pid,
+                )}
                 {#if provConfig}
                   <button
                     type="button"
-                    class="relative border rounded-lg p-3 text-left transition-all {selectedProviderId === pid
+                    class="relative border rounded-lg p-3 text-left transition-all {selectedProviderId ===
+                    pid
                       ? 'border-accent bg-accent/5'
-                      : 'border-border bg-bg-primary hover:border-zinc-600'}"
+                      : 'border-border bg-bg-primary hover:border-text-dim'}"
                     onclick={() => (selectedProviderId = pid)}
                   >
-                    <div class="text-xs font-bold text-white">{provConfig.name}</div>
-                    <div class="text-[10px] text-zinc-500 mt-0.5 truncate">{provConfig.description}</div>
+                    <div class="text-xs font-bold text-text-primary">
+                      {provConfig.name}
+                    </div>
+                    <div class="text-[10px] text-text-dim mt-0.5 truncate">
+                      {provConfig.description}
+                    </div>
                     {#if selectedProviderId === pid}
-                      <div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent"></div>
+                      <div
+                        class="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent"
+                      ></div>
                     {/if}
                   </button>
                 {/if}
               {/each}
             </div>
           </div>
-        {:else if uniqueProviderIds.length === 1}
-          <input type="hidden" value={uniqueProviderIds[0]} />
         {/if}
 
         <!-- Name -->
@@ -257,7 +290,9 @@
               placeholder="100"
             />
           </div>
-          <p class="mt-1.5 text-[10px] text-text-dim">Number of credits the customer receives per pack.</p>
+          <p class="mt-1.5 text-[10px] text-text-dim">
+            Number of credits the customer receives per pack.
+          </p>
         </div>
 
         <!-- Price + Currency -->
@@ -267,7 +302,9 @@
               for="pack-price"
               class="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2"
             >
-              Price <span class="normal-case text-text-dim">({currency} smallest unit)</span>
+              Price <span class="normal-case text-text-dim"
+                >({currency} smallest unit)</span
+              >
             </label>
             <div class="input-icon-wrapper">
               <input
@@ -287,11 +324,7 @@
             >
               Currency
             </label>
-            <select
-              id="pack-currency"
-              bind:value={currency}
-              class="input"
-            >
+            <select id="pack-currency" bind:value={currency} class="input">
               {#each availableCurrencies as c}
                 <option value={c.code}>{c.code}</option>
               {/each}
@@ -305,19 +338,24 @@
             for="pack-scope"
             class="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2"
           >
-            Credit System <span class="normal-case text-red-400">*</span>
+            Credit System <span class="normal-case text-red-500">*</span>
           </label>
           {#if loadingSystems}
-            <div class="text-xs text-text-dim py-2">Loading credit systems…</div>
+            <div class="text-xs text-text-dim py-2">
+              Loading credit systems…
+            </div>
           {:else if creditSystems.length === 0}
             <div class="bg-amber-500/10 border border-amber-500/20 rounded p-3">
-              <p class="text-[11px] text-amber-400">No credit systems found. Create a credit system first before adding credit packs.</p>
+              <p class="text-[11px] text-amber-600 dark:text-amber-400">
+                No credit systems found. Create a credit system first before
+                adding credit packs.
+              </p>
             </div>
           {:else}
             <select
               id="pack-scope"
               bind:value={creditSystemId}
-              class="w-full bg-bg-primary border border-border rounded px-3 py-2.5 text-sm text-white focus:border-accent focus:outline-none appearance-none"
+              class="w-full bg-bg-primary border border-border rounded px-3 py-2.5 text-sm text-text-primary focus:border-accent focus:outline-none appearance-none"
             >
               <option value="" disabled>Select a credit system…</option>
               {#each creditSystems as cs}
@@ -333,12 +371,19 @@
         <!-- Preview -->
         {#if name && credits > 0}
           <div class="bg-bg-primary border border-border rounded-lg p-4">
-            <p class="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2">Preview</p>
-            <p class="text-sm text-white font-medium">{name}</p>
+            <p
+              class="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2"
+            >
+              Preview
+            </p>
+            <p class="text-sm text-text-primary font-medium">{name}</p>
             <p class="text-xs text-text-dim mt-1">
               {credits} credits for {formatPreview(price, currency)}
               {#if creditSystemId}
-                <span class="text-amber-400">→ {creditSystems.find(cs => cs.id === creditSystemId)?.name}</span>
+                <span class="text-amber-600 dark:text-amber-400"
+                  >→ {creditSystems.find((cs) => cs.id === creditSystemId)
+                    ?.name}</span
+                >
               {/if}
             </p>
           </div>
@@ -347,23 +392,29 @@
     </div>
 
     <!-- Footer -->
-    <div class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-secondary">
+    <div
+      class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-secondary"
+    >
       <button
-        class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
+        class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
         onclick={close}
       >
         Cancel
       </button>
       <button
-        class="px-6 py-2 bg-accent hover:bg-accent-hover text-black text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
+        class="px-6 py-2 bg-accent hover:bg-accent-hover text-accent-contrast text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
         onclick={handleSubmit}
-        disabled={!name || credits < 1 || !creditSystemId || !selectedProviderId || isCreating}
+        disabled={!name ||
+          credits < 1 ||
+          !creditSystemId ||
+          !selectedProviderId ||
+          isCreating}
       >
         {#if isCreating}
-          <Loader2 size={14} class="animate-spin" />
+          <CircleNotch size={14} class="animate-spin" weight="duotone" />
           Creating...
         {:else}
-          <Check size={14} />
+          <Check size={14} weight="fill" />
           Create Pack
         {/if}
       </button>

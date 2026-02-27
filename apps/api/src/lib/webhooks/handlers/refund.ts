@@ -6,12 +6,16 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
   const { db, organizationId, event, adapter, providerAccount, cache } = ctx;
   const email = event.customer.email?.toLowerCase();
   if (!email) {
-    console.warn(`[WEBHOOK] refund.success without customer email for org=${organizationId}`);
+    console.warn(
+      `[WEBHOOK] refund.success without customer email for org=${organizationId}`,
+    );
     return;
   }
 
   const refundAmount = event.refund?.amount || 0;
-  console.log(`[WEBHOOK] Processing refund for org=${organizationId}, customer=${email}, amount=${refundAmount}, ref=${event.refund?.reference}`);
+  console.log(
+    `[WEBHOOK] Processing refund for org=${organizationId}, customer=${email}, amount=${refundAmount}, ref=${event.refund?.reference}`,
+  );
 
   // 1. Find customer
   const dbCustomer = await db.query.customers.findFirst({
@@ -22,7 +26,9 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
   });
 
   if (!dbCustomer) {
-    console.warn(`[WEBHOOK] Refund: customer ${email} not found in org ${organizationId}`);
+    console.warn(
+      `[WEBHOOK] Refund: customer ${email} not found in org ${organizationId}`,
+    );
     return;
   }
 
@@ -45,16 +51,39 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
   //    Partial refund: refund amount < all plan prices → record it but keep access
   //    NOTE: refundAmount === 0 is treated as full refund — when a provider sends a refund
   //    event without an amount, we assume the entire charge was refunded (conservative default).
-  const isFullRefund = refundAmount === 0 || activeSubs.some(
-    (sub: { plan?: { price: number } | null }) => sub.plan && refundAmount >= sub.plan.price,
-  );
+  //    IMPORTANT: Only compare amounts when currencies match to avoid incorrect comparisons
+  //    (e.g., 10000 kobo NGN != 10000 cents USD)
+  const refundCurrency = event.refund?.currency?.toUpperCase();
+  const isFullRefund =
+    refundAmount === 0 ||
+    activeSubs.some(
+      (sub: { plan?: { price: number; currency?: string | null } | null }) => {
+        if (!sub.plan) return false;
+        // If currency info is available, only match when currencies are the same
+        if (
+          refundCurrency &&
+          sub.plan.currency &&
+          sub.plan.currency.toUpperCase() !== refundCurrency
+        ) {
+          return false;
+        }
+        return refundAmount >= sub.plan.price;
+      },
+    );
 
   if (!isFullRefund) {
     // Partial refund — record on subscription metadata, don't revoke access
-    console.log(`[WEBHOOK] Partial refund (${refundAmount}) for customer ${dbCustomer.id} — recording without revoking access`);
+    console.log(
+      `[WEBHOOK] Partial refund (${refundAmount}) for customer ${dbCustomer.id} — recording without revoking access`,
+    );
     for (const sub of activeSubs) {
-      const existingMeta = typeof sub.metadata === "object" && sub.metadata ? sub.metadata as Record<string, unknown> : {};
-      const refunds = Array.isArray(existingMeta.refunds) ? existingMeta.refunds : [];
+      const existingMeta =
+        typeof sub.metadata === "object" && sub.metadata
+          ? (sub.metadata as Record<string, unknown>)
+          : {};
+      const refunds = Array.isArray(existingMeta.refunds)
+        ? existingMeta.refunds
+        : [];
       refunds.push({
         amount: refundAmount,
         currency: event.refund?.currency,
@@ -72,7 +101,8 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
 
   // 4. Full refund — cancel each subscription (on provider + locally)
   for (const sub of activeSubs) {
-    const subCode = sub.providerSubscriptionCode || sub.paystackSubscriptionCode;
+    const subCode =
+      sub.providerSubscriptionCode || sub.paystackSubscriptionCode;
     if (
       adapter &&
       providerAccount &&
@@ -89,7 +119,10 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
           account: providerAccount,
         });
       } catch (e) {
-        console.warn(`[WEBHOOK] Refund: provider cancel failed for sub ${subCode}:`, e);
+        console.warn(
+          `[WEBHOOK] Refund: provider cancel failed for sub ${subCode}:`,
+          e,
+        );
       }
     }
 
@@ -98,7 +131,9 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
       .set({ status: "refunded", canceledAt: now, updatedAt: now })
       .where(eq(schema.subscriptions.id, sub.id));
 
-    console.log(`[WEBHOOK] Refund: canceled subscription ${sub.id} (plan=${sub.planId})`);
+    console.log(
+      `[WEBHOOK] Refund: canceled subscription ${sub.id} (plan=${sub.planId})`,
+    );
   }
 
   // 5. Revoke all entitlements for this customer
@@ -109,16 +144,37 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
   // 5b. Invalidate cache so /check returns denied immediately
   if (cache) {
     try {
-      await Promise.all([
-        cache.invalidateCustomer(organizationId, email),
-        cache.invalidateSubscriptions(organizationId, dbCustomer.id),
-      ]);
+      const cacheAny = cache as any;
+      const dashboardInvalidate =
+        typeof cacheAny.invalidateDashboardCustomer === "function"
+          ? cacheAny.invalidateDashboardCustomer(dbCustomer.id)
+          : Promise.resolve();
+      if (typeof cacheAny.invalidateCustomerAliases === "function") {
+        await Promise.all([
+          cacheAny.invalidateCustomerAliases(organizationId, {
+            id: dbCustomer.id,
+            email: dbCustomer.email,
+            externalId: dbCustomer.externalId,
+          }),
+          cache.invalidateSubscriptions(organizationId, dbCustomer.id),
+          dashboardInvalidate,
+        ]);
+      } else {
+        await Promise.all([
+          cache.invalidateCustomer(organizationId, dbCustomer.id),
+          cache.invalidateCustomer(organizationId, email),
+          cache.invalidateSubscriptions(organizationId, dbCustomer.id),
+          dashboardInvalidate,
+        ]);
+      }
     } catch (e) {
       console.warn(`[WEBHOOK] Refund: cache invalidation failed:`, e);
     }
   }
 
-  console.log(`[WEBHOOK] Refund: revoked all entitlements for customer ${dbCustomer.id}`);
+  console.log(
+    `[WEBHOOK] Refund: revoked all entitlements for customer ${dbCustomer.id}`,
+  );
 
   // 6. Deduct credits if the original charge added them
   // Providers may stringify metadata values, so coerce with Number()
@@ -138,7 +194,9 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
           updatedAt: now,
         })
         .where(eq(schema.credits.id, existingCredits.id));
-      console.log(`[WEBHOOK] Refund: deducted ${refundCredits} credits (atomic)`);
+      console.log(
+        `[WEBHOOK] Refund: deducted ${refundCredits} credits (atomic)`,
+      );
     }
   }
 }

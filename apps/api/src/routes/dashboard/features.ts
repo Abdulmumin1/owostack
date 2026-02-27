@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
@@ -49,7 +49,14 @@ app.post("/", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { organizationId, name, type, meterType, unit } = parsed.data;
+  const {
+    organizationId: orgIdFromData,
+    name,
+    type,
+    meterType,
+    unit,
+  } = parsed.data;
+  const organizationId = c.get("organizationId") || orgIdFromData;
   const db = c.get("db");
 
   // Generate slug
@@ -80,18 +87,72 @@ app.post("/", async (c) => {
 });
 
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
 
+  const excludeBoolean = c.req.query("excludeBoolean") === "true";
   const db = c.get("db");
+
   const features = await db.query.features.findMany({
-    where: eq(schema.features.organizationId, organizationId),
-    orderBy: (features, { desc }) => [desc(features.createdAt)],
+    where: excludeBoolean
+      ? and(
+          eq(schema.features.organizationId, organizationId),
+          ne(schema.features.type, "boolean"),
+        )
+      : eq(schema.features.organizationId, organizationId),
+    orderBy: (f: any, { desc }: any) => [desc(f.createdAt)],
   });
 
   return c.json({ success: true, data: features });
+});
+
+const updateFeatureSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  unit: z.string().optional(),
+});
+
+app.patch("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const parsed = updateFeatureSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(zodErrorToResponse(parsed.error), 400);
+  }
+
+  const db = c.get("db");
+
+  try {
+    const [feature] = await db
+      .update(schema.features)
+      .set({
+        ...parsed.data,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.features.id, id))
+      .returning();
+
+    if (!feature) {
+      return c.json({ success: false, error: "Feature not found" }, 404);
+    }
+
+    // Invalidate cache
+    if (c.env.CACHE) {
+      const cache = new EntitlementCache(c.env.CACHE);
+      await Promise.all([
+        cache.invalidateFeature(feature.organizationId, feature.id),
+        cache.invalidateFeature(feature.organizationId, feature.slug),
+      ]);
+    }
+
+    return c.json({ success: true, data: feature });
+  } catch (e: any) {
+    console.error("Failed to update feature:", e);
+    return c.json({ success: false, error: e.message }, 500);
+  }
 });
 
 app.delete("/:id", async (c) => {

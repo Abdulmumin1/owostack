@@ -27,14 +27,20 @@ await owo.track({
 
 ## Parameters
 
-| Parameter  | Type     | Required | Description                         |
-| ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | ✅       | Your internal user ID               |
-| `feature`  | `string` | ✅       | Feature key to record usage against |
-| `value`    | `number` | -        | Amount to add (default: 1)          |
-| `entity`   | `string` | -        | Scope usage to an entity (seat/org) |
-| `customerData` | `object` | -    | Auto-create customer if missing     |
-| `metadata` | `object` | -        | Additional event data for auditing  |
+| Parameter      | Type     | Required | Description                         |
+| -------------- | -------- | -------- | ----------------------------------- |
+| `customer`     | `string` | ✅       | Your internal user ID               |
+| `feature`      | `string` | ✅       | Feature key to record usage against |
+| `value`        | `number` | -        | Amount to add (default: 1)          |
+| `entity`       | `string` | -        | Scope to an entity (must exist)     |
+| `customerData` | `object` | -        | Auto-create customer if missing     |
+| `metadata`     | `object` | -        | Additional event data for auditing  |
+
+<Callout type="warning">
+  When using `entity`, the entity must be created with
+  [`addEntity()`](/docs/sdk/entities) first. Tracking a non-existent entity
+  returns `entity_not_found` error.
+</Callout>
 
 ## Response
 
@@ -48,7 +54,12 @@ interface TrackResult {
   balance: number | null; // Remaining balance when applicable
   resetsAt: string | null; // Period reset time
   resetInterval: string | null;
-  details: { message: string; planName?: string; trial?: boolean; trialEndsAt?: string | null };
+  details: {
+    message: string;
+    planName?: string;
+    trial?: boolean;
+    trialEndsAt?: string | null;
+  };
 }
 ```
 

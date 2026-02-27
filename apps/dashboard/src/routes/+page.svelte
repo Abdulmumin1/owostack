@@ -1,424 +1,463 @@
 <script lang="ts">
-  import {  ArrowRight, CreditCard, Users, Zap,  Coins, LockIcon } from "lucide-svelte";
-  import Logo from "$lib/components/ui/Logo.svelte";
-  import { onMount, tick } from "svelte";
+  import { ArrowRight, Buildings, CheckCircle, CircleNotch, Cpu, Eye, EyeSlash, Key, Link, Lock, Plus, X } from "phosphor-svelte";
+  import { organization, apiFetch } from "$lib/auth-client";
+  import { getActiveEnvironment } from "$lib/env";
+  import SidePanel from "$lib/components/ui/SidePanel.svelte";
+  import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
+  import { goto } from "$app/navigation";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
+  import { SUPPORTED_PROVIDERS } from "$lib/providers";
 
-  const phrases: { text: string; icons: typeof CreditCard[] }[] = [
-    { text: "subscriptions", icons: [CreditCard] },
-    { text: "feature gating", icons: [LockIcon] },
-    { text: "usage metering", icons: [Coins] },
-    { text: "team seats", icons: [Users] },
-    { text: "subscriptions + feature gating", icons: [CreditCard, LockIcon] },
-    { text: "usage metering + team seats", icons: [Coins, Users] },
-    { text: "subscriptions + metering + overage", icons: [CreditCard, Coins, Zap] },
-  ];
+  let orgs = $state<any[]>([]);
+  let isLoading = $state(true);
+  let showCreateModal = $state(false);
 
-  let currentIndex = 0;
-  let visible = true;
-  let containerWidth = 0;
-  let innerEl: HTMLSpanElement;
-  let interval: ReturnType<typeof setInterval>;
+  // Organization fields
+  let newOrgName = $state("");
+  let newOrgSlug = $state("");
 
-  async function measureCurrent() {
-    await tick();
-    requestAnimationFrame(() => {
-      if (innerEl) containerWidth = innerEl.scrollWidth;
-    });
+  // Provider fields
+  let selectedProviderId = $state("paystack");
+  let providerCredentials = $state<Record<string, string>>({});
+  let showSecretFields = $state<Record<string, boolean>>({});
+  let enabledProviderIds = $state<string[]>([]);
+
+  let availableProviders = $derived(
+    SUPPORTED_PROVIDERS.filter((p) => enabledProviderIds.includes(p.id))
+  );
+
+  // UI state
+  let isCreating = $state(false);
+  let createError = $state<string | null>(null);
+  let currentStep = $state(1); // 1 = org details, 2 = provider
+
+  let selectedProviderConfig = $derived(
+    availableProviders.find((p) => p.id === selectedProviderId) ||
+    SUPPORTED_PROVIDERS.find((p) => p.id === selectedProviderId)
+  );
+
+  let hasRequiredCredentials = $derived(() => {
+    const config = availableProviders.find((p) => p.id === selectedProviderId);
+    if (!config) return false;
+    return config.fields.some(
+      (f) => !f.optional && providerCredentials[f.key]?.trim()
+    );
+  });
+
+  async function loadOrgs() {
+    isLoading = true;
+    const { data } = await organization.list();
+    orgs = data || [];
+    isLoading = false;
   }
 
-  onMount(() => {
-    measureCurrent();
-    interval = setInterval(async () => {
-      visible = false;
-      const nextIndex = (currentIndex + 1) % phrases.length;
-      setTimeout(async () => {
-        currentIndex = nextIndex;
-        await measureCurrent();
-        visible = true;
-      }, 400);
-    }, 2400);
-    return () => clearInterval(interval);
+  $effect(() => {
+    loadOrgs();
+    loadEnabledProviders();
   });
+
+  async function loadEnabledProviders() {
+    try {
+      const res = await apiFetch(`/api/dashboard/providers/enabled`);
+      if (res.data?.data) {
+        enabledProviderIds = res.data.data;
+        if (enabledProviderIds.length > 0) {
+          selectedProviderId = enabledProviderIds[0];
+        }
+      }
+    } catch (e) {
+      enabledProviderIds = ["paystack"];
+    }
+  }
+
+  function nextStep() {
+    if (!newOrgName || !newOrgSlug) return;
+    currentStep = 2;
+  }
+
+  function prevStep() {
+    currentStep = 1;
+  }
+
+  async function createOrganization(skipProvider = false) {
+    if (!newOrgName || !newOrgSlug) return;
+    if (!skipProvider && !hasRequiredCredentials()) return;
+
+    isCreating = true;
+    createError = null;
+
+    try {
+      // Step 1: Create the organization
+      const { data: orgData, error: orgError } = await organization.create({
+        name: newOrgName,
+        slug: newOrgSlug,
+      });
+
+      if (orgError) throw new Error(orgError.message);
+      if (!orgData?.id) throw new Error("Failed to create organization");
+
+      // Step 2: Connect provider (if not skipped)
+      if (!skipProvider) {
+        const credentials: Record<string, unknown> = {};
+        const config = SUPPORTED_PROVIDERS.find((p) => p.id === selectedProviderId);
+        if (config) {
+          for (const field of config.fields) {
+            const val = providerCredentials[field.key];
+            if (val && val.trim().length > 0) {
+              credentials[field.key] = val.trim();
+            }
+          }
+        }
+
+        const configRes = await apiFetch("/api/dashboard/providers/accounts", {
+          method: "POST",
+          body: JSON.stringify({
+            organizationId: orgData.id,
+            providerId: selectedProviderId,
+            environment: getActiveEnvironment(),
+            credentials,
+          }),
+        });
+
+        if (configRes.error) {
+          console.error("Provider config failed:", configRes.error);
+        }
+      }
+
+      // Success - redirect to the new org
+      closeModal();
+      goto(`/app/${orgData.id}`);
+    } catch (err: any) {
+      createError = err?.message || "Failed to create organization";
+    } finally {
+      isCreating = false;
+    }
+  }
+
+  function closeModal() {
+    showCreateModal = false;
+    newOrgName = "";
+    newOrgSlug = "";
+    selectedProviderId = availableProviders[0]?.id || "paystack";
+    providerCredentials = {};
+    showSecretFields = {};
+    currentStep = 1;
+    createError = null;
+  }
 </script>
 
 <svelte:head>
-  <title>Owostack — Billing Infrastructure for AI SaaS</title>
+  <title>Organizations - Owostack</title>
 </svelte:head>
 
-<div class="min-h-screen bg-bg-primary text-text-primary font-sans selection:bg-accent/30">
-
+<div class="max-w-4xl">
   <!-- Header -->
-  <header class="px-6 py-5">
-    <div class="max-w-4xl mx-auto flex items-center justify-between">
-      <a href="/" class="flex items-center gap-2">
-        <Logo size={24} class="text-accent" />
-        <span class="text-sm font-bold tracking-tight">Owostack</span>
-      </a>
-      <nav class="flex items-center gap-6 text-xs text-text-secondary">
-        <a href="/docs" class="hidden sm:inline hover:text-text-primary transition-colors">Docs</a>
-        <a href="https://github.com/Abdulmumin1/owostack" class="hidden sm:flex items-center gap-1.5 hover:text-text-primary transition-colors">
-          <!-- <Github size={13} /> -->
-          Github
-        </a>
-        <a href="/signup" class="btn btn-primary py-1.5 px-4">get started</a>
-      </nav>
+  <div class="mb-10 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-bold text-text-primary mb-2">Organizations</h1>
+      <p class="text-text-dim text-xs uppercase tracking-widest font-semibold">
+        Manage your teams and projects
+      </p>
     </div>
-  </header>
 
-  <!-- Hero -->
-  <section class="px-6 pt-28 pb-20 md:pt-40 md:pb-28 relative">
-    <div class="max-w-4xl mx-auto">
-      <div class="text-[11px] font-bold text-text-secondary flex gap-2 uppercase tracking-[0.25em] mb-8">
-        <div class="w-4 h-4 bg-[#F26522] flex items-center justify-center rounded-xs"><span class="text-white text-[10px] font-bold font-sans">Y</span></div>
-Not backed by Y Combinator</div>
-      <h1 class="text-4xl md:text-6xl font-bold leading-[1.08] tracking-tight mb-6">
-        Three API calls.<br />
-        <span class="text-text-secondary">That's your entire billing layer.</span>
-      </h1>
-      <div class="text-base md:text-lg text-text-secondary max-w-150 leading-relaxed mb-10">
-        <span>Add </span>
-        <span
-          class="inline-flex overflow-hidden align-bottom transition-[width] duration-300 ease-in-out"
-          style="width: {containerWidth}px; height: 1.6em;"
+    {#if orgs.length > 0}
+      <button class="btn btn-primary" onclick={() => (showCreateModal = true)}>
+        <Plus   size={16}  weight="fill" />
+        New Organization
+      </button>
+    {/if}
+  </div>
+
+  {#if isLoading}
+    <div class="space-y-3">
+      {#each Array(3) as _}
+        <div class="bg-bg-card border border-border p-5 shadow-sm">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+              <Skeleton class="w-10 h-10 rounded" />
+              <div class="space-y-2">
+                <Skeleton class="h-4 w-32" />
+                <Skeleton class="h-3 w-24" />
+              </div>
+            </div>
+            <div class="flex items-center gap-4">
+              <Skeleton class="h-3 w-32" />
+              <Skeleton class="w-8 h-8" />
+            </div>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {:else if orgs.length > 0}
+    <!-- Organizations List -->
+    <div class="space-y-3">
+      {#each orgs as org (org.id)}
+        <a
+          href="/{org.slug}"
+          class="group block bg-bg-card border border-border hover:border-text-dim transition-all p-5 shadow-sm"
         >
-          <span
-            bind:this={innerEl}
-            class="inline-flex items-center gap-1.5 transition-all duration-300 ease-in-out text-text-primary font-medium whitespace-nowrap"
-            class:translate-y-0={visible}
-            class:opacity-100={visible}
-            class:translate-y-3={!visible}
-            class:opacity-0={!visible}
-          >
-            {#each phrases[currentIndex].icons as Icon}
-              <svelte:component this={Icon} size={18} class="text-accent shrink-0" />
-            {/each}
-            {phrases[currentIndex].text}
-          </span>
-        </span>
-        <span> to your app.</span>
-        <br />
-        <span>Provider-agnostic.</span>
-      </div>
-      <div class="flex flex-wrap items-center gap-5">
-        <a href="/signup" class="btn btn-primary py-2.5 px-6 text-xs">Get Started</a>
-        <a href="{import.meta.env.VITE_DOCS_URL}" class="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors group">
-          Read the docs
-          <ArrowRight size={14} class="group-hover:translate-x-0.5 transition-transform" />
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+              <div
+                class="w-10 h-10 flex items-center justify-center bg-info-bg text-info"
+              >
+                <Buildings   size={18}  weight="duotone" />
+              </div>
+              <div>
+                <h3 class="font-bold text-text-primary text-sm mb-0.5">
+                  {org.name}
+                </h3>
+                <p class="text-text-dim text-xs font-mono">{org.slug}</p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-4">
+              <span class="text-xs text-text-dim">
+                Created {new Date(org.createdAt).toLocaleDateString()}
+              </span>
+              <div
+                class="w-8 h-8 flex items-center justify-center border border-border group-hover:border-text-dim group-hover:text-text-primary text-text-dim transition-colors"
+              >
+                <ArrowRight   size={14}  weight="fill" />
+              </div>
+            </div>
+          </div>
         </a>
-      </div>
+      {/each}
     </div>
-  </section>
-
-  <!-- Code -->
-  <section class="px-6 pb-28 md:pb-36">
-    <div class="max-w-4xl mx-auto">
-      <div class="border border-border/40 overflow-hidden bg-bg-secondary/40">
-        <div class="flex items-center px-5 py-3 border-b border-border/40">
-          <span class="text-[11px] font-mono text-text-secondary">billing.ts</span>
-        </div>
-        <div class="p-6 md:p-8 font-mono text-[13px] md:text-sm leading-[1.8] overflow-x-auto">
-          <pre class="text-text-secondary"><span class="text-text-secondary italic">// Subscribe a customer to a plan</span>
-<span class="text-accent font-medium">await</span> owo.<span class="text-white">attach</span>(&#123;
-  customer: <span class="text-amber-400">"user@acme.com"</span>,
-  product:  <span class="text-amber-400">"pro"</span>,
-&#125;);
-
-<span class="text-text-secondary italic">// Check if they can use a feature</span>
-<span class="text-accent font-medium">const</span> &#123; allowed &#125; = <span class="text-accent font-medium">await</span> owo.<span class="text-white">check</span>(&#123;
-  customer: <span class="text-amber-400">"user@acme.com"</span>,
-  feature:  <span class="text-amber-400">"gpu-inference"</span>,
-&#125;);
-
-<span class="text-text-secondary italic">// Record usage</span>
-<span class="text-accent font-medium">await</span> owo.<span class="text-white">track</span>(&#123;
-  customer: <span class="text-amber-400">"user@acme.com"</span>,
-  feature:  <span class="text-amber-400">"gpu-inference"</span>,
-&#125;);</pre>
-        </div>
+  {:else}
+    <!-- Empty State -->
+    <div
+      class="border border-border border-dashed p-12 flex flex-col items-center justify-center text-center"
+    >
+      <div class="w-12 h-12 bg-info-bg text-info flex items-center justify-center mb-4">
+        <Buildings size={24} weight="duotone" />
       </div>
+      <h3 class="text-text-primary font-bold mb-2">No organizations yet</h3>
+      <p class="text-text-dim text-sm mb-6 max-w-xs">
+        Create your first organization and connect a payment provider to get
+        started.
+      </p>
+
+      <button class="btn btn-primary" onclick={() => (showCreateModal = true)}>
+        <Plus   size={16}  weight="fill" />
+        Create Organization
+      </button>
     </div>
-  </section>
-
-  <!-- Before / After -->
-  <section class="px-6 pb-28 md:pb-36">
-    <div class="max-w-4xl mx-auto">
-      <p class="text-[11px] font-bold text-text-secondary uppercase tracking-[0.25em] mb-6">What you're replacing</p>
-      <div class="grid md:grid-cols-2 gap-px bg-border/30">
-
-        <!-- Before -->
-        <div class="bg-bg-primary">
-          <div class="px-5 py-3 border-b border-border/30">
-            <span class="text-[11px] font-mono text-red-400/70">checkout.ts — without owostack</span>
-          </div>
-          <div class="p-6 font-mono text-[11px] md:text-xs leading-[1.9] overflow-x-auto text-text-secondary max-h-[600px] overflow-y-auto">
-<pre><span class="text-text-secondary italic">// Subscribe a customer</span>
-<span class="text-red-400/60">const</span> txn = <span class="text-red-400/60">await</span> paystack.transaction
-  .initialize(&#123;
-  email: customer.email,
-  amount: plan.price * 100,
-  plan: plan.paystackPlanCode,
-  metadata: &#123; customerId: customer.id &#125;,
-&#125;);
-
-<span class="text-text-secondary italic">// Handle upgrade proration</span>
-<span class="text-red-400/60">const</span> sub = <span class="text-red-400/60">await</span> paystack.subscription.fetch(code);
-<span class="text-red-400/60">const</span> remaining = daysUntil(sub.next_payment_date);
-<span class="text-red-400/60">const</span> credit = (sub.amount / 30) * remaining;
-<span class="text-red-400/60">const</span> prorated = newPlan.price - credit;
-
-<span class="text-text-secondary italic">// Gate a feature</span>
-<span class="text-red-400/60">const</span> sub = <span class="text-red-400/60">await</span> db.subscriptions
-  .findFirst(&#123;
-  where: &#123; 
-    customerId, 
-    status: <span class="text-amber-400/50">"active"</span> 
-  &#125;
-&#125;);
-<span class="text-red-400/60">const</span> plan = <span class="text-red-400/60">await</span> db.plans
-  .findFirst(&#123;
-  where: &#123; id: sub.planId &#125;,
-  include: &#123; features: true &#125;,
-&#125;);
-<span class="text-red-400/60">const</span> allowed = plan.features
-  .some(
-  f => f.slug === <span class="text-amber-400/50">"gpu-inference"</span>
-);
-
-<span class="text-text-secondary italic">// Track usage</span>
-<span class="text-red-400/60">const</span> usage = <span class="text-red-400/60">await</span> db.usageRecords
-  .findFirst(&#123;
-  where: &#123; customerId, featureId, period &#125;
-&#125;);
-<span class="text-red-400/60">if</span> (usage.consumed >= usage.limit) &#123;
-  <span class="text-red-400/60">throw new</span> Error(<span class="text-amber-400/50">"Limit exceeded"</span>);
-&#125;
-<span class="text-red-400/60">await</span> db.usageRecords.update(&#123;
-  where: &#123; id: usage.id &#125;,
-  data: &#123; 
-    consumed: usage.consumed + 1 
-  &#125;,
-&#125;);
-
-<span class="text-text-secondary italic">// ─── webhooks.ts ───────────────────────</span>
-
-<span class="text-text-secondary italic">// Verify webhook signature</span>
-<span class="text-red-400/60">const</span> hash = crypto
-  .createHmac(<span class="text-amber-400/50">"sha512"</span>, secret)
-  .update(JSON.stringify(req.body))
-  .digest(<span class="text-amber-400/50">"hex"</span>);
-<span class="text-red-400/60">if</span> (hash !== req.headers[
-  <span class="text-amber-400/50">"x-paystack-signature"</span>
-]) &#123;
-  <span class="text-red-400/60">throw new</span> Error(<span class="text-amber-400/50">"Invalid signature"</span>);
-&#125;
-
-<span class="text-text-secondary italic">// Route webhook events</span>
-<span class="text-red-400/60">const</span> event = req.body;
-<span class="text-red-400/60">switch</span> (event.event) &#123;
-  <span class="text-red-400/60">case</span> <span class="text-amber-400/50">"subscription.create"</span>:
-    <span class="text-red-400/60">const</span> customer = <span class="text-red-400/60">await</span> db.customers
-      .upsert(&#123;
-      where: &#123; email: event.data.customer.email &#125;,
-      create: &#123;
-        email: event.data.customer.email,
-        paystackCustomerId: event.data.customer.id,
-        paystackAuthCode: 
-          event.data.authorization
-            .authorization_code,
-      &#125;,
-      update: &#123;
-        paystackAuthCode: 
-          event.data.authorization
-            .authorization_code,
-      &#125;,
-    &#125;);
-    <span class="text-red-400/60">const</span> plan = <span class="text-red-400/60">await</span> db.plans
-      .findFirst(&#123;
-      where: &#123; 
-        paystackPlanCode: 
-          event.data.plan.plan_code 
-      &#125;,
-    &#125;);
-    <span class="text-red-400/60">await</span> db.subscriptions.create(&#123;
-      data: &#123;
-        customerId: customer.id,
-        planId: plan.id,
-        status: <span class="text-amber-400/50">"active"</span>,
-        paystackSubCode: 
-          event.data.subscription_code,
-        currentPeriodStart: <span class="text-red-400/60">new</span> Date(),
-        currentPeriodEnd: 
-          <span class="text-red-400/60">new</span> Date(
-            event.data.next_payment_date
-          ),
-      &#125;,
-    &#125;);
-    <span class="text-red-400/60">break</span>;
-
-  <span class="text-red-400/60">case</span> <span class="text-amber-400/50">"subscription.not_renew"</span>:
-    <span class="text-red-400/60">await</span> db.subscriptions.update(&#123;
-      where: &#123; 
-        paystackSubCode: 
-          event.data.subscription_code 
-      &#125;,
-      data: &#123;
-        status: <span class="text-amber-400/50">"pending_cancel"</span>,
-        cancelAt: 
-          <span class="text-red-400/60">new</span> Date(
-            event.data.next_payment_date
-          ),
-      &#125;,
-    &#125;);
-    <span class="text-red-400/60">break</span>;
-
-  <span class="text-red-400/60">case</span> <span class="text-amber-400/50">"charge.success"</span>:
-    <span class="text-red-400/60">const</span> meta = event.data.metadata;
-    <span class="text-red-400/60">if</span> (meta?.type === <span class="text-amber-400/50">"credit_purchase"</span>) &#123;
-      <span class="text-red-400/60">const</span> credits = parseInt(meta.credits);
-      <span class="text-red-400/60">await</span> db.$executeRaw`
-        UPDATE customers
-        SET credit_balance = 
-          credit_balance + $&#123;credits&#125;
-        WHERE id = $&#123;meta.customerId&#125;
-      `;
-    &#125; <span class="text-red-400/60">else</span> &#123;
-      <span class="text-red-400/60">await</span> db.payments.create(&#123;
-        data: &#123;
-          customerId: meta.customerId,
-          amount: event.data.amount,
-          reference: event.data.reference,
-          status: <span class="text-amber-400/50">"success"</span>,
-        &#125;,
-      &#125;);
-    &#125;
-    <span class="text-red-400/60">break</span>;
-
-  <span class="text-red-400/60">case</span> <span class="text-amber-400/50">"invoice.payment_failed"</span>:
-    <span class="text-red-400/60">await</span> db.subscriptions.update(&#123;
-      where: &#123; 
-        paystackSubCode: 
-          event.data.subscription_code 
-      &#125;,
-      data: &#123; status: <span class="text-amber-400/50">"past_due"</span> &#125;,
-    &#125;);
-    <span class="text-red-400/60">await</span> sendEmail(&#123;
-      to: event.data.customer.email,
-      template: <span class="text-amber-400/50">"payment_failed"</span>,
-    &#125;);
-    <span class="text-red-400/60">break</span>;
-&#125;
-
-<span class="text-text-secondary italic">// Don't forget to handle: trial expiry, </span>
-<span class="text-text-secondary italic">// plan switches, refunds, disputes, </span>
-<span class="text-text-secondary italic">// card updates, idempotency, </span>
-<span class="text-text-secondary italic">// cache invalidation, race conditions...</span></pre>
-          </div>
-        </div>
-
-        <!-- After -->
-        <div class="bg-bg-secondary/40 hidden md:block">
-          <div class="px-5 py-3 border-b border-border/30">
-            <span class="text-[11px] font-mono text-accent">billing.ts — with owostack</span>
-          </div>
-          <div class="p-6 font-mono text-[11px] md:text-xs leading-[1.9] overflow-x-auto">
-<pre><span class="text-text-secondary italic">// Subscribe (or upgrade/downgrade)</span>
-<span class="text-accent font-medium">await</span> owo.<span class="text-white">attach</span>(&#123;
-  customer: <span class="text-amber-400">"user@acme.com"</span>,
-  product:  <span class="text-amber-400">"pro"</span>,
-&#125;);
-
-<span class="text-text-secondary italic">// Gate a feature</span>
-<span class="text-accent font-medium">const</span> &#123; allowed &#125; = <span class="text-accent font-medium">await</span> owo.<span class="text-white">check</span>(&#123;
-  customer: <span class="text-amber-400">"user@acme.com"</span>,
-  feature:  <span class="text-amber-400">"gpu-inference"</span>,
-&#125;);
-
-<span class="text-text-secondary italic">// Track usage (atomic, no race conditions)</span>
-<span class="text-accent font-medium">await</span> owo.<span class="text-white">track</span>(&#123;
-  customer: <span class="text-amber-400">"user@acme.com"</span>,
-  feature:  <span class="text-amber-400">"gpu-inference"</span>,
-&#125;);
-
-<span class="text-text-secondary italic">// ─── webhooks? ─────────────we don't do that here────</span>
-<span class="text-text-secondary italic">// Signature verification ✓</span>
-<span class="text-text-secondary italic">// Subscription lifecycle ✓</span>
-<span class="text-text-secondary italic">// Payment reconciliation ✓</span>
-<span class="text-text-secondary italic">// Team seats ✓</span>
-<span class="text-text-secondary italic">// Credit card (or no) free trials ✓</span>
-<span class="text-text-secondary italic">// Credit purchases ✓</span>
-<span class="text-text-secondary italic">// Add-on plans ✓</span>
-<span class="text-text-secondary italic">// Overages ✓</span>
-<span class="text-accent italic font-medium">// All handled.</span></pre>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
-  <!-- Value props — single row, text only -->
-  <section class="px-6 pb-28 md:pb-36">
-    <div class="max-w-4xl mx-auto grid sm:grid-cols-3 gap-12 md:gap-16">
-      <div>
-        <h3 class="text-sm font-bold text-text-primary mb-3">Provider-agnostic</h3>
-        <p class="text-sm text-text-secondary leading-relaxed">
-          Write billing logic once. Use Multiple providers <span class="shimmer-paystack">Paystack</span>, <span class="shimmer-stripe">Stripe</span>, <span class="shimmer-dodo">Dodo</span>, or any other for different regions.
-        </p>
-      </div>
-      <div>
-        <h3 class="text-sm font-bold text-text-primary mb-3">Real-time metering</h3>
-        <p class="text-sm text-text-secondary leading-relaxed">
-          Track usage with atomic precision via <span class="text-white font-medium">Durable Objects</span>. Credits, quotas, and overage — zero race conditions.
-        </p>
-      </div>
-      <div>
-        <h3 class="text-sm font-bold text-text-primary mb-3">Feature gating</h3>
-        <p class="text-sm text-text-secondary leading-relaxed">
-          Entitlement-based access control. Ask if the customer <em>has the feature</em>, not what plan they're on.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Footer -->
-  <footer class="px-6 py-8 border-t border-border/30">
-    <div class="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
-      <span class="text-xs text-text-secondary">A product of The Thirdpen Company</span>
-      <div class="flex items-center gap-6 text-xs text-text-secondary">
-        <a href="/docs" class="hover:text-text-primary transition-colors">Docs</a>
-        <a href="https://github.com/Abdulmumin1/owostack" class="hover:text-text-primary transition-colors">GitHub</a>
-      </div>
-    </div>
-  </footer>
+  {/if}
 </div>
 
-<style>
-  .shimmer-paystack,
-  .shimmer-stripe,
-  .shimmer-dodo {
-    background-size: 200% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: shimmer 3s ease-in-out infinite;
-    font-weight: 600;
-  }
+<!-- Create Organization SidePanel -->
+<SidePanel open={showCreateModal} title="Create Organization" onclose={closeModal} width="max-w-md">
+  <div class="text-sm">
+    <div class="p-5 space-y-6">
+      <!-- Step Indicator -->
+      <div class="flex items-center gap-4 mb-2">
+        <div class="flex items-center gap-2">
+          <div
+            class="w-6 h-6 flex items-center justify-center text-[10px] font-bold {currentStep >= 1
+              ? 'bg-accent text-black'
+              : 'bg-bg-secondary text-text-dim'}"
+          >
+            {currentStep > 1 ? "✓" : "1"}
+          </div>
+          <span
+            class="text-[10px] font-bold uppercase tracking-widest {currentStep >= 1
+              ? 'text-text-primary'
+              : 'text-text-dim'}">Details</span
+          >
+        </div>
+        <div class="flex-1 h-px bg-border"></div>
+        <div class="flex items-center gap-2">
+          <div
+            class="w-6 h-6 flex items-center justify-center text-[10px] font-bold {currentStep >= 2
+              ? 'bg-accent text-black'
+              : 'bg-bg-secondary text-text-dim'}"
+          >
+            2
+          </div>
+          <span
+            class="text-[10px] font-bold uppercase tracking-widest {currentStep >= 2
+              ? 'text-text-primary'
+              : 'text-text-dim'}">Provider</span
+          >
+        </div>
+      </div>
 
-  .shimmer-paystack {
-    background-image: linear-gradient(120deg, #00C3F7 0%, #ffffff 40%, #00C3F7 50%, #ffffff 60%, #00C3F7 100%);
-  }
+      {#if createError}
+        <div class="mb-4 p-3 bg-error-bg border border-error text-error text-xs uppercase tracking-tight">
+          {createError}
+        </div>
+      {/if}
 
-  .shimmer-stripe {
-    background-image: linear-gradient(120deg, #635BFF 0%, #ffffff 40%, #635BFF 50%, #ffffff 60%, #635BFF 100%);
-  }
+      {#if currentStep === 1}
+        <!-- Step 1: Organization Details -->
+        <div class="space-y-5">
+          <div>
+            <label
+              for="orgName"
+              class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2"
+              >Organization Name</label
+            >
+            <div class="input-icon-wrapper">
+              <Buildings   size={14} class="input-icon-left"  weight="duotone" />
+              <input
+                type="text"
+                id="orgName"
+                bind:value={newOrgName}
+                placeholder="e.g. Acme Corp"
+                class="input input-has-icon-left font-bold"
+              />
+            </div>
+          </div>
 
-  .shimmer-dodo {
-    background-image: linear-gradient(120deg, #3af900 0%, #ffffff 40%, #4dff5c 50%, #ffffff 60%, #84ff62 100%);
-  }
+          <div>
+            <label
+              for="orgSlug"
+              class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2"
+              >Slug</label
+            >
+            <div class="input-icon-wrapper">
+              <Link   size={14} class="input-icon-left"  weight="duotone" />
+              <input
+                type="text"
+                id="orgSlug"
+                bind:value={newOrgSlug}
+                placeholder="e.g. acme-corp"
+                class="input input-has-icon-left font-bold"
+              />
+            </div>
+          </div>
+        </div>
+      {:else}
+        <!-- Step 2: Connect Payment Provider -->
+        <div class="space-y-5">
+          <!-- Provider Selection -->
+          <div>
+            <label class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3">
+              Select Provider
+            </label>
+            <div class="space-y-2">
+              {#each availableProviders as provider}
+                <button
+                  class="w-full p-3 border text-left transition-all flex items-center gap-3 {selectedProviderId === provider.id
+                    ? 'border-accent bg-accent-light'
+                    : 'border-border bg-bg-secondary hover:border-border-strong'}"
+                  onclick={() => {
+                    selectedProviderId = provider.id;
+                    providerCredentials = {};
+                  }}
+                >
+                  <Cpu   size={16} class="text-text-dim shrink-0"  weight="duotone" />
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-bold text-text-primary">{provider.name}</span>
+                      <ProviderBadge providerId={provider.id} size="xs" />
+                    </div>
+                    <p class="text-[9px] text-text-dim mt-0.5">{provider.description}</p>
+                  </div>
+                </button>
+              {/each}
+            </div>
+          </div>
 
-  @keyframes shimmer {
-    0% { background-position: 100% 50%; }
-    50% { background-position: 0% 50%; }
-    100% { background-position: 100% 50%; }
-  }
-</style>
+          <!-- Dynamic Credential Fields -->
+          {#if selectedProviderConfig}
+            {#each selectedProviderConfig.fields as field}
+              <div>
+                <label
+                  for={field.key}
+                  class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2"
+                  >{field.label} {#if field.optional}<span class="text-text-muted font-normal">(Optional)</span>{:else}<span class="text-error">*</span>{/if}</label
+                >
+                <div class="input-icon-wrapper">
+                  <Lock size={14} class="input-icon-left text-text-muted" weight="duotone" />
+                  <input
+                    type={field.secret && !showSecretFields[field.key] ? "password" : "text"}
+                    id={field.key}
+                    bind:value={providerCredentials[field.key]}
+                    placeholder={field.placeholder}
+                    class="input input-has-icon-left pr-10 font-mono text-xs"
+                  />
+                  {#if field.secret}
+                    <button
+                      type="button"
+                      class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary dark:hover:text-text-primary transition-colors"
+                      onclick={() => (showSecretFields[field.key] = !showSecretFields[field.key])}
+                    >
+                      {#if showSecretFields[field.key]}
+                        <EyeSlash   size={16}  weight="duotone" />
+                      {:else}
+                        <Eye   size={16}  weight="duotone" />
+                      {/if}
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+
+            {#if selectedProviderConfig.docsUrl}
+              <p class="text-[10px] text-text-muted uppercase tracking-tight">
+                Find your keys at <a
+                  href={selectedProviderConfig.docsUrl}
+                  target="_blank"
+                  class="text-accent hover:underline font-bold"
+                  >{selectedProviderConfig.name} Developer Gear</a
+                >
+              </p>
+            {/if}
+          {/if}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Footer -->
+    <div class="p-5 border-t border-border flex items-center justify-between sticky bottom-0 bg-bg-card">
+      {#if currentStep === 1}
+        <button
+          class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
+          onclick={closeModal}
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-primary px-6"
+          onclick={nextStep}
+          disabled={!newOrgName || !newOrgSlug}
+        >
+          Continue
+          <ArrowRight   size={14}  weight="fill" />
+        </button>
+      {:else}
+        <div class="flex items-center gap-2">
+          <button
+            class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
+            onclick={prevStep}
+          >
+            Back
+          </button>
+          <button
+            class="px-4 py-2 text-xs font-bold text-text-muted hover:text-text-dim transition-colors uppercase tracking-widest"
+            onclick={() => createOrganization(true)}
+            disabled={isCreating}
+          >
+            Skip
+          </button>
+        </div>
+        <button
+          class="btn btn-primary px-6"
+          onclick={() => createOrganization(false)}
+          disabled={!hasRequiredCredentials() || isCreating}
+        >
+          {#if isCreating}
+            <CircleNotch   size={14} class="animate-spin"  weight="duotone" />
+            Creating...
+          {:else}
+            <CheckCircle   size={14}  weight="fill" />
+            Create & Connect
+          {/if}
+        </button>
+      {/if}
+    </div>
+  </div>
+</SidePanel>

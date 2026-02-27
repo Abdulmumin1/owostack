@@ -18,7 +18,11 @@ export async function handleChargeFailed(ctx: WebhookContext): Promise<void> {
 
   await db
     .update(schema.subscriptions)
-    .set({ status: "past_due", updatedAt: Date.now() })
+    .set({
+      status: "past_due",
+      providerId: event.provider,
+      updatedAt: Date.now(),
+    })
     .where(eq(schema.subscriptions.id, sub.id));
 
   if (cache) {

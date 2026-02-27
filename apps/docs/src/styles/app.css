@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
+@import "fumadocs-openapi/css/preset.css";
+
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap");
 
 /* =============================================================================
    Owostack Design System - Docs Theme
@@ -8,106 +11,170 @@
 ============================================================================= */
 
 @theme {
-  --color-bg-primary: #161715;
-  --color-bg-secondary: #10120f;
-  --color-accent: #65a30d;
-  --color-border: #262626;
+  /* Radius — subtle, not round */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
 
-  --radius-xs: 0px;
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
-  --radius-2xl: 0px;
-  --radius-3xl: 0px;
-  --radius-full: 0px;
-
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  /* Typography */
+  --font-display: "Outfit", system-ui, sans-serif;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", monospace;
 }
 
 /* =============================================================================
-   Fumadocs Variables
+   Fumadocs Variables Mapping
 ============================================================================= */
 
-:root,
-.dark {
-  --color-fd-background: #161715;
-  --color-fd-foreground: #ffffff;
-  --color-fd-primary: #65a30d;
-  --color-fd-primary-foreground: #161715;
-  --color-fd-secondary: #10120f;
-  --color-fd-secondary-foreground: #e5e5e5;
-  --color-fd-border: #262626;
-  --color-fd-muted: #1a1c19;
-  --color-fd-muted-foreground: #a3a3a3;
-  --color-fd-card: #10120f;
-  --color-fd-card-foreground: #ffffff;
-  --color-fd-popover: #10120f;
-  --color-fd-popover-foreground: #e5e5e5;
-  --color-fd-accent: rgba(101, 163, 13, 0.15);
-  --color-fd-accent-foreground: #65a30d;
-  --color-fd-ring: #65a30d;
+:root {
+  /* Map Dashboard Light Colors to Fumadocs Theme */
+  --color-fd-background: #fafaf5;
+  --color-fd-foreground: #1a1a1a;
+  --color-fd-primary: #e8a855;
+  --color-fd-primary-foreground: #1a1a1a;
+  --color-fd-secondary: #f3f0e8;
+  --color-fd-secondary-foreground: #3d3d3d;
+  --color-fd-border: #e0d9cc;
+  --color-fd-muted: #ede9df;
+  --color-fd-muted-foreground: #6b6b6b;
+  --color-fd-card: #ffffff;
+  --color-fd-card-foreground: #1a1a1a;
+  --color-fd-popover: #fffef9;
+  --color-fd-popover-foreground: #1a1a1a;
+  --color-fd-accent: #fdf3e0;
+  --color-fd-accent-foreground: #d4891a;
+  --color-fd-ring: #c07515;
+
+  /* Dashboard Extra Color Tracking for Overrides */
+  --color-border-light: #ede9df;
+  --color-border-strong: #c8c0b0;
+  --color-text-dim: #8b8b8b;
+}
+
+:root.dark {
+  --color-fd-background: #131313;
+  --color-fd-foreground: #f5f5f5;
+  --color-fd-primary: #f0b860;
+  --color-fd-primary-foreground: #1a1a1a;
+  --color-fd-secondary: #1a1a1a;
+  --color-fd-secondary-foreground: #b5b5b5;
+  --color-fd-border: #333333;
+  --color-fd-muted: #242424;
+  --color-fd-muted-foreground: #808080;
+  --color-fd-card: #1e1e1e;
+  --color-fd-card-foreground: #f5f5f5;
+  --color-fd-popover: #222222;
+  --color-fd-popover-foreground: #f5f5f5;
+  --color-fd-accent: #3d3020;
+  --color-fd-accent-foreground: #f5c878;
+  --color-fd-ring: #c07515;
+
+  --color-border-light: #2a2a2a;
+  --color-border-strong: #444444;
+  --color-text-dim: #5a5a5a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --color-fd-background: #131313;
+    --color-fd-foreground: #f5f5f5;
+    --color-fd-primary: #f0b860;
+    --color-fd-primary-foreground: #1a1a1a;
+    --color-fd-secondary: #1a1a1a;
+    --color-fd-secondary-foreground: #b5b5b5;
+    --color-fd-border: #333333;
+    --color-fd-muted: #242424;
+    --color-fd-muted-foreground: #808080;
+    --color-fd-card: #1e1e1e;
+    --color-fd-card-foreground: #f5f5f5;
+    --color-fd-popover: #222222;
+    --color-fd-popover-foreground: #f5f5f5;
+    --color-fd-accent: #3d3020;
+    --color-fd-accent-foreground: #f5c878;
+    --color-fd-ring: #c07515;
+
+    --color-border-light: #2a2a2a;
+    --color-border-strong: #444444;
+    --color-text-dim: #5a5a5a;
+  }
 }
 
 /* =============================================================================
-   Global Reset
+   Global & Typography
 ============================================================================= */
 
-* {
-  border-radius: 0 !important;
+html,
+body,
+#root,
+.fd-docs-body,
+[data-fd-page],
+[data-fd-layout] {
+  font-family: var(--font-sans) !important;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display) !important;
 }
 
 html,
 body {
-  background-color: #161715 !important;
-  color: #ffffff !important;
-  font-family: var(--font-sans);
+  background-color: var(--color-fd-background) !important;
+  color: var(--color-fd-foreground) !important;
   height: auto !important;
 }
 
-/* =============================================================================
-   Layout & Sticky Sidebar
-============================================================================= */
-
 [data-fd-layout="docs"] {
-  background-color: #161715 !important;
+  background-color: var(--color-fd-background) !important;
   overflow: visible !important;
 }
 
-/* Sidebar Styling - Locked to the left */
+main,
+article,
+.fd-docs-body,
+[data-fd-page] {
+  background-color: var(--color-fd-background) !important;
+}
+
+/* =============================================================================
+   Layout & Component Overrides
+============================================================================= */
+
+/* Sidebar */
 .fd-sidebar {
-  background-color: #10120f !important;
-  border-right: 1px solid #262626 !important;
+  background-color: var(--color-fd-background) !important;
+  border-right: 1px solid var(--color-fd-border) !important;
   position: sticky !important;
-  top: 0 !important;
-  height: 100vh !important;
+  top: 2.5rem !important; /* height of header (h-10 = 40px) */
+  height: calc(100vh - 2.5rem) !important;
   z-index: 30;
   mask-image: none !important;
   -webkit-mask-image: none !important;
 }
 
-/* Main content areas */
-main,
-article,
-.fd-docs-body,
-[data-fd-page] {
-  background-color: #161715 !important;
+[data-fd-layout="docs"] {
+  padding-top: 0 !important;
 }
 
-/* =============================================================================
-   Component Overrides
-============================================================================= */
-
-/* Sidebar Items — accent handled by --color-fd-primary */
+.fd-toc {
+  top: 2.5rem !important;
+  height: calc(100vh - 2.5rem) !important;
+}
 
 /* TOC */
 .fd-toc {
-  border-left: 1px solid #262626 !important;
+  border-left: 1px solid var(--color-fd-border) !important;
 }
 
 .fd-toc-link[data-active="true"] {
-  color: #65a30d !important;
+  color: var(--color-fd-primary) !important;
 }
 
 /* Code Blocks */
@@ -116,71 +183,108 @@ code {
   font-family: var(--font-mono) !important;
 }
 
-pre {
-  border: 1px solid #262626 !important;
-}
-
 .fd-codeblock {
-  /* border: 1px solid #262626 !important; */
+  border: 1px solid var(--color-fd-border) !important;
+  border-radius: var(--radius-md) !important;
 }
 
-/* Let Shiki control token + background colors */
-pre.shiki,
 .fd-codeblock pre {
-  /* padding: 1rem !important; */
+  border: none !important;
 }
 
 /* Inline code */
 :not(pre) > code {
-  background-color: #1a1c19 !important;
-  border: 1px solid #262626 !important;
+  background-color: var(--color-fd-muted) !important;
+  border: 1px solid var(--color-fd-border) !important;
+  border-radius: var(--radius-sm) !important;
   padding: 0.15rem 0.35rem !important;
   font-size: 0.875em !important;
-  /* color: #a3e635 !important; */
 }
 
 /* Tables */
 .fd-table {
-  border: 1px solid #262626 !important;
+  border: 1px solid var(--color-fd-border) !important;
+  border-radius: var(--radius-md) !important;
 }
 
 .fd-table th {
-  background-color: #10120f !important;
-  border-bottom: 1px solid #262626 !important;
-  color: #737373 !important;
+  background-color: var(--color-fd-secondary) !important;
+  border-bottom: 1px solid var(--color-fd-border) !important;
+  color: var(--color-fd-muted-foreground) !important;
 }
 
 .fd-table td {
-  border-bottom: 1px solid rgba(38, 38, 38, 0.5) !important;
+  border-bottom: 1px solid var(--color-border-light) !important;
 }
 
-/* Cards */
+/* Cards (Matches Dashboard style) */
 .fd-card {
-  background-color: #10120f !important;
-  border: 1px solid #262626 !important;
+  background-color: var(--color-fd-card) !important;
+  border: 1px solid var(--color-fd-border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: 3px 3px 0 0 var(--color-fd-border) !important;
 }
 
-/* Nav */
-.fd-nav {
-  background-color: #161715 !important;
-  border-bottom: 1px solid #262626 !important;
+@media screen and (min-width: 1024px) {
+  .fd-nav {
+    display: none !important;
+  }
+
+  [data-fd-layout="docs"] {
+    padding-top: 0 !important;
+  }
+
+  .fd-sidebar,
+  .fd-toc {
+    top: 0 !important;
+    height: 100vh !important;
+  }
+
+  .fd-sidebar-title {
+    display: none !important;
+  }
+}
+
+/* On mobile, we keep the default nav for search/burger, but hide the pill? */
+/* Or show the pill at the bottom? */
+@media screen and (max-width: 1023px) {
+  .fixed.top-6 {
+    top: auto !important;
+    bottom: 1.5rem !important;
+  }
 }
 
 /* Search */
 .fd-search {
-  background-color: #10120f !important;
-  border: 1px solid #333333 !important;
+  background-color: var(--color-fd-card) !important;
+  border: 1px solid var(--color-border-strong) !important;
+  border-radius: var(--radius-sm) !important;
 }
 
-/* Scrollbar */
+/* Callouts/Alerts */
+.fd-callout {
+  border: 1px solid var(--color-fd-border) !important;
+  border-radius: var(--radius-md) !important;
+}
+
+/* =============================================================================
+   Scrollbar Match
+============================================================================= */
+
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background-color: #161715;
+  background-color: var(--color-fd-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #262626;
+  background-color: var(--color-border-strong);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-dim);
 }

@@ -7,7 +7,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // Get active environment
 app.get("/config/active-environment", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ success: false, error: "Organization ID required" }, 400);
   }
@@ -82,7 +82,7 @@ app.post("/switch-environment", async (c) => {
 
 // Get org default currency
 app.get("/config/default-currency", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ success: false, error: "Organization ID required" }, 400);
   }

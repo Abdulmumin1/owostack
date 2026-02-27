@@ -1,4 +1,10 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  sqliteTable,
+  text,
+  integer,
+  index,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import { organizations } from "./organizations";
 
 /**
@@ -335,6 +341,36 @@ export const usageRecords = sqliteTable(
   ],
 );
 
+export const usageDailySummaries = sqliteTable(
+  "usage_daily_summaries",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    featureId: text("feature_id")
+      .notNull()
+      .references(() => features.id, { onDelete: "cascade" }),
+    date: text("date").notNull(), // "YYYY-MM-DD"
+    amount: integer("amount").notNull().default(0),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("usage_summary_org_idx").on(table.organizationId),
+    index("usage_summary_customer_idx").on(table.customerId),
+    uniqueIndex("usage_summary_unique_idx").on(
+      table.customerId,
+      table.featureId,
+      table.date,
+    ),
+  ],
+);
+
 export const credits = sqliteTable(
   "credits",
   {
@@ -371,13 +407,17 @@ export const creditPacks = sqliteTable(
     credits: integer("credits").notNull(), // Number of credits in this pack
     price: integer("price").notNull(), // Price in smallest currency unit (kobo/cents)
     currency: text("currency").notNull().default("NGN"),
-    creditSystemId: text("credit_system_id")
-      .references(() => creditSystems.id, { onDelete: "set null" }), // null = global pool, set = scoped to this credit system
+    creditSystemId: text("credit_system_id").references(
+      () => creditSystems.id,
+      { onDelete: "set null" },
+    ), // null = global pool, set = scoped to this credit system
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     providerProductId: text("provider_product_id"), // e.g. Stripe prod_xxx
-    providerPriceId: text("provider_price_id"),     // e.g. Stripe price_xxx
-    providerId: text("provider_id"),                 // Which provider the product is synced to
-    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+    providerPriceId: text("provider_price_id"), // e.g. Stripe price_xxx
+    providerId: text("provider_id"), // Which provider the product is synced to
+    metadata: text("metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
     createdAt: integer("created_at")
       .notNull()
       .$defaultFn(() => Date.now()),
@@ -398,17 +438,20 @@ export const creditPurchases = sqliteTable(
     customerId: text("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
-    creditPackId: text("credit_pack_id")
-      .references(() => creditPacks.id),
-    creditSystemId: text("credit_system_id")
-      .references(() => creditSystems.id, { onDelete: "set null" }), // null = global, set = scoped
+    creditPackId: text("credit_pack_id").references(() => creditPacks.id),
+    creditSystemId: text("credit_system_id").references(
+      () => creditSystems.id,
+      { onDelete: "set null" },
+    ), // null = global, set = scoped
     credits: integer("credits").notNull(), // Total credits added (pack.credits * quantity)
     quantity: integer("quantity").notNull().default(1), // Number of packs purchased
     price: integer("price").notNull().default(0), // Total amount paid (pack.price * quantity)
     currency: text("currency").notNull().default("NGN"),
     paymentReference: text("payment_reference"),
     providerId: text("provider_id"),
-    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+    metadata: text("metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
     createdAt: integer("created_at")
       .notNull()
       .$defaultFn(() => Date.now()),
@@ -437,7 +480,10 @@ export const creditSystemBalances = sqliteTable(
   },
   (table) => [
     index("csb_customer_idx").on(table.customerId),
-    uniqueIndex("csb_customer_system_idx").on(table.customerId, table.creditSystemId),
+    uniqueIndex("csb_customer_system_idx").on(
+      table.customerId,
+      table.creditSystemId,
+    ),
   ],
 );
 
@@ -654,7 +700,9 @@ export const invoices = sqliteTable(
 
     // Metadata
     description: text("description"),
-    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+    metadata: text("metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
 
     createdAt: integer("created_at")
       .notNull()
@@ -690,7 +738,9 @@ export const invoiceItems = sqliteTable(
     periodEnd: integer("period_end"),
 
     // Metadata
-    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+    metadata: text("metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
 
     createdAt: integer("created_at")
       .notNull()
@@ -715,7 +765,9 @@ export const paymentAttempts = sqliteTable(
     // Provider info
     provider: text("provider"), // paystack, flutterwave, etc.
     providerReference: text("provider_reference"),
-    providerMetadata: text("provider_metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+    providerMetadata: text("provider_metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
 
     // Retry logic
     attemptNumber: integer("attempt_number").notNull().default(1),
@@ -745,9 +797,13 @@ export const overageSettings = sqliteTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
 
     // Billing interval: when to generate overage invoices
-    billingInterval: text("billing_interval").notNull().default("end_of_period"), // end_of_period, daily, weekly, monthly, threshold
+    billingInterval: text("billing_interval")
+      .notNull()
+      .default("end_of_period"), // end_of_period, daily, weekly, monthly, threshold
     thresholdAmount: integer("threshold_amount"), // Minor units — triggers invoice when unbilled hits this
-    autoCollect: integer("auto_collect", { mode: "boolean" }).notNull().default(false), // Charge card automatically
+    autoCollect: integer("auto_collect", { mode: "boolean" })
+      .notNull()
+      .default(false), // Charge card automatically
     gracePeriodHours: integer("grace_period_hours").notNull().default(0), // Wait before collecting
 
     createdAt: integer("created_at")
@@ -757,9 +813,7 @@ export const overageSettings = sqliteTable(
       .notNull()
       .$defaultFn(() => Date.now()),
   },
-  (table) => [
-    uniqueIndex("overage_settings_org_idx").on(table.organizationId),
-  ],
+  (table) => [uniqueIndex("overage_settings_org_idx").on(table.organizationId)],
 );
 
 export const paymentMethods = sqliteTable(
@@ -779,7 +833,9 @@ export const paymentMethods = sqliteTable(
     cardBrand: text("card_brand"),
     cardExpMonth: text("card_exp_month"),
     cardExpYear: text("card_exp_year"),
-    isDefault: integer("is_default", { mode: "boolean" }).notNull().default(true),
+    isDefault: integer("is_default", { mode: "boolean" })
+      .notNull()
+      .default(true),
     isValid: integer("is_valid", { mode: "boolean" }).notNull().default(true),
     verifiedAt: integer("verified_at"),
     invalidatedAt: integer("invalidated_at"),
@@ -827,5 +883,50 @@ export const customerOverageLimits = sqliteTable(
   (table) => [
     uniqueIndex("col_customer_idx").on(table.customerId),
     index("col_org_idx").on(table.organizationId),
+  ],
+);
+
+// =============================================================================
+// Feature Entities (for per-seat/org scoped features)
+// =============================================================================
+
+export const entities = sqliteTable(
+  "entities",
+  {
+    id: text("id").primaryKey(),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    featureId: text("feature_id")
+      .notNull()
+      .references(() => features.id, { onDelete: "cascade" }),
+    entityId: text("entity_id").notNull(), // User-provided entity ID (e.g., "user_123")
+
+    // Entity metadata
+    name: text("name"),
+    email: text("email"),
+    metadata: text("metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
+
+    // Entity status
+    status: text("status").notNull().default("active"), // active, pending_removal
+
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    removedAt: integer("removed_at"),
+  },
+  (table) => [
+    index("entities_customer_idx").on(table.customerId),
+    index("entities_feature_idx").on(table.featureId),
+    uniqueIndex("entities_customer_feature_entity_idx").on(
+      table.customerId,
+      table.featureId,
+      table.entityId,
+    ),
   ],
 );

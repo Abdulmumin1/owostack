@@ -32,7 +32,7 @@ const updatePackSchema = z.object({
 
 // GET / — List credit packs for an organization
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
@@ -198,7 +198,7 @@ app.delete("/:id", async (c) => {
 
 // GET /purchases — List credit purchases for a customer
 app.get("/purchases", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   const customerId = c.req.query("customerId");
 
   if (!organizationId) {

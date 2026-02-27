@@ -9,22 +9,29 @@
     "directory": "packages/cli"
   },
   "type": "module",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "bin": {
     "owostack": "./dist/index.js",
     "owo": "./dist/index.js"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --clean",
-    "dev": "tsup src/index.ts --format esm --watch"
+    "dev": "tsup src/index.ts --format esm --watch",
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "@clack/prompts": "^1.0.1",
     "@owostack/core": "workspace:*",
-    "@owostack/types": "workspace:*"
+    "@owostack/types": "workspace:*",
+    "commander": "^14.0.3",
+    "picocolors": "^1.1.1"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "tsup": "^8.3.6",
+    "@types/node": "^22.19.10",
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.3"
   },
   "publishConfig": {

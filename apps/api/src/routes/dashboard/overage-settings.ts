@@ -11,7 +11,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 // GET / — Get overage settings for an organization
 // ---------------------------------------------------------------------------
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ success: false, error: "organizationId required" }, 400);
   }
@@ -94,7 +94,7 @@ app.put("/", async (c) => {
 // ---------------------------------------------------------------------------
 app.get("/customer-limits", async (c) => {
   const customerId = c.req.query("customerId");
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!customerId || !organizationId) {
     return c.json({ success: false, error: "customerId and organizationId required" }, 400);
   }

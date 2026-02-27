@@ -1,0 +1,51 @@
+{
+  "title": "API Reference",
+  "description": "The API for Owostack",
+  "root": true,
+  "pages": [
+    "index",
+
+    "---Subscriptions---",
+    "attach",
+
+    "---Entitlements---",
+    "check",
+    "track",
+
+    "---Add-ons---",
+    "addon",
+
+    "---Wallet---",
+    "getWallet",
+    "setupWallet",
+    "removePaymentMethod",
+
+    "---Billing---",
+    "getBillingUsage",
+    "createInvoice",
+    "listInvoices",
+    "payInvoice",
+
+    "---Catalog---",
+    "sync",
+
+    "---Plans---",
+    "listPlans",
+    "getPlan",
+
+    "---Customers---",
+    "createCustomer",
+    "getCustomer",
+
+    "---Entities---",
+    "addEntity",
+    "removeEntity",
+    "listEntities",
+
+    "---Credit Systems---",
+    "listCreditSystems",
+
+    "---Webhooks---",
+    "webhook"
+  ]
+}

@@ -27,4 +27,32 @@ export async function handleCustomerIdentified(ctx: WebhookContext): Promise<voi
       updatedAt: Date.now(),
     })
     .where(eq(schema.customers.id, existing.id));
+
+  if (ctx.cache) {
+    try {
+      const cacheAny = ctx.cache as any;
+      const dashboardInvalidate =
+        typeof cacheAny.invalidateDashboardCustomer === "function"
+          ? cacheAny.invalidateDashboardCustomer(existing.id)
+          : Promise.resolve();
+      if (typeof cacheAny.invalidateCustomerAliases === "function") {
+        await Promise.all([
+          cacheAny.invalidateCustomerAliases(organizationId, {
+            id: existing.id,
+            email: existing.email,
+            externalId: existing.externalId,
+          }),
+          dashboardInvalidate,
+        ]);
+      } else {
+        await Promise.all([
+          ctx.cache.invalidateCustomer(organizationId, existing.id),
+          ctx.cache.invalidateCustomer(organizationId, email),
+          dashboardInvalidate,
+        ]);
+      }
+    } catch (e) {
+      console.warn(`[WEBHOOK] customer.identified cache invalidation failed:`, e);
+    }
+  }
 }

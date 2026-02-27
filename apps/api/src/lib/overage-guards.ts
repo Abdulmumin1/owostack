@@ -1,4 +1,6 @@
 import { sql } from "drizzle-orm";
+import type { UsageLedgerDO } from "./usage-ledger-do";
+import { sumUnbilledByFeature, sumUsageAmount } from "./usage-ledger";
 
 /**
  * Overage guard checks — called before allowing overage usage.
@@ -41,7 +43,27 @@ export async function getOverageUnitsUsed(
   periodStart: number,
   periodEnd: number,
   included: number | null,
+  opts?: {
+    usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
+    organizationId?: string | null;
+  },
 ): Promise<number> {
+  const ledgerTotal = await sumUsageAmount(
+    {
+      usageLedger: opts?.usageLedger,
+      organizationId: opts?.organizationId,
+    },
+    {
+      customerId,
+      featureId,
+      periodStart,
+      periodEnd,
+    },
+  );
+  if (ledgerTotal !== null) {
+    return Math.max(0, ledgerTotal - (included || 0));
+  }
+
   const result = await (db as any).run(
     sql`SELECT COALESCE(SUM(amount), 0) as total
         FROM usage_records
@@ -62,7 +84,77 @@ export async function getOverageUnitsUsed(
 export async function getUnbilledOverageAmount(
   db: any,
   customerId: string,
+  opts?: {
+    usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
+    organizationId?: string | null;
+  },
 ): Promise<number> {
+  const ledgerUsageRows = await sumUnbilledByFeature(
+    {
+      usageLedger: opts?.usageLedger,
+      organizationId: opts?.organizationId,
+    },
+    customerId,
+  );
+
+  if (ledgerUsageRows !== null) {
+    const planRows = await (db as any).run(
+      sql`SELECT pf.feature_id,
+                 pf.price_per_unit,
+                 pf.overage_price,
+                 pf.billing_units,
+                 pf.limit_value,
+                 pf.usage_model
+          FROM subscriptions s
+          JOIN plan_features pf ON pf.plan_id = s.plan_id
+          WHERE s.customer_id = ${customerId}
+            AND s.status IN ('active', 'canceled', 'pending_cancel')
+            AND pf.overage = 'charge'`,
+    );
+
+    const featureConfig = new Map<
+      string,
+      {
+        pricePerUnit: number;
+        overagePrice: number;
+        billingUnits: number;
+        limitValue: number;
+        usageModel: string;
+      }
+    >();
+
+    for (const row of planRows?.results || []) {
+      if (!row.feature_id || featureConfig.has(row.feature_id)) continue;
+      featureConfig.set(row.feature_id, {
+        pricePerUnit: Number(row.price_per_unit || 0),
+        overagePrice: Number(row.overage_price || 0),
+        billingUnits: Number(row.billing_units || 1),
+        limitValue: Number(row.limit_value || 0),
+        usageModel: String(row.usage_model || "included"),
+      });
+    }
+
+    let totalAmount = 0;
+    for (const entry of ledgerUsageRows) {
+      const cfg = featureConfig.get(entry.featureId);
+      if (!cfg) continue;
+
+      const usage = Number(entry.totalUsage || 0);
+      const billable =
+        cfg.usageModel === "included"
+          ? Math.max(0, usage - cfg.limitValue)
+          : usage;
+      if (billable <= 0) continue;
+
+      const unitPrice = cfg.pricePerUnit || cfg.overagePrice || 0;
+      const billingUnits = cfg.billingUnits || 1;
+      const packages = Math.ceil(billable / billingUnits);
+      totalAmount += packages * unitPrice;
+    }
+
+    return totalAmount;
+  }
+
   // Sum up all uninvoiced usage for features with overage=charge
   // This is an approximation — we sum usage * pricePerUnit for all charge-mode features
   const result = await (db as any).run(
@@ -163,6 +255,10 @@ export async function checkOverageAllowed(
   included: number | null,
   maxOverageUnits: number | null,
   requestedUnits: number,
+  opts?: {
+    usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
+    organizationId?: string | null;
+  },
 ): Promise<OverageGuardResult> {
   // 1. Card on file check
   const hasCard = await hasPaymentMethod(db, customerId);
@@ -175,7 +271,15 @@ export async function checkOverageAllowed(
 
   // 2. Feature-level max overage units check
   if (maxOverageUnits !== null && maxOverageUnits !== undefined && maxOverageUnits > 0) {
-    const overageUsed = await getOverageUnitsUsed(db, customerId, featureId, periodStart, periodEnd, included);
+    const overageUsed = await getOverageUnitsUsed(
+      db,
+      customerId,
+      featureId,
+      periodStart,
+      periodEnd,
+      included,
+      opts,
+    );
     if (overageUsed + requestedUnits > maxOverageUnits) {
       return {
         allowed: false,
@@ -187,7 +291,7 @@ export async function checkOverageAllowed(
   // 3. Customer spending cap check
   const customerLimit = await getCustomerOverageLimit(db, customerId);
   if (customerLimit?.maxOverageAmount !== null && customerLimit?.maxOverageAmount !== undefined && customerLimit.maxOverageAmount > 0) {
-    const currentAmount = await getUnbilledOverageAmount(db, customerId);
+    const currentAmount = await getUnbilledOverageAmount(db, customerId, opts);
     if (currentAmount >= customerLimit.maxOverageAmount) {
       if (customerLimit.onLimitReached === "block") {
         return {

@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { Activity, Calendar, CreditCard, Clock, Package, Zap, User, Loader2, Mail, Hash } from "lucide-svelte";
+  import { Calendar, CircleNotch, Clock, CreditCard, Envelope, Hash, Lightning, Package, Pulse, User } from "phosphor-svelte";
   import { apiFetch } from "$lib/auth-client";
   import { formatCurrency } from "$lib/utils/currency";
   import ProgressBar from "$lib/components/ui/ProgressBar.svelte";
   import Timeline from "$lib/components/ui/Timeline.svelte";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
+  import Avatar from "$lib/components/ui/Avatar.svelte";
 
   let {
     customerId,
@@ -62,11 +63,11 @@
 
   function statusColor(status: string) {
     switch (status) {
-      case "active": return "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
-      case "canceled": return "bg-red-400/10 text-red-400 border-red-400/20";
-      case "trialing": return "bg-blue-400/10 text-blue-400 border-blue-400/20";
-      case "past_due": return "bg-amber-400/10 text-amber-400 border-amber-400/20";
-      default: return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+      case "active": return "bg-success-bg text-success border-success/20";
+      case "canceled": return "bg-error-bg text-error border-error/20";
+      case "trialing": return "bg-info-bg text-info border-info/20";
+      case "past_due": return "bg-warning-bg text-warning border-warning/20";
+      default: return "bg-bg-secondary text-text-dim border-border";
     }
   }
 
@@ -86,28 +87,31 @@
     if (type.includes("subscription")) return Calendar;
     if (type.includes("charge") || type.includes("payment")) return CreditCard;
     if (type.includes("customer")) return User;
-    return Zap;
+    return Lightning;
   }
 
   const maxUsage = $derived(
-    data?.featureUsageSummary?.length > 0
+    Array.isArray(data?.featureUsageSummary) && data.featureUsageSummary.length > 0
       ? Math.max(...data.featureUsageSummary.map((f: any) => f.totalUsage))
       : 1
   );
 
   const timeline = $derived.by(() => {
+    const events = Array.isArray(data?.events) ? data.events : [];
+    const recentUsage = Array.isArray(data?.recentUsage) ? data.recentUsage : [];
+
     const merged: { label: string; ts: number; icon: any; iconColor: string }[] = [
-      ...(data?.events || []).map((e: any) => ({
+      ...events.map((e: any) => ({
         label: eventLabel(e.type),
         ts: e.createdAt as number,
         icon: eventIcon(e.type),
-        iconColor: "bg-blue-500/10 text-blue-400",
+        iconColor: "bg-info-bg text-info",
       })),
-      ...(data?.recentUsage || []).map((u: any) => ({
+      ...recentUsage.map((u: any) => ({
         label: `Used ${u.amount} ${u.unit || "units"} of ${u.featureName}`,
         ts: u.createdAt as number,
-        icon: Activity,
-        iconColor: "bg-accent/10 text-accent",
+        icon: Pulse,
+        iconColor: "bg-accent-light text-accent",
       })),
     ];
     return merged
@@ -154,27 +158,27 @@
   <div class="p-5 space-y-5">
     <!-- Customer Info -->
     <div class="flex items-start gap-3">
-      <div class="w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent font-bold text-sm uppercase shrink-0">
-        {data.customer.email[0]}
+      <div class="w-10 h-10 rounded-full overflow-hidden shrink-0">
+        <Avatar name={data.customer.email} size={40} />
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
-          <h3 class="text-sm font-bold text-white truncate">{data.customer.name || "Anonymous"}</h3>
+          <h3 class="text-sm font-bold text-text-primary truncate">{data.customer.name || "Anonymous"}</h3>
           <ProviderBadge providerId={data.customer.providerId} size="xs" />
         </div>
         <div class="flex flex-col gap-1 mt-1">
-          <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
-            <Mail size={10} />
+          <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
+            <Envelope   size={10}  weight="duotone" />
             {data.customer.email}
           </span>
           {#if data.customer.externalId}
-            <span class="flex items-center gap-1.5 text-[10px] text-zinc-500 font-mono">
-              <Hash size={10} />
+            <span class="flex items-center gap-1.5 text-[10px] text-text-dim font-mono">
+              <Hash   size={10}  weight="duotone" />
               {data.customer.externalId}
             </span>
           {/if}
-          <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
-            <Clock size={10} />
+          <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
+            <Clock   size={10}  weight="duotone" />
             Joined {formatDate(data.customer.createdAt)}
           </span>
         </div>
@@ -183,64 +187,64 @@
 
     <!-- Quick Stats -->
     <div class="grid grid-cols-3 gap-3">
-      <div class="bg-white/5 rounded p-3 text-center">
-        <div class="text-lg font-bold text-white">{data.subscriptions?.length || 0}</div>
-        <div class="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Subs</div>
+      <div class="bg-bg-secondary rounded p-3 text-center">
+        <div class="text-lg font-bold text-text-primary">{(Array.isArray(data.subscriptions) ? data.subscriptions : []).length}</div>
+        <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Subs</div>
       </div>
-      <div class="bg-white/5 rounded p-3 text-center">
-        <div class="text-lg font-bold text-white">{data.featureUsageSummary?.length || 0}</div>
-        <div class="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Features</div>
+      <div class="bg-bg-secondary rounded p-3 text-center">
+        <div class="text-lg font-bold text-text-primary">{(Array.isArray(data.featureUsageSummary) ? data.featureUsageSummary : []).length}</div>
+        <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Features</div>
       </div>
-      <div class="bg-white/5 rounded p-3 text-center">
-        <div class="text-lg font-bold text-white">{data.events?.length || 0}</div>
-        <div class="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Events</div>
+      <div class="bg-bg-secondary rounded p-3 text-center">
+        <div class="text-lg font-bold text-text-primary">{(Array.isArray(data.events) ? data.events : []).length}</div>
+        <div class="text-[9px] text-text-dim uppercase tracking-widest font-bold">Events</div>
       </div>
     </div>
 
     <!-- Subscriptions -->
     <div>
-      <h4 class="text-[10px] font-bold text-white uppercase tracking-widest mb-3">Subscriptions</h4>
-      {#if data.subscriptions?.length > 0}
+      <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-3">Subscriptions</h4>
+      {#if Array.isArray(data.subscriptions) && data.subscriptions.length > 0}
         <div class="space-y-2">
           {#each data.subscriptions as sub}
-            <div class="bg-white/5 rounded p-3">
+            <div class="bg-bg-secondary rounded p-3">
               <div class="flex items-center justify-between mb-1.5">
                 <div class="flex items-center gap-2">
-                  <Package size={12} class="text-zinc-500" />
-                  <span class="text-xs font-semibold text-white">{sub.planName}</span>
-                  <span class="text-[9px] text-zinc-600 font-mono">{formatCurrency(sub.planPrice, sub.planCurrency)}/{sub.planInterval}</span>
+                  <Package   size={12} class="text-text-dim"  weight="duotone" />
+                  <span class="text-xs font-semibold text-text-primary">{sub.planName}</span>
+                  <span class="text-[9px] text-text-dim font-mono">{formatCurrency(sub.planPrice, sub.planCurrency)}/{sub.planInterval}</span>
                 </div>
                 <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border {statusColor(sub.status)}">
                   {sub.status}
                 </span>
               </div>
-              <div class="text-[9px] text-zinc-600">
+              <div class="text-[9px] text-text-dim">
                 {formatDate(sub.currentPeriodStart)} – {formatDate(sub.currentPeriodEnd)}
               </div>
             </div>
           {/each}
         </div>
       {:else}
-        <p class="text-xs text-zinc-600">No subscriptions</p>
+        <p class="text-xs text-text-dim">No subscriptions</p>
       {/if}
     </div>
 
     <!-- Feature Usage -->
-    {#if data.featureUsageSummary?.length > 0}
+    {#if Array.isArray(data.featureUsageSummary) && data.featureUsageSummary.length > 0}
       <div>
         <div class="flex items-center justify-between mb-3">
-          <h4 class="text-[10px] font-bold text-white uppercase tracking-widest">Feature Usage</h4>
-          <span class="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">This month</span>
+          <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest">Feature Usage</h4>
+          <span class="text-[9px] text-text-dim font-bold uppercase tracking-widest">This month</span>
         </div>
         <div class="space-y-3">
           {#each data.featureUsageSummary as feat}
             <div>
               <div class="flex items-center justify-between mb-1">
-                <span class="text-xs text-white font-medium">{feat.featureName}</span>
-                <span class="text-xs text-white font-bold">
+                <span class="text-xs text-text-primary font-medium">{feat.featureName}</span>
+                <span class="text-xs text-text-primary font-bold">
                   {formatNumber(feat.totalUsage)}
                   {#if feat.unit}
-                    <span class="text-[10px] text-zinc-600 font-normal ml-0.5">{feat.unit}</span>
+                    <span class="text-[10px] text-text-dim font-normal ml-0.5">{feat.unit}</span>
                   {/if}
                 </span>
               </div>
@@ -251,17 +255,17 @@
       </div>
     {/if}
 
-    <!-- Activity Timeline -->
+    <!-- Pulse Timeline -->
     <div>
-      <h4 class="text-[10px] font-bold text-white uppercase tracking-widest mb-2">Activity</h4>
-      <div class="bg-white/5 rounded overflow-hidden">
+      <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-2">Pulse</h4>
+      <div class="bg-bg-secondary rounded overflow-hidden">
         <Timeline items={timeline} />
       </div>
     </div>
   </div>
 {:else}
   <div class="flex flex-col items-center justify-center py-16 text-center px-5">
-    <User size={24} class="text-zinc-600 mb-3" />
-    <p class="text-xs text-zinc-500">Customer not found</p>
+    <User   size={24} class="text-text-dim/20 mb-3"  weight="duotone" />
+    <p class="text-xs text-text-dim">Customer not found</p>
   </div>
 {/if}

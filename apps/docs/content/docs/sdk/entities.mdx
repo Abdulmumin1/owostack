@@ -1,0 +1,246 @@
+---
+title: addEntity(), removeEntity(), listEntities()
+description: Manage feature entities for per-seat and org-scoped billing
+icon: Users
+---
+
+# Entity Management
+
+Entities represent scoped resources like seats, workspaces, or team members. Use these methods to manage entities for per-seat billing and entity-scoped usage tracking.
+
+## Flat API
+
+### `owo.addEntity(params)`
+
+Add an entity to a customer. Validates against feature limits.
+
+```ts
+await owo.addEntity({
+  customer: string,    // Customer ID or email
+  feature: string,     // Feature slug (e.g., "seats")
+  entity: string,      // Your entity ID
+  name?: string,       // Display name
+  email?: string,      // Contact email
+  metadata?: Record<string, unknown>, // Custom data
+}): Promise<AddEntityResult>
+```
+
+**Returns:**
+
+```ts
+interface AddEntityResult {
+  success: boolean;
+  entityId: string;
+  featureId: string;
+  count: number; // Current entity count
+  limit: number | null;
+  remaining: number | null;
+}
+```
+
+**Throws:** `limit_exceeded` if adding would exceed the plan limit.
+
+### `owo.removeEntity(params)`
+
+Remove an entity and free up the slot.
+
+```ts
+await owo.removeEntity({
+  customer: string,    // Customer ID or email
+  feature: string,     // Feature slug
+  entity: string,      // Entity ID to remove
+}): Promise<RemoveEntityResult>
+```
+
+**Returns:**
+
+```ts
+interface RemoveEntityResult {
+  success: boolean;
+  entityId: string;
+  count: number; // Remaining entity count
+}
+```
+
+### `owo.listEntities(params?)`
+
+List entities for a customer.
+
+```ts
+await owo.listEntities({
+  customer: string,    // Customer ID or email
+  feature?: string,    // Optional: filter by feature
+}): Promise<ListEntitiesResult>
+```
+
+**Returns:**
+
+```ts
+interface Entity {
+  id: string;
+  featureId: string;
+  name?: string;
+  email?: string;
+  metadata?: Record<string, unknown>;
+  status: "active" | "pending_removal";
+  createdAt: string;
+}
+
+interface ListEntitiesResult {
+  success: boolean;
+  entities: Entity[];
+  total: number;
+}
+```
+
+## Examples
+
+### Add Team Members (Seats)
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+
+// Add team members - validates against seat limit
+try {
+  await owo.addEntity({
+    customer: "org@acme.com",
+    feature: "seats",
+    entity: "user_123",
+    name: "John Doe",
+    email: "john@acme.com",
+    metadata: { role: "admin", department: "engineering" },
+  });
+  console.log("Seat added successfully");
+} catch (err) {
+  if (err.code === "limit_exceeded") {
+    console.log("Seat limit reached - upgrade required");
+  }
+}
+```
+
+### Check Seat Availability First
+
+```ts
+// Optional: Check if seat is available before adding
+const check = await owo.check({
+  customer: "org@acme.com",
+  feature: "seats",
+  value: 1,
+});
+
+if (check.allowed) {
+  await owo.addEntity({
+    customer: "org@acme.com",
+    feature: "seats",
+    entity: "user_456",
+    name: "Jane Smith",
+  });
+} else {
+  console.log("No seats available");
+}
+```
+
+### List and Manage Seats
+
+```ts
+// List all active seats
+const { entities } = await owo.listEntities({
+  customer: "org@acme.com",
+  feature: "seats",
+});
+
+console.log(`Active seats: ${entities.length}`);
+entities.forEach((seat) => {
+  console.log(`- ${seat.name} (${seat.email})`);
+});
+
+// Remove a team member
+await owo.removeEntity({
+  customer: "org@acme.com",
+  feature: "seats",
+  entity: "user_123",
+});
+```
+
+### Multiple Entity Types
+
+You can have different entity types per feature:
+
+```ts
+// Admin seats (different feature, different limit)
+await owo.addEntity({
+  customer: "org@acme.com",
+  feature: "admin-seats",
+  entity: "admin_1",
+  name: "CEO",
+});
+
+// Regular member seats
+await owo.addEntity({
+  customer: "org@acme.com",
+  feature: "member-seats",
+  entity: "member_1",
+  name: "Engineer",
+});
+```
+
+## Entity-Scoped Usage
+
+Once an entity is added, you can track and check usage scoped to that entity:
+
+```ts
+// Track AI credits for a specific seat
+await owo.track({
+  customer: "org@acme.com",
+  feature: "ai-credits",
+  entity: "user_123", // Must exist!
+  value: 50,
+});
+
+// Check remaining credits for the seat
+const status = await owo.check({
+  customer: "org@acme.com",
+  feature: "ai-credits",
+  entity: "user_123",
+});
+
+console.log(`${status.balance} credits remaining`);
+```
+
+**Important:** Entities must be created with `addEntity()` before using them in `check()` or `track()`. Attempting to track a non-existent entity returns `entity_not_found` error.
+
+## Customer-Bound API
+
+You can also call entity methods on the customer object:
+
+```ts
+const org = await owo.customer({ email: "org@acme.com" });
+
+// Add entity via customer object
+await org.addEntity({
+  feature: "seats",
+  entity: "user_123",
+  name: "John Doe",
+});
+
+// List entities
+const { entities } = await org.listEntities({ feature: "seats" });
+
+// Remove entity
+await org.removeEntity({ feature: "seats", entity: "user_123" });
+```
+
+## Validation
+
+- **Entity uniqueness:** Entity IDs are unique per feature. You can reuse the same ID across different features.
+- **Limit enforcement:** `addEntity()` validates synchronously against the feature limit.
+- **Entity required:** `check()` and `track()` require entities to exist. Returns `entity_not_found` error otherwise.
+
+## Related
+
+- [`customer()`](./customer) - Create and manage customers
+- [`check()`](./check) - Check feature access (supports entity scope)
+- [`track()`](./track) - Track usage (supports entity scope)
+- [Seat Pricing Guide](/docs/guides/seat-pricing) - Complete walkthrough

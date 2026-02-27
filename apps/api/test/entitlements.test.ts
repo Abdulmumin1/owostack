@@ -1,6 +1,10 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { Hono } from "hono";
 import entitlements from "../src/routes/api/entitlements";
+import {
+  deductScopedBalance,
+  getScopedBalance,
+} from "../src/lib/addon-credits";
 
 vi.mock("../src/lib/api-keys", async () => {
   const actual = await vi.importActual<any>("../src/lib/api-keys");
@@ -12,6 +16,12 @@ vi.mock("../src/lib/api-keys", async () => {
     }),
   };
 });
+
+vi.mock("../src/lib/addon-credits", () => ({
+  getScopedBalance: vi.fn(async () => 0),
+  deductScopedBalance: vi.fn(async () => false),
+  topUpScopedBalance: vi.fn(async () => 0),
+}));
 
 describe("Entitlements Engine (Check & Track)", () => {
   const apiKey = "owo_sk_test";
@@ -78,6 +88,13 @@ describe("Entitlements Engine (Check & Track)", () => {
         },
         credits: {
           findFirst: vi.fn().mockResolvedValue({ balance: 0 }),
+        },
+        entities: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "entity_test",
+            entityId: "workspace_1",
+            status: "active",
+          }),
         },
       },
       insert: vi.fn().mockReturnThis(),
@@ -360,6 +377,212 @@ describe("Entitlements Engine (Check & Track)", () => {
     );
     expect(kv.delete).toHaveBeenCalledWith(
       expect.stringContaining(`org:org_test:subscriptions:${customerId}`),
+    );
+  });
+
+  it("check uses DO and falls back to addon credits for credit system features when limit is exceeded (sendEvent=true)", async () => {
+    const usageMeter = {
+      check: vi.fn(async () => ({
+        allowed: false,
+        code: "limit_exceeded",
+        usage: 100,
+        limit: 100,
+      })),
+      configureFeature: vi.fn(async () => null),
+      track: vi.fn(async () => ({
+        allowed: true,
+        code: "tracked",
+        balance: 0,
+      })),
+    } as any;
+
+    mockEnv = {
+      ...mockEnv,
+      USAGE_METER: {
+        idFromName: vi.fn(() => "do_1"),
+        get: vi.fn(() => usageMeter),
+      },
+    };
+
+    vi.mocked(getScopedBalance).mockResolvedValue(100);
+    vi.mocked(deductScopedBalance).mockResolvedValue(true);
+
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: "feat_child",
+      organizationId: "org_test",
+      slug: "dfs",
+      type: "metered",
+    });
+
+    mockDb.query.planFeatures.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          planId: "plan_test",
+          featureId: "cs_feature_1",
+          limitValue: 100,
+          resetInterval: "monthly",
+          resetOnEnable: false,
+          rolloverEnabled: false,
+          rolloverMaxBalance: null,
+          usageModel: "included",
+          creditCost: 0,
+        },
+      ]);
+
+    mockDb.select.mockImplementation((shape: any) => {
+      if (shape && "creditSystemId" in shape && "creditSystemSlug" in shape) {
+        return {
+          from: (_table: any) => ({
+            innerJoin: (_join: any, _on: any) => ({
+              where: async (_where: any) => {
+                void _where;
+                return [
+                  {
+                    creditSystemId: "cs_feature_1",
+                    cost: 20,
+                    creditSystemSlug: "support-credits",
+                  },
+                ];
+              },
+            }),
+          }),
+        };
+      }
+
+      return {
+        from: (_table: any) => {
+          return {
+            where: async (_where: any) => {
+              void _where;
+              return [{ total: usageTotal }];
+            },
+          };
+        },
+      };
+    });
+
+    const res = await app.request(
+      "/check",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: "feat_child",
+          value: 3,
+          sendEvent: true,
+        }),
+      },
+      mockEnv,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.allowed).toBe(true);
+    expect(body.code).toBe("addon_credits_used");
+    expect(body.addonCredits).toBe(40);
+
+    expect(usageMeter.check).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(deductScopedBalance)).toHaveBeenCalledWith(
+      mockDb,
+      customerId,
+      "cs_feature_1",
+      60,
+    );
+    expect(mockExecutionCtx.waitUntil).toHaveBeenCalled();
+    expect(mockDb.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        featureId: "cs_feature_1",
+        amount: 60,
+      }),
+    );
+  });
+
+  it("track resolves credit system mapping and persists usage against the credit system feature id with multiplied effectiveValue", async () => {
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: "feat_child",
+      organizationId: "org_test",
+      slug: "dfs",
+      type: "boolean",
+    });
+
+    mockDb.query.planFeatures.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          planId: "plan_test",
+          featureId: "cs_feature_1",
+          limitValue: 100,
+          resetInterval: "monthly",
+          resetOnEnable: false,
+          rolloverEnabled: false,
+          rolloverMaxBalance: null,
+          usageModel: "included",
+          creditCost: 0,
+        },
+      ]);
+
+    mockDb.select.mockImplementation((shape: any) => {
+      if (shape && "creditSystemId" in shape && "creditSystemSlug" in shape) {
+        return {
+          from: (_table: any) => ({
+            innerJoin: (_join: any, _on: any) => ({
+              where: async (_where: any) => {
+                void _where;
+                return [
+                  {
+                    creditSystemId: "cs_feature_1",
+                    cost: 20,
+                    creditSystemSlug: "support-credits",
+                  },
+                ];
+              },
+            }),
+          }),
+        };
+      }
+
+      return {
+        from: (_table: any) => {
+          return {
+            where: async (_where: any) => {
+              void _where;
+              return [{ total: usageTotal }];
+            },
+          };
+        },
+      };
+    });
+
+    const res = await app.request(
+      "/track",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: "feat_child",
+          value: 3,
+        }),
+      },
+      mockEnv,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.success).toBe(true);
+    expect(body.allowed).toBe(true);
+    expect(body.code).toBe("tracked");
+
+    expect(mockExecutionCtx.waitUntil).toHaveBeenCalled();
+    expect(mockDb.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        featureId: "cs_feature_1",
+        amount: 60,
+      }),
     );
   });
 });

@@ -9,6 +9,6 @@
 </script>
 
 <div
-  class="animate-pulse bg-white/5 {className}"
+  class="animate-pulse bg-bg-tertiary {className}"
   {...rest}
 ></div>

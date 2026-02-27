@@ -8,9 +8,9 @@ icon: Plug
 
 Owostack is designed to work with multiple payment providers through a single interface. This page explains the abstraction layer and how provider differences are handled.
 
-## Why provider-agnostic?
+## Why multiple providers?
 
-Different payment providers serve different markets and have different strengths. Paystack dominates in Nigeria and West Africa. Dodo Payments handles global USD billing. Rather than lock you into one provider, Owostack abstracts the differences so your application code stays the same regardless of which provider processes the payment.
+Different payment providers serve different markets and have different strengths. Paystack dominates in Nigeria and West Africa. Dodo Payments and Polar handle global billing flows. Rather than lock you into one provider, Owostack abstracts the differences so your application code stays the same regardless of which provider processes the payment.
 
 Your app calls `attach()`, `check()`, and `track()`. Owostack figures out which provider to use, translates the request into the provider's API format, and normalizes the webhooks back into a common event model.
 
@@ -29,10 +29,11 @@ The adapter interface is designed so that core billing logic (plan switching, tr
 
 ## Currently Supported providers
 
-| Provider | ID | Markets | Key differences |
-|----------|----|---------|-----------------|
-| Paystack | `paystack` | Nigeria, Ghana, South Africa, Kenya | Card authorization codes for recurring charges; webhook verification via HMAC-SHA512 |
-| Dodo Payments | `dodopayments` | Global (USD, EUR, GBP) | Product-centric checkout (requires product ID); on-demand subscriptions for card-on-file; Standard Webhooks spec |
+| Provider      | ID             | Markets                             | Key differences                                                                                                                  |
+| ------------- | -------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Paystack      | `paystack`     | Nigeria, Ghana, South Africa, Kenya | Card authorization codes for recurring charges; webhook verification via HMAC-SHA512                                             |
+| Dodo Payments | `dodopayments` | Global (USD, EUR, GBP)              | Product-centric checkout (requires product ID); on-demand subscriptions for card-on-file; Standard Webhooks spec                 |
+| Polar         | `polar`        | Global                              | Product-centric checkout (supports multiple products); native subscription lifecycle webhooks; Standard Webhooks signature model |
 
 ## Provider accounts
 
@@ -42,7 +43,7 @@ A **provider account** stores the credentials for a specific provider within you
 - **Webhook secret** — used to verify incoming webhook payloads
 - **Environment** — test or live
 
-Each organization can have multiple provider accounts — for example, a Paystack test account, a Paystack live account, and a Dodo Payments live account.
+Each organization can have multiple provider accounts — for example, a Paystack test account, a Paystack live account, and a Polar live account.
 
 ## How providers are selected
 
@@ -60,16 +61,22 @@ This means you can run multiple providers side by side and control routing at th
 Some billing features work differently depending on the provider:
 
 **Trials:**
+
 - Paystack — small verification charge (auto-refunded), Owostack manages trial billing
 - Dodo — native trial period, provider defers first charge automatically
+- Polar — native trial support via provider-side subscription lifecycle
 
 **Card on file:**
+
 - Paystack — stores a reusable authorization code from the first charge
 - Dodo — creates an on-demand subscription that can be charged with arbitrary amounts
+- Polar — stores provider-managed subscription IDs for recurring lifecycle events
 
 **Checkout:**
+
 - Paystack — raw amount checkout, no pre-created product needed
 - Dodo — product-centric, requires a synced product ID for every checkout
+- Polar — product-centric checkout with support for single- or multi-product sessions
 
 These differences are handled internally. Your application code is the same regardless of provider.
 

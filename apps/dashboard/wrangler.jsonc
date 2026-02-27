@@ -12,7 +12,7 @@
 	
 	"routes": [
 		{
-			"pattern": "owostack.com",
+			"pattern": "app.owostack.com",
 			"custom_domain": true
 		}
 	],

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { resolveOrCreateCustomer } from "../../lib/customers";
 import { verifyApiKey } from "../../lib/api-keys";
@@ -73,7 +73,6 @@ app.post("/attach", async (c) => {
   const apiKey = authHeader.split(" ")[1];
   const db = c.get("db");
   const authDb = c.get("authDb");
-
 
   // Verify API Key
   const keyRecord = await verifyApiKey(authDb, apiKey);
@@ -159,11 +158,15 @@ app.post("/attach", async (c) => {
     // 1. Explicit provider requested
     if (selectedProviderId) {
       selectedAccount = providerAccounts.find(
-        (a) => a.providerId === selectedProviderId && a.environment === providerEnv,
+        (a) =>
+          a.providerId === selectedProviderId && a.environment === providerEnv,
       );
       if (!selectedAccount) {
         return c.json(
-          { success: false, error: `Provider '${selectedProviderId}' not configured` },
+          {
+            success: false,
+            error: `Provider '${selectedProviderId}' not configured`,
+          },
           400,
         );
       }
@@ -172,7 +175,8 @@ app.post("/attach", async (c) => {
     // 2. Plan's own provider — use the provider the plan was created on
     if (!selectedAccount && plan.providerId) {
       selectedAccount = providerAccounts.find(
-        (a) => a.providerId === plan.providerId && a.environment === providerEnv,
+        (a) =>
+          a.providerId === plan.providerId && a.environment === providerEnv,
       );
       if (selectedAccount) {
         selectedProviderId = plan.providerId;
@@ -219,7 +223,10 @@ app.post("/attach", async (c) => {
     const resolvedAdapter = registry.get(selectedProviderId);
     if (!resolvedAdapter) {
       return c.json(
-        { success: false, error: `Provider '${selectedProviderId}' not registered` },
+        {
+          success: false,
+          error: `Provider '${selectedProviderId}' not registered`,
+        },
         400,
       );
     }
@@ -250,39 +257,98 @@ app.post("/attach", async (c) => {
   // 4. Handle TRIAL plans (trialDays > 0, no card required) — separate path
   const trialDays = plan.trialDays || 0;
   const trialCardRequired = plan.trialCardRequired || false;
-  const trialUnit = (plan.metadata as Record<string, unknown>)?.trialUnit === "minutes" ? "minutes" : "days";
+  const trialUnit =
+    (plan.metadata as Record<string, unknown>)?.trialUnit === "minutes"
+      ? "minutes"
+      : "days";
 
   if (trialDays > 0 && !trialCardRequired) {
     try {
-      const now = Date.now();
-      const trialEndMs = trialUnit === "minutes"
-        ? now + trialDays * 60 * 1000
-        : now + trialDays * 24 * 60 * 60 * 1000;
-      console.log(`[TRIAL] Creating no-card trial: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}, endsAt=${new Date(trialEndMs).toISOString()}`);
+      // Check for existing active/trialing subscription to prevent duplicates
+      const existingSub = await db.query.subscriptions.findFirst({
+        where: and(
+          eq(schema.subscriptions.customerId, customerRecord.id),
+          eq(schema.subscriptions.planId, plan.id),
+          or(
+            eq(schema.subscriptions.status, "active"),
+            eq(schema.subscriptions.status, "trialing"),
+            eq(schema.subscriptions.status, "pending"),
+          ),
+        ),
+      });
 
-      const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
-      const [subscription] = await db
-        .insert(schema.subscriptions)
-        .values({
-          id: crypto.randomUUID(),
-          customerId: customerRecord.id,
-          planId: plan.id,
-          providerId: selectedProviderId,
-          providerSubscriptionId: trialCode,
-          providerSubscriptionCode: trialCode,
-          paystackSubscriptionCode: selectedProviderId === "paystack" ? trialCode : null,
-          status: "trialing",
-          currentPeriodStart: now,
-          currentPeriodEnd: trialEndMs,
-          metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
-        })
-        .returning();
+      if (existingSub && existingSub.status !== "pending") {
+        console.log(
+          `[TRIAL] Existing subscription found: ${existingSub.id}, skipping trial creation`,
+        );
+        return c.json({
+          success: true,
+          trial: true,
+          message: "Trial already active",
+          subscription_id: existingSub.id,
+          customer_id: customerRecord.id,
+          trial_ends_at: existingSub.currentPeriodEnd
+            ? new Date(existingSub.currentPeriodEnd).toISOString()
+            : null,
+        });
+      }
+
+      const now = Date.now();
+      const trialEndMs =
+        trialUnit === "minutes"
+          ? now + trialDays * 60 * 1000
+          : now + trialDays * 24 * 60 * 60 * 1000;
+      console.log(
+        `[TRIAL] Creating no-card trial: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}, endsAt=${new Date(trialEndMs).toISOString()}`,
+      );
+
+      let subscriptionId;
+
+      if (existingSub && existingSub.status === "pending") {
+        subscriptionId = existingSub.id;
+        const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
+        await db
+          .update(schema.subscriptions)
+          .set({
+            providerId: selectedProviderId,
+            providerSubscriptionId: trialCode,
+            providerSubscriptionCode: trialCode,
+            paystackSubscriptionCode:
+              selectedProviderId === "paystack" ? trialCode : null,
+            status: "trialing",
+            currentPeriodStart: now,
+            currentPeriodEnd: trialEndMs,
+            metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
+            updatedAt: now,
+          })
+          .where(eq(schema.subscriptions.id, existingSub.id));
+      } else {
+        const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
+        const [subscription] = await db
+          .insert(schema.subscriptions)
+          .values({
+            id: crypto.randomUUID(),
+            customerId: customerRecord.id,
+            planId: plan.id,
+            providerId: selectedProviderId,
+            providerSubscriptionId: trialCode,
+            providerSubscriptionCode: trialCode,
+            paystackSubscriptionCode:
+              selectedProviderId === "paystack" ? trialCode : null,
+            status: "trialing",
+            currentPeriodStart: now,
+            currentPeriodEnd: trialEndMs,
+            metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
+          })
+          .returning();
+        subscriptionId = subscription.id;
+      }
 
       // Dispatch trial-end workflow (sleeps until trial ends, then expires)
       try {
         await c.env.TRIAL_END_WORKFLOW.create({
           params: {
-            subscriptionId: subscription.id,
+            subscriptionId: subscriptionId,
             customerId: customerRecord.id,
             planId: plan.id,
             organizationId: keyRecord.organizationId,
@@ -295,38 +361,62 @@ app.post("/attach", async (c) => {
             planSlug: plan.slug,
           },
         });
-        console.log(`[TRIAL] Trial end workflow dispatched: subscription=${subscription.id}, trialEnds=${new Date(trialEndMs).toISOString()}`);
+        console.log(
+          `[TRIAL] Trial end workflow dispatched: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
+        );
       } catch (wfErr) {
-        console.error(`[TRIAL] Failed to dispatch trial end workflow for subscription=${subscription.id}:`, wfErr);
+        console.error(
+          `[TRIAL] Failed to dispatch trial end workflow for subscription=${subscriptionId}:`,
+          wfErr,
+        );
       }
 
       // Provision entitlements so trial users can access features
       await provisionEntitlements(db, customerRecord.id, plan.id);
 
-      console.log(`[TRIAL] No-card trial activated: subscription=${subscription.id}, trialEnds=${new Date(trialEndMs).toISOString()}`);
+      console.log(
+        `[TRIAL] No-card trial activated: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
+      );
       return c.json({
         success: true,
         trial: true,
-        message: trialUnit === "minutes" ? `${trialDays}-minute trial activated` : `${trialDays}-day trial activated`,
-        subscription_id: subscription.id,
+        message:
+          trialUnit === "minutes"
+            ? `${trialDays}-minute trial activated`
+            : `${trialDays}-day trial activated`,
+        subscription_id: subscriptionId,
         customer_id: customerRecord.id,
         trial_ends_at: new Date(trialEndMs).toISOString(),
       });
     } catch (e: any) {
       return c.json(
-        { success: false, error: e.message || "Failed to create trial subscription" },
+        {
+          success: false,
+          error: e.message || "Failed to create trial subscription",
+        },
         500,
       );
     }
   }
 
   // 5a. Lazy plan sync — ensure the plan exists on the provider before any checkout
-  if (providerCtx && !plan.providerPlanId && plan.type === "paid" && plan.billingType === "recurring") {
+  if (
+    providerCtx &&
+    !plan.providerPlanId &&
+    plan.type === "paid" &&
+    plan.billingType === "recurring"
+  ) {
     try {
-      const syncedId = await ensurePlanSynced(db, plan, providerCtx.adapter, providerCtx.account);
+      const syncedId = await ensurePlanSynced(
+        db,
+        plan,
+        providerCtx.adapter,
+        providerCtx.account,
+      );
       if (syncedId) {
         (plan as any).providerPlanId = syncedId;
-        if (providerCtx.adapter.id === "paystack") (plan as any).paystackPlanId = syncedId;
+        if (providerCtx.adapter.id === "paystack")
+          (plan as any).paystackPlanId = syncedId;
       }
     } catch (e) {
       console.warn(`[checkout] Lazy plan sync failed for ${plan.id}:`, e);
@@ -337,7 +427,11 @@ app.post("/attach", async (c) => {
   if (trialDays > 0 && trialCardRequired) {
     if (!providerCtx) {
       return c.json(
-        { success: false, error: "Trial with card requires a payment provider. Please connect a provider first." },
+        {
+          success: false,
+          error:
+            "Trial with card requires a payment provider. Please connect a provider first.",
+        },
         400,
       );
     }
@@ -348,35 +442,71 @@ app.post("/attach", async (c) => {
     // wallet.setup() + attach() work together without redundant charges.
     const alreadyHasCard = await hasPaymentMethod(db, customerRecord.id);
     if (alreadyHasCard) {
-      console.log(`[TRIAL] Customer ${customerRecord.id} already has card — skipping auth capture, creating trial directly`);
+      console.log(
+        `[TRIAL] Customer ${customerRecord.id} already has card — skipping auth capture, creating trial directly`,
+      );
       try {
         const now = Date.now();
-        const trialEndMs = trialUnit === "minutes"
-          ? now + trialDays * 60 * 1000
-          : now + trialDays * 24 * 60 * 60 * 1000;
+        const trialEndMs =
+          trialUnit === "minutes"
+            ? now + trialDays * 60 * 1000
+            : now + trialDays * 24 * 60 * 60 * 1000;
 
         const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
-        const [subscription] = await db
-          .insert(schema.subscriptions)
-          .values({
-            id: crypto.randomUUID(),
-            customerId: customerRecord.id,
-            planId: plan.id,
-            providerId: selectedProviderId,
-            providerSubscriptionId: trialCode,
-            providerSubscriptionCode: trialCode,
-            paystackSubscriptionCode: selectedProviderId === "paystack" ? trialCode : null,
-            status: "trialing",
-            currentPeriodStart: now,
-            currentPeriodEnd: trialEndMs,
-            metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
-          })
-          .returning();
+
+        // Find existing pending sub if it exists to prevent duplicates
+        const existingPendingSub = await db.query.subscriptions.findFirst({
+          where: and(
+            eq(schema.subscriptions.customerId, customerRecord.id),
+            eq(schema.subscriptions.planId, plan.id),
+            eq(schema.subscriptions.status, "pending"),
+          ),
+        });
+
+        let subscriptionId;
+
+        if (existingPendingSub) {
+          subscriptionId = existingPendingSub.id;
+          await db
+            .update(schema.subscriptions)
+            .set({
+              providerId: selectedProviderId,
+              providerSubscriptionId: trialCode,
+              providerSubscriptionCode: trialCode,
+              paystackSubscriptionCode:
+                selectedProviderId === "paystack" ? trialCode : null,
+              status: "trialing",
+              currentPeriodStart: now,
+              currentPeriodEnd: trialEndMs,
+              metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
+              updatedAt: now,
+            })
+            .where(eq(schema.subscriptions.id, existingPendingSub.id));
+        } else {
+          const [subscription] = await db
+            .insert(schema.subscriptions)
+            .values({
+              id: crypto.randomUUID(),
+              customerId: customerRecord.id,
+              planId: plan.id,
+              providerId: selectedProviderId,
+              providerSubscriptionId: trialCode,
+              providerSubscriptionCode: trialCode,
+              paystackSubscriptionCode:
+                selectedProviderId === "paystack" ? trialCode : null,
+              status: "trialing",
+              currentPeriodStart: now,
+              currentPeriodEnd: trialEndMs,
+              metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
+            })
+            .returning();
+          subscriptionId = subscription.id;
+        }
 
         try {
           await c.env.TRIAL_END_WORKFLOW.create({
             params: {
-              subscriptionId: subscription.id,
+              subscriptionId: subscriptionId,
               customerId: customerRecord.id,
               planId: plan.id,
               organizationId: keyRecord.organizationId,
@@ -390,7 +520,10 @@ app.post("/attach", async (c) => {
             },
           });
         } catch (wfErr) {
-          console.error(`[TRIAL] Failed to dispatch trial end workflow:`, wfErr);
+          console.error(
+            `[TRIAL] Failed to dispatch trial end workflow:`,
+            wfErr,
+          );
         }
 
         await provisionEntitlements(db, customerRecord.id, plan.id);
@@ -399,23 +532,38 @@ app.post("/attach", async (c) => {
           success: true,
           trial: true,
           trial_days: trialDays,
-          message: trialUnit === "minutes" ? `${trialDays}-minute trial activated` : `${trialDays}-day trial activated`,
-          subscription_id: subscription.id,
+          message:
+            trialUnit === "minutes"
+              ? `${trialDays}-minute trial activated`
+              : `${trialDays}-day trial activated`,
+          subscription_id: subscriptionId,
           customer_id: customerRecord.id,
           trial_ends_at: new Date(trialEndMs).toISOString(),
         });
       } catch (e: any) {
         return c.json(
-          { success: false, error: e.message || "Failed to create trial subscription" },
+          {
+            success: false,
+            error: e.message || "Failed to create trial subscription",
+          },
           500,
         );
       }
     }
 
-    console.log(`[TRIAL] Initiating card-required trial checkout: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}`);
+    console.log(
+      `[TRIAL] Initiating card-required trial checkout: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}`,
+    );
     // Providers like Dodo handle trials natively via subscription_data.trial_period_days.
     // Mark these so the trial-end workflow skips the charge (provider handles billing).
     const isNativeTrial = providerCtx.adapter.supportsNativeTrials === true;
+
+    // Pre-calculate trial end date for reliable downstream processing
+    const trialDurationMs =
+      trialUnit === "minutes"
+        ? trialDays * 60 * 1000
+        : trialDays * 24 * 60 * 60 * 1000;
+    const trialEndsAt = new Date(Date.now() + trialDurationMs).toISOString();
 
     const trialMetadata = {
       ...metadata,
@@ -428,6 +576,7 @@ app.post("/attach", async (c) => {
       provider_id: selectedProviderId,
       trial_days: trialDays,
       trial_unit: trialUnit,
+      trial_ends_at: trialEndsAt,
       is_trial: true,
       native_trial: isNativeTrial,
       amount: plan.price,
@@ -435,19 +584,23 @@ app.post("/attach", async (c) => {
     };
 
     try {
-      const customerRef = customerRecord.providerCustomerId || customerRecord.paystackCustomerId || email;
+      const customerRef =
+        customerRecord.providerCustomerId ||
+        customerRecord.paystackCustomerId ||
+        email;
       // Only pass the plan for providers with native trial support.
       // For auth-capture providers (Paystack), plan: null ensures the checkout
       // charges the small auth amount instead of the full subscription price.
       const trialPlanRef = isNativeTrial
-        ? (plan.providerPlanId || plan.paystackPlanId)
+        ? plan.providerPlanId || plan.paystackPlanId
         : null;
 
       // Convert trial duration to days for providers that support native trials (Dodo).
       // Minute-based trials (used for testing) round up to at least 1 day.
-      const trialDaysForProvider = trialUnit === "minutes"
-        ? Math.max(1, Math.ceil(trialDays / 1440))
-        : trialDays;
+      const trialDaysForProvider =
+        trialUnit === "minutes"
+          ? Math.max(1, Math.ceil(trialDays / 1440))
+          : trialDays;
 
       const result = await providerCtx.adapter.createCheckoutSession({
         customer: { id: customerRef, email },
@@ -463,10 +616,7 @@ app.post("/attach", async (c) => {
       });
 
       if (result.isErr()) {
-        return c.json(
-          { success: false, error: result.error.message },
-          400,
-        );
+        return c.json({ success: false, error: result.error.message }, 400);
       }
 
       return c.json({
@@ -478,7 +628,10 @@ app.post("/attach", async (c) => {
         accessCode: result.value.accessCode,
       });
     } catch (e: any) {
-      return c.json({ success: false, error: e.message || "Network error" }, 500);
+      return c.json(
+        { success: false, error: e.message || "Network error" },
+        500,
+      );
     }
   }
 
@@ -490,19 +643,25 @@ app.post("/attach", async (c) => {
   //    - Lateral: switches features immediately, no charge
   //    - New: creates subscription (direct if card on file, checkout if not)
   try {
-    const result = await executeSwitch(db, customerRecord.id, plan.id, providerCtx, {
-      callbackUrl,
-      metadata: {
-        ...metadata,
-        organization_id: keyRecord.organizationId,
-        project_id: project.id,
+    const result = await executeSwitch(
+      db,
+      customerRecord.id,
+      plan.id,
+      providerCtx,
+      {
+        callbackUrl,
+        metadata: {
+          ...metadata,
+          organization_id: keyRecord.organizationId,
+          project_id: project.id,
+          environment: providerEnv,
+          provider_id: selectedProviderId,
+        },
+        downgradeWorkflow: c.env.DOWNGRADE_WORKFLOW,
+        organizationId: keyRecord.organizationId,
         environment: providerEnv,
-        provider_id: selectedProviderId,
       },
-      downgradeWorkflow: c.env.DOWNGRADE_WORKFLOW,
-      organizationId: keyRecord.organizationId,
-      environment: providerEnv,
-    });
+    );
 
     if (!result.success) {
       return c.json({ success: false, error: result.message }, 400);

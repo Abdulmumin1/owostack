@@ -1,12 +1,12 @@
 ---
 title: Introduction
-description: Provider-agnostic billing infrastructure for AI SaaS
+description: Billing infrastructure for AI SaaS
 icon: Rocket
 ---
 
 # Owostack
 
-Owostack is a provider-agnostic billing layer for subscriptions, usage, and entitlements. You connect a payment provider, model plans and features, and use three API primitives to enforce access and track usage: `attach`, `check`, and `track`.
+Owostack is a billing infrastructure for subscriptions, usage, and entitlements. You connect a payment provider, model plans and features, and use three API primitives to enforce access and track usage: `attach`, `check`, and `track`.
 
 ## What you build with Owostack
 
@@ -54,9 +54,13 @@ Provider Checkout -> Provider Webhooks -> Owostack
 Owostack receives provider webhooks, normalizes events, and keeps subscription state, entitlements, and usage meters in sync. Your app just checks and tracks.
 
 <Cards>
-  <Card title="Quickstart" href="/docs/quickstart" icon="Zap" />
-  <Card title="Webhook Setup" href="/docs/webhook-setup" icon="Webhook" />
-  <Card title="How It Works" href="/docs/concepts/how-it-works" icon="Workflow" />
+  <Card title="Quickstart" href="/docs/getting-started/quickstart" icon="Zap" />
+  <Card title="Webhook Setup" href="/docs/getting-started/webhook-setup" icon="Webhook" />
+  <Card
+    title="How It Works"
+    href="/docs/concepts/how-it-works"
+    icon="Workflow"
+  />
 </Cards>
 
 ## Supported billing models

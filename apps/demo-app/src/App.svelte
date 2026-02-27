@@ -109,7 +109,9 @@
       const res = await owo.check({
         customer: customerId,
         feature: featureId,
-        customerData: { email: customerId },
+        ...(customerId.includes("@")
+          ? { customerData: { email: customerId } }
+          : {}),
       });
       log("Check Result:", res);
     } catch (e: any) {
@@ -126,6 +128,9 @@
         customer: customerId,
         feature: featureId,
         value: trackAmount,
+        ...(customerId.includes("@")
+          ? { customerData: { email: customerId } }
+          : {}),
       });
       log("Track Result:", res);
     } catch (e: any) {
@@ -157,7 +162,10 @@
         quantity: packQuantity,
       });
       addonResult = res;
-      log(res.success ? "Addon Purchase Success:" : "Addon Purchase Failed:", res);
+      log(
+        res.success ? "Addon Purchase Success:" : "Addon Purchase Failed:",
+        res,
+      );
     } catch (e: any) {
       log("Addon Purchase Error:", e.message);
     }
@@ -165,13 +173,17 @@
 
   async function handleCheckAddonBalance() {
     if (!customerId || !featureId) return alert("Customer & Feature required");
-    log(`Checking addon balance via /check (sendEvent=false) for ${featureId}...`);
+    log(
+      `Checking addon balance via /check (sendEvent=false) for ${featureId}...`,
+    );
 
     try {
       const res = await owo.check({
         customer: customerId,
         feature: featureId,
-        customerData: { email: customerId },
+        ...(customerId.includes("@")
+          ? { customerData: { email: customerId } }
+          : {}),
       });
       addonBalanceResult = res;
       log("Check w/ Addon Info:", {
@@ -188,7 +200,9 @@
 
   async function handleExhaustAndFallback() {
     if (!customerId || !featureId) return alert("Customer & Feature required");
-    log(`--- Exhaust Test: sending check(sendEvent=true) repeatedly for '${featureId}' ---`);
+    log(
+      `--- Exhaust Test: sending check(sendEvent=true) repeatedly for '${featureId}' ---`,
+    );
 
     for (let i = 0; i < 5; i++) {
       try {
@@ -197,11 +211,15 @@
           feature: featureId,
           value: 1,
           sendEvent: true,
-          customerData: { email: customerId },
+          ...(customerId.includes("@")
+            ? { customerData: { email: customerId } }
+            : {}),
         } as any);
         const code = (res as any).code;
         const addon = (res as any).addonCredits;
-        log(`  Round ${i + 1}: ${res.allowed ? "✓" : "✗"} code=${code}${addon !== undefined ? ` addon=${addon}` : ""}`);
+        log(
+          `  Round ${i + 1}: ${res.allowed ? "✓" : "✗"} code=${code}${addon !== undefined ? ` addon=${addon}` : ""}`,
+        );
         if (!res.allowed) {
           log("  → Blocked. Test complete.");
           break;
@@ -249,10 +267,13 @@
       if (res.paid) {
         log("Invoice paid (auto-charged):", res);
         if (invoiceResult?.invoice?.id === invoiceId) {
-          invoiceResult = { ...invoiceResult, invoice: { ...invoiceResult.invoice, status: "paid" } };
+          invoiceResult = {
+            ...invoiceResult,
+            invoice: { ...invoiceResult.invoice, status: "paid" },
+          };
         }
         invoicesList = invoicesList.map((inv: any) =>
-          inv.id === invoiceId ? { ...inv, status: "paid" } : inv
+          inv.id === invoiceId ? { ...inv, status: "paid" } : inv,
         );
       } else {
         log("Checkout URL:", res.checkoutUrl);
@@ -399,7 +420,9 @@
         </div>
 
         {#if walletSetupResult}
-          <div class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs font-mono break-all">
+          <div
+            class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs font-mono break-all"
+          >
             {#if walletSetupResult.checkoutUrl}
               <a
                 href={walletSetupResult.checkoutUrl}
@@ -409,7 +432,11 @@
                 Complete Card Setup &rarr;
               </a>
             {/if}
-            <pre class="mt-2 text-zinc-500">{JSON.stringify(walletSetupResult, null, 2)}</pre>
+            <pre class="mt-2 text-zinc-500">{JSON.stringify(
+                walletSetupResult,
+                null,
+                2,
+              )}</pre>
           </div>
         {/if}
 
@@ -417,18 +444,26 @@
           <div class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs">
             {#if walletResult.methods && walletResult.methods.length > 0}
               {#each walletResult.methods as method}
-                <div class="flex items-center justify-between py-2 border-b border-zinc-800 last:border-0">
+                <div
+                  class="flex items-center justify-between py-2 border-b border-zinc-800 last:border-0"
+                >
                   <div>
                     <span class="text-zinc-300 font-bold">
-                      {method.cardBrand || method.type || 'Card'}
+                      {method.cardBrand || method.type || "Card"}
                     </span>
                     {#if method.cardLast4}
-                      <span class="text-zinc-500 ml-1">**** {method.cardLast4}</span>
+                      <span class="text-zinc-500 ml-1"
+                        >**** {method.cardLast4}</span
+                      >
                     {/if}
                     {#if method.cardExpMonth && method.cardExpYear}
-                      <span class="text-zinc-600 ml-2 text-[10px]">{method.cardExpMonth}/{method.cardExpYear}</span>
+                      <span class="text-zinc-600 ml-2 text-[10px]"
+                        >{method.cardExpMonth}/{method.cardExpYear}</span
+                      >
                     {/if}
-                    <span class="text-zinc-600 ml-2 text-[10px] uppercase">{method.providerId}</span>
+                    <span class="text-zinc-600 ml-2 text-[10px] uppercase"
+                      >{method.providerId}</span
+                    >
                   </div>
                   <button
                     onclick={() => handleRemoveCard(method.id)}
@@ -439,7 +474,9 @@
                 </div>
               {/each}
             {:else}
-              <div class="text-zinc-600 italic text-center py-3">No payment methods on file</div>
+              <div class="text-zinc-600 italic text-center py-3">
+                No payment methods on file
+              </div>
             {/if}
           </div>
         {/if}
@@ -520,7 +557,9 @@
             >
               <button
                 class="px-2 text-zinc-400 hover:text-white"
-                onclick={() => { if (packQuantity > 1) packQuantity-- }}>-</button
+                onclick={() => {
+                  if (packQuantity > 1) packQuantity--;
+                }}>-</button
               >
               <span class="text-xs w-6 text-center">{packQuantity}x</span>
               <button
@@ -553,10 +592,15 @@
             {/if}
             {#if addonResult.balance !== undefined}
               <div class="text-purple-300 font-bold mb-1">
-                Balance: {addonResult.balance} credits (system: {addonResult.creditSystemId || "n/a"})
+                Balance: {addonResult.balance} credits (system: {addonResult.creditSystemId ||
+                  "n/a"})
               </div>
             {/if}
-            <pre class="text-zinc-500 mt-1">{JSON.stringify(addonResult, null, 2)}</pre>
+            <pre class="text-zinc-500 mt-1">{JSON.stringify(
+                addonResult,
+                null,
+                2,
+              )}</pre>
           </div>
         {/if}
 
@@ -581,20 +625,33 @@
           <div class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs">
             <div class="flex justify-between items-center">
               <span class="text-zinc-400">Allowed</span>
-              <span class:text-emerald-400={addonBalanceResult.allowed} class:text-red-400={!addonBalanceResult.allowed} class="font-bold">
+              <span
+                class:text-emerald-400={addonBalanceResult.allowed}
+                class:text-red-400={!addonBalanceResult.allowed}
+                class="font-bold"
+              >
                 {addonBalanceResult.allowed ? "Yes" : "No"} ({addonBalanceResult.code})
               </span>
             </div>
             {#if addonBalanceResult.planCredits}
-              <div class="flex justify-between items-center mt-1 border-t border-zinc-800 pt-1">
+              <div
+                class="flex justify-between items-center mt-1 border-t border-zinc-800 pt-1"
+              >
                 <span class="text-zinc-500">Plan Credits</span>
-                <span class="text-zinc-300">{addonBalanceResult.planCredits.used}/{addonBalanceResult.planCredits.limit}</span>
+                <span class="text-zinc-300"
+                  >{addonBalanceResult.planCredits.used}/{addonBalanceResult
+                    .planCredits.limit}</span
+                >
               </div>
             {/if}
             {#if addonBalanceResult.addonCredits !== undefined}
-              <div class="flex justify-between items-center mt-1 border-t border-zinc-800 pt-1">
+              <div
+                class="flex justify-between items-center mt-1 border-t border-zinc-800 pt-1"
+              >
                 <span class="text-zinc-500">Add-on Credits</span>
-                <span class="text-purple-400 font-bold">{addonBalanceResult.addonCredits}</span>
+                <span class="text-purple-400 font-bold"
+                  >{addonBalanceResult.addonCredits}</span
+                >
               </div>
             {/if}
           </div>
@@ -637,7 +694,8 @@
             <div class="flex justify-between items-center mb-2">
               <span class="text-zinc-400">Unbilled Amount</span>
               <span class="text-amber-400 font-bold">
-                {unbilledUsage.currency} {(unbilledUsage.totalEstimated / 100).toFixed(2)}
+                {unbilledUsage.currency}
+                {(unbilledUsage.totalEstimated / 100).toFixed(2)}
               </span>
             </div>
             {#each unbilledUsage.features || [] as f}
@@ -655,13 +713,18 @@
         {/if}
 
         {#if invoiceResult?.success}
-          <div class="bg-zinc-900 p-3 rounded border border-emerald-800 text-xs">
+          <div
+            class="bg-zinc-900 p-3 rounded border border-emerald-800 text-xs"
+          >
             <div class="text-emerald-400 font-bold mb-2">
               Invoice {invoiceResult.invoice.number}
             </div>
             <div class="flex justify-between text-zinc-400">
               <span>Total</span>
-              <span>{invoiceResult.invoice.currency} {(invoiceResult.invoice.total / 100).toFixed(2)}</span>
+              <span
+                >{invoiceResult.invoice.currency}
+                {(invoiceResult.invoice.total / 100).toFixed(2)}</span
+              >
             </div>
             <div class="text-zinc-600 text-xs mt-1">
               Status: {invoiceResult.invoice.status}
@@ -681,18 +744,27 @@
         {#if invoicesList.length > 0}
           <div class="space-y-2">
             {#each invoicesList as inv}
-              <div class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs flex items-center justify-between">
+              <div
+                class="bg-zinc-900 p-3 rounded border border-zinc-700 text-xs flex items-center justify-between"
+              >
                 <div>
-                  <span class="text-zinc-300 font-bold">{inv.number || inv.id.slice(0, 8)}</span>
-                  <span class="text-zinc-500 ml-2">{inv.currency} {((inv.total || 0) / 100).toFixed(2)}</span>
-                  <span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                  <span class="text-zinc-300 font-bold"
+                    >{inv.number || inv.id.slice(0, 8)}</span
+                  >
+                  <span class="text-zinc-500 ml-2"
+                    >{inv.currency} {((inv.total || 0) / 100).toFixed(2)}</span
+                  >
+                  <span
+                    class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold"
                     class:bg-emerald-900={inv.status === "paid"}
                     class:text-emerald-400={inv.status === "paid"}
                     class:bg-amber-900={inv.status === "open"}
                     class:text-amber-400={inv.status === "open"}
-                    class:bg-zinc-700={inv.status !== "paid" && inv.status !== "open"}
-                    class:text-zinc-400={inv.status !== "paid" && inv.status !== "open"}
-                  >{inv.status}</span>
+                    class:bg-zinc-700={inv.status !== "paid" &&
+                      inv.status !== "open"}
+                    class:text-zinc-400={inv.status !== "paid" &&
+                      inv.status !== "open"}>{inv.status}</span
+                  >
                 </div>
                 {#if inv.status === "open"}
                   <button

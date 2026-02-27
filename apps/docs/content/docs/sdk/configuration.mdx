@@ -1,0 +1,178 @@
+---
+title: Configuration
+description: SDK initialization and configuration options
+icon: Settings
+---
+
+# Configuration
+
+Configure the Owostack SDK with your API keys and environment settings.
+
+## Initialization
+
+```ts
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
+  mode: "live", // or "sandbox"
+});
+```
+
+## Configuration Options
+
+| Option      | Type                  | Required | Description                          |
+| ----------- | --------------------- | -------- | ------------------------------------ |
+| `secretKey` | `string`              | ✅       | Your API secret key                  |
+| `mode`      | `"sandbox" \| "live"` | -        | Environment mode (default: live)     |
+| `apiUrl`    | `string`              | -        | Custom API URL (overrides mode)      |
+| `debug`     | `boolean`             | -        | Enable debug logging                 |
+| `catalog`   | `CatalogEntry[]`      | -        | Declarative plan/feature definitions |
+
+## Environment Modes
+
+Use the `mode` option to switch between sandbox and live environments:
+
+```ts
+// Sandbox mode (uses test API keys and data)
+const sandboxClient = new Owostack({
+  secretKey: process.env.OWOSTACK_SANDBOX_SECRET_KEY,
+  mode: "sandbox",
+});
+
+// Live mode (uses production API keys)
+const liveClient = new Owostack({
+  secretKey: process.env.OWOSTACK_LIVE_SECRET_KEY,
+  mode: "live",
+});
+```
+
+### Mode-Based API URLs
+
+- **sandbox**: `https://sandbox.owostack.com`
+- **live**: `https://api.owostack.com`
+
+## Custom API URL
+
+For self-hosted deployments or custom endpoints, use `apiUrl`. This takes precedence over `mode`:
+
+```ts
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
+  apiUrl: "https://billing.mycompany.com",
+  // mode is ignored when apiUrl is provided
+});
+```
+
+## URL Resolution Priority
+
+The SDK resolves the API URL in this order:
+
+1. **Explicit `apiUrl`** (highest priority)
+2. **Mode-based URL** (sandbox/live)
+3. **Default URL** (`https://api.owostack.com`)
+
+## Debug Mode
+
+Enable debug mode for verbose logging:
+
+```ts
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
+  mode: "sandbox",
+  debug: true,
+});
+```
+
+## With Catalog
+
+Pass a declarative catalog for plan/feature management:
+
+```ts
+import { metered, boolean, plan } from "@owostack/core";
+
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
+  mode: "live",
+  catalog: [
+    plan("pro", {
+      name: "Pro",
+      price: 2900,
+      currency: "USD",
+      interval: "monthly",
+      features: [
+        metered("api-calls").limit(10000),
+        boolean("premium-support").enabled(),
+      ],
+    }),
+  ],
+});
+
+// Sync catalog to server
+await owo.sync();
+```
+
+## Runtime Configuration
+
+Override configuration at runtime (useful for CLI tooling):
+
+```ts
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
+});
+
+// Switch to sandbox mode
+owo.setSecretKey(process.env.OWOSTACK_SANDBOX_SECRET_KEY);
+owo.setApiUrl("https://sandbox.owostack.com");
+```
+
+## Best Practices
+
+1. **Use environment variables** - Never hardcode API keys
+2. **Separate sandbox/live keys** - Use different keys for each environment
+3. **Use mode explicitly** - Always specify mode in multi-environment setups
+4. **Custom URL overrides mode** - When using apiUrl, mode is ignored
+
+## Examples
+
+### Development Setup
+
+```ts
+// config.ts
+export const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SANDBOX_SECRET_KEY!,
+  mode: "sandbox",
+  debug: process.env.NODE_ENV === "development",
+});
+```
+
+### Production Setup
+
+```ts
+// config.ts
+export const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_LIVE_SECRET_KEY!,
+  mode: "live",
+});
+```
+
+### Dynamic Mode
+
+```ts
+// config.ts
+const mode = process.env.OWOSTACK_MODE as "sandbox" | "live" | undefined;
+const secretKey =
+  mode === "sandbox"
+    ? process.env.OWOSTACK_SANDBOX_SECRET_KEY
+    : process.env.OWOSTACK_LIVE_SECRET_KEY;
+
+export const owo = new Owostack({
+  secretKey: secretKey!,
+  mode: mode || "live",
+});
+```
+
+## Related
+
+- [Catalog Sync](/docs/sdk/catalog) - Define plans and features declaratively
+- [Quickstart](/docs/quickstart) - Get started with Owostack

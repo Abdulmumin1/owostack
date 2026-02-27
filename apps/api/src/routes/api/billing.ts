@@ -9,6 +9,7 @@ import {
   deriveProviderEnvironment,
   loadProviderAccounts,
 } from "../../lib/providers";
+import { trackBusinessEvent } from "../../lib/analytics-engine";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 
@@ -77,7 +78,9 @@ app.get("/usage", async (c) => {
     return c.json({ success: false, error: "Customer not found" }, 404);
   }
 
-  const billingService = new BillingService(db);
+  const billingService = new BillingService(db, {
+    usageLedger: c.env.USAGE_LEDGER,
+  });
   const result = await billingService.getUnbilledUsage(customer.id, organizationId);
 
   if (result.isErr()) {
@@ -113,15 +116,34 @@ app.post("/invoice", async (c) => {
     return c.json({ success: false, error: "Customer not found" }, 404);
   }
 
-  const billingService = new BillingService(db);
+  const billingService = new BillingService(db, {
+    usageLedger: c.env.USAGE_LEDGER,
+  });
   const result = await billingService.generateInvoice(customer.id, organizationId);
 
   if (result.isErr()) {
+    const noUsage = result.error.message.includes("Unbilled usage");
+    trackBusinessEvent(c.env, {
+      event: "billing.invoice.generate",
+      outcome: noUsage ? "empty" : "error",
+      organizationId,
+      customerId: customer.id,
+    });
+
     if (result.error.message.includes("Unbilled usage")) {
       return c.json({ success: false, error: "No unbilled usage to invoice" }, 400);
     }
     return c.json({ success: false, error: result.error.message }, 500);
   }
+
+  trackBusinessEvent(c.env, {
+    event: "billing.invoice.generate",
+    outcome: "success",
+    organizationId,
+    customerId: customer.id,
+    value: Number(result.value.total || 0),
+    currency: result.value.currency || null,
+  });
 
   return c.json({
     success: true,
@@ -151,7 +173,9 @@ app.get("/invoices", async (c) => {
     return c.json({ success: false, error: "Customer not found" }, 404);
   }
 
-  const billingService = new BillingService(db);
+  const billingService = new BillingService(db, {
+    usageLedger: c.env.USAGE_LEDGER,
+  });
   const result = await billingService.getInvoices(customer.id, organizationId);
 
   if (result.isErr()) {
@@ -193,10 +217,23 @@ app.post("/invoice/:id/pay", async (c) => {
   });
 
   if (!invoice) {
+    trackBusinessEvent(c.env, {
+      event: "billing.invoice.pay",
+      outcome: "invoice_not_found",
+      organizationId,
+    });
     return c.json({ success: false, error: "Invoice not found" }, 404);
   }
 
   if (invoice.status === "paid") {
+    trackBusinessEvent(c.env, {
+      event: "billing.invoice.pay",
+      outcome: "already_paid",
+      organizationId,
+      customerId: invoice.customerId,
+      value: Number(invoice.total || 0),
+      currency: invoice.currency || null,
+    });
     return c.json({
       success: true,
       paid: true,
@@ -211,10 +248,22 @@ app.post("/invoice/:id/pay", async (c) => {
   }
 
   if (invoice.status !== "open") {
+    trackBusinessEvent(c.env, {
+      event: "billing.invoice.pay",
+      outcome: "invalid_status",
+      organizationId,
+      customerId: invoice.customerId,
+    });
     return c.json({ success: false, error: `Invoice is ${invoice.status} — only open invoices can be paid` }, 400);
   }
 
   if (!invoice.amountDue || invoice.amountDue <= 0) {
+    trackBusinessEvent(c.env, {
+      event: "billing.invoice.pay",
+      outcome: "no_outstanding_balance",
+      organizationId,
+      customerId: invoice.customerId,
+    });
     return c.json({ success: false, error: "Invoice has no outstanding balance" }, 400);
   }
 
@@ -236,6 +285,12 @@ app.post("/invoice/:id/pay", async (c) => {
   });
 
   if (!subscription?.providerId) {
+    trackBusinessEvent(c.env, {
+      event: "billing.invoice.pay",
+      outcome: "provider_missing",
+      organizationId,
+      customerId: customer.id,
+    });
     return c.json({ success: false, error: "No provider configured for this customer" }, 400);
   }
 
@@ -256,6 +311,13 @@ app.post("/invoice/:id/pay", async (c) => {
   );
 
   if (!adapter || !account) {
+    trackBusinessEvent(c.env, {
+      event: "billing.invoice.pay",
+      outcome: "provider_not_configured",
+      organizationId,
+      customerId: customer.id,
+      providerId: subscription.providerId,
+    });
     return c.json({ success: false, error: "Payment provider not configured" }, 400);
   }
 
@@ -310,6 +372,16 @@ app.post("/invoice/:id/pay", async (c) => {
           })
           .where(eq(schema.invoices.id, invoice.id));
 
+        trackBusinessEvent(c.env, {
+          event: "billing.invoice.pay",
+          outcome: "auto_charge_paid",
+          organizationId,
+          customerId: customer.id,
+          providerId: subscription.providerId,
+          value: Number(invoice.amountDue || 0),
+          currency: invoice.currency || null,
+        });
+
         return c.json({
           success: true,
           paid: true,
@@ -325,8 +397,26 @@ app.post("/invoice/:id/pay", async (c) => {
 
       // Charge failed — fall through to checkout
       console.warn(`[billing] Auto-charge failed for invoice ${invoice.id}:`, chargeResult.error.message);
+      trackBusinessEvent(c.env, {
+        event: "billing.invoice.pay",
+        outcome: "auto_charge_failed",
+        organizationId,
+        customerId: customer.id,
+        providerId: subscription.providerId,
+        value: Number(invoice.amountDue || 0),
+        currency: invoice.currency || null,
+      });
     } catch (e) {
       console.warn(`[billing] Auto-charge error for invoice ${invoice.id}:`, e);
+      trackBusinessEvent(c.env, {
+        event: "billing.invoice.pay",
+        outcome: "auto_charge_error",
+        organizationId,
+        customerId: customer.id,
+        providerId: subscription.providerId,
+        value: Number(invoice.amountDue || 0),
+        currency: invoice.currency || null,
+      });
     }
   }
 
@@ -354,6 +444,15 @@ app.post("/invoice/:id/pay", async (c) => {
     // Some providers (e.g. Dodo) can't create raw-amount checkouts without a product.
     // If auto-charge was attempted but failed, communicate that clearly.
     const hasAuthCode = !!customer.providerAuthorizationCode;
+    trackBusinessEvent(c.env, {
+      event: "billing.invoice.pay",
+      outcome: "checkout_error",
+      organizationId,
+      customerId: customer.id,
+      providerId: subscription.providerId,
+      value: Number(invoice.amountDue || 0),
+      currency: invoice.currency || null,
+    });
     return c.json({
       success: false,
       error: hasAuthCode
@@ -361,6 +460,16 @@ app.post("/invoice/:id/pay", async (c) => {
         : `No payment method on file and checkout creation failed: ${checkoutResult.error.message}`,
     }, 500);
   }
+
+  trackBusinessEvent(c.env, {
+    event: "billing.invoice.pay",
+    outcome: "checkout_required",
+    organizationId,
+    customerId: customer.id,
+    providerId: subscription.providerId,
+    value: Number(invoice.amountDue || 0),
+    currency: invoice.currency || null,
+  });
 
   return c.json({
     success: true,

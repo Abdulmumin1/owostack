@@ -8,6 +8,7 @@ import {
   deriveProviderEnvironment,
   loadProviderAccounts,
 } from "../../lib/providers";
+import { getMinimumChargeAmount } from "../../lib/provider-minimums";
 import type { Env, Variables } from "../../index";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -60,12 +61,27 @@ const syncPlanSchema = z.object({
   interval: z.string(),
   planGroup: z.string().optional(),
   trialDays: z.number().optional(),
+  provider: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   features: z.array(syncPlanFeatureSchema),
 });
 
+const syncCreditSystemFeatureSchema = z.object({
+  feature: z.string().min(1),
+  creditCost: z.number().min(0),
+});
+
+const syncCreditSystemSchema = z.object({
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  features: z.array(syncCreditSystemFeatureSchema),
+});
+
 const syncPayloadSchema = z.object({
+  defaultProvider: z.string().optional(),
   features: z.array(syncFeatureSchema),
+  creditSystems: z.array(syncCreditSystemSchema).optional(),
   plans: z.array(syncPlanSchema),
 });
 
@@ -83,21 +99,49 @@ app.post("/", async (c) => {
   const parsed = syncPayloadSchema.safeParse(body);
 
   if (!parsed.success) {
-    return c.json({ success: false, error: "Invalid sync payload", details: parsed.error.flatten() }, 400);
+    return c.json(
+      {
+        success: false,
+        error: "Invalid sync payload",
+        details: parsed.error.flatten(),
+      },
+      400,
+    );
   }
 
-  const { features: featureDefs, plans: planDefs } = parsed.data;
+  const {
+    features: featureDefs,
+    creditSystems: creditSystemDefs,
+    plans: planDefs,
+    defaultProvider,
+  } = parsed.data;
   const db = c.get("db");
   const organizationId = c.get("organizationId");
 
   if (!organizationId) {
-    return c.json({ success: false, error: "Organization context missing" }, 500);
+    return c.json(
+      { success: false, error: "Organization context missing" },
+      500,
+    );
   }
 
   const result = {
     success: true,
-    features: { created: [] as string[], updated: [] as string[], unchanged: [] as string[] },
-    plans: { created: [] as string[], updated: [] as string[], unchanged: [] as string[] },
+    features: {
+      created: [] as string[],
+      updated: [] as string[],
+      unchanged: [] as string[],
+    },
+    creditSystems: {
+      created: [] as string[],
+      updated: [] as string[],
+      unchanged: [] as string[],
+    },
+    plans: {
+      created: [] as string[],
+      updated: [] as string[],
+      unchanged: [] as string[],
+    },
     warnings: [] as string[],
   };
 
@@ -121,7 +165,8 @@ app.post("/", async (c) => {
       const typeChanged = existing.type !== featureDef.type;
 
       if (nameChanged || typeChanged) {
-        await db.update(schema.features)
+        await db
+          .update(schema.features)
           .set({
             name: featureDef.name,
             type: featureDef.type,
@@ -131,12 +176,15 @@ app.post("/", async (c) => {
         result.features.updated.push(featureDef.slug);
 
         if (existing.source === "dashboard") {
-          result.warnings.push(`Feature '${featureDef.slug}' was managed by dashboard — now managed by SDK.`);
+          result.warnings.push(
+            `Feature '${featureDef.slug}' was managed by dashboard — now managed by SDK.`,
+          );
         }
       } else {
         // Mark as SDK-managed even if nothing changed
         if (existing.source !== "sdk") {
-          await db.update(schema.features)
+          await db
+            .update(schema.features)
             .set({ source: "sdk" })
             .where(eq(schema.features.id, existing.id));
         }
@@ -157,7 +205,68 @@ app.post("/", async (c) => {
   }
 
   // =========================================================================
-  // 2. Sync Plans
+  // 2. Sync Credit Systems
+  // =========================================================================
+  if (creditSystemDefs && creditSystemDefs.length > 0) {
+    for (const csDef of creditSystemDefs) {
+      const existing = await db.query.creditSystems.findFirst({
+        where: and(
+          eq(schema.creditSystems.organizationId, organizationId),
+          eq(schema.creditSystems.slug, csDef.slug),
+        ),
+      });
+
+      if (existing) {
+        const nameChanged = existing.name !== csDef.name;
+        const descChanged =
+          existing.description !== (csDef.description ?? null);
+
+        if (nameChanged || descChanged) {
+          await db
+            .update(schema.creditSystems)
+            .set({
+              name: csDef.name,
+              description: csDef.description ?? null,
+              updatedAt: Date.now(),
+            })
+            .where(eq(schema.creditSystems.id, existing.id));
+          result.creditSystems.updated.push(csDef.slug);
+        } else {
+          result.creditSystems.unchanged.push(csDef.slug);
+        }
+
+        // Sync credit system features
+        await reconcileCreditSystemFeatures(
+          db,
+          organizationId,
+          existing.id,
+          csDef.features,
+        );
+      } else {
+        // Create new credit system
+        const csId = crypto.randomUUID();
+        await db.insert(schema.creditSystems).values({
+          id: csId,
+          organizationId,
+          name: csDef.name,
+          slug: csDef.slug,
+          description: csDef.description ?? null,
+        });
+
+        // Sync credit system features
+        await reconcileCreditSystemFeatures(
+          db,
+          organizationId,
+          csId,
+          csDef.features,
+        );
+        result.creditSystems.created.push(csDef.slug);
+      }
+    }
+  }
+
+  // =========================================================================
+  // 3. Sync Plans
   // =========================================================================
   for (const planDef of planDefs) {
     const existing = await db.query.plans.findFirst({
@@ -182,7 +291,53 @@ app.post("/", async (c) => {
         existing.trialDays !== (planDef.trialDays ?? 0);
 
       if (changed) {
-        await db.update(schema.plans)
+        // Validate minimum charge amount if price changed and plan has a provider
+        if (
+          existing.price !== planDef.price &&
+          planDef.price > 0 &&
+          existing.providerId
+        ) {
+          const minimumAmount = getMinimumChargeAmount(
+            existing.providerId,
+            planDef.currency,
+          );
+
+          if (minimumAmount > 0 && planDef.price < minimumAmount) {
+            const minDisplay = minimumAmount / 100;
+            result.warnings.push(
+              `Plan '${planDef.slug}' price ${planDef.price / 100} ${planDef.currency} is below the minimum charge amount of ${minDisplay} ${planDef.currency} for ${existing.providerId}. Price update skipped.`,
+            );
+            // Skip price update but continue with other changes
+            await db
+              .update(schema.plans)
+              .set({
+                name: planDef.name,
+                currency: planDef.currency,
+                interval: planDef.interval,
+                description: planDef.description ?? null,
+                planGroup: planDef.planGroup ?? null,
+                trialDays: planDef.trialDays ?? 0,
+                type: planDef.price === 0 ? "free" : "paid",
+                providerId:
+                  planDef.provider ?? defaultProvider ?? existing.providerId,
+                metadata: planDef.metadata ?? null,
+                source: "sdk",
+                updatedAt: Date.now(),
+              })
+              .where(eq(schema.plans.id, existing.id));
+            result.plans.updated.push(planDef.slug);
+            await reconcilePlanFeatures(
+              db,
+              organizationId,
+              existing.id,
+              planDef.features,
+            );
+            continue;
+          }
+        }
+
+        await db
+          .update(schema.plans)
           .set({
             name: planDef.name,
             price: planDef.price,
@@ -192,6 +347,8 @@ app.post("/", async (c) => {
             planGroup: planDef.planGroup ?? null,
             trialDays: planDef.trialDays ?? 0,
             type: planDef.price === 0 ? "free" : "paid",
+            providerId:
+              planDef.provider ?? defaultProvider ?? existing.providerId,
             metadata: planDef.metadata ?? null,
             source: "sdk",
             updatedAt: Date.now(),
@@ -199,7 +356,9 @@ app.post("/", async (c) => {
           .where(eq(schema.plans.id, existing.id));
 
         if (existing.source === "dashboard") {
-          result.warnings.push(`Plan '${planDef.slug}' was managed by dashboard — now managed by SDK.`);
+          result.warnings.push(
+            `Plan '${planDef.slug}' was managed by dashboard — now managed by SDK.`,
+          );
         }
 
         // Sync price/name changes with payment provider
@@ -237,9 +396,14 @@ app.post("/", async (c) => {
               });
 
               if (updateResult.isOk()) {
-                console.log(`[sync] Updated plan on ${existing.providerId}: ${existing.providerPlanId}`);
+                console.log(
+                  `[sync] Updated plan on ${existing.providerId}: ${existing.providerPlanId}`,
+                );
               } else {
-                console.warn(`[sync] Failed to update plan on ${existing.providerId}:`, updateResult.error);
+                console.warn(
+                  `[sync] Failed to update plan on ${existing.providerId}:`,
+                  updateResult.error,
+                );
               }
             }
           } catch (e) {
@@ -251,7 +415,8 @@ app.post("/", async (c) => {
       } else {
         // Mark as SDK-managed
         if (existing.source !== "sdk") {
-          await db.update(schema.plans)
+          await db
+            .update(schema.plans)
             .set({ source: "sdk" })
             .where(eq(schema.plans.id, existing.id));
         }
@@ -259,10 +424,18 @@ app.post("/", async (c) => {
       }
 
       // Reconcile plan features
-      await reconcilePlanFeatures(db, organizationId, existing.id, planDef.features);
+      await reconcilePlanFeatures(
+        db,
+        organizationId,
+        existing.id,
+        planDef.features,
+      );
     } else {
       // Create new plan
       const planId = crypto.randomUUID();
+      // Determine provider: plan.provider overrides defaultProvider
+      const effectiveProvider = planDef.provider ?? defaultProvider ?? null;
+
       await db.insert(schema.plans).values({
         id: planId,
         organizationId,
@@ -275,6 +448,7 @@ app.post("/", async (c) => {
         planGroup: planDef.planGroup ?? null,
         trialDays: planDef.trialDays ?? 0,
         type: planDef.price === 0 ? "free" : "paid",
+        providerId: effectiveProvider,
         metadata: planDef.metadata ?? null,
         source: "sdk",
       });
@@ -324,16 +498,27 @@ async function reconcilePlanFeatures(
       // If feature is disabled, remove the plan_feature if it exists
       const existing = existingByFeatureId.get(feature.id);
       if (existing) {
-        await db.delete(schema.planFeatures)
+        await db
+          .delete(schema.planFeatures)
           .where(eq(schema.planFeatures.id, existing.id));
       }
       continue;
     }
 
     const existing = existingByFeatureId.get(feature.id);
+
+    // For boolean features, limit should be null (not 0)
+    const isBoolean = feature.type === "boolean";
+    const limitValue = isBoolean
+      ? null
+      : fd.limit !== undefined
+        ? fd.limit
+        : null;
+    const resetInterval = isBoolean ? null : (fd.reset ?? "monthly");
+
     const values = {
-      limitValue: fd.limit !== undefined ? fd.limit : null,
-      resetInterval: fd.reset ?? "monthly",
+      limitValue,
+      resetInterval,
       overage: fd.overage ?? "block",
       overagePrice: fd.overagePrice ?? null,
       maxOverageUnits: fd.maxOverageUnits ?? null,
@@ -343,7 +528,8 @@ async function reconcilePlanFeatures(
 
     if (existing) {
       // Update existing plan feature
-      await db.update(schema.planFeatures)
+      await db
+        .update(schema.planFeatures)
         .set(values)
         .where(eq(schema.planFeatures.id, existing.id));
     } else {
@@ -353,6 +539,58 @@ async function reconcilePlanFeatures(
         planId,
         featureId: feature.id,
         ...values,
+      });
+    }
+  }
+}
+
+/**
+ * Reconcile credit system features — upsert credit_system_features entries.
+ * Links features to a credit system with their credit cost.
+ */
+async function reconcileCreditSystemFeatures(
+  db: any,
+  organizationId: string,
+  creditSystemId: string,
+  featureDefs: z.infer<typeof syncCreditSystemFeatureSchema>[],
+) {
+  // Load all features for this org to resolve slugs → IDs
+  const orgFeatures = await db.query.features.findMany({
+    where: eq(schema.features.organizationId, organizationId),
+  });
+  const featureBySlug = new Map<string, any>();
+  for (const f of orgFeatures) {
+    featureBySlug.set(f.slug, f);
+  }
+
+  // Load existing credit system features
+  const existingCsFeatures = await db.query.creditSystemFeatures.findMany({
+    where: eq(schema.creditSystemFeatures.creditSystemId, creditSystemId),
+  });
+  const existingByFeatureId = new Map<string, any>();
+  for (const csf of existingCsFeatures) {
+    existingByFeatureId.set(csf.featureId, csf);
+  }
+
+  for (const fd of featureDefs) {
+    const feature = featureBySlug.get(fd.feature);
+    if (!feature) continue;
+
+    const existing = existingByFeatureId.get(feature.id);
+
+    if (existing) {
+      if (existing.cost !== fd.creditCost) {
+        await db
+          .update(schema.creditSystemFeatures)
+          .set({ cost: fd.creditCost })
+          .where(eq(schema.creditSystemFeatures.id, existing.id));
+      }
+    } else {
+      await db.insert(schema.creditSystemFeatures).values({
+        id: crypto.randomUUID(),
+        creditSystemId,
+        featureId: feature.id,
+        cost: fd.creditCost,
       });
     }
   }

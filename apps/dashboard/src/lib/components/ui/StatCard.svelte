@@ -6,7 +6,7 @@
     value,
     subtitle = undefined,
     icon: Icon = undefined,
-    iconColor = "text-zinc-500 bg-white/5",
+    iconColor = "text-text-dim bg-bg-secondary",
     children = undefined,
   }: {
     label: string;
@@ -18,18 +18,18 @@
   } = $props();
 </script>
 
-<div class="bg-bg-card border border-border p-5 shadow-md">
+<div class="bg-bg-card border border-border p-5 rounded-lg">
   <div class="flex items-center gap-2 mb-3">
     {#if Icon}
       <div class="w-7 h-7 {iconColor} flex items-center justify-center rounded">
-        <Icon size={14} />
+        <Icon  size={14}  weight="duotone" />
       </div>
     {/if}
-    <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{label}</span>
+    <span class="text-[10px] font-bold text-text-dim uppercase tracking-widest">{label}</span>
   </div>
-  <div class="text-2xl font-bold text-white">{value}</div>
+  <div class="text-2xl font-bold text-text-primary">{value}</div>
   {#if subtitle}
-    <p class="text-[10px] text-zinc-600 mt-1.5">{subtitle}</p>
+    <p class="text-[10px] text-text-dim mt-1.5">{subtitle}</p>
   {/if}
   {#if children}
     {@render children()}

@@ -50,7 +50,8 @@ export function auth(env: Env) {
   const db = createDb(wrapD1ForDates(d1));
 
   // Determine if running in production (non-localhost)
-  const isProduction = env.BETTER_AUTH_URL && !env.BETTER_AUTH_URL.includes("localhost");
+  const isProduction =
+    env.BETTER_AUTH_URL && !env.BETTER_AUTH_URL.includes("localhost");
 
   return betterAuth({
     database: drizzleAdapter(db, {
@@ -71,12 +72,28 @@ export function auth(env: Env) {
 
     emailAndPassword: {
       enabled: true,
+      forgetPassword: {
+        enabled: true,
+      },
+      async sendResetPassword({ user, token }, request) {
+        // In dev, use the origin or localhost dashboard
+        const origin =
+          request?.headers.get("origin") || "http://localhost:5173";
+        const resetURL = `${origin}/reset-password?token=${token}`;
+
+        console.log(`[AUTH] 🔑 Password reset requested for ${user.email}`);
+        console.log(`[AUTH] 🔗 Reset URL: ${resetURL}`);
+      },
     },
 
     socialProviders: {
       google: {
         clientId: env.GOOGLE_CLIENT_ID || "",
         clientSecret: env.GOOGLE_CLIENT_SECRET || "",
+      },
+      github: {
+        clientId: env.GITHUB_CLIENT_ID || "",
+        clientSecret: env.GITHUB_CLIENT_SECRET || "",
       },
     },
 
@@ -85,10 +102,10 @@ export function auth(env: Env) {
       "http://localhost:5174",
       "http://localhost:5175",
       "http://localhost:5176",
-      "https://dashboard.owostack.com",
+      "https://app.owostack.com",
     ],
 
-    // Cross-subdomain cookies so session works on both api-test and api workers
+    // Cross-subdomain cookies so session works on both sandbox and api workers
     ...(isProduction
       ? {
           advanced: {
@@ -106,6 +123,27 @@ export function auth(env: Env) {
         organizationLimit: 5,
         creatorRole: "owner",
         membershipLimit: 100,
+        async sendInvitationEmail(data) {
+          // Use dashboard URL for the invite link (not API)
+          // Fallback to constructing from BETTER_AUTH_URL or localhost
+          const dashboardUrl =
+            env.DASHBOARD_URL ||
+            env.BETTER_AUTH_URL?.replace(/localhost:\d+/, "localhost:5173") ||
+            "http://localhost:5173";
+          const inviteLink = `${dashboardUrl}/accept-invitation/${data.id}`;
+          console.log(
+            `[AUTH] 📧 Organization invitation sent to ${data.email}`,
+          );
+          console.log(`[AUTH] 🔗 Invite link: ${inviteLink}`);
+          console.log(`[AUTH] 📋 Invitation data:`, {
+            email: data.email,
+            organization: data.organization.name,
+            invitedBy: data.inviter.user.email,
+            role: data.role,
+          });
+          // TODO: Implement actual email sending via your email service
+          // Example: await sendEmail({ to: data.email, subject: "...", body: "..." });
+        },
       }),
     ],
   });

@@ -1,7 +1,7 @@
 {
   "name": "@owostack/core",
   "version": "0.1.0",
-  "description": "Core SDK for Owostack - Paystack made delightful",
+  "description": "Core SDK for Owostack billing infrastructure",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -9,7 +9,9 @@
     "directory": "packages/core"
   },
   "type": "module",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -25,7 +27,14 @@
     "test": "vitest",
     "lint": "eslint src/"
   },
-  "keywords": ["paystack", "billing", "subscriptions", "usage-based", "africa", "payments"],
+  "keywords": [
+    "paystack",
+    "billing",
+    "subscriptions",
+    "usage-based",
+    "africa",
+    "payments"
+  ],
   "dependencies": {
     "@owostack/types": "workspace:*"
   },

@@ -37,6 +37,13 @@ const { allowed, code, balance } = await owo.check({
 - `balance` is useful for UX (show usage).
 - `code` helps you decide *why* access was denied (upgrade, top-up, etc.).
 
+### Response codes
+
+- `access_granted` — the customer has access
+- `limit_exceeded` — usage limit has been reached
+- `feature_not_in_plan` — the feature is not available on the current plan
+- `no_active_subscription` — the customer has no active subscription
+
 ## Usage tracking
 
 If a feature is metered, call `track()` to record usage.
@@ -49,4 +56,6 @@ await owo.track({
 });
 ```
 
-See [Entitlements](/docs/features/entitlements) and [Usage Metering](/docs/features/metering) for deeper detail.
+## Overrides
+
+Owostack allows you to override entitlements at the **customer** level. You can grant specific features to a customer regardless of their plan — useful for grandfathering early users or giving beta access.

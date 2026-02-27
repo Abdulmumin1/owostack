@@ -1,0 +1,17 @@
+{
+  "title": "SDK Reference",
+  "icon": "Code",
+  "pages": [
+    "configuration",
+    "customer",
+    "entities",
+    "attach",
+    "plans",
+    "check",
+    "track",
+    "addon",
+    "wallet",
+    "billing",
+    "catalog"
+  ]
+}

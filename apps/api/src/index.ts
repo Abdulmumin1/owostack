@@ -4,9 +4,11 @@ import { createDb, schema } from "@owostack/db";
 import { eq, and } from "drizzle-orm";
 import { type User } from "better-auth";
 import { auth } from "./lib/auth";
+import { resolveOrganizationId } from "./lib/organization-resolver";
 import { WebhookHandler } from "./lib/webhooks";
 import { WebhookError, errorToResponse } from "./lib/errors";
 import { decrypt } from "./lib/encryption";
+import { trackHttpMetric } from "./lib/analytics-engine";
 import type { ProviderAccount } from "@owostack/adapters";
 import { getProviderRegistry } from "./lib/providers";
 
@@ -35,41 +37,63 @@ import apiAddon from "./routes/api/addon";
 import apiSync from "./routes/api/sync";
 import apiWallet from "./routes/api/wallet";
 import apiPlans from "./routes/api/plans";
+import apiCustomers from "./routes/api/customers";
+import apiCreditSystems from "./routes/api/credit-systems";
+import apiSubscriptions from "./routes/api/subscriptions";
+import cliAuth from "./routes/cli-auth";
 
 // Durable Objects
 import { UsageMeterDO } from "./lib/usage-meter";
-export { UsageMeterDO };
+import { UsageLedgerDO } from "./lib/usage-ledger-do";
+export { UsageMeterDO, UsageLedgerDO };
 
 // Workflows
 import { TrialEndWorkflow } from "./lib/workflows/trial-end";
 import { DowngradeWorkflow } from "./lib/workflows/downgrade";
 import { PlanUpgradeWorkflow } from "./lib/workflows/plan-upgrade";
 import { OverageBillingWorkflow } from "./lib/workflows/overage-billing";
-export { TrialEndWorkflow, DowngradeWorkflow, PlanUpgradeWorkflow, OverageBillingWorkflow };
+import { CancelDowngradeWorkflow } from "./lib/workflows/cancel-downgrade";
+export {
+  TrialEndWorkflow,
+  DowngradeWorkflow,
+  PlanUpgradeWorkflow,
+  OverageBillingWorkflow,
+  CancelDowngradeWorkflow,
+};
 
 export type Env = {
-  DB: D1Database;           // Per-environment business data (customers, plans, subs, etc.)
-  DB_AUTH: D1Database;      // Shared auth data (users, sessions, orgs, projects)
-  CACHE: KVNamespace;
+  DB: D1Database; // Per-environment business data (customers, plans, subs, etc.)
+  DB_AUTH: D1Database; // Shared auth data (users, sessions, orgs, projects)
+  CACHE: KVNamespace; // Per-environment cache
+  CACHE_SHARED: KVNamespace; // Shared cache across all environments (CLI auth, etc.)
+  ANALYTICS?: AnalyticsEngineDataset; // Optional Cloudflare Analytics Engine dataset
   USAGE_METER: DurableObjectNamespace<UsageMeterDO>;
+  USAGE_LEDGER?: DurableObjectNamespace<UsageLedgerDO>;
   TRIAL_END_WORKFLOW: Workflow;
   DOWNGRADE_WORKFLOW: Workflow;
   PLAN_UPGRADE_WORKFLOW: Workflow;
+  CANCEL_DOWNGRADE_WORKFLOW: Workflow;
   OVERAGE_BILLING_WORKFLOW: Workflow;
   OVERAGE_BILLING_QUEUE: Queue;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   ENCRYPTION_KEY: string;
   ENVIRONMENT?: string; // "test" | "live" | "development" — set per worker deployment
-  ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack" or "paystack,stripe"
+  CF_ACCOUNT_ID?: string; // Cloudflare account ID used for Analytics Engine SQL reads
+  CF_ANALYTICS_READ_TOKEN?: string; // API token with Analytics:Read for SQL queries
+  ANALYTICS_DATASET?: string; // Optional override dataset name for SQL reads
+  ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack,dodopayments,polar"
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  DASHBOARD_URL?: string; // URL for redirects (e.g., after OAuth)
 };
 
 export type Variables = {
-  db: ReturnType<typeof createDb>;     // Business DB (per-environment)
+  db: ReturnType<typeof createDb>; // Business DB (per-environment)
   authDb: ReturnType<typeof createDb>; // Auth DB (shared across environments)
   user: User | null;
   session: any | null;
@@ -94,11 +118,10 @@ app.use(
         "http://localhost:5174",
         "http://localhost:3000",
         "http://localhost:4173",
-        "https://dash.owostack.com",
         "https://app.owostack.com",
         "https://owostack.com",
       ];
-      if (origin ) {
+      if (origin && allowedOrigins.includes(origin)) {
         return origin;
       }
       // Fallback for non-browser requests (e.g., Postman)
@@ -121,8 +144,57 @@ app.use("*", async (c, next) => {
   await next();
 });
 
+// Lightweight request analytics for capacity planning and debugging.
+app.use("*", async (c, next) => {
+  const start = Date.now();
+  let threw = false;
+
+  try {
+    await next();
+  } catch (error) {
+    threw = true;
+    throw error;
+  } finally {
+    const webhookMatch = c.req.path.match(
+      /^\/webhooks\/([^/]+)(?:\/([^/]+))?$/,
+    );
+    let organizationId: string | null = null;
+
+    try {
+      organizationId = (c.get("organizationId") as string | undefined) ?? null;
+    } catch {
+      organizationId = null;
+    }
+
+    organizationId =
+      organizationId ||
+      c.req.query("organizationId") ||
+      webhookMatch?.[1] ||
+      null;
+    const providerId = webhookMatch ? webhookMatch[2] || "paystack" : null;
+
+    trackHttpMetric(c.env, {
+      method: c.req.method,
+      path: c.req.path,
+      status: c.res?.status ?? (threw ? 500 : 0),
+      durationMs: Date.now() - start,
+      organizationId,
+      providerId,
+    });
+  }
+});
+
+app.get("/api/auth/debug-routes", (c) => {
+  const routes = Object.keys(auth(c.env).api);
+  return c.json({ routes });
+});
+
+// CLI Authentication Routes (must be BEFORE Better Auth wildcard)
+app.route("/api/auth/cli", cliAuth);
+
 // Auth Routes (Better Auth)
 app.on(["POST", "GET"], "/api/auth/*", (c) => {
+  console.log(`[AUTH-DEBUG] ${c.req.method} ${c.req.url}`);
   return auth(c.env).handler(c.req.raw);
 });
 
@@ -131,18 +203,16 @@ app.on(["POST", "GET"], "/api/auth/*", (c) => {
 // =============================================================================
 const dashboardRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-
 dashboardRoutes.use(
   "*",
   cors({
     origin: (origin) => {
       // Allow requests from localhost during development
-       const allowedOrigins = [
+      const allowedOrigins = [
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:3000",
         "http://localhost:4173",
-        "https://dash.owostack.com",
         "https://app.owostack.com",
         "https://owostack.com",
       ];
@@ -181,22 +251,28 @@ dashboardRoutes.use("*", async (c, next) => {
       organizationId = body?.organizationId;
     } catch {}
   }
+
   if (organizationId) {
     const db = c.get("db");
     const authDb = c.get("authDb");
+
+    // Resolve organization identifier (could be ID or slug)
+    const resolvedId = await resolveOrganizationId(db, organizationId);
+    const finalOrgId = resolvedId || organizationId;
+
+    // Store resolved ID in context for downstream handlers
+    c.set("organizationId", finalOrgId);
+
     const existing = await db.query.organizations.findFirst({
-      where: eq(schema.organizations.id, organizationId),
+      where: eq(schema.organizations.id, finalOrgId),
       columns: { id: true },
     });
     if (!existing) {
       const org = await authDb.query.organizations.findFirst({
-        where: eq(schema.organizations.id, organizationId),
+        where: eq(schema.organizations.id, finalOrgId),
       });
       if (org) {
-        await db
-          .insert(schema.organizations)
-          .values(org)
-          .onConflictDoNothing();
+        await db.insert(schema.organizations).values(org).onConflictDoNothing();
       }
     }
   }
@@ -237,6 +313,8 @@ const v1Routes = new Hono<{ Bindings: Env; Variables: Variables }>();
 // Mount API modules
 // checkout.ts has `post('/attach')`.
 // entitlements.ts has `post('/check')` and `post('/track')`.
+// IMPORTANT: Mount specific routes BEFORE generic ones (e.g., customers has auth middleware on "*")
+v1Routes.route("/subscriptions", apiSubscriptions); // Public GET /activate must come before customers
 v1Routes.route("/", apiCheckout);
 v1Routes.route("/", apiEntitlements);
 v1Routes.route("/", apiAddon);
@@ -244,6 +322,8 @@ v1Routes.route("/billing", apiBilling);
 v1Routes.route("/sync", apiSync);
 v1Routes.route("/", apiWallet);
 v1Routes.route("/plans", apiPlans);
+v1Routes.route("/", apiCustomers);
+v1Routes.route("/credit-systems", apiCreditSystems);
 
 apiRoutes.route("/v1", v1Routes);
 
@@ -258,8 +338,20 @@ app.route("/v1", v1Routes);
 // POST /webhooks/:organizationId            (backward compat — defaults to paystack)
 // =============================================================================
 
-async function handleWebhookRequest(c: any, organizationId: string, providerId: string) {
-  console.log(`[WEBHOOK-ROUTE] Received webhook for org=${organizationId}, provider=${providerId}`);
+async function handleWebhookRequest(
+  c: any,
+  organizationId: string,
+  providerId: string,
+) {
+  const maskSecretForLog = (value: string | null | undefined) => {
+    if (!value) return "<empty>";
+    if (value.length <= 10) return `${value.slice(0, 2)}***`;
+    return `${value.slice(0, 6)}...${value.slice(-4)} (len=${value.length})`;
+  };
+
+  console.log(
+    `[WEBHOOK-ROUTE] Received webhook for org=${organizationId}, provider=${providerId}`,
+  );
 
   // 1. Resolve adapter from registry
   const adapter = providerRegistry.get(providerId);
@@ -271,7 +363,9 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   // 2. Get the signature from the provider-specific header
   const sigHeader = adapter.signatureHeaderName || `x-${providerId}-signature`;
   const signature = c.req.header(sigHeader);
-  console.log(`[WEBHOOK-ROUTE] Signature header=${sigHeader}, hasSignature=${!!signature}`);
+  console.log(
+    `[WEBHOOK-ROUTE] Signature header=${sigHeader}, hasSignature=${!!signature}`,
+  );
 
   if (!signature) {
     return c.json(
@@ -300,7 +394,8 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
 
   // 4. Resolve the webhook secret for this provider
   const project = await authDb.query.projects.findFirst({
-    where: (projects, { eq }) => eq(projects.organizationId, organizationId),
+    where: (projects: any, { eq }: any) =>
+      eq(projects.organizationId, organizationId),
   });
 
   if (!project) {
@@ -309,23 +404,50 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
 
   const workerEnv = c.env.ENVIRONMENT === "live" ? "live" : "test";
   let secret: string | null = null;
+  let secretSource: string | null = null;
 
   // 4a. Check provider account credentials for a webhook-specific secret
   // (e.g. Dodo Payments uses a separate webhookSecret, not the API key)
-  const providerAccounts = await db.query.providerAccounts.findMany({
+  const allProviderAccounts = await db.query.providerAccounts.findMany({
     where: and(
       eq(schema.providerAccounts.organizationId, organizationId),
       eq(schema.providerAccounts.providerId, providerId),
     ),
   });
-  for (const pa of providerAccounts) {
+  const providerAccounts = allProviderAccounts.filter((pa: any) => {
+    const env = pa?.environment;
+    return !env || env === workerEnv;
+  });
+  const scopedProviderAccounts =
+    providerAccounts.length > 0 ? providerAccounts : allProviderAccounts;
+  let secretAccountId: string | null = null;
+  for (const pa of scopedProviderAccounts) {
     const creds = (pa as any).credentials || {};
-    if (typeof creds.webhookSecret === "string" && creds.webhookSecret.length > 0) {
+    if (
+      typeof creds.webhookSecret === "string" &&
+      creds.webhookSecret.length > 0
+    ) {
       try {
-        secret = await decrypt(creds.webhookSecret, c.env.ENCRYPTION_KEY);
-        console.log(`[WEBHOOK-ROUTE] Using provider account webhookSecret for org=${organizationId}, provider=${providerId}`);
+        secret = (
+          await decrypt(creds.webhookSecret, c.env.ENCRYPTION_KEY)
+        ).trim();
+        secretSource = "provider_account_webhook_secret_encrypted";
+        secretAccountId = pa.id;
+        console.log(
+          `[WEBHOOK-ROUTE] Using provider account webhookSecret for org=${organizationId}, provider=${providerId}`,
+        );
       } catch (e) {
-        console.warn(`[WEBHOOK-ROUTE] Failed to decrypt provider webhookSecret:`, e);
+        console.warn(
+          `[WEBHOOK-ROUTE] Failed to decrypt provider webhookSecret:`,
+          e,
+        );
+        // Backward compatibility: older rows may have been stored as plaintext.
+        secret = creds.webhookSecret.trim();
+        secretSource = "provider_account_webhook_secret_plaintext";
+        secretAccountId = pa.id;
+        console.warn(
+          `[WEBHOOK-ROUTE] Falling back to raw provider webhookSecret for org=${organizationId}, provider=${providerId}`,
+        );
       }
       break;
     }
@@ -334,25 +456,39 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   // 4b. Fallback: project-level webhookSecret
   if (!secret) {
     secret = project.webhookSecret;
+    if (secret) {
+      secretSource = "project_webhook_secret";
+    }
   }
 
   // 4c. Fallback: provider API secret key (e.g. Paystack uses this for HMAC)
   if (!secret) {
     const encryptedKey =
       workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
-    console.log(`[WEBHOOK-ROUTE] No webhookSecret, falling back to ${workerEnv} secret key (hasKey=${!!encryptedKey})`);
+    console.log(
+      `[WEBHOOK-ROUTE] No webhookSecret, falling back to ${workerEnv} secret key (hasKey=${!!encryptedKey})`,
+    );
 
     if (encryptedKey) {
       try {
-        secret = await decrypt(encryptedKey, c.env.ENCRYPTION_KEY);
+        secret = (await decrypt(encryptedKey, c.env.ENCRYPTION_KEY)).trim();
+        secretSource = `project_${workerEnv}_secret_key_encrypted`;
       } catch (e) {
-        console.error(`[WEBHOOK-ROUTE] Failed to decrypt key for verification:`, e);
+        console.error(
+          `[WEBHOOK-ROUTE] Failed to decrypt key for verification:`,
+          e,
+        );
+        // Backward compatibility: allow plaintext project secret keys.
+        secret = encryptedKey.trim();
+        secretSource = `project_${workerEnv}_secret_key_plaintext`;
       }
     }
   }
 
   if (!secret) {
-    console.error(`[WEBHOOK-ROUTE] No secret available for org=${organizationId}, provider=${providerId}`);
+    console.error(
+      `[WEBHOOK-ROUTE] No secret available for org=${organizationId}, provider=${providerId}`,
+    );
     return c.json({ error: "Webhook secret not configured" }, 500);
   }
 
@@ -361,7 +497,7 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   // can access webhook-id, webhook-timestamp, etc.
   const reqHeaders: Record<string, string> = {};
   c.req.raw.headers.forEach((value: string, key: string) => {
-    reqHeaders[key] = value;
+    reqHeaders[key.toLowerCase()] = value;
   });
 
   const verifyResult = await adapter.verifyWebhook({
@@ -372,7 +508,26 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   });
 
   if (verifyResult.isErr() || !verifyResult.value) {
-    console.error(`[WEBHOOK-ROUTE] Signature verification FAILED for org=${organizationId}, provider=${providerId}`);
+    console.error(
+      `[WEBHOOK-ROUTE] Signature verification FAILED for org=${organizationId}, provider=${providerId}`,
+    );
+    if (providerId === "polar") {
+      console.error("[WEBHOOK-ROUTE] Polar verification context", {
+        org: organizationId,
+        provider: providerId,
+        workerEnv,
+        secretSource,
+        secretAccountId,
+        providerAccountsTotal: allProviderAccounts.length,
+        providerAccountsScoped: scopedProviderAccounts.length,
+        secretPreview: maskSecretForLog(secret),
+        signatureHeaderPresent: !!signature,
+        signatureHeaderPreview: maskSecretForLog(signature),
+        webhookId: reqHeaders["webhook-id"] || null,
+        webhookTimestamp: reqHeaders["webhook-timestamp"] || null,
+        availableHeaders: Object.keys(reqHeaders),
+      });
+    }
     return c.json(
       errorToResponse(new WebhookError({ reason: "invalid_signature" })),
       401,
@@ -394,25 +549,35 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
   const parseResult = adapter.parseWebhookEvent({ payload: rawPayload });
   if (parseResult.isErr()) {
     // Unknown events are not errors — just ACK them
-    console.log(`[WEBHOOK-ROUTE] Unhandled event from ${providerId}: ${parseResult.error.message}`);
+    console.log(
+      `[WEBHOOK-ROUTE] Unhandled event from ${providerId}: ${parseResult.error.message}`,
+    );
     return c.json({ success: true, received: true, skipped: true });
   }
 
   const normalizedEvent = parseResult.value;
-  console.log(`[WEBHOOK-ROUTE] Event: ${normalizedEvent.type}, provider=${normalizedEvent.provider}, ref=${normalizedEvent.payment?.reference || "n/a"}`);
+  console.log(
+    `[WEBHOOK-ROUTE] Event: ${normalizedEvent.type}, provider=${normalizedEvent.provider}, ref=${normalizedEvent.payment?.reference || "n/a"}`,
+  );
 
   // 7. Build provider account for API calls (cancel sub, etc.)
   // Provider accounts are loaded from the DB — no legacy fallback.
   let providerAccount: ProviderAccount | undefined;
-  if (providerAccounts.length > 0) {
-    const pa = providerAccounts[0] as any;
+  if (scopedProviderAccounts.length > 0) {
+    const pa = scopedProviderAccounts[0] as any;
     const creds = { ...(pa.credentials || {}) };
     // Decrypt the secretKey for API calls
     if (typeof creds.secretKey === "string" && creds.secretKey.length > 0) {
       try {
-        creds.secretKey = await decrypt(creds.secretKey, c.env.ENCRYPTION_KEY);
+        creds.secretKey = (
+          await decrypt(creds.secretKey, c.env.ENCRYPTION_KEY)
+        ).trim();
       } catch (e) {
-        console.warn(`[WEBHOOK-ROUTE] Failed to decrypt provider secretKey:`, e);
+        console.warn(
+          `[WEBHOOK-ROUTE] Failed to decrypt provider secretKey:`,
+          e,
+        );
+        creds.secretKey = creds.secretKey.trim();
       }
     }
     providerAccount = {
@@ -435,6 +600,10 @@ async function handleWebhookRequest(c: any, organizationId: string, providerId: 
     trialEndWorkflow: c.env.TRIAL_END_WORKFLOW,
     planUpgradeWorkflow: c.env.PLAN_UPGRADE_WORKFLOW,
     cache: c.env.CACHE,
+    analyticsEnv: {
+      ANALYTICS: c.env.ANALYTICS,
+      ENVIRONMENT: c.env.ENVIRONMENT,
+    },
   });
 
   const handleResult = await handler.handle(normalizedEvent);
@@ -452,7 +621,11 @@ app.post("/webhooks/:organizationId", async (c) => {
 
 // Provider-agnostic: /webhooks/:orgId/:provider
 app.post("/webhooks/:organizationId/:provider", async (c) => {
-  return handleWebhookRequest(c, c.req.param("organizationId"), c.req.param("provider"));
+  return handleWebhookRequest(
+    c,
+    c.req.param("organizationId"),
+    c.req.param("provider"),
+  );
 });
 
 // =============================================================================
@@ -475,7 +648,9 @@ export default {
   // Cron → enqueue org-level messages (lightweight, stays well within 30s)
   // -------------------------------------------------------------------------
   async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
-    console.log(`[CRON] Triggered at ${new Date(event.scheduledTime).toISOString()}, cron=${event.cron}`);
+    console.log(
+      `[CRON] Triggered at ${new Date(event.scheduledTime).toISOString()}, cron=${event.cron}`,
+    );
 
     const db = createDb(env.DB);
 
@@ -494,23 +669,31 @@ export default {
       const orgs = await db
         .select()
         .from((schema as any).overageSettings)
-        .where(eq((schema as any).overageSettings.billingInterval, targetInterval));
+        .where(
+          eq((schema as any).overageSettings.billingInterval, targetInterval),
+        );
 
-      console.log(`[CRON] Found ${orgs.length} orgs with interval=${targetInterval}, enqueuing...`);
+      console.log(
+        `[CRON] Found ${orgs.length} orgs with interval=${targetInterval}, enqueuing...`,
+      );
 
       // Enqueue one message per org — the queue consumer handles the heavy lifting
-      const messages: { body: OverageBillingQueueMessage }[] = orgs.map((org: any) => ({
-        body: {
-          organizationId: org.organizationId,
-          targetInterval,
-          scheduledTime: event.scheduledTime,
-        },
-      }));
+      const messages: { body: OverageBillingQueueMessage }[] = orgs.map(
+        (org: any) => ({
+          body: {
+            organizationId: org.organizationId,
+            targetInterval,
+            scheduledTime: event.scheduledTime,
+          },
+        }),
+      );
 
       // Queue.sendBatch accepts up to 100 messages per call
       const QUEUE_BATCH_LIMIT = 100;
       for (let i = 0; i < messages.length; i += QUEUE_BATCH_LIMIT) {
-        await env.OVERAGE_BILLING_QUEUE.sendBatch(messages.slice(i, i + QUEUE_BATCH_LIMIT));
+        await env.OVERAGE_BILLING_QUEUE.sendBatch(
+          messages.slice(i, i + QUEUE_BATCH_LIMIT),
+        );
       }
 
       console.log(`[CRON] Enqueued ${messages.length} org messages to queue`);
@@ -523,7 +706,11 @@ export default {
   // Queue consumer — each message = one org. Query customers, dispatch workflows.
   // Each consumer invocation gets its own 30s CPU budget.
   // -------------------------------------------------------------------------
-  async queue(batch: MessageBatch<OverageBillingQueueMessage>, env: Env, _ctx: ExecutionContext) {
+  async queue(
+    batch: MessageBatch<OverageBillingQueueMessage>,
+    env: Env,
+    _ctx: ExecutionContext,
+  ) {
     const db = createDb(env.DB);
 
     for (const msg of batch.messages) {
@@ -542,15 +729,19 @@ export default {
           .where(eq(schema.customers.organizationId, organizationId));
 
         // Deduplicate — a customer with multiple active subs appears multiple times
-        const uniqueIds = [...new Set(customers.map((c: { id: string }) => c.id))];
-        console.log(`[QUEUE] Org ${organizationId}: dispatching ${uniqueIds.length} workflows`);
+        const uniqueIds = [
+          ...new Set(customers.map((c: { id: string }) => c.id)),
+        ];
+        console.log(
+          `[QUEUE] Org ${organizationId}: dispatching ${uniqueIds.length} workflows`,
+        );
 
         // Dispatch in parallel batches
         const BATCH_SIZE = 50;
         for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
           const chunk = uniqueIds.slice(i, i + BATCH_SIZE);
           await Promise.allSettled(
-            chunk.map(customerId =>
+            chunk.map((customerId) =>
               env.OVERAGE_BILLING_WORKFLOW.create({
                 id: `overage-cron-${customerId}-${scheduledTime}`,
                 params: {
@@ -558,8 +749,11 @@ export default {
                   customerId,
                   trigger: "cron" as const,
                 },
-              }).catch(e => {
-                console.warn(`[QUEUE] Failed to create workflow for customer=${customerId}:`, e);
+              }).catch((e) => {
+                console.warn(
+                  `[QUEUE] Failed to create workflow for customer=${customerId}:`,
+                  e,
+                );
               }),
             ),
           );

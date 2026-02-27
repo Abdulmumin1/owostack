@@ -25,9 +25,17 @@ export const authClient = createAuthClient({
     },
   },
   plugins: [organizationClient()],
+  emailAndPassword: {
+    enabled: true,
+  },
 });
 
-export const { signIn, signUp, useSession, organization } = authClient;
+export const signIn = authClient.signIn;
+export const signUp = authClient.signUp;
+export const useSession = authClient.useSession;
+export const organization = authClient.organization;
+export const forgetPassword = (authClient as any).requestPasswordReset;
+export const resetPassword = (authClient as any).resetPassword;
 
 /**
  * Environment-aware fetch. Routes ALL calls to the test or live API

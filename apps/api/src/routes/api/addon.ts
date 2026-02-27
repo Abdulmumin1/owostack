@@ -277,19 +277,28 @@ async function handleAddonPurchase(
   }
 
   // Resolve or create customer
-  const email = customer.toLowerCase();
+  const normalizedCustomer = customer.trim();
+  const customerLooksLikeEmail = normalizedCustomer.includes("@");
+  const customerData = customerLooksLikeEmail
+    ? { email: normalizedCustomer.toLowerCase(), metadata }
+    : undefined;
+
   const customerRecord = await resolveOrCreateCustomer({
     db,
     organizationId: keyRecord.organizationId,
-    customerId: customer,
-    customerData: { email, metadata },
+    customerId: normalizedCustomer,
+    customerData,
     providerId: selectedProviderId,
     waitUntil: (p: Promise<any>) => c.executionCtx.waitUntil(p),
   });
 
   if (!customerRecord) {
     return c.json(
-      { success: false, error: "Could not resolve or create customer" },
+      {
+        success: false,
+        error:
+          "Could not resolve customer. Use an existing customer ID/external ID or pass a customer email to auto-create.",
+      },
       400,
     );
   }

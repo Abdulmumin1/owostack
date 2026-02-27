@@ -71,7 +71,7 @@ app.get("/", async (c) => {
     );
   }
 
-  // Map to public shape — strip internal IDs, provider details, etc.
+  // Map to public shape — strip internal IDs, keep provider for SDK sync.
   const plans = filtered.map((p: any) => ({
     id: p.id,
     slug: p.slug,
@@ -85,17 +85,26 @@ app.get("/", async (c) => {
     isAddon: p.isAddon ?? false,
     planGroup: p.planGroup || null,
     trialDays: p.trialDays ?? 0,
-    features: (p.planFeatures || []).map((pf: any) => ({
-      slug: pf.feature?.slug ?? pf.featureId,
-      name: pf.feature?.name ?? pf.featureId,
-      type: pf.feature?.type ?? "metered",
-      enabled: pf.limitValue !== 0,
-      limit: pf.limitValue ?? null,
-      resetInterval: pf.resetInterval || null,
-      unit: pf.feature?.unit || null,
-      overage: pf.overage !== "block" ? pf.overage : undefined,
-      overagePrice: pf.overagePrice ?? undefined,
-    })),
+    provider: p.providerId || null,
+    features: (p.planFeatures || []).map((pf: any) => {
+      const featureType = pf.feature?.type ?? "metered";
+      const isBoolean = featureType === "boolean";
+
+      return {
+        slug: pf.feature?.slug ?? pf.featureId,
+        name: pf.feature?.name ?? pf.featureId,
+        type: featureType,
+        enabled: isBoolean
+          ? pf.limitValue !== 0
+          : pf.limitValue !== 0 && pf.limitValue !== null,
+        // For boolean features, limit is always null. For metered, use the actual value.
+        limit: isBoolean ? null : (pf.limitValue ?? null),
+        resetInterval: isBoolean ? null : pf.resetInterval || null,
+        unit: pf.feature?.unit || null,
+        overage: pf.overage !== "block" ? pf.overage : undefined,
+        overagePrice: pf.overagePrice ?? undefined,
+      };
+    }),
   }));
 
   return c.json({ success: true, plans });

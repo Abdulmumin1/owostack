@@ -90,6 +90,11 @@ export interface ProviderProductRef {
   metadata?: Record<string, unknown>;
 }
 
+export interface ProviderCustomerSession {
+  url: string;
+  token?: string | null;
+}
+
 export interface CheckoutLineItem {
   priceId: string;
   quantity: number;
@@ -126,6 +131,7 @@ export interface NormalizedWebhookEvent {
     planCode?: string;
     startDate?: string;
     nextPaymentDate?: string;
+    trialEndDate?: string;
   };
   payment?: {
     amount: number;
@@ -206,6 +212,14 @@ export interface ProviderAdapter {
     account: ProviderAccount;
   }): Promise<ProviderResult<ProviderCustomerRef>>;
 
+  // Optional: create a provider-managed customer session (e.g. customer portal).
+  createCustomerSession?(params: {
+    customer: ProviderCustomerRef;
+    metadata?: Record<string, unknown>;
+    environment: ProviderEnvironment;
+    account: ProviderAccount;
+  }): Promise<ProviderResult<ProviderCustomerSession>>;
+
   createPlan(params: {
     name: string;
     amount: number;
@@ -259,7 +273,10 @@ export interface ProviderAdapter {
   changePlan?(params: {
     subscriptionId: string;
     newPlanId: string;
-    prorationMode?: "prorated_immediately" | "full_immediately" | "difference_immediately";
+    prorationMode?:
+      | "prorated_immediately"
+      | "full_immediately"
+      | "difference_immediately";
     quantity?: number;
     metadata?: Record<string, unknown>;
     environment: ProviderEnvironment;
@@ -324,6 +341,7 @@ export function createProviderRegistry(): ProviderRegistry {
 
 export { paystackAdapter } from "./paystack";
 export { dodoAdapter } from "./dodo";
+export { polarAdapter } from "./polar";
 export { selectProvider } from "./selector";
 export { resolveProvider } from "./provider-factory";
 

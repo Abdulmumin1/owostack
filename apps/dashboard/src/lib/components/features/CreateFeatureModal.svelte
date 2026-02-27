@@ -2,7 +2,7 @@
   import { Result } from "better-result";
   import { apiFetch } from "$lib/auth-client";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
-  import { Loader2, Check } from "lucide-svelte";
+  import { Check, CircleNotch } from "phosphor-svelte";
 
   let { 
     isOpen = $bindable(false), 
@@ -82,11 +82,11 @@
 </script>
 
 <SidePanel open={isOpen} title="Create Feature" onclose={close} width="max-w-md">
-  <div class="text-sm">
-    <div class="p-5 space-y-6">
+  <div class="text-sm h-full flex flex-col">
+    <div class="p-5 space-y-6 flex-1">
       {#if error}
-        <div class="bg-red-500/10 p-4 border border-red-500/20">
-          <p class="text-xs font-medium text-red-500">{error}</p>
+        <div class="bg-error-bg p-4 border border-error rounded">
+          <p class="text-xs font-medium text-error">{error}</p>
         </div>
       {/if}
 
@@ -118,7 +118,7 @@
           >
             Type
           </label>
-          <div class="grid grid-cols-3 gap-2">
+          <div class="flex p-1 bg-bg-secondary rounded-lg border border-border">
             {#each [
               { value: 'metered', label: 'Metered' },
               { value: 'boolean', label: 'Boolean' },
@@ -126,7 +126,9 @@
             ] as opt}
               <button
                 type="button"
-                class="py-2.5 text-[10px] font-bold uppercase tracking-widest border transition-all {type === opt.value ? 'bg-lime-600 text-lime-600-contrast border-lime-600' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-white'}"
+                class="flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 {type === opt.value
+                  ? 'bg-bg-card text-text-primary shadow-sm border border-border'
+                  : 'text-text-dim hover:text-text-secondary'}"
                 onclick={() => (type = opt.value as typeof type)}
               >
                 {opt.label}
@@ -153,20 +155,22 @@
             >
               Meter Type
             </label>
-            <div class="grid grid-cols-2 gap-2">
-              {#each [
-                { value: 'consumable', label: 'Consumable' },
-                { value: 'non_consumable', label: 'Non-Consumable' }
-              ] as opt}
-                <button
-                  type="button"
-                  class="py-2.5 text-[10px] font-bold uppercase tracking-widest border transition-all {meterType === opt.value ? 'bg-lime-600 text-lime-600-contrast border-lime-600' : 'bg-bg-card text-text-dim border-border hover:border-border-light hover:text-white'}"
-                  onclick={() => (meterType = opt.value as typeof meterType)}
-                >
-                  {opt.label}
-                </button>
-              {/each}
-            </div>
+          <div class="flex p-1 bg-bg-secondary rounded-lg border border-border">
+            {#each [
+              { value: 'consumable', label: 'Consumable' },
+              { value: 'non_consumable', label: 'Non-Consumable' }
+            ] as opt}
+              <button
+                type="button"
+                class="flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 {meterType === opt.value
+                  ? 'bg-bg-card text-text-primary shadow-sm border border-border'
+                  : 'text-text-dim hover:text-text-secondary'}"
+                onclick={() => (meterType = opt.value as typeof meterType)}
+              >
+                {opt.label}
+              </button>
+            {/each}
+          </div>
             <p class="mt-2 text-[10px] text-text-dim uppercase tracking-tight">
               {#if meterType === "consumable"}
                 Usage resets or accumulates (e.g. Credits).
@@ -199,23 +203,23 @@
     </div>
 
     <!-- Footer -->
-    <div class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card">
+    <div class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card mt-auto">
       <button
-        class="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-widest"
+        class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
         onclick={close}
       >
         Cancel
       </button>
       <button
-        class="px-6 py-2 bg-accent hover:bg-accent-hover text-black text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
+        class="btn btn-primary"
         onclick={handleSubmit}
         disabled={!name || isCreating}
       >
         {#if isCreating}
-          <Loader2 size={14} class="animate-spin" />
+          <CircleNotch   size={14} class="animate-spin"  weight="duotone" />
           Creating...
         {:else}
-          <Check size={14} />
+          <Check   size={14}  weight="fill" />
           Create Feature
         {/if}
       </button>

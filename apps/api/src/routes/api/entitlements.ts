@@ -9,11 +9,190 @@ import type { Env, Variables } from "../../index";
 import { getResetPeriod } from "../../lib/reset-period";
 import { zodErrorToResponse } from "../../lib/validation";
 import { getScopedBalance, deductScopedBalance } from "../../lib/addon-credits";
-import { checkOverageAllowed, getOrgOverageSettings, getUnbilledOverageAmount } from "../../lib/overage-guards";
+import { trackUsageEvent } from "../../lib/analytics-engine";
+import {
+  appendUsageRecord,
+  sumUsageAmount,
+  rehydrateUsageLedger,
+} from "../../lib/usage-ledger";
+import {
+  checkOverageAllowed,
+  getOrgOverageSettings,
+  getUnbilledOverageAmount,
+} from "../../lib/overage-guards";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
+
+function scheduleCacheOp(c: any, op: Promise<unknown>, label: string) {
+  c.executionCtx.waitUntil(
+    op.catch((error) => {
+      console.warn(`[entitlements] cache ${label} failed:`, error);
+    }),
+  );
+}
+
+async function persistUsageRecord(
+  c: any,
+  db: any,
+  organizationId: string | null | undefined,
+  record: {
+    customerId: string;
+    featureId: string;
+    entityId?: string | null;
+    amount: number;
+    periodStart: number;
+    periodEnd: number;
+  },
+) {
+  const orgId = organizationId || "unknown";
+  const dateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
+  // Dispatch all logging tasks in parallel for maximum background efficiency
+  const [d1Result, doResult, aeResult] = await Promise.allSettled([
+    // 1. Update Daily Aggregate (Sensible D1 Cleanup)
+    db
+      .insert(schema.usageDailySummaries)
+      .values({
+        id: crypto.randomUUID(),
+        organizationId: orgId,
+        customerId: record.customerId,
+        featureId: record.featureId,
+        date: dateStr,
+        amount: record.amount,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.usageDailySummaries.customerId,
+          schema.usageDailySummaries.featureId,
+          schema.usageDailySummaries.date,
+        ],
+        set: {
+          amount: sql`${schema.usageDailySummaries.amount} + ${record.amount}`,
+          updatedAt: Date.now(),
+        },
+      }),
+
+    // 2. Write to Pulse (Durable Object)
+    appendUsageRecord(
+      {
+        usageLedger: c.env.USAGE_LEDGER,
+        organizationId: organizationId || null,
+      },
+      {
+        customerId: record.customerId,
+        featureId: record.featureId,
+        entityId: record.entityId ?? null,
+        amount: record.amount,
+        periodStart: record.periodStart,
+        periodEnd: record.periodEnd,
+        createdAt: Date.now(),
+      },
+    ),
+
+    // 3. Write to Analytics Engine
+    (async () => {
+      try {
+        trackUsageEvent(c.env, {
+          customerId: record.customerId,
+          featureId: record.featureId,
+          amount: record.amount,
+          organizationId: orgId,
+          periodStart: record.periodStart,
+          periodEnd: record.periodEnd,
+          entityId: record.entityId ?? null,
+        });
+      } catch (e) {
+        console.error("[entitlements] Analytics Engine log failed:", e);
+      }
+    })(),
+  ]);
+
+  // Check results and handle failures
+  // D1 aggregate failure - log but don't throw (it's our backup)
+  if (d1Result.status === "rejected") {
+    console.error(
+      `[persist] D1 aggregate update failed for customer=${record.customerId}, ` +
+        `feature=${record.featureId}:`,
+      d1Result.reason,
+    );
+  }
+
+  // DO failure - CRITICAL, throw to trigger retry
+  if (doResult.status === "rejected") {
+    console.error(
+      `[persist] UsageLedgerDO persist failed for customer=${record.customerId}, ` +
+        `feature=${record.featureId}:`,
+      doResult.reason,
+    );
+    throw new Error(`UsageLedgerDO persist failed: ${doResult.reason}`);
+  }
+
+  // Analytics Engine failure - log but not critical
+  if (aeResult.status === "rejected") {
+    console.warn(
+      `[persist] Analytics Engine log failed for customer=${record.customerId}, ` +
+        `feature=${record.featureId}:`,
+      aeResult.reason,
+    );
+    // Don't throw - AE is for analytics only, not billing
+  }
+}
+
+function scheduleUsagePersist(
+  c: any,
+  db: any,
+  organizationId: string | null | undefined,
+  record: {
+    customerId: string;
+    featureId: string;
+    entityId?: string | null;
+    amount: number;
+    periodStart: number;
+    periodEnd: number;
+  },
+  label: string,
+) {
+  // Retry configuration
+  const MAX_RETRIES = 3;
+  const INITIAL_DELAY_MS = 1000; // 1 second
+
+  async function persistWithRetry(attempt: number = 1): Promise<void> {
+    try {
+      await persistUsageRecord(c, db, organizationId, record);
+      if (attempt > 1) {
+        console.log(
+          `[entitlements] usage persist ${label} succeeded on attempt ${attempt}`,
+        );
+      }
+    } catch (error) {
+      if (attempt < MAX_RETRIES) {
+        const delayMs = INITIAL_DELAY_MS * Math.pow(2, attempt - 1); // Exponential backoff: 1s, 2s, 4s
+        console.warn(
+          `[entitlements] usage persist ${label} failed (attempt ${attempt}/${MAX_RETRIES}), ` +
+            `retrying in ${delayMs}ms:`,
+          error,
+        );
+
+        // Use setTimeout for delay, then retry
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        return persistWithRetry(attempt + 1);
+      } else {
+        // All retries exhausted - this is critical
+        console.error(
+          `[entitlements] CRITICAL: usage persist ${label} failed after ${MAX_RETRIES} attempts. ` +
+            `Data loss risk - customer=${record.customerId}, feature=${record.featureId}, amount=${record.amount}. ` +
+            `Error:`,
+          error,
+        );
+        // Don't throw - we don't want to crash the request, but we've logged prominently
+      }
+    }
+  }
+
+  c.executionCtx.waitUntil(persistWithRetry(1));
+}
 
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
@@ -59,7 +238,6 @@ const trackSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-
 // ---------------------------------------------------------------------------
 // Add-on Credit Helpers (scoped to credit system — no global pool)
 // Every add-on pack must be attached to a credit system.
@@ -77,7 +255,12 @@ async function tryDeductAddonCredits(
   creditSystemId: string,
 ): Promise<{ deducted: boolean; remaining?: number }> {
   // Atomic deduct with WHERE balance >= amount guard (prevents negative balance under concurrency)
-  const success = await deductScopedBalance(db, customerId, creditSystemId, amount);
+  const success = await deductScopedBalance(
+    db,
+    customerId,
+    creditSystemId,
+    amount,
+  );
   if (success) {
     const remaining = await getScopedBalance(db, customerId, creditSystemId);
     return { deducted: true, remaining };
@@ -105,11 +288,11 @@ async function getAddonBalance(
 // ---------------------------------------------------------------------------
 
 interface CreditSystemMapping {
-  creditSystemId: string;     // ID of the credit system (= feature ID of the pool)
-  creditSystemSlug: string;   // Slug of the credit system feature
-  costPerUnit: number;        // How many credits one unit of the child feature costs
-  planFeature: any;           // The plan_feature row for the credit system
-  subscription: any;          // The subscription granting access
+  creditSystemId: string; // ID of the credit system (= feature ID of the pool)
+  creditSystemSlug: string; // Slug of the credit system feature
+  costPerUnit: number; // How many credits one unit of the child feature costs
+  planFeature: any; // The plan_feature row for the credit system
+  subscription: any; // The subscription granting access
 }
 
 async function resolveCreditSystem(
@@ -142,13 +325,18 @@ async function resolveCreditSystem(
 
     const csPlanFeatures = await db.query.planFeatures.findMany({
       where: and(
-        sql`${schema.planFeatures.planId} IN (${sql.join(planIds.map((id: string) => sql`${id}`), sql`, `)})`,
+        sql`${schema.planFeatures.planId} IN (${sql.join(
+          planIds.map((id: string) => sql`${id}`),
+          sql`, `,
+        )})`,
         eq(schema.planFeatures.featureId, csFeatureId),
       ),
     });
 
     for (const pf of csPlanFeatures) {
-      const sub = subscriptions.find((s: { planId: string }) => s.planId === pf.planId);
+      const sub = subscriptions.find(
+        (s: { planId: string }) => s.planId === pf.planId,
+      );
       if (sub) {
         return {
           creditSystemId: csFeatureId,
@@ -173,7 +361,14 @@ app.post("/check", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { customer: customerId, feature: featureId, value, customerData, sendEvent, entity } = parsed.data;
+  const {
+    customer: customerId,
+    feature: featureId,
+    value,
+    customerData,
+    sendEvent,
+    entity,
+  } = parsed.data;
   const db = c.get("db");
   const organizationId = c.get("organizationId");
   const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
@@ -187,7 +382,11 @@ app.post("/check", async (c) => {
 
   // 1. Resolve Customer (cache-first, then DB, auto-create if customerData provided)
   const customer = await resolveOrCreateCustomer({
-    db, organizationId, customerId, customerData, cache,
+    db,
+    organizationId,
+    customerId,
+    customerData,
+    cache,
     waitUntil: (p) => c.executionCtx.waitUntil(p),
   });
 
@@ -200,28 +399,38 @@ app.post("/check", async (c) => {
       balance: null,
       resetsAt: null,
       resetInterval: null,
-      details: { message: `Customer '${customerId}' not found in this organization.` },
+      details: {
+        message: `Customer '${customerId}' not found in this organization.`,
+      },
     });
   }
 
   // 2. Resolve Feature (cache-first, then DB)
   let feature = cache
-    ? await cache.getFeature<typeof schema.features.$inferSelect>(organizationId, featureId)
+    ? await cache.getFeature<typeof schema.features.$inferSelect>(
+        organizationId,
+        featureId,
+      )
     : null;
 
   if (!feature) {
-    feature = (await db.query.features.findFirst({
-      where: and(
-        eq(schema.features.organizationId, organizationId),
-        or(
-          eq(schema.features.id, featureId),
-          eq(schema.features.slug, featureId),
+    feature =
+      (await db.query.features.findFirst({
+        where: and(
+          eq(schema.features.organizationId, organizationId),
+          or(
+            eq(schema.features.id, featureId),
+            eq(schema.features.slug, featureId),
+          ),
         ),
-      ),
-    })) ?? null;
+      })) ?? null;
 
     if (feature && cache) {
-      cache.setFeature(organizationId, featureId, feature); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setFeature(organizationId, featureId, feature),
+        "setFeature(/check)",
+      );
     }
   }
 
@@ -238,20 +447,54 @@ app.post("/check", async (c) => {
     });
   }
 
-  // 3. Check Subscription & Plans (cache-first, then DB)
+  // 3. Validate Entity (if provided, must exist)
+  // Allow both active and pending_removal for check() since it's read-only
+  if (entity) {
+    const existingEntity = await db.query.entities.findFirst({
+      where: and(
+        eq(schema.entities.customerId, customer.id),
+        eq(schema.entities.featureId, feature.id),
+        eq(schema.entities.entityId, entity),
+        or(
+          eq(schema.entities.status, "active"),
+          eq(schema.entities.status, "pending_removal"),
+        ),
+      ),
+    });
+
+    if (!existingEntity) {
+      return c.json({
+        allowed: false,
+        code: "entity_not_found",
+        usage: null,
+        limit: null,
+        balance: null,
+        resetsAt: null,
+        resetInterval: null,
+        details: {
+          message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
+        },
+      });
+    }
+  }
+
+  // 4. Check Subscription & Plans (cache-first, then DB)
   const subsCacheKey = customer.id;
   let subscriptions = cache
-    ? await cache.getSubscriptions<Awaited<ReturnType<typeof db.query.subscriptions.findMany>>>(
-        organizationId,
-        subsCacheKey
-      )
+    ? await cache.getSubscriptions<
+        Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
+      >(organizationId, subsCacheKey)
     : null;
 
   if (!subscriptions) {
     subscriptions = await db.query.subscriptions.findMany({
       where: and(
         eq(schema.subscriptions.customerId, customer.id),
-        inArray(schema.subscriptions.status, ["active", "trialing", "pending_cancel"]),
+        inArray(schema.subscriptions.status, [
+          "active",
+          "trialing",
+          "pending_cancel",
+        ]),
       ),
       with: {
         plan: true,
@@ -259,7 +502,11 @@ app.post("/check", async (c) => {
     });
 
     if (subscriptions.length > 0 && cache) {
-      cache.setSubscriptions(organizationId, subsCacheKey, subscriptions); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setSubscriptions(organizationId, subsCacheKey, subscriptions),
+        "setSubscriptions(/check)",
+      );
     }
   }
 
@@ -289,23 +536,29 @@ app.post("/check", async (c) => {
   if (expiredTrialIds.length > 0) {
     // Fire-and-forget: mark expired trials in DB
     c.executionCtx.waitUntil(
-      db.update(schema.subscriptions)
+      db
+        .update(schema.subscriptions)
         .set({ status: "expired", updatedAt: now })
-        .where(inArray(schema.subscriptions.id, expiredTrialIds))
+        .where(inArray(schema.subscriptions.id, expiredTrialIds)),
     );
   }
   if (expiredCancelIds.length > 0) {
     // Fire-and-forget: mark scheduled cancellations as canceled in DB
     c.executionCtx.waitUntil(
-      db.update(schema.subscriptions)
+      db
+        .update(schema.subscriptions)
         .set({ status: "canceled", canceledAt: now, updatedAt: now })
-        .where(inArray(schema.subscriptions.id, expiredCancelIds))
+        .where(inArray(schema.subscriptions.id, expiredCancelIds)),
     );
   }
   if (expiredTrialIds.length > 0 || expiredCancelIds.length > 0) {
     // Invalidate cache so next request gets fresh data
     if (cache) {
-      cache.invalidateSubscriptions(organizationId, subsCacheKey);
+      scheduleCacheOp(
+        c,
+        cache.invalidateSubscriptions(organizationId, subsCacheKey),
+        "invalidateSubscriptions(/check)",
+      );
     }
   }
 
@@ -318,7 +571,9 @@ app.post("/check", async (c) => {
       balance: null,
       resetsAt: null,
       resetInterval: null,
-      details: { message: "No active or trialing subscription found for this customer." },
+      details: {
+        message: "No active or trialing subscription found for this customer.",
+      },
     });
   }
 
@@ -326,22 +581,28 @@ app.post("/check", async (c) => {
   const planIds = subscriptions.map((s: { planId: string }) => s.planId);
   const pfCacheKey = `${planIds.sort().join(",")}:${feature.id}`;
   let planFeatures = cache
-    ? await cache.getPlanFeatures<Awaited<ReturnType<typeof db.query.planFeatures.findMany>>>(
-        organizationId,
-        pfCacheKey
-      )
+    ? await cache.getPlanFeatures<
+        Awaited<ReturnType<typeof db.query.planFeatures.findMany>>
+      >(organizationId, pfCacheKey)
     : null;
 
   if (!planFeatures) {
     planFeatures = await db.query.planFeatures.findMany({
       where: and(
-        sql`${schema.planFeatures.planId} IN (${sql.join(planIds.map((id: string) => sql`${id}`), sql`, `)})`,
+        sql`${schema.planFeatures.planId} IN (${sql.join(
+          planIds.map((id: string) => sql`${id}`),
+          sql`, `,
+        )})`,
         eq(schema.planFeatures.featureId, feature.id),
       ),
     });
 
     if (planFeatures.length > 0 && cache) {
-      cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures),
+        "setPlanFeatures(/check)",
+      );
     }
   }
 
@@ -351,7 +612,9 @@ app.post("/check", async (c) => {
   let creditMapping: CreditSystemMapping | null = null;
 
   for (const pf of planFeatures) {
-    const sub = subscriptions.find((s: { planId: string }) => s.planId === pf.planId);
+    const sub = subscriptions.find(
+      (s: { planId: string }) => s.planId === pf.planId,
+    );
     if (sub) {
       accessGrantingSubscription = sub;
       accessGrantingPlanFeature = pf;
@@ -361,7 +624,12 @@ app.post("/check", async (c) => {
 
   // Credit system fallback: feature may belong to a credit system pool
   if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
-    creditMapping = await resolveCreditSystem(db, feature.id, planIds, subscriptions);
+    creditMapping = await resolveCreditSystem(
+      db,
+      feature.id,
+      planIds,
+      subscriptions,
+    );
     if (creditMapping) {
       accessGrantingSubscription = creditMapping.subscription;
       accessGrantingPlanFeature = creditMapping.planFeature;
@@ -377,7 +645,9 @@ app.post("/check", async (c) => {
       balance: null,
       resetsAt: null,
       resetInterval: null,
-      details: { message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.` },
+      details: {
+        message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.`,
+      },
     });
   }
 
@@ -389,15 +659,22 @@ app.post("/check", async (c) => {
   // - effectiveFeatureId: track usage against the credit system's feature, not the child
   // - effectiveValue: multiply by cost (e.g., 1 unit of "dfs" = 20 credits)
   // - effectiveFeatureKey: use credit system slug for DO tracking
-  const effectiveFeatureId = creditMapping ? creditMapping.creditSystemId : feature.id;
-  const effectiveValue = creditMapping ? value * creditMapping.costPerUnit : value;
-  const effectiveFeatureSlug = creditMapping ? creditMapping.creditSystemSlug : (feature.slug || feature.id);
+  const effectiveFeatureId = creditMapping
+    ? creditMapping.creditSystemId
+    : feature.id;
+  const effectiveValue = creditMapping
+    ? value * creditMapping.costPerUnit
+    : value;
+  const effectiveFeatureSlug = creditMapping
+    ? creditMapping.creditSystemSlug
+    : feature.slug || feature.id;
 
   // Build reusable details context
   const isTrial = subscription.status === "trialing";
-  const trialEndsAt = isTrial && subscription.currentPeriodEnd
-    ? new Date(subscription.currentPeriodEnd).toISOString()
-    : null;
+  const trialEndsAt =
+    isTrial && subscription.currentPeriodEnd
+      ? new Date(subscription.currentPeriodEnd).toISOString()
+      : null;
   const planName = (subscription as any).plan?.name || "current plan";
 
   // Helper to build the details object — only includes truthy optional fields
@@ -406,7 +683,12 @@ app.post("/check", async (c) => {
       message,
       planName,
       ...(isTrial ? { trial: true, trialEndsAt } : {}),
-      ...(creditMapping ? { creditSystem: creditMapping.creditSystemSlug, creditCostPerUnit: creditMapping.costPerUnit } : {}),
+      ...(creditMapping
+        ? {
+            creditSystem: creditMapping.creditSystemSlug,
+            creditCostPerUnit: creditMapping.costPerUnit,
+          }
+        : {}),
       ...extra,
     };
   }
@@ -466,56 +748,112 @@ app.post("/check", async (c) => {
         creditCost: planFeature.creditCost || 0,
       };
 
-      let doResult = await usageMeter.check(featureKey, effectiveValue, currentConfig);
+      let doResult = await usageMeter.check(
+        featureKey,
+        effectiveValue,
+        currentConfig,
+      );
 
-      // If DO has no state yet (fresh/restart), migrate usage from DB and configure
+      // If DO has no state yet (fresh/restart), migrate usage from UsageLedgerDO and configure
       if (doResult.code === "feature_not_found") {
-        const { periodStart: migPeriodStart, periodEnd: migPeriodEnd } = resetPeriod;
-        const entityFilter = entity
-          ? eq(schema.usageRecords.entityId, entity)
-          : undefined;
-        const usageResult = await db
-          .select({ total: sql<number>`sum(amount)` })
-          .from(schema.usageRecords)
-          .where(
-            and(
-              eq(schema.usageRecords.customerId, customer.id),
-              eq(schema.usageRecords.featureId, effectiveFeatureId),
-              entityFilter,
-              sql`${schema.usageRecords.createdAt} >= ${migPeriodStart}`,
-              sql`${schema.usageRecords.createdAt} <= ${migPeriodEnd}`,
-            ),
-          );
-        const currentUsage = usageResult[0]?.total || 0;
+        const { periodStart: migPeriodStart, periodEnd: migPeriodEnd } =
+          resetPeriod;
 
-        await usageMeter.configureFeature(
-          featureKey,
-          { ...currentConfig, initialUsage: currentUsage },
+        // Query UsageLedgerDO for historical usage (not D1 - DO is source of truth)
+        let ledgerUsage = await sumUsageAmount(
+          {
+            usageLedger: c.env.USAGE_LEDGER,
+            organizationId: organizationId || null,
+          },
+          {
+            customerId: customer.id,
+            featureId: effectiveFeatureId,
+            entityId: entity || undefined,
+            createdAtFrom: migPeriodStart,
+            createdAtTo: migPeriodEnd,
+          },
         );
+
+        // If UsageLedgerDO is empty, try to rehydrate from D1 aggregates
+        if ((ledgerUsage === null || ledgerUsage === 0) && c.env.USAGE_LEDGER) {
+          console.log(
+            `[entitlements] UsageLedgerDO empty for ${customer.id}/${effectiveFeatureId}, attempting rehydration`,
+          );
+          const rehydrated = await rehydrateUsageLedger(
+            {
+              usageLedger: c.env.USAGE_LEDGER,
+              organizationId: organizationId || null,
+            },
+            db,
+            [customer.id],
+            30, // Last 30 days
+          );
+
+          if (rehydrated.success && rehydrated.inserted > 0) {
+            // Retry sum after rehydration
+            ledgerUsage = await sumUsageAmount(
+              {
+                usageLedger: c.env.USAGE_LEDGER,
+                organizationId: organizationId || null,
+              },
+              {
+                customerId: customer.id,
+                featureId: effectiveFeatureId,
+                entityId: entity || undefined,
+                createdAtFrom: migPeriodStart,
+                createdAtTo: migPeriodEnd,
+              },
+            );
+            console.log(
+              `[entitlements] Rehydrated ${rehydrated.inserted} records, new usage: ${ledgerUsage}`,
+            );
+          }
+        }
+
+        const currentUsage = ledgerUsage ?? 0;
+
+        await usageMeter.configureFeature(featureKey, {
+          ...currentConfig,
+          initialUsage: currentUsage,
+        });
 
         doResult = await usageMeter.check(featureKey, effectiveValue);
       }
 
       if (!doResult.allowed) {
         // During trials, always block at limit — no overage billing for free trials
-        const overageSetting = isTrial ? "block" : (planFeature.overage || "block");
-        
+        const overageSetting = isTrial
+          ? "block"
+          : planFeature.overage || "block";
+
         // Add-on credits FIRST — consume purchased credits before overage billing
         if (creditMapping) {
-          const addonBalance = await getAddonBalance(db, customer.id, creditMapping.creditSystemId);
+          const addonBalance = await getAddonBalance(
+            db,
+            customer.id,
+            creditMapping.creditSystemId,
+          );
           if (addonBalance >= effectiveValue) {
             if (sendEvent) {
-              await tryDeductAddonCredits(db, customer.id, effectiveValue, creditMapping.creditSystemId);
-              c.executionCtx.waitUntil(
-                db.insert(schema.usageRecords).values({
-                  id: crypto.randomUUID(),
+              await tryDeductAddonCredits(
+                db,
+                customer.id,
+                effectiveValue,
+                creditMapping.creditSystemId,
+              );
+              scheduleUsagePersist(
+                c,
+                db,
+                organizationId,
+                {
                   customerId: customer.id,
                   featureId: effectiveFeatureId,
                   entityId: entity || null,
                   amount: effectiveValue,
                   periodStart: resetPeriod.periodStart,
                   periodEnd: resetPeriod.periodEnd,
-                }),
+                },
+                "check:addon-fallback",
               );
             }
             const remaining = addonBalance - (sendEvent ? effectiveValue : 0);
@@ -524,14 +862,24 @@ app.post("/check", async (c) => {
               code: "addon_credits_used",
               usage: doResult.usage,
               limit: doResult.limit,
-              balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
+              balance:
+                doResult.limit === null
+                  ? null
+                  : doResult.limit - doResult.usage,
               resetsAt,
               resetInterval: planFeature.resetInterval,
               addonCredits: remaining,
-              planCredits: { used: doResult.usage, limit: doResult.limit, resetsAt },
+              planCredits: {
+                used: doResult.usage,
+                limit: doResult.limit,
+                resetsAt,
+              },
               details: buildDetails(
                 `Plan credits exhausted. ${effectiveValue} add-on credits ${sendEvent ? "deducted" : "will be deducted"}.`,
-                { addonCreditsUsed: effectiveValue, addonCreditsRemaining: remaining },
+                {
+                  addonCreditsUsed: effectiveValue,
+                  addonCreditsRemaining: remaining,
+                },
               ),
             });
           }
@@ -540,9 +888,13 @@ app.post("/check", async (c) => {
         // If overage is "charge", check guards before allowing
         if (overageSetting === "charge") {
           const overageGuard = await checkOverageAllowed(
-            db, customer.id, effectiveFeatureId,
-            resetPeriod.periodStart, resetPeriod.periodEnd,
-            planFeature.limitValue, planFeature.maxOverageUnits,
+            db,
+            customer.id,
+            effectiveFeatureId,
+            resetPeriod.periodStart,
+            resetPeriod.periodEnd,
+            planFeature.limitValue,
+            planFeature.maxOverageUnits,
             effectiveValue,
           );
 
@@ -552,7 +904,10 @@ app.post("/check", async (c) => {
               code: "overage_allowed",
               usage: doResult.usage,
               limit: doResult.limit,
-              balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
+              balance:
+                doResult.limit === null
+                  ? null
+                  : doResult.limit - doResult.usage,
               resetsAt,
               resetInterval: planFeature.resetInterval,
               details: buildDetails(
@@ -561,7 +916,8 @@ app.post("/check", async (c) => {
                   overage: {
                     type: overageSetting,
                     willBeBilled: true,
-                    pricePerUnit: planFeature.overagePrice || planFeature.pricePerUnit,
+                    pricePerUnit:
+                      planFeature.overagePrice || planFeature.pricePerUnit,
                     billingUnits: planFeature.billingUnits,
                   },
                 },
@@ -580,46 +936,78 @@ app.post("/check", async (c) => {
           code: "limit_exceeded",
           usage: doResult.usage,
           limit: doResult.limit,
-          balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
+          balance:
+            doResult.limit === null ? null : doResult.limit - doResult.usage,
           resetsAt,
           resetInterval: planFeature.resetInterval,
-          ...(blockAddonCredits !== undefined ? { addonCredits: blockAddonCredits } : {}),
-          details: buildDetails(`Usage limit reached (${doResult.usage}/${doResult.limit}). Resets at ${resetsAt}.`),
+          ...(blockAddonCredits !== undefined
+            ? { addonCredits: blockAddonCredits }
+            : {}),
+          details: buildDetails(
+            `Usage limit reached (${doResult.usage}/${doResult.limit}). Resets at ${resetsAt}.`,
+          ),
         });
       }
 
       // sendEvent: atomically track usage if check passed
       if (sendEvent) {
-        const trackResult = await usageMeter.track(featureKey, effectiveValue, currentConfig);
+        const trackResult = await usageMeter.track(
+          featureKey,
+          effectiveValue,
+          currentConfig,
+        );
         if (trackResult && !trackResult.allowed) {
           // Add-on credit fallback for race condition (check passed but track failed)
           if (creditMapping) {
-            const deductResult = await tryDeductAddonCredits(db, customer.id, effectiveValue, creditMapping.creditSystemId);
+            const deductResult = await tryDeductAddonCredits(
+              db,
+              customer.id,
+              effectiveValue,
+              creditMapping.creditSystemId,
+            );
             if (deductResult.deducted) {
-              c.executionCtx.waitUntil(
-                db.insert(schema.usageRecords).values({
-                  id: crypto.randomUUID(),
+              scheduleUsagePersist(
+                c,
+                db,
+                organizationId,
+                {
                   customerId: customer.id,
                   featureId: effectiveFeatureId,
                   entityId: entity || null,
                   amount: effectiveValue,
                   periodStart: resetPeriod.periodStart,
                   periodEnd: resetPeriod.periodEnd,
-                }),
+                },
+                "check:track-race-addon",
               );
               return c.json({
                 allowed: true,
                 code: "addon_credits_used",
-                usage: trackResult.balance !== undefined ? (doResult.limit !== null ? doResult.limit - trackResult.balance : null) : doResult.usage,
+                usage:
+                  trackResult.balance !== undefined
+                    ? doResult.limit !== null
+                      ? doResult.limit - trackResult.balance
+                      : null
+                    : doResult.usage,
                 limit: doResult.limit,
-                balance: doResult.limit === null ? null : trackResult.balance ?? (doResult.limit - doResult.usage),
+                balance:
+                  doResult.limit === null
+                    ? null
+                    : (trackResult.balance ?? doResult.limit - doResult.usage),
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
                 addonCredits: deductResult.remaining,
-                planCredits: { used: doResult.usage, limit: doResult.limit, resetsAt },
+                planCredits: {
+                  used: doResult.usage,
+                  limit: doResult.limit,
+                  resetsAt,
+                },
                 details: buildDetails(
                   `Plan credits exhausted. ${effectiveValue} add-on credits deducted.`,
-                  { addonCreditsUsed: effectiveValue, addonCreditsRemaining: deductResult.remaining },
+                  {
+                    addonCreditsUsed: effectiveValue,
+                    addonCreditsRemaining: deductResult.remaining,
+                  },
                 ),
               });
             }
@@ -627,27 +1015,46 @@ app.post("/check", async (c) => {
           return c.json({
             allowed: false,
             code: "limit_exceeded",
-            usage: trackResult.balance !== undefined ? (doResult.limit !== null ? doResult.limit - trackResult.balance : null) : doResult.usage,
+            usage:
+              trackResult.balance !== undefined
+                ? doResult.limit !== null
+                  ? doResult.limit - trackResult.balance
+                  : null
+                : doResult.usage,
             limit: doResult.limit,
-            balance: doResult.limit === null ? null : trackResult.balance ?? (doResult.limit - doResult.usage),
+            balance:
+              doResult.limit === null
+                ? null
+                : (trackResult.balance ?? doResult.limit - doResult.usage),
             resetsAt,
             resetInterval: planFeature.resetInterval,
-            details: buildDetails(`Usage tracking denied — insufficient balance (${trackResult.balance} remaining). Resets at ${resetsAt}.`),
+            details: buildDetails(
+              `Usage tracking denied — insufficient balance (${trackResult.balance} remaining). Resets at ${resetsAt}.`,
+            ),
           });
         }
         // Also persist to DB for audit trail
-        await db.insert(schema.usageRecords).values({
-          id: crypto.randomUUID(),
-          customerId: customer.id,
-          featureId: effectiveFeatureId,
-          entityId: entity || null,
-          amount: effectiveValue,
-          periodStart: resetPeriod.periodStart,
-          periodEnd: resetPeriod.periodEnd,
-        });
+        scheduleUsagePersist(
+          c,
+          db,
+          organizationId,
+          {
+            customerId: customer.id,
+            featureId: effectiveFeatureId,
+            entityId: entity || null,
+            amount: effectiveValue,
+            periodStart: resetPeriod.periodStart,
+            periodEnd: resetPeriod.periodEnd,
+          },
+          "check:track-inline",
+        );
 
         // Deduct from credits.balance for prepaid model (not credit systems)
-        if (!creditMapping && planFeature.creditCost && planFeature.creditCost > 0) {
+        if (
+          !creditMapping &&
+          planFeature.creditCost &&
+          planFeature.creditCost > 0
+        ) {
           const cost = value * planFeature.creditCost;
           c.executionCtx.waitUntil(
             db
@@ -656,7 +1063,7 @@ app.post("/check", async (c) => {
                 balance: sql`${schema.credits.balance} - ${cost}`,
                 updatedAt: Date.now(),
               })
-              .where(eq(schema.credits.customerId, customer.id))
+              .where(eq(schema.credits.customerId, customer.id)),
           );
         }
       }
@@ -671,12 +1078,21 @@ app.post("/check", async (c) => {
         code: "access_granted",
         usage: doResult.usage,
         limit: doResult.limit,
-        balance: doResult.limit === null ? null : doResult.limit - doResult.usage,
+        balance:
+          doResult.limit === null ? null : doResult.limit - doResult.usage,
         resetsAt,
         resetInterval: planFeature.resetInterval,
-        ...(addonCreditsBalance !== undefined ? { addonCredits: addonCreditsBalance } : {}),
+        ...(addonCreditsBalance !== undefined
+          ? { addonCredits: addonCreditsBalance }
+          : {}),
         ...(creditMapping && doResult.limit !== null
-          ? { planCredits: { used: doResult.usage, limit: doResult.limit, resetsAt } }
+          ? {
+              planCredits: {
+                used: doResult.usage,
+                limit: doResult.limit,
+                resetsAt,
+              },
+            }
           : {}),
         details: buildDetails(
           doResult.limit === null
@@ -696,45 +1112,84 @@ app.post("/check", async (c) => {
         balance: null,
         resetsAt,
         resetInterval: planFeature.resetInterval,
-        details: buildDetails(`Unlimited access to '${feature.slug || feature.id}' on ${planName}.`),
+        details: buildDetails(
+          `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`,
+        ),
       });
     }
 
     // Calculate current usage for this period using the feature's reset interval
-    const { periodStart: currentPeriodStart, periodEnd: currentPeriodEnd } = getResetPeriod(
-      planFeature.resetInterval,
-      subscription.currentPeriodStart,
-      subscription.currentPeriodEnd,
-    );
-
-    // Sum usage records within the reset-interval-aware period
-    const dbEntityFilter = entity
-      ? eq(schema.usageRecords.entityId, entity)
-      : undefined;
-    const usageResult = await db
-      .select({
-        total: sql<number>`sum(amount)`,
-      })
-      .from(schema.usageRecords)
-      .where(
-        and(
-          eq(schema.usageRecords.customerId, customer.id),
-          eq(schema.usageRecords.featureId, effectiveFeatureId),
-          dbEntityFilter,
-          sql`${schema.usageRecords.createdAt} >= ${currentPeriodStart}`,
-          sql`${schema.usageRecords.createdAt} <= ${currentPeriodEnd}`,
-        ),
+    const { periodStart: currentPeriodStart, periodEnd: currentPeriodEnd } =
+      getResetPeriod(
+        planFeature.resetInterval,
+        subscription.currentPeriodStart,
+        subscription.currentPeriodEnd,
       );
 
-    const currentUsage = usageResult[0]?.total || 0;
+    // Sum usage from UsageLedgerDO (source of truth) - not D1
+    let ledgerUsage = await sumUsageAmount(
+      {
+        usageLedger: c.env.USAGE_LEDGER,
+        organizationId: organizationId || null,
+      },
+      {
+        customerId: customer.id,
+        featureId: effectiveFeatureId,
+        entityId: entity || undefined,
+        createdAtFrom: currentPeriodStart,
+        createdAtTo: currentPeriodEnd,
+      },
+    );
+
+    // If UsageLedgerDO is empty, try to rehydrate from D1 aggregates
+    if ((ledgerUsage === null || ledgerUsage === 0) && c.env.USAGE_LEDGER) {
+      console.log(
+        `[entitlements/check] UsageLedgerDO empty for ${customer.id}/${effectiveFeatureId}, attempting rehydration`,
+      );
+      const rehydrated = await rehydrateUsageLedger(
+        {
+          usageLedger: c.env.USAGE_LEDGER,
+          organizationId: organizationId || null,
+        },
+        db,
+        [customer.id],
+        30,
+      );
+
+      if (rehydrated.success && rehydrated.inserted > 0) {
+        // Retry sum after rehydration
+        ledgerUsage = await sumUsageAmount(
+          {
+            usageLedger: c.env.USAGE_LEDGER,
+            organizationId: organizationId || null,
+          },
+          {
+            customerId: customer.id,
+            featureId: effectiveFeatureId,
+            entityId: entity || undefined,
+            createdAtFrom: currentPeriodStart,
+            createdAtTo: currentPeriodEnd,
+          },
+        );
+        console.log(
+          `[entitlements/check] Rehydrated ${rehydrated.inserted} records, new usage: ${ledgerUsage}`,
+        );
+      }
+    }
+
+    const currentUsage = ledgerUsage ?? 0;
 
     if (currentUsage + effectiveValue > planFeature.limitValue) {
       // During trials, always block at limit — no overage billing for free trials
-      const overageSetting = isTrial ? "block" : (planFeature.overage || "block");
-      
+      const overageSetting = isTrial ? "block" : planFeature.overage || "block";
+
       // Add-on credits FIRST — consume purchased credits before overage billing
       if (creditMapping) {
-        const addonBalance = await getAddonBalance(db, customer.id, creditMapping.creditSystemId);
+        const addonBalance = await getAddonBalance(
+          db,
+          customer.id,
+          creditMapping.creditSystemId,
+        );
         if (addonBalance >= effectiveValue) {
           return c.json({
             allowed: true,
@@ -745,10 +1200,17 @@ app.post("/check", async (c) => {
             resetsAt,
             resetInterval: planFeature.resetInterval,
             addonCredits: addonBalance,
-            planCredits: { used: currentUsage, limit: planFeature.limitValue, resetsAt },
+            planCredits: {
+              used: currentUsage,
+              limit: planFeature.limitValue,
+              resetsAt,
+            },
             details: buildDetails(
               `Plan credits exhausted. ${effectiveValue} add-on credits will be deducted.`,
-              { addonCreditsUsed: effectiveValue, addonCreditsRemaining: addonBalance },
+              {
+                addonCreditsUsed: effectiveValue,
+                addonCreditsRemaining: addonBalance,
+              },
             ),
           });
         }
@@ -757,9 +1219,13 @@ app.post("/check", async (c) => {
       // If overage is "charge", check guards before allowing
       if (overageSetting === "charge") {
         const overageGuard = await checkOverageAllowed(
-          db, customer.id, effectiveFeatureId,
-          currentPeriodStart, currentPeriodEnd,
-          planFeature.limitValue, planFeature.maxOverageUnits,
+          db,
+          customer.id,
+          effectiveFeatureId,
+          currentPeriodStart,
+          currentPeriodEnd,
+          planFeature.limitValue,
+          planFeature.maxOverageUnits,
           effectiveValue,
         );
 
@@ -778,7 +1244,8 @@ app.post("/check", async (c) => {
                 overage: {
                   type: overageSetting,
                   willBeBilled: true,
-                  pricePerUnit: planFeature.overagePrice || planFeature.pricePerUnit,
+                  pricePerUnit:
+                    planFeature.overagePrice || planFeature.pricePerUnit,
                   billingUnits: planFeature.billingUnits,
                 },
               },
@@ -800,15 +1267,23 @@ app.post("/check", async (c) => {
         balance: planFeature.limitValue - currentUsage,
         resetsAt,
         resetInterval: planFeature.resetInterval,
-        ...(dbBlockAddonCredits !== undefined ? { addonCredits: dbBlockAddonCredits } : {}),
-        details: buildDetails(`Usage limit exceeded (${currentUsage}/${planFeature.limitValue}). Resets at ${resetsAt}.`),
+        ...(dbBlockAddonCredits !== undefined
+          ? { addonCredits: dbBlockAddonCredits }
+          : {}),
+        details: buildDetails(
+          `Usage limit exceeded (${currentUsage}/${planFeature.limitValue}). Resets at ${resetsAt}.`,
+        ),
       });
     }
 
     // If it costs credits (prepaid balance model), check balance.
     // NOTE: Credit systems do NOT use credits.balance — they enforce via usage_records pool.
     // Only planFeature.creditCost triggers the prepaid balance check.
-    if (!creditMapping && planFeature.creditCost && planFeature.creditCost > 0) {
+    if (
+      !creditMapping &&
+      planFeature.creditCost &&
+      planFeature.creditCost > 0
+    ) {
       const cost = value * planFeature.creditCost;
       const creditRecord = await db.query.credits.findFirst({
         where: eq(schema.credits.customerId, customer.id),
@@ -824,25 +1299,36 @@ app.post("/check", async (c) => {
           balance: planFeature.limitValue - currentUsage,
           resetsAt,
           resetInterval: planFeature.resetInterval,
-          details: buildDetails(`Insufficient credits — balance: ${creditBalance}, required: ${cost}.`),
+          details: buildDetails(
+            `Insufficient credits — balance: ${creditBalance}, required: ${cost}.`,
+          ),
         });
       }
     }
 
     // sendEvent: track usage inline (DB-only path, no DO)
     if (sendEvent) {
-      await db.insert(schema.usageRecords).values({
-        id: crypto.randomUUID(),
-        customerId: customer.id,
-        featureId: effectiveFeatureId,
-        entityId: entity || null,
-        amount: effectiveValue,
-        periodStart: currentPeriodStart,
-        periodEnd: currentPeriodEnd,
-      });
+      scheduleUsagePersist(
+        c,
+        db,
+        organizationId,
+        {
+          customerId: customer.id,
+          featureId: effectiveFeatureId,
+          entityId: entity || null,
+          amount: effectiveValue,
+          periodStart: currentPeriodStart,
+          periodEnd: currentPeriodEnd,
+        },
+        "check:track-inline-db-only",
+      );
 
       // Deduct from credits.balance for prepaid model (not credit systems)
-      if (!creditMapping && planFeature.creditCost && planFeature.creditCost > 0) {
+      if (
+        !creditMapping &&
+        planFeature.creditCost &&
+        planFeature.creditCost > 0
+      ) {
         const cost = value * planFeature.creditCost;
         await db
           .update(schema.credits)
@@ -862,7 +1348,9 @@ app.post("/check", async (c) => {
       balance: planFeature.limitValue - currentUsage,
       resetsAt,
       resetInterval: planFeature.resetInterval,
-      details: buildDetails(`Access granted — used ${currentUsage} of ${planFeature.limitValue}.`),
+      details: buildDetails(
+        `Access granted — used ${currentUsage} of ${planFeature.limitValue}.`,
+      ),
     });
   }
 
@@ -887,7 +1375,13 @@ app.post("/track", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { customer: customerId, feature: featureId, value, customerData, entity } = parsed.data;
+  const {
+    customer: customerId,
+    feature: featureId,
+    value,
+    customerData,
+    entity,
+  } = parsed.data;
   const db = c.get("db");
   const organizationId = c.get("organizationId");
   const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
@@ -901,73 +1395,127 @@ app.post("/track", async (c) => {
 
   // 1. Resolve Customer (cache-first, then DB, auto-create if customerData provided)
   const customer = await resolveOrCreateCustomer({
-    db, organizationId, customerId, customerData, cache,
+    db,
+    organizationId,
+    customerId,
+    customerData,
+    cache,
     waitUntil: (p) => c.executionCtx.waitUntil(p),
   });
 
   if (!customer) {
-    return c.json({
-      success: false,
-      allowed: false,
-      code: "customer_not_found",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: { message: `Customer '${customerId}' not found in this organization.` },
-    }, 404);
+    return c.json(
+      {
+        success: false,
+        allowed: false,
+        code: "customer_not_found",
+        usage: null,
+        limit: null,
+        balance: null,
+        resetsAt: null,
+        resetInterval: null,
+        details: {
+          message: `Customer '${customerId}' not found in this organization.`,
+        },
+      },
+      404,
+    );
   }
 
   // 2. Resolve Feature (cache-first, then DB)
   let feature = cache
-    ? await cache.getFeature<typeof schema.features.$inferSelect>(organizationId, featureId)
+    ? await cache.getFeature<typeof schema.features.$inferSelect>(
+        organizationId,
+        featureId,
+      )
     : null;
 
   if (!feature) {
-    feature = (await db.query.features.findFirst({
-      where: and(
-        eq(schema.features.organizationId, organizationId),
-        or(
-          eq(schema.features.id, featureId),
-          eq(schema.features.slug, featureId),
+    feature =
+      (await db.query.features.findFirst({
+        where: and(
+          eq(schema.features.organizationId, organizationId),
+          or(
+            eq(schema.features.id, featureId),
+            eq(schema.features.slug, featureId),
+          ),
         ),
-      ),
-    })) ?? null;
+      })) ?? null;
 
     if (feature && cache) {
-      cache.setFeature(organizationId, featureId, feature); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setFeature(organizationId, featureId, feature),
+        "setFeature(/track)",
+      );
     }
   }
 
   if (!feature) {
-    return c.json({
-      success: false,
-      allowed: false,
-      code: "feature_not_found",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: { message: `Feature '${featureId}' not found.` },
-    }, 404);
+    return c.json(
+      {
+        success: false,
+        allowed: false,
+        code: "feature_not_found",
+        usage: null,
+        limit: null,
+        balance: null,
+        resetsAt: null,
+        resetInterval: null,
+        details: { message: `Feature '${featureId}' not found.` },
+      },
+      404,
+    );
   }
 
-  // 3. Find active/trialing subscriptions (cache-first, then DB)
+  // 3. Validate Entity (if provided, must exist)
+  if (entity) {
+    const existingEntity = await db.query.entities.findFirst({
+      where: and(
+        eq(schema.entities.customerId, customer.id),
+        eq(schema.entities.featureId, feature.id),
+        eq(schema.entities.entityId, entity),
+        eq(schema.entities.status, "active"),
+      ),
+    });
+
+    if (!existingEntity) {
+      return c.json(
+        {
+          success: false,
+          allowed: false,
+          code: "entity_not_found",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
+          },
+        },
+        404,
+      );
+    }
+  }
+
+  // 4. Find active/trialing subscriptions (cache-first, then DB)
   const subsCacheKey = customer.id;
   let subscriptions = cache
-    ? await cache.getSubscriptions<Awaited<ReturnType<typeof db.query.subscriptions.findMany>>>(
-        organizationId,
-        subsCacheKey
-      )
+    ? await cache.getSubscriptions<
+        Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
+      >(organizationId, subsCacheKey)
     : null;
 
   if (!subscriptions) {
     subscriptions = await db.query.subscriptions.findMany({
       where: and(
         eq(schema.subscriptions.customerId, customer.id),
-        inArray(schema.subscriptions.status, ["active", "trialing", "pending_cancel"]),
+        inArray(schema.subscriptions.status, [
+          "active",
+          "trialing",
+          "pending_cancel",
+        ]),
       ),
       with: {
         plan: true,
@@ -975,7 +1523,11 @@ app.post("/track", async (c) => {
     });
 
     if (subscriptions.length > 0 && cache) {
-      cache.setSubscriptions(organizationId, subsCacheKey, subscriptions); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setSubscriptions(organizationId, subsCacheKey, subscriptions),
+        "setSubscriptions(/track)",
+      );
     }
   }
 
@@ -1003,58 +1555,76 @@ app.post("/track", async (c) => {
   });
   if (trackExpiredTrialIds.length > 0) {
     c.executionCtx.waitUntil(
-      db.update(schema.subscriptions)
+      db
+        .update(schema.subscriptions)
         .set({ status: "expired", updatedAt: trackNow })
-        .where(inArray(schema.subscriptions.id, trackExpiredTrialIds))
+        .where(inArray(schema.subscriptions.id, trackExpiredTrialIds)),
     );
   }
   if (trackExpiredCancelIds.length > 0) {
     c.executionCtx.waitUntil(
-      db.update(schema.subscriptions)
+      db
+        .update(schema.subscriptions)
         .set({ status: "canceled", canceledAt: trackNow, updatedAt: trackNow })
-        .where(inArray(schema.subscriptions.id, trackExpiredCancelIds))
+        .where(inArray(schema.subscriptions.id, trackExpiredCancelIds)),
     );
   }
   if (trackExpiredTrialIds.length > 0 || trackExpiredCancelIds.length > 0) {
     if (cache) {
-      cache.invalidateSubscriptions(organizationId, subsCacheKey);
+      scheduleCacheOp(
+        c,
+        cache.invalidateSubscriptions(organizationId, subsCacheKey),
+        "invalidateSubscriptions(/track)",
+      );
     }
   }
 
   if (subscriptions.length === 0) {
-    return c.json({
-      success: false,
-      allowed: false,
-      code: "no_active_subscription",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: { message: "No active or trialing subscription found for this customer." },
-    }, 400);
+    return c.json(
+      {
+        success: false,
+        allowed: false,
+        code: "no_active_subscription",
+        usage: null,
+        limit: null,
+        balance: null,
+        resetsAt: null,
+        resetInterval: null,
+        details: {
+          message:
+            "No active or trialing subscription found for this customer.",
+        },
+      },
+      400,
+    );
   }
 
   // 4. Find planFeatures (cache-first, then batch DB query)
   const planIds = subscriptions.map((s: { planId: string }) => s.planId);
   const pfCacheKey = `${planIds.sort().join(",")}:${feature.id}`;
   let planFeatures = cache
-    ? await cache.getPlanFeatures<Awaited<ReturnType<typeof db.query.planFeatures.findMany>>>(
-        organizationId,
-        pfCacheKey
-      )
+    ? await cache.getPlanFeatures<
+        Awaited<ReturnType<typeof db.query.planFeatures.findMany>>
+      >(organizationId, pfCacheKey)
     : null;
 
   if (!planFeatures) {
     planFeatures = await db.query.planFeatures.findMany({
       where: and(
-        sql`${schema.planFeatures.planId} IN (${sql.join(planIds.map((id: string) => sql`${id}`), sql`, `)})`,
+        sql`${schema.planFeatures.planId} IN (${sql.join(
+          planIds.map((id: string) => sql`${id}`),
+          sql`, `,
+        )})`,
         eq(schema.planFeatures.featureId, feature.id),
       ),
     });
 
     if (planFeatures.length > 0 && cache) {
-      cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures); // fire-and-forget
+      scheduleCacheOp(
+        c,
+        cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures),
+        "setPlanFeatures(/track)",
+      );
     }
   }
 
@@ -1063,7 +1633,9 @@ app.post("/track", async (c) => {
   let trackCreditMapping: CreditSystemMapping | null = null;
 
   for (const pf of planFeatures) {
-    const sub = subscriptions.find((s: { planId: string }) => s.planId === pf.planId);
+    const sub = subscriptions.find(
+      (s: { planId: string }) => s.planId === pf.planId,
+    );
     if (sub) {
       accessGrantingSubscription = sub;
       accessGrantingPlanFeature = pf;
@@ -1073,7 +1645,12 @@ app.post("/track", async (c) => {
 
   // Credit system fallback
   if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
-    trackCreditMapping = await resolveCreditSystem(db, feature.id, planIds, subscriptions);
+    trackCreditMapping = await resolveCreditSystem(
+      db,
+      feature.id,
+      planIds,
+      subscriptions,
+    );
     if (trackCreditMapping) {
       accessGrantingSubscription = trackCreditMapping.subscription;
       accessGrantingPlanFeature = trackCreditMapping.planFeature;
@@ -1084,29 +1661,41 @@ app.post("/track", async (c) => {
   const planFeature = accessGrantingPlanFeature;
 
   if (!subscription || !planFeature) {
-    return c.json({
-      success: false,
-      allowed: false,
-      code: "feature_not_in_plan",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: { message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.` },
-    }, 400);
+    return c.json(
+      {
+        success: false,
+        allowed: false,
+        code: "feature_not_in_plan",
+        usage: null,
+        limit: null,
+        balance: null,
+        resetsAt: null,
+        resetInterval: null,
+        details: {
+          message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.`,
+        },
+      },
+      400,
+    );
   }
 
   // Credit system effective values
-  const trackEffectiveFeatureId = trackCreditMapping ? trackCreditMapping.creditSystemId : feature.id;
-  const trackEffectiveValue = trackCreditMapping ? value * trackCreditMapping.costPerUnit : value;
-  const trackEffectiveSlug = trackCreditMapping ? trackCreditMapping.creditSystemSlug : (feature.slug || feature.id);
+  const trackEffectiveFeatureId = trackCreditMapping
+    ? trackCreditMapping.creditSystemId
+    : feature.id;
+  const trackEffectiveValue = trackCreditMapping
+    ? value * trackCreditMapping.costPerUnit
+    : value;
+  const trackEffectiveSlug = trackCreditMapping
+    ? trackCreditMapping.creditSystemSlug
+    : feature.slug || feature.id;
 
   // Build reusable details context for track responses
   const isTrial = subscription.status === "trialing";
-  const trialEndsAt = isTrial && subscription.currentPeriodEnd
-    ? new Date(subscription.currentPeriodEnd).toISOString()
-    : null;
+  const trialEndsAt =
+    isTrial && subscription.currentPeriodEnd
+      ? new Date(subscription.currentPeriodEnd).toISOString()
+      : null;
 
   const trackPlanName = (subscription as any).plan?.name || "current plan";
 
@@ -1115,7 +1704,12 @@ app.post("/track", async (c) => {
       message,
       planName: trackPlanName,
       ...(isTrial ? { trial: true, trialEndsAt } : {}),
-      ...(trackCreditMapping ? { creditSystem: trackCreditMapping.creditSystemSlug, creditCostPerUnit: trackCreditMapping.costPerUnit } : {}),
+      ...(trackCreditMapping
+        ? {
+            creditSystem: trackCreditMapping.creditSystemSlug,
+            creditCostPerUnit: trackCreditMapping.costPerUnit,
+          }
+        : {}),
       ...extra,
     };
   }
@@ -1160,31 +1754,71 @@ app.post("/track", async (c) => {
       };
 
       // Track usage atomically via RPC (config synced inline)
-      doResult = await usageMeter.track(trackFeatureKey, trackEffectiveValue, currentConfig);
+      doResult = await usageMeter.track(
+        trackFeatureKey,
+        trackEffectiveValue,
+        currentConfig,
+      );
 
-      // If DO has no state yet (fresh/restart), migrate usage from DB and configure
+      // If DO has no state yet (fresh/restart), migrate usage from UsageLedgerDO and configure
       if (doResult.code === "feature_not_found") {
-        const trackEntityFilter = entity
-          ? eq(schema.usageRecords.entityId, entity)
-          : undefined;
-        const usageResult = await db
-          .select({ total: sql<number>`sum(amount)` })
-          .from(schema.usageRecords)
-          .where(
-            and(
-              eq(schema.usageRecords.customerId, customer.id),
-              eq(schema.usageRecords.featureId, trackEffectiveFeatureId),
-              trackEntityFilter,
-              sql`${schema.usageRecords.createdAt} >= ${periodStart}`,
-              sql`${schema.usageRecords.createdAt} <= ${periodEnd}`,
-            ),
-          );
-        const currentUsage = usageResult[0]?.total || 0;
-
-        await usageMeter.configureFeature(
-          trackFeatureKey,
-          { ...currentConfig, initialUsage: currentUsage },
+        // Query UsageLedgerDO for historical usage (source of truth)
+        let ledgerUsage = await sumUsageAmount(
+          {
+            usageLedger: c.env.USAGE_LEDGER,
+            organizationId: organizationId || null,
+          },
+          {
+            customerId: customer.id,
+            featureId: trackEffectiveFeatureId,
+            entityId: entity || undefined,
+            createdAtFrom: periodStart,
+            createdAtTo: periodEnd,
+          },
         );
+
+        // If UsageLedgerDO is empty, try to rehydrate from D1 aggregates
+        if ((ledgerUsage === null || ledgerUsage === 0) && c.env.USAGE_LEDGER) {
+          console.log(
+            `[entitlements/track] UsageLedgerDO empty for ${customer.id}/${trackEffectiveFeatureId}, attempting rehydration`,
+          );
+          const rehydrated = await rehydrateUsageLedger(
+            {
+              usageLedger: c.env.USAGE_LEDGER,
+              organizationId: organizationId || null,
+            },
+            db,
+            [customer.id],
+            30,
+          );
+
+          if (rehydrated.success && rehydrated.inserted > 0) {
+            // Retry sum after rehydration
+            ledgerUsage = await sumUsageAmount(
+              {
+                usageLedger: c.env.USAGE_LEDGER,
+                organizationId: organizationId || null,
+              },
+              {
+                customerId: customer.id,
+                featureId: trackEffectiveFeatureId,
+                entityId: entity || undefined,
+                createdAtFrom: periodStart,
+                createdAtTo: periodEnd,
+              },
+            );
+            console.log(
+              `[entitlements/track] Rehydrated ${rehydrated.inserted} records, new usage: ${ledgerUsage}`,
+            );
+          }
+        }
+
+        const currentUsage = ledgerUsage ?? 0;
+
+        await usageMeter.configureFeature(trackFeatureKey, {
+          ...currentConfig,
+          initialUsage: currentUsage,
+        });
 
         doResult = await usageMeter.track(trackFeatureKey, trackEffectiveValue);
       }
@@ -1192,24 +1826,37 @@ app.post("/track", async (c) => {
       // If DO says not allowed, try addon credits first, then overage
       if (doResult && !doResult.allowed) {
         // During trials, always block at limit — no overage billing for free trials
-        const overageSetting = isTrial ? "block" : (planFeature.overage || "block");
-        
+        const overageSetting = isTrial
+          ? "block"
+          : planFeature.overage || "block";
+
         // Add-on credits FIRST — consume purchased credits before overage billing
         if (trackCreditMapping) {
-          const deductResult = await tryDeductAddonCredits(db, customer.id, trackEffectiveValue, trackCreditMapping.creditSystemId);
+          const deductResult = await tryDeductAddonCredits(
+            db,
+            customer.id,
+            trackEffectiveValue,
+            trackCreditMapping.creditSystemId,
+          );
           if (deductResult.deducted) {
-            c.executionCtx.waitUntil(
-              db.insert(schema.usageRecords).values({
-                id: crypto.randomUUID(),
+            scheduleUsagePersist(
+              c,
+              db,
+              organizationId,
+              {
                 customerId: customer.id,
                 featureId: trackEffectiveFeatureId,
                 entityId: entity || null,
                 amount: trackEffectiveValue,
                 periodStart,
                 periodEnd,
-              }),
+              },
+              "track:addon-fallback",
             );
-            const addonDoUsage = planFeature.limitValue !== null ? planFeature.limitValue - doResult.balance : null;
+            const addonDoUsage =
+              planFeature.limitValue !== null
+                ? planFeature.limitValue - doResult.balance
+                : null;
             return c.json({
               success: true,
               allowed: true,
@@ -1220,10 +1867,17 @@ app.post("/track", async (c) => {
               resetsAt: new Date(periodEnd).toISOString(),
               resetInterval: planFeature.resetInterval,
               addonCredits: deductResult.remaining,
-              planCredits: { used: addonDoUsage ?? 0, limit: planFeature.limitValue, resetsAt: new Date(periodEnd).toISOString() },
+              planCredits: {
+                used: addonDoUsage ?? 0,
+                limit: planFeature.limitValue,
+                resetsAt: new Date(periodEnd).toISOString(),
+              },
               details: buildTrackDetails(
                 `Plan credits exhausted. ${trackEffectiveValue} add-on credits deducted.`,
-                { addonCreditsUsed: trackEffectiveValue, addonCreditsRemaining: deductResult.remaining },
+                {
+                  addonCreditsUsed: trackEffectiveValue,
+                  addonCreditsRemaining: deductResult.remaining,
+                },
               ),
             });
           }
@@ -1232,14 +1886,21 @@ app.post("/track", async (c) => {
         // If overage is "charge", check guards before allowing
         if (overageSetting === "charge") {
           const overageGuard = await checkOverageAllowed(
-            db, customer.id, trackEffectiveFeatureId,
-            periodStart, periodEnd,
-            planFeature.limitValue, planFeature.maxOverageUnits,
+            db,
+            customer.id,
+            trackEffectiveFeatureId,
+            periodStart,
+            periodEnd,
+            planFeature.limitValue,
+            planFeature.maxOverageUnits,
             trackEffectiveValue,
           );
 
           if (!overageGuard.allowed) {
-            const guardUsage = planFeature.limitValue !== null ? planFeature.limitValue - doResult.balance : null;
+            const guardUsage =
+              planFeature.limitValue !== null
+                ? planFeature.limitValue - doResult.balance
+                : null;
             return c.json({
               success: false,
               allowed: false,
@@ -1249,15 +1910,25 @@ app.post("/track", async (c) => {
               balance: doResult.balance,
               resetsAt: new Date(periodEnd).toISOString(),
               resetInterval: planFeature.resetInterval,
-              details: buildTrackDetails(overageGuard.reason || `Overage not allowed. ${doResult.balance} remaining.`),
+              details: buildTrackDetails(
+                overageGuard.reason ||
+                  `Overage not allowed. ${doResult.balance} remaining.`,
+              ),
             });
           }
           // Guard passed — continue to persist overage usage record below
         } else {
           // overage is "block" and addon credits insufficient — block
-          const blockUsage = planFeature.limitValue !== null ? planFeature.limitValue - doResult.balance : null;
+          const blockUsage =
+            planFeature.limitValue !== null
+              ? planFeature.limitValue - doResult.balance
+              : null;
           const trackBlockAddonCredits = trackCreditMapping
-            ? await getAddonBalance(db, customer.id, trackCreditMapping.creditSystemId)
+            ? await getAddonBalance(
+                db,
+                customer.id,
+                trackCreditMapping.creditSystemId,
+              )
             : undefined;
           return c.json({
             success: false,
@@ -1268,8 +1939,12 @@ app.post("/track", async (c) => {
             balance: doResult.balance,
             resetsAt: new Date(periodEnd).toISOString(),
             resetInterval: planFeature.resetInterval,
-            ...(trackBlockAddonCredits !== undefined ? { addonCredits: trackBlockAddonCredits } : {}),
-            details: buildTrackDetails(`Usage tracking denied — limit reached (${doResult.balance} remaining). Resets at ${new Date(periodEnd).toISOString()}.`),
+            ...(trackBlockAddonCredits !== undefined
+              ? { addonCredits: trackBlockAddonCredits }
+              : {}),
+            details: buildTrackDetails(
+              `Usage tracking denied — limit reached (${doResult.balance} remaining). Resets at ${new Date(periodEnd).toISOString()}.`,
+            ),
           });
         }
       }
@@ -1279,22 +1954,30 @@ app.post("/track", async (c) => {
     // Persist to DB asynchronously (for audit trail and backup)
     // Using waitUntil to avoid blocking the response
     // ===========================================================================
-    c.executionCtx.waitUntil(
-      db.insert(schema.usageRecords).values({
-        id: crypto.randomUUID(),
+    scheduleUsagePersist(
+      c,
+      db,
+      organizationId,
+      {
         customerId: customer.id,
         featureId: trackEffectiveFeatureId,
         entityId: entity || null,
         amount: trackEffectiveValue,
         periodStart,
         periodEnd,
-      })
+      },
+      "track:main",
     );
 
     // Deduct Credits if applicable (prepaid balance model)
     // NOTE: Credit systems do NOT use credits.balance — they enforce via usage_records pool.
     // This runs regardless of DO availability — credits.balance is a separate DB counter.
-    if (subscription && !trackCreditMapping && planFeature.creditCost && planFeature.creditCost > 0) {
+    if (
+      subscription &&
+      !trackCreditMapping &&
+      planFeature.creditCost &&
+      planFeature.creditCost > 0
+    ) {
       const cost = value * planFeature.creditCost;
       c.executionCtx.waitUntil(
         db
@@ -1303,41 +1986,51 @@ app.post("/track", async (c) => {
             balance: sql`${schema.credits.balance} - ${cost}`,
             updatedAt: Date.now(),
           })
-          .where(eq(schema.credits.customerId, customer.id))
+          .where(eq(schema.credits.customerId, customer.id)),
       );
     }
 
     // Determine if this was an overage usage
-    const isOverage = doResult && !doResult.allowed && planFeature.overage === "charge";
+    const isOverage =
+      doResult && !doResult.allowed && planFeature.overage === "charge";
 
     // Threshold trigger: if this was overage, check if unbilled amount crosses org threshold
     if (isOverage && organizationId) {
-      c.executionCtx.waitUntil((async () => {
-        try {
-          const orgSettings = await getOrgOverageSettings(db, organizationId);
-          if (orgSettings?.billingInterval === "threshold" && orgSettings.thresholdAmount) {
-            const unbilledAmount = await getUnbilledOverageAmount(db, customer.id);
-            if (unbilledAmount >= orgSettings.thresholdAmount) {
-              const hourBucket = Math.floor(Date.now() / (3600 * 1000));
-              await c.env.OVERAGE_BILLING_WORKFLOW.create({
-                id: `overage-threshold-${customer.id}-${hourBucket}`,
-                params: {
-                  organizationId,
-                  customerId: customer.id,
-                  trigger: "threshold",
-                },
-              });
+      c.executionCtx.waitUntil(
+        (async () => {
+          try {
+            const orgSettings = await getOrgOverageSettings(db, organizationId);
+            if (
+              orgSettings?.billingInterval === "threshold" &&
+              orgSettings.thresholdAmount
+            ) {
+              const unbilledAmount = await getUnbilledOverageAmount(
+                db,
+                customer.id,
+              );
+              if (unbilledAmount >= orgSettings.thresholdAmount) {
+                const hourBucket = Math.floor(Date.now() / (3600 * 1000));
+                await c.env.OVERAGE_BILLING_WORKFLOW.create({
+                  id: `overage-threshold-${customer.id}-${hourBucket}`,
+                  params: {
+                    organizationId,
+                    customerId: customer.id,
+                    trigger: "threshold",
+                  },
+                });
+              }
             }
+          } catch (e) {
+            console.error("[track] Threshold check failed:", e);
           }
-        } catch (e) {
-          console.error("[track] Threshold check failed:", e);
-        }
-      })());
+        })(),
+      );
     }
 
-    const successUsage = doResult && planFeature.limitValue !== null
-      ? planFeature.limitValue - (doResult.balance ?? 0)
-      : null;
+    const successUsage =
+      doResult && planFeature.limitValue !== null
+        ? planFeature.limitValue - (doResult.balance ?? 0)
+        : null;
 
     return c.json({
       success: true,
@@ -1349,25 +2042,31 @@ app.post("/track", async (c) => {
       resetsAt: new Date(periodEnd).toISOString(),
       resetInterval: planFeature.resetInterval,
       details: isOverage
-        ? buildTrackDetails(
-            `Usage tracked as overage (will be billed).`,
-            { overage: { type: planFeature.overage, willBeBilled: true } },
-          )
-        : buildTrackDetails(`Usage tracked successfully (${doResult?.balance ?? 'n/a'} remaining).`),
+        ? buildTrackDetails(`Usage tracked as overage (will be billed).`, {
+            overage: { type: planFeature.overage, willBeBilled: true },
+          })
+        : buildTrackDetails(
+            `Usage tracked successfully (${doResult?.balance ?? "n/a"} remaining).`,
+          ),
     });
   } catch (e: any) {
     console.error("Track failed:", e);
-    return c.json({
-      success: false,
-      allowed: false,
-      code: "internal_error",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: { message: "An internal error occurred while tracking usage." },
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        allowed: false,
+        code: "internal_error",
+        usage: null,
+        limit: null,
+        balance: null,
+        resetsAt: null,
+        resetInterval: null,
+        details: {
+          message: "An internal error occurred while tracking usage.",
+        },
+      },
+      500,
+    );
   }
 });
 

@@ -62,7 +62,7 @@ const insertMock = vi.fn(() => ({
   values: insertValuesMock,
 }));
 
-const mockDb = {
+const mockDb: any = {
   insert: insertMock,
   query: {
     organizations: {
@@ -125,6 +125,7 @@ describe("Plans API", () => {
   const paystackAdapter = {
     id: "paystack",
     createPlan: vi.fn(async () => ok({ id: "prov_plan_paystack_1" })),
+    updatePlan: vi.fn(async () => ok({ id: "prov_plan_paystack_1" })),
   };
   const dodoAdapter = {
     id: "dodopayments",
@@ -361,6 +362,128 @@ describe("Plans API", () => {
     expect(inserted.providerId).toBe("dodopayments");
     expect(inserted.providerPlanId).toBe("prov_plan_dodo_1");
     expect(inserted.paystackPlanId).toBe(null);
+  });
+
+  it("creates unique slugs by suffixing when a plan with the same slug already exists", async () => {
+    mockDb.query.plans.findFirst
+      .mockResolvedValueOnce({ id: "existing" })
+      .mockResolvedValueOnce(null);
+
+    mockReturningPlan = {
+      id: "plan_slug_2",
+      organizationId: "org_123",
+      name: "Pro Plan",
+      price: 1000,
+      interval: "monthly",
+      currency: "USD",
+      type: "free",
+      billingModel: "base",
+      billingType: "recurring",
+      slug: "pro-plan-1",
+    };
+
+    const res = await app.request(
+      "/api/dashboard/plans",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organizationId: "org_123",
+          name: "Pro Plan",
+          price: 1000,
+          type: "free",
+          billingModel: "base",
+          billingType: "recurring",
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockDb.query.plans.findFirst).toHaveBeenCalledTimes(2);
+    const inserted = insertValuesMock.mock.calls[0]?.[0] as any;
+    expect(inserted.slug).toBe("pro-plan-1");
+  });
+
+  it("PATCH triggers provider sync via adapter.updatePlan when provider fields change", async () => {
+    const updateReturningMock = vi.fn(async () => [
+      {
+        id: "plan_patch_1",
+        organizationId: "org_123",
+        name: "Pro",
+        price: 5000,
+        interval: "monthly",
+        currency: "USD",
+        description: null,
+        providerId: "paystack",
+        providerPlanId: "prov_plan_paystack_1",
+      },
+    ]);
+    const updateSetMock = vi.fn(() => ({
+      where: vi.fn(() => ({
+        returning: updateReturningMock,
+      })),
+    }));
+    mockDb.update = vi.fn(() => ({
+      set: updateSetMock,
+    }));
+
+    mockDb.query.plans.findFirst.mockResolvedValueOnce({
+      id: "plan_patch_1",
+      metadata: {},
+    });
+
+    const res = await app.request(
+      "/api/dashboard/plans/plan_patch_1",
+      {
+        method: "PATCH",
+        body: JSON.stringify({ price: 6000 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(paystackAdapter.updatePlan).toHaveBeenCalledTimes(1);
+    const arg = paystackAdapter.updatePlan.mock.calls[0]?.[0] as any;
+    expect(arg.planId).toBe("prov_plan_paystack_1");
+    expect(arg.amount).toBe(5000);
+    expect(arg.environment).toBe("test");
+    expect(arg.account.id).toBe("acct_paystack");
+  });
+
+  it("PATCH does not call provider when provider fields are unchanged", async () => {
+    const updateReturningMock = vi.fn(async () => [
+      {
+        id: "plan_patch_2",
+        organizationId: "org_123",
+        name: "Pro",
+        price: 5000,
+        interval: "monthly",
+        currency: "USD",
+        description: null,
+        providerId: "paystack",
+        providerPlanId: "prov_plan_paystack_1",
+      },
+    ]);
+    const updateSetMock = vi.fn(() => ({
+      where: vi.fn(() => ({
+        returning: updateReturningMock,
+      })),
+    }));
+    mockDb.update = vi.fn(() => ({
+      set: updateSetMock,
+    }));
+
+    const res = await app.request(
+      "/api/dashboard/plans/plan_patch_2",
+      {
+        method: "PATCH",
+        body: JSON.stringify({ isActive: true }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(paystackAdapter.updatePlan).not.toHaveBeenCalled();
   });
 
   it("should create a plan with trial", async () => {

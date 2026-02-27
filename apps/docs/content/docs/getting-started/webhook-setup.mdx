@@ -1,0 +1,59 @@
+---
+title: Webhook Setup
+description: Configure your provider to send events to Owostack
+icon: Webhook
+---
+
+# Webhook setup
+
+Owostack receives provider webhooks on your behalf. This keeps subscriptions, entitlements, and usage in sync.
+
+## 1. Find your webhook URL
+
+Your webhook URL is:
+
+```
+https://api.owostack.com/webhooks/{your-organization-id}/{provider-id}
+```
+
+Example:
+
+```
+https://api.owostack.com/webhooks/org_123/{provider-id}
+```
+
+## 2. Configure your provider
+
+In your provider dashboard, paste the webhook URL and save. Use the provider's test environment when setting up test data.
+
+<Callout type="important">
+  If your provider supports webhook signing secrets, copy the secret and save it
+  in **Settings → Payment Providers** for the matching account.
+</Callout>
+
+## 3. Verify delivery
+
+Trigger a test payment or subscription in your provider dashboard. You should see:
+
+- A subscription appear in the Owostack dashboard
+- An event logged in the **Events** tab
+
+## Common events Owostack handles
+
+- Subscription created, updated, canceled
+- Payment succeeded or failed
+- Refunds (when supported by the provider)
+
+## Troubleshooting
+
+### Webhooks not arriving
+
+1. Confirm the URL includes both organization ID and provider ID
+2. Confirm the provider account environment matches your test/live setup
+3. Check the provider dashboard for delivery errors
+
+### Invalid signature errors
+
+1. Confirm the saved webhook secret matches the provider account
+2. Ensure you pasted the secret without whitespace
+3. Regenerate the secret and save it again

@@ -1,0 +1,29 @@
+---
+title: CLI Overview
+description: Manage your Owostack configuration from the terminal
+---
+
+# Owostack CLI
+
+The Owostack CLI is the primary tool for managing your billing configuration. It allows you to synchronize your local catalog with the Owostack cloud, validate your configuration, and pull existing settings from your account.
+
+## Installation
+
+The CLI is included with the `@owostack/core` package, but you can also use it via `npx`:
+
+```bash
+npx owo --help
+```
+
+Or install it globally:
+
+```bash
+npm install -g @owostack/cli
+```
+
+## Features
+
+- **Project Initialization**: Quickly set up a new Owostack project.
+- **Catalog Synchronization**: Push your local `owo.config.ts` to the cloud.
+- **Diff & Validation**: Preview changes before applying them and ensure your configuration is valid.
+- **Local Development**: Pull existing plans and features into your local environment.

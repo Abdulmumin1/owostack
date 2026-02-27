@@ -4,6 +4,7 @@ import {
   createProviderRegistry,
   paystackAdapter,
   dodoAdapter,
+  polarAdapter,
 } from "@owostack/adapters";
 import type {
   AttachRequestContext,
@@ -23,6 +24,7 @@ export function getProviderRegistry() {
   const registry = createProviderRegistry();
   registry.register(paystackAdapter);
   registry.register(dodoAdapter);
+  registry.register(polarAdapter);
   // registry.register(stripeAdapter);
   return registry;
 }

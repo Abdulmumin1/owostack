@@ -54,7 +54,20 @@ export async function resolveOrCreateCustomer(
     })) ?? null;
 
     if (customer && cache) {
-      cache.setCustomer(organizationId, customerIdLower, customer);
+      const setAliasesPromise = cache.setCustomerAliases(
+        organizationId,
+        {
+          id: customer.id,
+          email: customer.email,
+          externalId: customer.externalId,
+        },
+        customer,
+      );
+      if (opts.waitUntil) {
+        opts.waitUntil(setAliasesPromise);
+      } else {
+        await setAliasesPromise;
+      }
     }
   }
 
@@ -79,8 +92,26 @@ export async function resolveOrCreateCustomer(
         .update(schema.customers)
         .set(patches)
         .where(eq(schema.customers.id, customer.id))
-        .then(() => {
-          if (cache) cache.invalidateCustomer(organizationId, customerIdLower);
+        .then(async () => {
+          if (!cache) return;
+          await cache.invalidateCustomerAliases(organizationId, {
+            id: customer.id,
+            email: customer.email,
+            externalId: customer.externalId,
+          });
+          const patchedCustomer = {
+            ...customer,
+            ...patches,
+          } as typeof customer;
+          await cache.setCustomerAliases(
+            organizationId,
+            {
+              id: patchedCustomer.id,
+              email: patchedCustomer.email,
+              externalId: patchedCustomer.externalId,
+            },
+            patchedCustomer,
+          );
         })
         .catch((e: unknown) => console.warn("[customers] backfill failed:", e));
 
@@ -115,7 +146,20 @@ export async function resolveOrCreateCustomer(
   customer = newCustomer as unknown as typeof schema.customers.$inferSelect;
 
   if (cache) {
-    cache.setCustomer(organizationId, customerIdLower, customer);
+    const setAliasesPromise = cache.setCustomerAliases(
+      organizationId,
+      {
+        id: customer.id,
+        email: customer.email,
+        externalId: customer.externalId,
+      },
+      customer,
+    );
+    if (opts.waitUntil) {
+      opts.waitUntil(setAliasesPromise);
+    } else {
+      await setAliasesPromise;
+    }
   }
 
   return customer;

@@ -1,0 +1,208 @@
+---
+title: "Your first billing flow"
+description: Build a working subscription with feature gating in 10 minutes
+icon: Zap
+---
+
+# Your first billing flow
+
+In this tutorial you will wire up a complete subscription flow from scratch. By the end you will have:
+
+- A plan with a metered feature and a boolean feature
+- A customer subscribed to that plan via a real checkout
+- Working access control that blocks requests when the quota runs out
+
+You will build everything in a single Node.js script so you can see results immediately.
+
+## Before you start
+
+You need:
+
+- A free Owostack account — sign up at [app.owostack.com](https://app.owostack.com)
+- A payment provider account (Paystack or Dodo Payments)
+- Node.js 18+
+
+## 1. Create your organization and connect a provider
+
+1. Log in to the dashboard and click **Create Organization**.
+2. Name it anything you like (e.g. "My Tutorial App").
+3. Go to **Settings → Payment Providers** and add your provider's secret key.
+
+You should see a green **Connected** badge next to the provider.
+
+## 2. Set up webhooks
+
+Copy the webhook URL shown in the dashboard. It looks like this:
+
+```
+https://api.owostack.com/webhooks/<your-org-id>/<provider-id>
+```
+
+Paste it into your provider's webhook settings page. If your provider asks for events, select **all events**.
+
+<Callout type="warning">
+  Without webhooks, Owostack cannot confirm payments. Every step after this depends on webhooks working.
+</Callout>
+
+## 3. Create a plan with features
+
+1. Go to **Features** and create two features:
+
+| Name | Slug | Type |
+|------|------|------|
+| API Calls | `api-calls` | Metered |
+| Analytics | `analytics` | Boolean |
+
+2. Go to **Plans** and click **Create Plan**:
+
+| Field | Value |
+|-------|-------|
+| Name | Starter |
+| Price | 500 (in your currency's minor unit) |
+| Interval | Monthly |
+| Plan Group | main |
+
+3. Attach the features:
+   - `api-calls` → limit **100**, reset **monthly**
+   - `analytics` → **enabled**
+
+You should see the plan listed with both features attached.
+
+## 4. Generate an API key
+
+Go to **API Keys → Create New Key**. Name it "Tutorial" and copy the key. You will not see it again.
+
+Save it in a `.env` file:
+
+```sh
+OWOSTACK_API_KEY=owo_sk_xxxxxxxxxxxxxxxx
+```
+
+## 5. Install the SDK and write your first script
+
+```bash
+mkdir owostack-tutorial && cd owostack-tutorial
+npm init -y
+npm install @owostack/core dotenv
+```
+
+Create `index.mjs`:
+
+```js
+import "dotenv/config";
+import { Owostack } from "@owostack/core";
+
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+
+// --- Step A: Subscribe a customer ---
+const attach = await owo.attach({
+  customer: "tutorial_user",
+  product: "starter",
+});
+
+console.log("Attach result:", attach);
+
+if (attach.checkoutUrl) {
+  console.log("\n→ Open this URL to complete payment:\n", attach.checkoutUrl);
+  console.log("\nAfter paying, re-run this script.");
+  process.exit(0);
+}
+```
+
+Run it:
+
+```bash
+node index.mjs
+```
+
+You should see a checkout URL. Open it in your browser, complete the test payment, and come back.
+
+## 6. Check feature access
+
+After payment, add this below the attach block:
+
+```js
+// --- Step B: Check boolean feature ---
+const analyticsAccess = await owo.check({
+  customer: "tutorial_user",
+  feature: "analytics",
+});
+
+console.log("Analytics allowed?", analyticsAccess.allowed);
+// → true
+
+// --- Step C: Check metered feature ---
+const apiAccess = await owo.check({
+  customer: "tutorial_user",
+  feature: "api-calls",
+});
+
+console.log("API calls remaining:", apiAccess.balance, "/", apiAccess.limit);
+// → 100 / 100
+```
+
+Run it again. You should see `allowed: true` and `balance: 100`.
+
+## 7. Track usage and hit the limit
+
+Add this to consume some quota:
+
+```js
+// --- Step D: Track usage ---
+for (let i = 0; i < 5; i++) {
+  await owo.track({
+    customer: "tutorial_user",
+    feature: "api-calls",
+    value: 1,
+  });
+}
+
+const afterTracking = await owo.check({
+  customer: "tutorial_user",
+  feature: "api-calls",
+});
+
+console.log("After 5 calls — remaining:", afterTracking.balance);
+// → 95
+```
+
+Run it. Notice the remaining count drops by 5 each time you run the script.
+
+## 8. See what happens at the limit
+
+Replace the loop with a bulk track to exhaust the quota:
+
+```js
+// --- Step E: Exhaust quota ---
+const exhaust = await owo.track({
+  customer: "tutorial_user",
+  feature: "api-calls",
+  value: 200, // more than the 100 limit
+});
+
+console.log("Track result:", exhaust.code);
+// → "limit_exceeded"
+console.log("Allowed?", exhaust.allowed);
+// → false
+```
+
+Run it. The SDK returns `allowed: false` and `code: "limit_exceeded"`. This is the signal you would use in a real app to block the request or show an upgrade prompt.
+
+## What you built
+
+You now have a working billing flow:
+
+1. **attach()** creates a checkout or returns an existing subscription
+2. **check()** tells you whether a customer can use a feature right now
+3. **track()** records usage and enforces limits
+
+Everything else — webhook processing, entitlement provisioning, period resets — happens automatically.
+
+## Next steps
+
+<Cards>
+  <Card title="How to set up checkout" href="/docs/guides/checkout" />
+  <Card title="How to switch plans" href="/docs/guides/plan-switching" />
+  <Card title="How it works" href="/docs/concepts/how-it-works" />
+  <Card title="SDK Reference" href="/docs/sdk/attach" />
+</Cards>

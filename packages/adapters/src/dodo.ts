@@ -79,9 +79,7 @@ class DodoClient {
 
             if (!response.ok) {
               const errorBody = await response.text();
-              throw new Error(
-                `Dodo API ${response.status}: ${errorBody}`,
-              );
+              throw new Error(`Dodo API ${response.status}: ${errorBody}`);
             }
 
             // Some Dodo endpoints return no body (e.g. changePlan returns void)
@@ -160,31 +158,40 @@ class DodoClient {
         };
     tax_category: string;
     metadata?: Record<string, string>;
-  }): Promise<ProviderResult<{
-    product_id: string;
-    name?: string;
-    price: { currency: string; price: number };
-  }>> {
+  }): Promise<
+    ProviderResult<{
+      product_id: string;
+      name?: string;
+      price: { currency: string; price: number };
+    }>
+  > {
     return this.request("POST", "/products", params);
   }
 
-  updateProduct(productId: string, params: {
-    name?: string;
-    description?: string | null;
-    price?: {
-      currency: string;
-      price: number;
-      discount?: number;
-      purchasing_power_parity?: boolean;
-      type: "one_time_price" | "recurring_price";
-      payment_frequency_count?: number;
-      payment_frequency_interval?: string;
-      subscription_period_count?: number;
-      subscription_period_interval?: string;
-    };
-    tax_category?: string;
-  }): Promise<ProviderResult<Record<string, unknown>>> {
-    return this.request("PATCH", `/products/${encodeURIComponent(productId)}`, params);
+  updateProduct(
+    productId: string,
+    params: {
+      name?: string;
+      description?: string | null;
+      price?: {
+        currency: string;
+        price: number;
+        discount?: number;
+        purchasing_power_parity?: boolean;
+        type: "one_time_price" | "recurring_price";
+        payment_frequency_count?: number;
+        payment_frequency_interval?: string;
+        subscription_period_count?: number;
+        subscription_period_interval?: string;
+      };
+      tax_category?: string;
+    },
+  ): Promise<ProviderResult<Record<string, unknown>>> {
+    return this.request(
+      "PATCH",
+      `/products/${encodeURIComponent(productId)}`,
+      params,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -195,11 +202,13 @@ class DodoClient {
     email: string;
     name?: string;
     metadata?: Record<string, unknown>;
-  }): Promise<ProviderResult<{
-    customer_id: string;
-    email: string;
-    name?: string;
-  }>> {
+  }): Promise<
+    ProviderResult<{
+      customer_id: string;
+      email: string;
+      name?: string;
+    }>
+  > {
     return this.request("POST", "/customers", params);
   }
 
@@ -207,18 +216,23 @@ class DodoClient {
   // Subscriptions
   // -------------------------------------------------------------------------
 
-  getSubscription(subscriptionId: string): Promise<ProviderResult<{
-    subscription_id: string;
-    status: string;
-    product_id?: string;
-    created_at?: string;
-    next_billing_date?: string;
-    cancel_at_next_billing_date?: boolean;
-    customer?: { customer_id: string; email: string; name?: string };
-    metadata?: Record<string, unknown>;
-    on_demand?: boolean;
-  }>> {
-    return this.request("GET", `/subscriptions/${encodeURIComponent(subscriptionId)}`);
+  getSubscription(subscriptionId: string): Promise<
+    ProviderResult<{
+      subscription_id: string;
+      status: string;
+      product_id?: string;
+      created_at?: string;
+      next_billing_date?: string;
+      cancel_at_next_billing_date?: boolean;
+      customer?: { customer_id: string; email: string; name?: string };
+      metadata?: Record<string, unknown>;
+      on_demand?: boolean;
+    }>
+  > {
+    return this.request(
+      "GET",
+      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    );
   }
 
   updateSubscription(
@@ -230,7 +244,11 @@ class DodoClient {
       next_billing_date?: string | null;
     },
   ): Promise<ProviderResult<{ subscription_id: string; status: string }>> {
-    return this.request("PATCH", `/subscriptions/${encodeURIComponent(subscriptionId)}`, params);
+    return this.request(
+      "PATCH",
+      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+      params,
+    );
   }
 
   chargeSubscription(
@@ -242,20 +260,31 @@ class DodoClient {
       metadata?: Record<string, string> | null;
     },
   ): Promise<ProviderResult<{ payment_id: string }>> {
-    return this.request("POST", `/subscriptions/${encodeURIComponent(subscriptionId)}/charge`, params);
+    return this.request(
+      "POST",
+      `/subscriptions/${encodeURIComponent(subscriptionId)}/charge`,
+      params,
+    );
   }
 
   async changePlan(
     subscriptionId: string,
     params: {
       product_id: string;
-      proration_billing_mode: "prorated_immediately" | "full_immediately" | "difference_immediately";
+      proration_billing_mode:
+        | "prorated_immediately"
+        | "full_immediately"
+        | "difference_immediately";
       quantity: number;
       metadata?: Record<string, string> | null;
       on_payment_failure?: "prevent_change" | "apply_change" | null;
     },
   ): Promise<ProviderResult<{ changed: boolean }>> {
-    const result = await this.request("POST", `/subscriptions/${encodeURIComponent(subscriptionId)}/change-plan`, params);
+    const result = await this.request(
+      "POST",
+      `/subscriptions/${encodeURIComponent(subscriptionId)}/change-plan`,
+      params,
+    );
     if (result.isErr()) return result as ProviderResult<{ changed: boolean }>;
     return Result.ok({ changed: true });
   }
@@ -294,14 +323,19 @@ function resolveClient(
   return Result.ok(new DodoClient({ apiKey, baseUrl }));
 }
 
-function coerceMetadata(meta?: Record<string, unknown>): Record<string, string> | undefined {
+function coerceMetadata(
+  meta?: Record<string, unknown>,
+): Record<string, string> | undefined {
   if (!meta) return undefined;
   return Object.fromEntries(
     Object.entries(meta).map(([k, v]) => [k, String(v)]),
   );
 }
 
-function mapInterval(interval: string): { intervalType: string; count: number } {
+function mapInterval(interval: string): {
+  intervalType: string;
+  count: number;
+} {
   switch (interval.toLowerCase()) {
     case "monthly":
       return { intervalType: "Month", count: 1 };
@@ -333,7 +367,8 @@ async function verifyStandardWebhook(params: {
   payload: string;
   secret: string;
 }): Promise<boolean> {
-  const { webhookId, webhookTimestamp, webhookSignature, payload, secret } = params;
+  const { webhookId, webhookTimestamp, webhookSignature, payload, secret } =
+    params;
 
   // Standard Webhooks tolerance: 5 minutes
   const now = Math.floor(Date.now() / 1000);
@@ -375,9 +410,7 @@ async function verifyStandardWebhook(params: {
   );
 
   // Convert to base64
-  const computed = btoa(
-    String.fromCharCode(...new Uint8Array(signatureBytes)),
-  );
+  const computed = btoa(String.fromCharCode(...new Uint8Array(signatureBytes)));
 
   // webhook-signature header can contain multiple signatures: "v1,<sig1> v1,<sig2>"
   const signatures = webhookSignature.split(" ");
@@ -408,7 +441,9 @@ export const dodoAdapter: ProviderAdapter = {
   // ---------------------------------------------------------------------------
   // createCheckoutSession
   // ---------------------------------------------------------------------------
-  async createCheckoutSession(params): Promise<ProviderResult<CheckoutSession>> {
+  async createCheckoutSession(
+    params,
+  ): Promise<ProviderResult<CheckoutSession>> {
     const clientResult = resolveClient(params.account, params.environment);
     if (clientResult.isErr()) return clientResult;
 
@@ -419,7 +454,8 @@ export const dodoAdapter: ProviderAdapter = {
     if (!productId) {
       return Result.err({
         code: "invalid_request",
-        message: "Dodo Payments requires a product ID (plan must be synced first)",
+        message:
+          "Dodo Payments requires a product ID (plan must be synced first)",
         providerId: "dodopayments",
       });
     }
@@ -559,10 +595,15 @@ export const dodoAdapter: ProviderAdapter = {
 
     const updateBody: Record<string, unknown> = {};
     if (params.name !== undefined) updateBody.name = params.name;
-    if (params.description !== undefined) updateBody.description = params.description;
+    if (params.description !== undefined)
+      updateBody.description = params.description;
 
     // Rebuild the full price object — Dodo requires complete price data on update
-    if (params.amount !== undefined && params.currency !== undefined && params.interval !== undefined) {
+    if (
+      params.amount !== undefined &&
+      params.currency !== undefined &&
+      params.interval !== undefined
+    ) {
       const { intervalType, count } = mapInterval(params.interval);
 
       updateBody.price = {
@@ -578,7 +619,10 @@ export const dodoAdapter: ProviderAdapter = {
       };
     }
 
-    const response = await clientResult.value.updateProduct(params.planId, updateBody);
+    const response = await clientResult.value.updateProduct(
+      params.planId,
+      updateBody,
+    );
     if (response.isErr()) return response;
 
     return Result.ok({ updated: true });
@@ -590,7 +634,9 @@ export const dodoAdapter: ProviderAdapter = {
   // If an on-demand subscription exists (authorizationCode = subscription_id),
   // we can charge it. Otherwise, return unsupported — caller should use checkout.
   // ---------------------------------------------------------------------------
-  async createSubscription(params): Promise<ProviderResult<ProviderSubscriptionRef>> {
+  async createSubscription(
+    params,
+  ): Promise<ProviderResult<ProviderSubscriptionRef>> {
     const clientResult = resolveClient(params.account, params.environment);
     if (clientResult.isErr()) return clientResult;
 
@@ -601,7 +647,8 @@ export const dodoAdapter: ProviderAdapter = {
     if (!productId) {
       return Result.err({
         code: "invalid_request",
-        message: "Dodo Payments requires a product ID for subscription creation",
+        message:
+          "Dodo Payments requires a product ID for subscription creation",
         providerId: "dodopayments",
       });
     }
@@ -632,7 +679,9 @@ export const dodoAdapter: ProviderAdapter = {
   // ---------------------------------------------------------------------------
   // cancelSubscription
   // ---------------------------------------------------------------------------
-  async cancelSubscription(params): Promise<ProviderResult<{ canceled: boolean }>> {
+  async cancelSubscription(
+    params,
+  ): Promise<ProviderResult<{ canceled: boolean }>> {
     const clientResult = resolveClient(params.account, params.environment);
     if (clientResult.isErr()) return clientResult;
 
@@ -641,7 +690,8 @@ export const dodoAdapter: ProviderAdapter = {
       { status: "cancelled" },
     );
 
-    if (response.isErr()) return response as ProviderResult<{ canceled: boolean }>;
+    if (response.isErr())
+      return response as ProviderResult<{ canceled: boolean }>;
 
     return Result.ok({ canceled: true });
   },
@@ -651,7 +701,9 @@ export const dodoAdapter: ProviderAdapter = {
   // For Dodo, authorizationCode is the on-demand subscription_id.
   // Charges the subscription with a custom amount.
   // ---------------------------------------------------------------------------
-  async chargeAuthorization(params): Promise<ProviderResult<{ reference: string }>> {
+  async chargeAuthorization(
+    params,
+  ): Promise<ProviderResult<{ reference: string }>> {
     const clientResult = resolveClient(params.account, params.environment);
     if (clientResult.isErr()) return clientResult;
 
@@ -660,22 +712,27 @@ export const dodoAdapter: ProviderAdapter = {
     if (!subscriptionId) {
       return Result.err({
         code: "invalid_request",
-        message: "Dodo Payments requires an on-demand subscription ID for charges",
+        message:
+          "Dodo Payments requires an on-demand subscription ID for charges",
         providerId: "dodopayments",
       });
     }
 
-    const response = await clientResult.value.chargeSubscription(subscriptionId, {
-      product_price: params.amount,
-      product_currency: params.currency || undefined,
-      metadata: params.metadata
-        ? Object.fromEntries(
-            Object.entries(params.metadata).map(([k, v]) => [k, String(v)]),
-          )
-        : undefined,
-    });
+    const response = await clientResult.value.chargeSubscription(
+      subscriptionId,
+      {
+        product_price: params.amount,
+        product_currency: params.currency || undefined,
+        metadata: params.metadata
+          ? Object.fromEntries(
+              Object.entries(params.metadata).map(([k, v]) => [k, String(v)]),
+            )
+          : undefined,
+      },
+    );
 
-    if (response.isErr()) return response as ProviderResult<{ reference: string }>;
+    if (response.isErr())
+      return response as ProviderResult<{ reference: string }>;
 
     return Result.ok({
       reference: response.value.payment_id,
@@ -702,7 +759,9 @@ export const dodoAdapter: ProviderAdapter = {
   // refundCharge
   // Dodo supports refunds via POST /refunds with the payment_id.
   // ---------------------------------------------------------------------------
-  async refundCharge(params): Promise<ProviderResult<{ refunded: boolean; reference: string }>> {
+  async refundCharge(
+    params,
+  ): Promise<ProviderResult<{ refunded: boolean; reference: string }>> {
     const clientResult = resolveClient(params.account, params.environment);
     if (clientResult.isErr()) return clientResult;
 
@@ -719,12 +778,17 @@ export const dodoAdapter: ProviderAdapter = {
   // ---------------------------------------------------------------------------
   // fetchSubscription
   // ---------------------------------------------------------------------------
-  async fetchSubscription(params): Promise<ProviderResult<ProviderSubscriptionDetail>> {
+  async fetchSubscription(
+    params,
+  ): Promise<ProviderResult<ProviderSubscriptionDetail>> {
     const clientResult = resolveClient(params.account, params.environment);
     if (clientResult.isErr()) return clientResult;
 
-    const response = await clientResult.value.getSubscription(params.subscriptionId);
-    if (response.isErr()) return response as ProviderResult<ProviderSubscriptionDetail>;
+    const response = await clientResult.value.getSubscription(
+      params.subscriptionId,
+    );
+    if (response.isErr())
+      return response as ProviderResult<ProviderSubscriptionDetail>;
 
     const sub = response.value;
 
@@ -738,6 +802,7 @@ export const dodoAdapter: ProviderAdapter = {
       planCode: sub.product_id,
       startDate: sub.created_at,
       nextPaymentDate: sub.next_billing_date,
+      trialEndDate: undefined, // Dodo doesn't expose trial_end in their API
       cancelToken: undefined, // Dodo doesn't use cancel tokens
       metadata: sub.metadata || {},
     });
@@ -751,7 +816,8 @@ export const dodoAdapter: ProviderAdapter = {
       const headers = params.headers || {};
       const webhookId = headers["webhook-id"] || "";
       const webhookTimestamp = headers["webhook-timestamp"] || "";
-      const webhookSignature = params.signature || headers["webhook-signature"] || "";
+      const webhookSignature =
+        params.signature || headers["webhook-signature"] || "";
 
       if (!webhookId || !webhookTimestamp || !webhookSignature) {
         return Result.ok(false);
@@ -809,11 +875,18 @@ export const dodoAdapter: ProviderAdapter = {
         // Dodo signals trial start via a $0 payment with a subscription context.
         // Inject trial flags so downstream handlers detect the trial even if
         // our checkout metadata wasn't preserved in the webhook payload.
-        const isTrialPayment = (data.total_amount === 0 || !data.total_amount) && !!data.subscription_id;
+        const isTrialPayment =
+          (data.total_amount === 0 || !data.total_amount) &&
+          !!data.subscription_id;
         if (isTrialPayment) {
           if (metadata.is_trial === undefined) metadata.is_trial = true;
           if (metadata.native_trial === undefined) metadata.native_trial = true;
         }
+
+        // Read pre-calculated trial end date from metadata (calculated at checkout)
+        const trialEndDate = isTrialPayment
+          ? (metadata.trial_ends_at as string | undefined)
+          : undefined;
 
         return Result.ok({
           ...base,
@@ -839,6 +912,7 @@ export const dodoAdapter: ProviderAdapter = {
                 providerSubscriptionId: data.subscription_id,
                 status: "active",
                 nextPaymentDate: data.next_billing_date,
+                trialEndDate,
               }
             : undefined,
           plan: data.product_cart?.[0]?.product_id
@@ -867,7 +941,12 @@ export const dodoAdapter: ProviderAdapter = {
       // -----------------------------------------------------------------------
       // Subscription events
       // -----------------------------------------------------------------------
-      case "subscription.active":
+      case "subscription.active": {
+        // Read pre-calculated trial end date from metadata (calculated at checkout)
+        const trialEndDate = metadata.is_trial
+          ? (metadata.trial_ends_at as string | undefined)
+          : undefined;
+
         return Result.ok({
           ...base,
           type: "subscription.active",
@@ -878,11 +957,13 @@ export const dodoAdapter: ProviderAdapter = {
             planCode: data.product_id,
             startDate: data.created_at,
             nextPaymentDate: data.next_billing_date,
+            trialEndDate,
           },
           plan: data.product_id
             ? { providerPlanCode: data.product_id }
             : undefined,
         });
+      }
 
       case "subscription.renewed":
         // Renewal = successful charge in subscription context
