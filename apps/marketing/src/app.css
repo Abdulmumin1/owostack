@@ -1,0 +1,642 @@
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap");
+@import "tailwindcss";
+
+/* =============================================================================
+   Owostack Design System v3
+   Inspired by PostHog — warm, refined, cute
+   Elevation: colored shadows matching border
+   ============================================================================= */
+
+
+@theme {
+  /* ---------------------------------------------------------------------------
+     Color System — Warm Cream & Clay
+  --------------------------------------------------------------------------- */
+
+  /* Backgrounds */
+  --color-bg-primary: #fafaf5;
+  --color-bg-secondary: #f3f0e8;
+  --color-bg-tertiary: #ede9df;
+  --color-bg-card: #ffffff;
+  --color-bg-card-hover: #f7f5ef;
+  --color-bg-elevated: #fffef9;
+
+  /* Borders */
+  --color-border: #e0d9cc;
+  --color-border-light: #ede9df;
+  --color-border-strong: #c8c0b0;
+  --color-border-muted: #d4cdc2;
+
+  /* Primary — Warm Amber/Clay */
+  --color-accent: #e8a855;
+  --color-accent-hover: #d4891a;
+  --color-accent-border: #c07515;
+  --color-accent-light: #fdf3e0;
+  --color-accent-contrast: #1a1a1a;
+
+  /* Secondary — Deep Teal */
+  --color-secondary: #2db57d;
+  --color-secondary-hover: #1a9b68;
+  --color-secondary-border: #167a52;
+  --color-secondary-light: #e5f5ee;
+
+  /* Tertiary — Soft Blue */
+  --color-tertiary: #5b8bd6;
+  --color-tertiary-hover: #3d6bb8;
+  --color-tertiary-border: #2d4f8f;
+  --color-tertiary-light: #eef3fa;
+
+  /* Text */
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #3d3d3d;
+  --color-text-muted: #6b6b6b;
+  --color-text-dim: #8b8b8b;
+
+  /* Status */
+  --color-success: #2db57d;
+  --color-success-bg: #e5f5ee;
+  --color-warning: #e8a855;
+  --color-warning-bg: #fdf3e0;
+  --color-error: #d65555;
+  --color-error-bg: #faecec;
+  --color-info: #5b8bd6;
+  --color-info-bg: #eef3fa;
+
+  /* Radius — subtle, not round */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* Typography */
+  --font-display: "Outfit", system-ui, sans-serif;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", monospace;
+}
+
+/* ---------------------------------------------------------------------------
+   Dark Mode
+   --------------------------------------------------------------------------- */
+:root.dark {
+  --color-bg-primary: #131313;
+  --color-bg-secondary: #1a1a1a;
+  --color-bg-tertiary: #242424;
+  --color-bg-card: #1e1e1e;
+  --color-bg-card-hover: #282828;
+  --color-bg-elevated: #222222;
+
+  --color-border: #333333;
+  --color-border-light: #2a2a2a;
+  --color-border-strong: #444444;
+  --color-border-muted: #3a3a3a;
+
+  --color-accent: #f0b860;
+  --color-accent-hover: #f5c878;
+  --color-accent-border: #c07515;
+  --color-accent-light: #3d3020;
+  --color-accent-contrast: #1a1a1a;
+
+  --color-secondary: #3dc88a;
+  --color-secondary-hover: #50d89c;
+  --color-secondary-border: #167a52;
+  --color-secondary-light: #1a3028;
+
+  --color-tertiary: #6b9be0;
+  --color-tertiary-hover: #88afe8;
+  --color-tertiary-border: #2d4f8f;
+  --color-tertiary-light: #1a2530;
+
+  --color-text-primary: #f5f5f5;
+  --color-text-secondary: #b5b5b5;
+  --color-text-muted: #808080;
+  --color-text-dim: #5a5a5a;
+
+  --color-success: #3dc88a;
+  --color-success-bg: #1a2d24;
+  --color-warning: #f0b860;
+  --color-warning-bg: #2d281a;
+  --color-error: #e06666;
+  --color-error-bg: #2d1a1a;
+  --color-info: #6b9be0;
+  --color-info-bg: #1a2230;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --color-bg-primary: #131313;
+    --color-bg-secondary: #1a1a1a;
+    --color-bg-tertiary: #242424;
+    --color-bg-card: #1e1e1e;
+    --color-bg-card-hover: #282828;
+    --color-bg-elevated: #222222;
+
+    --color-border: #333333;
+    --color-border-light: #2a2a2a;
+    --color-border-strong: #444444;
+    --color-border-muted: #3a3a3a;
+
+    --color-accent: #f0b860;
+    --color-accent-hover: #f5c878;
+    --color-accent-border: #c07515;
+    --color-accent-light: #3d3020;
+    --color-accent-contrast: #1a1a1a;
+
+    --color-secondary: #3dc88a;
+    --color-secondary-hover: #50d89c;
+    --color-secondary-border: #167a52;
+    --color-secondary-light: #1a3028;
+
+    --color-tertiary: #6b9be0;
+    --color-tertiary-hover: #88afe8;
+    --color-tertiary-border: #2d4f8f;
+    --color-tertiary-light: #1a2530;
+
+    --color-text-primary: #f5f5f5;
+    --color-text-secondary: #b5b5b5;
+    --color-text-muted: #808080;
+    --color-text-dim: #5a5a5a;
+
+    --color-success: #3dc88a;
+    --color-success-bg: #1a2d24;
+    --color-warning: #f0b860;
+    --color-warning-bg: #2d281a;
+    --color-error: #e06666;
+    --color-error-bg: #2d1a1a;
+    --color-info: #6b9be0;
+    --color-info-bg: #1a2230;
+  }
+}
+
+/* =============================================================================
+   Base
+   ============================================================================= */
+
+html,
+body {
+  @apply bg-bg-primary text-text-primary font-sans antialiased;
+  height: 100%;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  @apply font-display font-semibold;
+}
+
+/* =============================================================================
+   Buttons — Cute & Compact with Colored Shadows
+   ============================================================================= */
+
+.btn {
+  @apply inline-flex items-center justify-center gap-1.5
+         font-display font-semibold text-xs
+         px-3 py-1.5
+         rounded-sm
+         border
+         cursor-pointer
+         select-none
+         transition-all duration-100;
+}
+
+.btn:active {
+  transform: translate(1px, 1px);
+}
+
+.btn:disabled {
+  @apply opacity-50 cursor-not-allowed pointer-events-none;
+}
+
+/* Primary — Amber */
+.btn-primary {
+  @apply bg-accent text-accent-contrast rounded-sm;
+  border-color: var(--color-accent-border);
+  box-shadow: 0px 4px 0 0px var(--color-accent-border);
+}
+
+.btn-primary:hover {
+  @apply bg-accent-hover;
+  box-shadow: 0px 3px 0 0px var(--color-accent-border);
+}
+
+.btn-primary:active {
+  box-shadow: 1px 1px 0 0 var(--color-accent-border);
+}
+
+/* Secondary — Outline */
+.btn-secondary {
+  @apply bg-bg-card text-text-secondary;
+  border-color: var(--color-border-strong);
+  box-shadow: 0px 3px 0 0 var(--color-border-strong);
+}
+
+.btn-secondary:hover {
+  @apply bg-bg-card-hover text-text-primary;
+}
+
+.btn-secondary:active {
+  box-shadow: 0px 2px 0 0 var(--color-border-strong);
+}
+
+/* Ghost — No shadow */
+.btn-ghost {
+  @apply bg-transparent text-text-muted border-transparent;
+}
+
+.btn-ghost:hover {
+  @apply bg-bg-secondary text-text-primary;
+}
+
+/* Muted — Like secondary but softer */
+.btn-muted {
+  @apply bg-bg-secondary text-text-muted;
+  border-color: var(--color-border);
+  box-shadow: 0px 3px 0 0 var(--color-border);
+}
+
+.btn-muted:hover {
+  @apply bg-bg-tertiary text-text-secondary;
+}
+
+.btn-muted:active {
+  box-shadow: 1px 1px 0 0 var(--color-border);
+}
+
+/* Success — Teal */
+.btn-success {
+  @apply bg-secondary text-white;
+  border-color: var(--color-secondary-border);
+  box-shadow: 0px 3px 0 0 var(--color-secondary-border);
+}
+
+.btn-success:hover {
+  @apply bg-secondary-hover;
+}
+
+/* Danger */
+.btn-error {
+  @apply bg-error text-white;
+  border-color: #b04545;
+  box-shadow: 0px 3px 0 0 #b04545;
+}
+
+/* Sizes */
+.btn-sm {
+  @apply text-[11px] px-2 py-1;
+}
+
+.btn-lg {
+  @apply text-sm px-4 py-2;
+}
+
+.btn-icon {
+  @apply p-1.5 aspect-square;
+}
+
+/* =============================================================================
+   Inputs — Clean & Warm
+   ============================================================================= */
+
+.input {
+  @apply w-full
+         bg-bg-card
+         border text-text-primary text-sm
+         px-3 py-1.5
+         rounded-sm
+         transition-colors duration-100;
+  border-color: var(--color-border-strong);
+}
+
+.input:hover {
+  border-color: var(--color-border-strong);
+}
+
+.input:focus {
+  @apply outline-none;
+  border-color: var(--color-accent-border);
+  box-shadow: 0 0 0 2px var(--color-accent-light);
+}
+
+.input:disabled {
+  @apply opacity-50 cursor-not-allowed bg-bg-secondary;
+}
+
+.input::placeholder {
+  @apply text-text-dim;
+}
+
+/* Input sizes */
+.input-sm {
+  @apply text-xs px-2 py-1;
+}
+
+.input-lg {
+  @apply text-base px-4 py-2;
+}
+
+/* Icon wrapper */
+.input-icon-wrapper {
+  @apply relative w-full;
+}
+
+.input-icon-left {
+  @apply absolute left-2.5 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none;
+}
+
+.input-icon-right {
+  @apply absolute right-2.5 top-1/2 -translate-y-1/2 text-text-dim;
+}
+
+.input-has-icon-left {
+  @apply pl-8;
+}
+
+.input-has-icon-right {
+  @apply pr-8;
+}
+
+/* Label */
+.label {
+  @apply block text-xs font-medium text-text-secondary mb-1;
+}
+
+.label-hint {
+  @apply text-[10px] text-text-dim font-normal ml-2;
+}
+
+/* Textarea */
+textarea.input {
+  @apply min-h-[80px] resize-y;
+}
+
+/* Select */
+select.input {
+  @apply appearance-none cursor-pointer pr-8;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238B8B8B' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+/* =============================================================================
+   Cards — Warm & Elevated
+   ============================================================================= */
+
+.card {
+  @apply bg-bg-card border rounded-lg p-4;
+  border-color: var(--color-border);
+  box-shadow: 3px 3px 0 0 var(--color-border);
+}
+
+.card-flat {
+  box-shadow: none;
+}
+
+.card-elevated {
+  @apply bg-bg-elevated;
+  border-color: var(--color-border-muted);
+  box-shadow: 0px 4px 0 0 var(--color-border-muted);
+}
+
+.card-interactive {
+  @apply cursor-pointer transition-all duration-100;
+}
+
+.card-interactive:hover {
+  @apply bg-bg-card-hover;
+}
+
+.card-interactive:active {
+  box-shadow: 0px 3px 0 0 var(--color-border);
+  transform: translate(1px, 1px);
+}
+
+.card-compact {
+  @apply p-3;
+}
+
+.card-header {
+  @apply pb-3 mb-3 border-b;
+  border-color: var(--color-border-light);
+}
+
+.card-title {
+  @apply font-display font-semibold text-base text-text-primary;
+}
+
+.card-description {
+  @apply text-xs text-text-muted mt-0.5;
+}
+
+/* =============================================================================
+   Badges / Chips — Cute & Pill-shaped
+   ============================================================================= */
+
+.badge {
+  @apply inline-flex items-center gap-1
+         text-[11px] font-medium
+         px-2 py-0.5
+         rounded-full
+         border;
+}
+
+.badge-default {
+  @apply bg-bg-secondary text-text-secondary;
+  border-color: var(--color-border);
+}
+
+.badge-primary {
+  @apply bg-accent-light text-accent-hover;
+  border-color: var(--color-accent);
+}
+
+.badge-secondary {
+  @apply bg-secondary-light text-secondary-hover;
+  border-color: var(--color-secondary);
+}
+
+.badge-success {
+  @apply bg-success-bg text-success;
+  border-color: var(--color-success);
+}
+
+.badge-warning {
+  @apply bg-warning-bg text-warning;
+  border-color: var(--color-warning);
+}
+
+.badge-error {
+  @apply bg-error-bg text-error;
+  border-color: var(--color-error);
+}
+
+.badge-info {
+  @apply bg-info-bg text-info;
+  border-color: var(--color-info);
+}
+
+/* Chip — like PostHog suggestion chips with shadow */
+.chip {
+  @apply inline-flex items-center gap-1.5
+         text-xs font-medium
+         px-3 py-1
+         rounded-full
+         border
+         cursor-pointer
+         transition-all duration-100;
+  @apply bg-bg-secondary text-text-secondary;
+  border-color: var(--color-border-strong);
+  box-shadow: 0px 3px 0 0 var(--color-border-strong);
+}
+
+.chip:hover {
+  @apply bg-bg-tertiary;
+}
+
+.chip:active {
+  box-shadow: 1px 1px 0 0 var(--color-border-strong);
+  transform: translate(1px, 1px);
+}
+
+.chip-active {
+  @apply bg-bg-tertiary text-text-primary;
+}
+
+/* =============================================================================
+   Tables
+   ============================================================================= */
+
+.table-container {
+  @apply w-full overflow-x-auto rounded-lg border bg-bg-card;
+  border-color: var(--color-border);
+}
+
+table {
+  @apply w-full border-collapse;
+}
+
+thead {
+  @apply bg-bg-secondary;
+}
+
+th {
+  @apply text-left text-[10px] font-semibold text-text-muted uppercase tracking-wider
+         px-3 py-2 border-b;
+  border-color: var(--color-border);
+}
+
+td {
+  @apply px-3 py-2 text-sm border-b;
+  border-color: var(--color-border-light);
+}
+
+tbody tr:hover {
+  @apply bg-bg-card-hover;
+}
+
+tbody tr:last-child td {
+  @apply border-b-0;
+}
+
+/* =============================================================================
+   Alerts
+   ============================================================================= */
+
+.alert {
+  @apply flex items-start gap-3 p-3 rounded-md border text-sm;
+}
+
+.alert-icon {
+  @apply flex-shrink-0 mt-0.5;
+}
+
+.alert-info {
+  @apply bg-info-bg text-info;
+  border-color: var(--color-info);
+}
+
+.alert-success {
+  @apply bg-success-bg text-success;
+  border-color: var(--color-success);
+}
+
+.alert-warning {
+  @apply bg-warning-bg text-warning;
+  border-color: var(--color-warning);
+}
+
+.alert-error {
+  @apply bg-error-bg text-error;
+  border-color: var(--color-error);
+}
+
+/* =============================================================================
+   Loading & Misc
+   ============================================================================= */
+
+.skeleton {
+  @apply bg-bg-tertiary rounded animate-pulse;
+}
+
+.spinner {
+  @apply w-4 h-4 border-2 border-border border-t-accent rounded-full animate-spin;
+}
+
+.divider {
+  @apply border-t my-3;
+  border-color: var(--color-border);
+}
+
+/* =============================================================================
+   Scrollbar
+   ============================================================================= */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-bg-secondary;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-border-strong rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-text-dim;
+}
+
+/* =============================================================================
+   Sidebar / Nav Items
+   ============================================================================= */
+
+.nav-item {
+  @apply flex items-center gap-2 px-3 py-1.5 rounded-sm text-sm
+         cursor-pointer transition-colors duration-100;
+}
+
+.nav-item:hover {
+  @apply bg-bg-secondary text-text-primary;
+}
+
+.nav-item-active {
+  @apply bg-bg-tertiary text-text-primary font-medium;
+}
+
+/* =============================================================================
+   Utility
+   ============================================================================= */
+
+.link {
+  @apply text-accent-hover underline underline-offset-2
+         hover:text-accent transition-colors;
+}
+
+.mono {
+  @apply font-mono;
+}
