@@ -12,7 +12,9 @@
 	"vars": {
 		"VITE_DOCS_URL": "https://owostack.com/docs",
 		"VITE_API_URL_TEST": "https://sandbox.owostack.com",
-		"VITE_API_URL_LIVE": "https://api.owostack.com"
+		"VITE_API_URL_LIVE": "https://api.owostack.com",
+		"PUBLIC_API_URL_TEST": "https://sandbox.owostack.com",
+		"PUBLIC_API_URL_LIVE": "https://api.owostack.com",
 	},
 	
 	"routes": [

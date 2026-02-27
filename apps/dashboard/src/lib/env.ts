@@ -13,11 +13,14 @@
  *   VITE_API_URL_LIVE   – e.g. https://api.owostack.com
  */
 
+
+import { PUBLIC_API_URL_LIVE, PUBLIC_API_URL_TEST } from '$env/static/public';
+
 export type AppEnvironment = "test" | "live";
 
 const API_URLS: Record<AppEnvironment, string> = {
-  test: import.meta.env.VITE_API_URL_TEST || "http://localhost:8787",
-  live: import.meta.env.VITE_API_URL_LIVE || "http://localhost:8787",
+  test: PUBLIC_API_URL_TEST || "http://localhost:8787",
+  live: PUBLIC_API_URL_LIVE || "http://localhost:8787",
 };
 
 // ---------------------------------------------------------------------------
