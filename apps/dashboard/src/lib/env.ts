@@ -9,7 +9,7 @@
  * and use cross-subdomain cookies, so auth works on either endpoint.
  *
  * Configure via Vite env vars in .env (or Cloudflare Pages env):
- *   VITE_API_URL_TEST   – e.g. https://api-test.owostack.com
+ *   VITE_API_URL_TEST   – e.g. https://sandbox.owostack.com
  *   VITE_API_URL_LIVE   – e.g. https://api.owostack.com
  */
 

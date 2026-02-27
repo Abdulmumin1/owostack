@@ -96,7 +96,7 @@
         throw new Error(authError.message);
       }
 
-      await goto("/app");
+      await goto("/");
     } catch (err: any) {
       error = err.message || "Something went wrong";
     } finally {

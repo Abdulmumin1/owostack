@@ -1,5 +1,17 @@
 <script lang="ts">
-  import { Calendar, Check,  CircleNotchIcon, Clock, CreditCard, Cube, Minus, Plus, X } from "phosphor-svelte";
+  import {
+    Calendar,
+    CaretDown,
+    CaretRight,
+    Check,
+    CircleNotchIcon,
+    Clock,
+    CreditCard,
+    Cube,
+    Minus,
+    Plus,
+    X,
+  } from "phosphor-svelte";
   import { fade, fly } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
   import { Result } from "better-result";
@@ -22,16 +34,21 @@
   let features = $state<any[]>([]);
   let creditSystems = $state<any[]>([]);
   let selectedFeatures = $state<any[]>([]);
+  let isFeaturesExpanded = $state(false);
   let connectedProviders = $state<any[]>([]);
   let selectedProviderId = $state("");
-  let uniqueProviderIds = $derived([...new Set(connectedProviders.map((p: any) => p.providerId))]);
+  let uniqueProviderIds = $derived([
+    ...new Set(connectedProviders.map((p: any) => p.providerId)),
+  ]);
 
   async function loadData() {
     try {
       const [featRes, credRes, provRes] = await Promise.all([
         apiFetch(`/api/dashboard/features?organizationId=${organizationId}`),
         apiFetch(`/api/dashboard/credits?organizationId=${organizationId}`),
-        apiFetch(`/api/dashboard/providers/accounts?organizationId=${organizationId}`),
+        apiFetch(
+          `/api/dashboard/providers/accounts?organizationId=${organizationId}`,
+        ),
       ]);
 
       if (credRes.data?.success) {
@@ -63,7 +80,7 @@
   });
 
   function toggleFeature(feature: any, isCreditSystem = false) {
-    const featureId = isCreditSystem ? feature.id : feature.id; 
+    const featureId = isCreditSystem ? feature.id : feature.id;
     const index = selectedFeatures.findIndex((f) => f.id === featureId);
 
     if (index === -1) {
@@ -240,268 +257,280 @@
 </script>
 
 <SidePanel open={isOpen} title="Create Plan" onclose={close} width="max-w-md">
-  <div class="text-sm">
+  <div class="text-sm flex flex-col h-full justify-between">
     <div class="p-5 space-y-6">
-        <!-- Name & ID -->
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label
-              class="block text-xs font-medium text-text-dim mb-1.5"
-              for="planName">Plan Name</label
-            >
-            <div class="input-icon-wrapper">
-              <input
-                type="text"
-                id="planName"
-                bind:value={planName}
-                placeholder="eg. Pro Plan"
-                class="input"
-                autofocus
-              />
-            </div>
-          </div>
-          <div>
-            <label
-              class="block text-xs font-medium text-text-dim mb-1.5"
-              for="planId">ID</label
-            >
-            <div class="input-icon-wrapper">
-              <input
-                type="text"
-                id="planId"
-                value={planId || "fills automatically"}
-                disabled
-                class="input opacity-50 cursor-not-allowed"
-              />
-            </div>
+      <!-- Name & ID -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label
+            class="block text-xs font-medium text-text-dim mb-1.5"
+            for="planName">Plan Name</label
+          >
+          <div class="input-icon-wrapper">
+            <input
+              type="text"
+              id="planName"
+              bind:value={planName}
+              placeholder="eg. Pro Plan"
+              class="input"
+              autofocus
+            />
           </div>
         </div>
-
-        <!-- Provider Selection (only show when multiple providers are connected) -->
-        {#if uniqueProviderIds.length > 1}
-          <div>
-            <div class="text-xs font-medium text-text-dim mb-2">
-              Payment Provider
-            </div>
-            <div class="grid grid-cols-{Math.min(uniqueProviderIds.length, 3)} gap-2">
-              {#each uniqueProviderIds as pid}
-                {@const provConfig = SUPPORTED_PROVIDERS.find((p) => p.id === pid)}
-                {#if provConfig}
-                  <button
-                    class="relative border rounded-lg p-3 text-left transition-all {selectedProviderId === pid
-                      ? 'border-accent bg-accent/5'
-                      : 'border-border bg-bg-secondary hover:border-text-dim'}"
-                    onclick={() => (selectedProviderId = pid)}
-                  >
-                    <div class="text-xs font-bold text-text-primary">{provConfig.name}</div>
-                    <div class="text-[10px] text-text-dim mt-0.5 truncate">{provConfig.description}</div>
-                    {#if selectedProviderId === pid}
-                      <div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent"></div>
-                    {/if}
-                  </button>
-                {/if}
-              {/each}
-            </div>
+        <div>
+          <label
+            class="block text-xs font-medium text-text-dim mb-1.5"
+            for="planId">ID</label
+          >
+          <div class="input-icon-wrapper">
+            <input
+              type="text"
+              id="planId"
+              value={planId || "fills automatically"}
+              disabled
+              class="input opacity-50 cursor-not-allowed"
+            />
           </div>
-        {/if}
+        </div>
+      </div>
 
-        <!-- Plan Type -->
+      <!-- Provider Selection (only show when multiple providers are connected) -->
+      {#if uniqueProviderIds.length > 1}
         <div>
           <div class="text-xs font-medium text-text-dim mb-2">
-            Select Plan Type
+            Payment Provider
           </div>
-          <div class="grid grid-cols-2 gap-3">
-            <button
-              class="relative border rounded-lg p-4 text-left transition-all {planType ===
-              'free'
-                ? 'border-accent bg-accent/5'
-                : 'border-border bg-bg-secondary hover:border-text-dim'}"
-              onclick={() => { planType = "free"; hasTrial = false; }}
-            >
-              <div
-                class="mb-3 w-8 h-8 rounded-full bg-bg-card border border-border flex items-center justify-center"
-              >
-                <Cube  
-                  size={16}
-                  class={planType === "free" ? "text-accent" : "text-text-dim"}
-                 weight="duotone" />
-              </div>
-              <div class="font-bold text-text-primary mb-0.5">Free</div>
-              <div class="text-[10px] text-text-dim leading-relaxed">
-                A plan without pricing that customers can use for free
-              </div>
-              {#if planType === "free"}
-                <div
-                  class="absolute top-3 right-3 w-2 h-2 rounded-full bg-accent"
-                ></div>
+          <div
+            class="grid grid-cols-{Math.min(uniqueProviderIds.length, 3)} gap-2"
+          >
+            {#each uniqueProviderIds as pid}
+              {@const provConfig = SUPPORTED_PROVIDERS.find(
+                (p) => p.id === pid,
+              )}
+              {#if provConfig}
+                <button
+                  class="relative border rounded-lg p-3 text-left transition-all {selectedProviderId ===
+                  pid
+                    ? 'border-accent bg-accent/5'
+                    : 'border-border bg-bg-secondary hover:border-text-dim'}"
+                  onclick={() => (selectedProviderId = pid)}
+                >
+                  <div class="text-xs font-bold text-text-primary">
+                    {provConfig.name}
+                  </div>
+                  <div class="text-[10px] text-text-dim mt-0.5 truncate">
+                    {provConfig.description}
+                  </div>
+                  {#if selectedProviderId === pid}
+                    <div
+                      class="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent"
+                    ></div>
+                  {/if}
+                </button>
               {/if}
-            </button>
-
-            <button
-              class="relative border rounded-lg p-4 text-left transition-all {planType ===
-              'paid'
-                ? 'border-accent bg-accent/5'
-                : 'border-border bg-bg-secondary hover:border-text-dim'}"
-              onclick={() => (planType = "paid")}
-            >
-              <div
-                class="mb-3 w-8 h-8 rounded-full bg-bg-card border border-border flex items-center justify-center"
-              >
-                <CreditCard  
-                  size={16}
-                  class={planType === "paid" ? "text-accent" : "text-text-dim"}
-                 weight="duotone" />
-              </div>
-              <div class="font-bold text-text-primary mb-0.5">Paid</div>
-              <div class="text-[10px] text-text-dim leading-relaxed">
-                A plan with fixed or usage-based pricing that customers may
-                purchase
-              </div>
-              {#if planType === "paid"}
-                <div
-                  class="absolute top-3 right-3 w-2 h-2 rounded-full bg-accent"
-                ></div>
-              {/if}
-            </button>
+            {/each}
           </div>
         </div>
+      {/if}
 
-        <!-- Paid Config -->
-        {#if planType === "paid"}
-          <div
-            class="space-y-4 pt-2"
-            transition:fly={{ y: -10, duration: 200 }}
+      <!-- Plan Type -->
+      <div>
+        <div class="text-xs font-medium text-text-dim mb-2">
+          Select Plan Type
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <button
+            class="relative border rounded-lg p-4 text-left transition-all {planType ===
+            'free'
+              ? 'border-accent bg-accent/5'
+              : 'border-border bg-bg-secondary hover:border-text-dim'}"
+            onclick={() => {
+              planType = "free";
+              hasTrial = false;
+            }}
           >
-            <div>
-              <div class="text-xs font-medium text-text-dim mb-2">
-                Plan Price
-              </div>
-
-              <!-- Billing Model -->
-              <div class="flex flex-col gap-2 mb-4">
-                <label class="flex items-center gap-2 cursor-pointer group">
-                  <div
-                    class="w-4 h-4 rounded-full border flex items-center justify-center {billingModel ===
-                    'base'
-                      ? 'border-accent'
-                      : 'border-border group-hover:border-text-dim'}"
-                  >
-                    {#if billingModel === "base"}
-                      <div class="w-2 h-2 rounded-full bg-accent" />
-                    {/if}
-                  </div>
-                  <input
-                    type="radio"
-                    value="base"
-                    bind:group={billingModel}
-                    class="hidden"
-                  />
-                  <div>
-                    <span class="text-xs text-text-primary block">Base price</span>
-                    <span class="text-[10px] text-text-dim block"
-                      >This plan has a fixed price. You can add per-unit prices
-                      later.</span
-                    >
-                  </div>
-                </label>
-              </div>
-
-              <!-- Recurring vs One-off segment -->
+            <div
+              class="mb-3 w-8 h-8 rounded-full bg-bg-card border border-border flex items-center justify-center"
+            >
+              <Cube
+                size={16}
+                class={planType === "free" ? "text-accent" : "text-text-dim"}
+                weight="duotone"
+              />
+            </div>
+            <div class="font-bold text-text-primary mb-0.5">Free</div>
+            <div class="text-[10px] text-text-dim leading-relaxed">
+              A plan without pricing that customers can use for free
+            </div>
+            {#if planType === "free"}
               <div
-                class="flex p-1 bg-bg-secondary rounded-lg border border-border mb-4"
-              >
-                <button
-                  class="flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 {billingType ===
-                  'recurring'
-                    ? 'bg-bg-card text-text-primary shadow-sm border border-border'
-                    : 'text-text-dim hover:text-text-secondary'}"
-                  onclick={() => (billingType = "recurring")}
-                >
-                  <Clock   size={12}  weight="duotone" />
-                  Recurring
-                </button>
-                <button
-                  class="flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 {billingType ===
-                  'one_time'
-                    ? 'bg-bg-card text-text-primary shadow-sm border border-border'
-                    : 'text-text-dim hover:text-text-secondary'}"
-                  onclick={() => (billingType = "one_time")}
-                >
-                  <Check   size={12}  weight="fill" />
-                  One-off
-                </button>
-              </div>
+                class="absolute top-3 right-3 w-2 h-2 rounded-full bg-accent"
+              ></div>
+            {/if}
+          </button>
 
-              <!-- Price + Currency -->
-              {#if billingModel === "base"}
-                <div class="grid grid-cols-3 gap-4">
-                  <div class="col-span-2">
-                    <label
-                      class="block text-xs font-medium text-text-dim mb-1.5"
-                      for="priceInput">Price</label
+          <button
+            class="relative border rounded-lg p-4 text-left transition-all {planType ===
+            'paid'
+              ? 'border-accent bg-accent/5'
+              : 'border-border bg-bg-secondary hover:border-text-dim'}"
+            onclick={() => (planType = "paid")}
+          >
+            <div
+              class="mb-3 w-8 h-8 rounded-full bg-bg-card border border-border flex items-center justify-center"
+            >
+              <CreditCard
+                size={16}
+                class={planType === "paid" ? "text-accent" : "text-text-dim"}
+                weight="duotone"
+              />
+            </div>
+            <div class="font-bold text-text-primary mb-0.5">Paid</div>
+            <div class="text-[10px] text-text-dim leading-relaxed">
+              A plan with fixed or usage-based pricing that customers may
+              purchase
+            </div>
+            {#if planType === "paid"}
+              <div
+                class="absolute top-3 right-3 w-2 h-2 rounded-full bg-accent"
+              ></div>
+            {/if}
+          </button>
+        </div>
+      </div>
+
+      <!-- Paid Config -->
+      {#if planType === "paid"}
+        <div class="space-y-4 pt-2" transition:fly={{ y: -10, duration: 200 }}>
+          <div>
+            <div class="text-xs font-medium text-text-dim mb-2">Plan Price</div>
+
+            <!-- Billing Model -->
+            <div class="flex flex-col gap-2 mb-4">
+              <label class="flex items-center gap-2 cursor-pointer group">
+                <div
+                  class="w-4 h-4 rounded-full border flex items-center justify-center {billingModel ===
+                  'base'
+                    ? 'border-accent'
+                    : 'border-border group-hover:border-text-dim'}"
+                >
+                  {#if billingModel === "base"}
+                    <div class="w-2 h-2 rounded-full bg-accent" />
+                  {/if}
+                </div>
+                <input
+                  type="radio"
+                  value="base"
+                  bind:group={billingModel}
+                  class="hidden"
+                />
+                <div>
+                  <span class="text-xs text-text-primary block">Base price</span
+                  >
+                  <span class="text-[10px] text-text-dim block"
+                    >This plan has a fixed price. You can add per-unit prices
+                    later.</span
+                  >
+                </div>
+              </label>
+            </div>
+
+            <!-- Recurring vs One-off segment -->
+            <div
+              class="flex p-1 bg-bg-secondary rounded-lg border border-border mb-4"
+            >
+              <button
+                class="flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 {billingType ===
+                'recurring'
+                  ? 'bg-bg-card text-text-primary shadow-sm border border-border'
+                  : 'text-text-dim hover:text-text-secondary'}"
+                onclick={() => (billingType = "recurring")}
+              >
+                <Clock size={12} weight="duotone" />
+                Recurring
+              </button>
+              <button
+                class="flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 {billingType ===
+                'one_time'
+                  ? 'bg-bg-card text-text-primary shadow-sm border border-border'
+                  : 'text-text-dim hover:text-text-secondary'}"
+                onclick={() => (billingType = "one_time")}
+              >
+                <Check size={12} weight="fill" />
+                One-off
+              </button>
+            </div>
+
+            <!-- Price + Currency -->
+            {#if billingModel === "base"}
+              <div class="grid grid-cols-3 gap-4">
+                <div class="col-span-2">
+                  <label
+                    class="block text-xs font-medium text-text-dim mb-1.5"
+                    for="priceInput">Price</label
+                  >
+                  <div class="input-icon-wrapper">
+                    <input
+                      type="number"
+                      id="priceInput"
+                      bind:value={price}
+                      placeholder="eg. 100"
+                      min="0"
+                      class="input pr-12"
+                    />
+                    <div
+                      class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-text-dim pointer-events-none"
                     >
-                    <div class="input-icon-wrapper">
-                      <input
-                        type="number"
-                        id="priceInput"
-                        bind:value={price}
-                        placeholder="eg. 100"
-                        min="0"
-                        class="input pr-12"
-                      />
-                      <div
-                        class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-text-dim pointer-events-none"
-                      >
-                        {currency}
-                      </div>
+                      {currency}
                     </div>
                   </div>
-                  <div>
-                    <label
-                      class="block text-xs font-medium text-text-dim mb-1.5"
-                      for="currencySelect">Currency</label
-                    >
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-medium text-text-dim mb-1.5"
+                    for="currencySelect">Currency</label
+                  >
+                  <select
+                    id="currencySelect"
+                    bind:value={currency}
+                    class="input appearance-none"
+                  >
+                    {#each availableCurrencies as c}
+                      <option value={c.code}>{c.code}</option>
+                    {/each}
+                  </select>
+                </div>
+              </div>
+
+              {#if billingType === "recurring"}
+                <div class="mt-4">
+                  <label
+                    class="block text-xs font-medium text-text-dim mb-1.5"
+                    for="intervalSelect">Billing Interval</label
+                  >
+                  <div class="input-icon-wrapper">
                     <select
-                      id="currencySelect"
-                      bind:value={currency}
+                      id="intervalSelect"
+                      bind:value={interval}
                       class="input appearance-none"
                     >
-                      {#each availableCurrencies as c}
-                        <option value={c.code}>{c.code}</option>
-                      {/each}
+                      <option value="monthly">per month</option>
+                      <option value="yearly">per year</option>
+                      <option value="quarterly">per quarter</option>
+                      <option value="weekly">per week</option>
                     </select>
                   </div>
                 </div>
-
-                {#if billingType === "recurring"}
-                  <div class="mt-4">
-                    <label
-                      class="block text-xs font-medium text-text-dim mb-1.5"
-                      for="intervalSelect">Billing Interval</label
-                    >
-                    <div class="input-icon-wrapper">
-                      <select
-                        id="intervalSelect"
-                        bind:value={interval}
-                        class="input appearance-none"
-                      >
-                        <option value="monthly">per month</option>
-                        <option value="yearly">per year</option>
-                        <option value="quarterly">per quarter</option>
-                        <option value="weekly">per week</option>
-                      </select>
-                    </div>
-                  </div>
-                {/if}
               {/if}
-            </div>
+            {/if}
           </div>
-        {/if}
+        </div>
+      {/if}
 
-        <!-- Options -->
-        <div class="space-y-3 pt-2">
-          <!-- Free Trial (only for paid plans) -->
-          {#if planType === "paid"}
+      <!-- Options -->
+      <div class="space-y-3 pt-2">
+        <!-- Free Trial (only for paid plans) -->
+        {#if planType === "paid"}
           <div>
             <label
               class="flex items-center gap-2 cursor-pointer group select-none"
@@ -512,11 +541,13 @@
                   : 'border-border group-hover:border-text-dim'}"
               >
                 {#if hasTrial}
-                  <Check   size={10} class="text-accent-contrast"  weight="fill" />
+                  <Check size={10} class="text-accent-contrast" weight="fill" />
                 {/if}
               </div>
               <input type="checkbox" bind:checked={hasTrial} class="hidden" />
-              <span class="text-xs text-text-primary font-medium">Free trial</span>
+              <span class="text-xs text-text-primary font-medium"
+                >Free trial</span
+              >
             </label>
             <p class="text-[10px] text-text-dim pl-6">
               Enable a free trial period for customers to try this plan
@@ -559,7 +590,11 @@
                         : 'border-border group-hover:border-text-dim'}"
                     >
                       {#if trialCardRequired}
-                        <Check   size={10} class="text-accent-contrast"  weight="fill" />
+                        <Check
+                          size={10}
+                          class="text-accent-contrast"
+                          weight="fill"
+                        />
                       {/if}
                     </div>
                     <input
@@ -573,218 +608,282 @@
               </div>
             {/if}
           </div>
-          {/if}
+        {/if}
 
-          <!-- Plan Group -->
-          <div class="mt-4">
-            <label
-              class="block text-xs font-medium text-text-dim mb-1.5"
-              for="planGroup">Plan Group (optional) <a class="text-accent hover:text-accent-hover underline" target="_blank" href="{import.meta.env.VITE_DOCS_URL}/concepts/plans-and-products#plan-groups-and-mutual-exclusivity">docs</a> </label
+        <!-- Plan Group -->
+        <div class="mt-4">
+          <label
+            class="block text-xs font-medium text-text-dim mb-1.5"
+            for="planGroup"
+            >Plan Group (optional) <a
+              class="text-accent hover:text-accent-hover underline"
+              target="_blank"
+              href="{import.meta.env
+                .VITE_DOCS_URL}/concepts/plans-and-products#plan-groups-and-mutual-exclusivity"
+              >docs</a
             >
-                  <div class="input-icon-wrapper">
-                    <input
-                      type="text"
-                      id="planGroup"
-                      bind:value={planGroup}
-                      placeholder="eg. support, sales"
-                      class="input"
-                    />
-                  </div>
-            <p class="text-[10px] text-text-dim mt-1">
-              Group related plans together (e.g., different tiers of the same
-              product)
-            </p>
+          </label>
+          <div class="input-icon-wrapper">
+            <input
+              type="text"
+              id="planGroup"
+              bind:value={planGroup}
+              placeholder="eg. support, sales"
+              class="input"
+            />
           </div>
-
-          <!-- Feature Selection -->
-          <div class="pt-4 border-t border-border">
-            <h3
-              class="text-xs font-bold text-text-primary mb-4 uppercase tracking-wider"
-            >
-              Features & Entitlements
-            </h3>
-
-            {#if features.length === 0 && creditSystems.length === 0}
-              <p class="text-[10px] text-text-dim italic">
-                No features or credit systems defined. Create them first to link
-                to plans.
-              </p>
-            {:else}
-              <div class="space-y-6">
-                <!-- Regular Features -->
-                {#if features.length > 0}
-                  <div class="space-y-3">
-                    <div
-                      class="text-[10px] font-bold text-text-dim uppercase tracking-widest"
-                    >
-                      Regular Features
-                    </div>
-                    {#each features as feature}
-                      {@const isSelected = selectedFeatures.find(
-                        (f) => f.id === feature.id && !f.isCreditSystem,
-                      )}
-                      <div
-                        class="bg-bg-card border {isSelected
-                          ? 'border-accent/50 bg-accent/5'
-                          : 'border-border'} p-3 rounded-lg transition-all"
-                      >
-                        <div class="flex items-center justify-between mb-2">
-                          <label
-                            class="flex items-center gap-3 cursor-pointer select-none"
-                          >
-                            <div
-                              class="w-4 h-4 rounded border flex items-center justify-center transition-colors {isSelected
-                                ? 'bg-accent border-accent'
-                                : 'border-border'}"
-                            >
-                              {#if isSelected}
-                                <Check   size={10} class="text-accent-contrast"  weight="fill" />
-                              {/if}
-                            </div>
-                            <input
-                              type="checkbox"
-                              checked={!!isSelected}
-                              onchange={() => toggleFeature(feature)}
-                              class="hidden"
-                            />
-                            <span class="text-xs font-bold text-text-primary"
-                              >{feature.name}</span
-                            >
-                          </label>
-                          <span
-                            class="text-[10px] font-mono text-text-dim uppercase"
-                            >{feature.type}</span
-                          >
-                        </div>
-
-                        {#if isSelected && feature.type !== "boolean"}
-                          <div
-                            class="pl-7 flex items-center gap-4"
-                            transition:fly={{ y: -5, duration: 150 }}
-                          >
-                            <div class="flex-1">
-                              <label
-                                class="block text-[9px] font-bold text-text-dim uppercase tracking-widest mb-1"
-                                >Limit Value</label
-                              >
-                              <div class="flex items-center gap-2">
-                                  <input
-                                  type="number"
-                                  bind:value={isSelected.limitValue}
-                                  placeholder="Unlimited"
-                                  class="w-20 bg-bg-secondary border border-border rounded px-2 py-1 text-xs text-text-primary focus:border-accent outline-none"
-                                />
-                                <span
-                                  class="text-[10px] text-text-dim font-bold uppercase"
-                                  >{feature.unit || "units"}</span
-                                >
-                              </div>
-                            </div>
-                          </div>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                {/if}
-
-                <!-- Credit Systems -->
-                {#if creditSystems.length > 0}
-                  <div class="space-y-3">
-                    <div
-                      class="text-[10px] font-bold text-text-dim uppercase tracking-widest"
-                    >
-                      Credit Systems
-                    </div>
-                    {#each creditSystems as cs}
-                      {@const isSelected = selectedFeatures.find(
-                        (f) => f.id === cs.id && f.isCreditSystem,
-                      )}
-                      <div
-                        class="bg-bg-card border {isSelected
-                          ? 'border-accent/50 bg-accent/5'
-                          : 'border-border'} p-3 rounded-lg transition-all"
-                      >
-                        <div class="flex items-center justify-between mb-2">
-                          <label
-                            class="flex items-center gap-3 cursor-pointer select-none"
-                          >
-                            <div
-                              class="w-4 h-4 rounded border flex items-center justify-center transition-colors {isSelected
-                                ? 'bg-accent border-accent'
-                                : 'border-border'}"
-                            >
-                              {#if isSelected}
-                                <Check   size={10} class="text-accent-contrast"  weight="fill" />
-                              {/if}
-                            </div>
-                            <input
-                              type="checkbox"
-                              checked={!!isSelected}
-                              onchange={() => toggleFeature(cs, true)}
-                              class="hidden"
-                            />
-                            <span class="text-xs font-bold text-text-primary"
-                              >{cs.name}</span
-                            >
-                          </label>
-                          <span
-                            class="text-[10px] font-mono text-accent uppercase font-bold"
-                            >Credits</span
-                          >
-                        </div>
-
-                        {#if isSelected}
-                          <div
-                            class="pl-7 flex items-center gap-4"
-                            transition:fly={{ y: -5, duration: 150 }}
-                          >
-                            <div class="flex-1">
-                              <label
-                                class="block text-[9px] font-bold text-text-dim uppercase tracking-widest mb-1"
-                                >Included Credits</label
-                              >
-                              <div class="flex items-center gap-2">
-                                  <input
-                                  type="number"
-                                  bind:value={isSelected.limitValue}
-                                  placeholder="Unlimited"
-                                  class="w-20 bg-bg-secondary border border-border rounded px-2 py-1 text-xs text-text-primary focus:border-accent outline-none"
-                                />
-                                <span
-                                  class="text-[10px] text-text-dim font-bold uppercase"
-                                  >credits</span
-                                >
-                              </div>
-                            </div>
-                          </div>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            {/if}
-          </div>
+          <p class="text-[10px] text-text-dim mt-1">
+            Group related plans together (e.g., different tiers of the same
+            product)
+          </p>
         </div>
 
-        {#if error}
-          <div
-            class="text-error text-xs py-2 bg-error-bg px-3 rounded-md border border-error"
+        <!-- Auto-enable Plan -->
+        <div class="mt-4">
+          <label
+            class="flex items-center gap-2 cursor-pointer group select-none"
           >
-            {error}
-          </div>
-        {/if}
+            <div
+              class="relative w-4 h-4 rounded border flex items-center justify-center transition-colors {autoEnable
+                ? 'bg-accent border-accent'
+                : 'border-border group-hover:border-text-dim'}"
+            >
+              {#if autoEnable}
+                <Check size={10} class="text-accent-contrast" weight="fill" />
+              {/if}
+            </div>
+            <input type="checkbox" bind:checked={autoEnable} class="hidden" />
+            <span class="text-xs text-text-primary font-medium"
+              >Auto-enable plan</span
+            >
+          </label>
+          <p class="text-[10px] text-text-dim pl-6">
+            {planType === "free"
+              ? "New customers will be subscribed to this plan automatically"
+              : "New customers will receive a pending subscription awaiting payment"}
+          </p>
+        </div>
+
+        <!-- Feature Selection -->
+        <div class="pt-4 border-t border-border">
+          <button
+            class="w-full flex items-center justify-between text-left focus:outline-none mb-2"
+            onclick={() => (isFeaturesExpanded = !isFeaturesExpanded)}
+            type="button"
+          >
+            <h3
+              class="text-xs font-bold text-text-primary uppercase tracking-wider"
+            >
+              Features & Entitlements {selectedFeatures.length > 0
+                ? `(${selectedFeatures.length})`
+                : ""}
+            </h3>
+            <div
+              class="text-text-dim hover:text-text-primary transition-colors"
+            >
+              {#if isFeaturesExpanded}
+                <CaretDown size={16} weight="bold" />
+              {:else}
+                <CaretRight size={16} weight="bold" />
+              {/if}
+            </div>
+          </button>
+
+          {#if isFeaturesExpanded}
+            <div transition:fly={{ y: -5, duration: 200 }}>
+              {#if features.length === 0 && creditSystems.length === 0}
+                <p class="text-[10px] text-text-dim italic">
+                  No features or credit systems defined. Create them first to
+                  link to plans.
+                </p>
+              {:else}
+                <div class="space-y-6">
+                  <!-- Regular Features -->
+                  {#if features.length > 0}
+                    <div class="space-y-3">
+                      <div
+                        class="text-[10px] font-bold text-text-dim uppercase tracking-widest"
+                      >
+                        Regular Features
+                      </div>
+                      {#each features as feature}
+                        {@const isSelected = selectedFeatures.find(
+                          (f) => f.id === feature.id && !f.isCreditSystem,
+                        )}
+                        <div
+                          class="bg-bg-card border {isSelected
+                            ? 'border-accent/50 bg-accent/5'
+                            : 'border-border'} p-3 rounded-lg transition-all"
+                        >
+                          <div class="flex items-center justify-between mb-2">
+                            <label
+                              class="flex items-center gap-3 cursor-pointer select-none"
+                            >
+                              <div
+                                class="w-4 h-4 rounded border flex items-center justify-center transition-colors {isSelected
+                                  ? 'bg-accent border-accent'
+                                  : 'border-border'}"
+                              >
+                                {#if isSelected}
+                                  <Check
+                                    size={10}
+                                    class="text-accent-contrast"
+                                    weight="fill"
+                                  />
+                                {/if}
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={!!isSelected}
+                                onchange={() => toggleFeature(feature)}
+                                class="hidden"
+                              />
+                              <span class="text-xs font-bold text-text-primary"
+                                >{feature.name}</span
+                              >
+                            </label>
+                            <span
+                              class="text-[10px] font-mono text-text-dim uppercase"
+                              >{feature.type}</span
+                            >
+                          </div>
+
+                          {#if isSelected && feature.type !== "boolean"}
+                            <div
+                              class="pl-7 flex items-center gap-4"
+                              transition:fly={{ y: -5, duration: 150 }}
+                            >
+                              <div class="flex-1">
+                                <label
+                                  class="block text-[9px] font-bold text-text-dim uppercase tracking-widest mb-1"
+                                  >Limit Value</label
+                                >
+                                <div class="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    bind:value={isSelected.limitValue}
+                                    placeholder="Unlimited"
+                                    class="w-20 bg-bg-secondary border border-border rounded px-2 py-1 text-xs text-text-primary focus:border-accent outline-none"
+                                  />
+                                  <span
+                                    class="text-[10px] text-text-dim font-bold uppercase"
+                                    >{feature.unit || "units"}</span
+                                  >
+                                </div>
+                              </div>
+                            </div>
+                          {/if}
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+
+                  <!-- Credit Systems -->
+                  {#if creditSystems.length > 0}
+                    <div class="space-y-3">
+                      <div
+                        class="text-[10px] font-bold text-text-dim uppercase tracking-widest"
+                      >
+                        Credit Systems
+                      </div>
+                      {#each creditSystems as cs}
+                        {@const isSelected = selectedFeatures.find(
+                          (f) => f.id === cs.id && f.isCreditSystem,
+                        )}
+                        <div
+                          class="bg-bg-card border {isSelected
+                            ? 'border-accent/50 bg-accent/5'
+                            : 'border-border'} p-3 rounded-lg transition-all"
+                        >
+                          <div class="flex items-center justify-between mb-2">
+                            <label
+                              class="flex items-center gap-3 cursor-pointer select-none"
+                            >
+                              <div
+                                class="w-4 h-4 rounded border flex items-center justify-center transition-colors {isSelected
+                                  ? 'bg-accent border-accent'
+                                  : 'border-border'}"
+                              >
+                                {#if isSelected}
+                                  <Check
+                                    size={10}
+                                    class="text-accent-contrast"
+                                    weight="fill"
+                                  />
+                                {/if}
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={!!isSelected}
+                                onchange={() => toggleFeature(cs, true)}
+                                class="hidden"
+                              />
+                              <span class="text-xs font-bold text-text-primary"
+                                >{cs.name}</span
+                              >
+                            </label>
+                            <span
+                              class="text-[10px] font-mono text-accent uppercase font-bold"
+                              >Credits</span
+                            >
+                          </div>
+
+                          {#if isSelected}
+                            <div
+                              class="pl-7 flex items-center gap-4"
+                              transition:fly={{ y: -5, duration: 150 }}
+                            >
+                              <div class="flex-1">
+                                <label
+                                  class="block text-[9px] font-bold text-text-dim uppercase tracking-widest mb-1"
+                                  >Included Credits</label
+                                >
+                                <div class="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    bind:value={isSelected.limitValue}
+                                    placeholder="Unlimited"
+                                    class="w-20 bg-bg-secondary border border-border rounded px-2 py-1 text-xs text-text-primary focus:border-accent outline-none"
+                                  />
+                                  <span
+                                    class="text-[10px] text-text-dim font-bold uppercase"
+                                    >credits</span
+                                  >
+                                </div>
+                              </div>
+                            </div>
+                          {/if}
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      {#if error}
+        <div
+          class="text-error text-xs py-2 bg-error-bg px-3 rounded-md border border-error"
+        >
+          {error}
+        </div>
+      {/if}
     </div>
 
     <!-- Footer -->
     <div
-      class="p-5  border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card"
+      class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card"
     >
       <button
         class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
         onclick={close}
       >
-        Cancel <span class="text-text-dim/60 ml-1 font-normal uppercase">Esc</span>
+        Cancel <span class="text-text-dim/60 ml-1 font-normal uppercase"
+          >Esc</span
+        >
       </button>
       <button
         class="px-6 py-2 bg-accent hover:bg-accent-hover text-accent-contrast text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
@@ -792,12 +891,10 @@
         disabled={!planName || (planType === "paid" && !price) || isCreating}
       >
         {#if isCreating}
-          <CircleNotchIcon   size={12} class="animate-spin"  />
+          <CircleNotchIcon size={12} class="animate-spin" />
           Creating...
         {:else}
-          Create plan <span class=" px-1 rounded ml-1 text-[10px]">
-            ⌘↵
-          </span>
+          Create plan <span class=" px-1 rounded ml-1 text-[10px]"> ⌘↵ </span>
         {/if}
       </button>
     </div>
