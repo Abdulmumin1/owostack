@@ -84,7 +84,7 @@ const updatePlanSchema = z.object({
 });
 
 app.post("/", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = createPlanSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -343,7 +343,7 @@ app.get("/:id", async (c) => {
 
 app.patch("/:id", async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = updatePlanSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -488,7 +488,7 @@ app.delete("/:id", async (c) => {
 
 app.patch("/features/:planFeatureId", async (c) => {
   const planFeatureId = c.req.param("planFeatureId");
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = addFeatureSchema.partial().safeParse(body);
 
   if (!parsed.success) {
@@ -574,7 +574,7 @@ const addFeatureSchema = z.object({
 
 app.post("/:planId/features", async (c) => {
   const planId = c.req.param("planId");
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = addFeatureSchema.safeParse(body);
 
   if (!parsed.success) {

@@ -81,7 +81,10 @@ app.get("/accounts", async (c) => {
 // Helper: parse enabled providers from env
 function getEnabledProviders(env: any): string[] {
   const raw = env.ENABLED_PROVIDERS || "paystack,dodopayments,polar";
-  return raw.split(",").map((s: string) => s.trim().toLowerCase()).filter(Boolean);
+  return raw
+    .split(",")
+    .map((s: string) => s.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 // List enabled providers (so the dashboard knows what to show)
@@ -91,7 +94,7 @@ app.get("/enabled", async (c) => {
 });
 
 app.post("/accounts", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = providerAccountSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -111,7 +114,10 @@ app.post("/accounts", async (c) => {
   const enabled = getEnabledProviders(c.env);
   if (!enabled.includes(providerId)) {
     return c.json(
-      { success: false, error: `Provider "${providerId}" is not enabled. Enabled providers: ${enabled.join(", ")}` },
+      {
+        success: false,
+        error: `Provider "${providerId}" is not enabled. Enabled providers: ${enabled.join(", ")}`,
+      },
       400,
     );
   }
@@ -128,7 +134,10 @@ app.post("/accounts", async (c) => {
   });
   if (existing) {
     return c.json(
-      { success: false, error: `A ${providerId} account for ${environment} environment already exists. Update it instead.` },
+      {
+        success: false,
+        error: `A ${providerId} account for ${environment} environment already exists. Update it instead.`,
+      },
       409,
     );
   }
@@ -138,10 +147,7 @@ app.post("/accounts", async (c) => {
   let storedCredentials: Record<string, unknown> = credentials;
 
   if (!c.env.ENCRYPTION_KEY && (secretKey || webhookSecret)) {
-    return c.json(
-      { success: false, error: "Encryption not configured" },
-      500,
-    );
+    return c.json({ success: false, error: "Encryption not configured" }, 500);
   }
 
   if (typeof secretKey === "string" && secretKey.length > 0) {
@@ -178,7 +184,10 @@ app.post("/accounts", async (c) => {
     // Unique constraint safety net (race between two concurrent requests)
     if (e.message?.includes("UNIQUE constraint")) {
       return c.json(
-        { success: false, error: `A ${providerId} account for ${environment} environment already exists.` },
+        {
+          success: false,
+          error: `A ${providerId} account for ${environment} environment already exists.`,
+        },
         409,
       );
     }
@@ -204,8 +213,14 @@ app.post("/accounts", async (c) => {
     };
     c.executionCtx.waitUntil(
       syncPlansToProvider(db, organizationId, adapter, providerAccount)
-        .then((r) => console.log(`[providers] Plan sync on connect: ${r.synced.length} synced, ${r.failed.length} failed`))
-        .catch((e) => console.warn("[providers] Plan sync on connect failed:", e)),
+        .then((r) =>
+          console.log(
+            `[providers] Plan sync on connect: ${r.synced.length} synced, ${r.failed.length} failed`,
+          ),
+        )
+        .catch((e) =>
+          console.warn("[providers] Plan sync on connect failed:", e),
+        ),
     );
   }
 
@@ -227,7 +242,7 @@ app.get("/rules", async (c) => {
 });
 
 app.post("/rules", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = providerRuleSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -268,7 +283,7 @@ const updateAccountSchema = z.object({
 
 app.patch("/accounts/:id", async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = updateAccountSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -383,7 +398,7 @@ const updateRuleSchema = z.object({
 
 app.patch("/rules/:id", async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = updateRuleSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -446,9 +461,7 @@ app.delete("/rules/:id", async (c) => {
     return c.json({ success: false, error: "Provider rule not found" }, 404);
   }
 
-  await db
-    .delete(schema.providerRules)
-    .where(eq(schema.providerRules.id, id));
+  await db.delete(schema.providerRules).where(eq(schema.providerRules.id, id));
 
   return c.json({ success: true });
 });
@@ -458,10 +471,13 @@ app.delete("/rules/:id", async (c) => {
 // =============================================================================
 
 app.post("/accounts/decrypt", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const { id, organizationId } = body;
   if (!id || !organizationId) {
-    return c.json({ success: false, error: "Missing id or organizationId" }, 400);
+    return c.json(
+      { success: false, error: "Missing id or organizationId" },
+      400,
+    );
   }
 
   const db = c.get("db");
@@ -489,7 +505,10 @@ app.post("/accounts/decrypt", async (c) => {
     try {
       credentials.secretKey = await decrypt(secretKey, c.env.ENCRYPTION_KEY);
     } catch (e) {
-      return c.json({ success: false, error: "Failed to decrypt secret key" }, 500);
+      return c.json(
+        { success: false, error: "Failed to decrypt secret key" },
+        500,
+      );
     }
   }
 
@@ -501,11 +520,14 @@ app.post("/accounts/decrypt", async (c) => {
 // =============================================================================
 
 app.post("/sync-plans", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const { organizationId, accountId } = body;
 
   if (!organizationId || !accountId) {
-    return c.json({ success: false, error: "organizationId and accountId required" }, 400);
+    return c.json(
+      { success: false, error: "organizationId and accountId required" },
+      400,
+    );
   }
 
   const db = c.get("db");
@@ -524,19 +546,37 @@ app.post("/sync-plans", async (c) => {
   const registry = getProviderRegistry();
   const adapter = registry.get(account.providerId);
   if (!adapter) {
-    return c.json({ success: false, error: `No adapter for provider: ${account.providerId}` }, 400);
+    return c.json(
+      {
+        success: false,
+        error: `No adapter for provider: ${account.providerId}`,
+      },
+      400,
+    );
   }
 
   // Decrypt credentials
   const credentials = { ...(account.credentials || {}) } as Record<string, any>;
-  if (typeof credentials.secretKey === "string" && credentials.secretKey.length > 0) {
+  if (
+    typeof credentials.secretKey === "string" &&
+    credentials.secretKey.length > 0
+  ) {
     if (!c.env.ENCRYPTION_KEY) {
-      return c.json({ success: false, error: "Encryption not configured" }, 500);
+      return c.json(
+        { success: false, error: "Encryption not configured" },
+        500,
+      );
     }
     try {
-      credentials.secretKey = await decrypt(credentials.secretKey, c.env.ENCRYPTION_KEY);
+      credentials.secretKey = await decrypt(
+        credentials.secretKey,
+        c.env.ENCRYPTION_KEY,
+      );
     } catch {
-      return c.json({ success: false, error: "Failed to decrypt provider credentials" }, 500);
+      return c.json(
+        { success: false, error: "Failed to decrypt provider credentials" },
+        500,
+      );
     }
   }
 
@@ -550,7 +590,12 @@ app.post("/sync-plans", async (c) => {
     updatedAt: account.updatedAt,
   };
 
-  const result = await syncPlansToProvider(db, organizationId, adapter, providerAccount);
+  const result = await syncPlansToProvider(
+    db,
+    organizationId,
+    adapter,
+    providerAccount,
+  );
 
   return c.json({
     success: true,

@@ -28,7 +28,7 @@ app.get("/config/active-environment", async (c) => {
 
 // Switch active environment
 app.post("/switch-environment", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const { organizationId, environment } = body;
 
   if (!organizationId || !["test", "live"].includes(environment)) {
@@ -113,7 +113,7 @@ app.get("/config/default-currency", async (c) => {
 
 // Update org default currency
 app.put("/config/default-currency", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const { organizationId, defaultCurrency } = body;
 
   if (!organizationId || !defaultCurrency) {
@@ -123,7 +123,11 @@ app.put("/config/default-currency", async (c) => {
     );
   }
 
-  if (typeof defaultCurrency !== "string" || defaultCurrency.length < 3 || defaultCurrency.length > 3) {
+  if (
+    typeof defaultCurrency !== "string" ||
+    defaultCurrency.length < 3 ||
+    defaultCurrency.length > 3
+  ) {
     return c.json(
       { success: false, error: "Currency must be a 3-letter ISO 4217 code" },
       400,

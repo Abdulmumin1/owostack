@@ -60,7 +60,10 @@ app.get("/", async (c) => {
     return c.json({ success: true, data: packs });
   } catch (e: any) {
     // Table may not exist yet (migration not run)
-    if (e?.message?.includes("no such table") || e?.message?.includes("Cannot read properties")) {
+    if (
+      e?.message?.includes("no such table") ||
+      e?.message?.includes("Cannot read properties")
+    ) {
       return c.json({ success: true, data: [] });
     }
     return c.json({ success: false, error: e.message }, 500);
@@ -69,14 +72,31 @@ app.get("/", async (c) => {
 
 // POST / — Create a credit pack
 app.post("/", async (c) => {
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = createPackSchema.safeParse(body);
 
   if (!parsed.success) {
-    return c.json({ success: false, error: "Invalid input", details: parsed.error.flatten() }, 400);
+    return c.json(
+      {
+        success: false,
+        error: "Invalid input",
+        details: parsed.error.flatten(),
+      },
+      400,
+    );
   }
 
-  const { organizationId, name, description, credits, price, currency, creditSystemId, providerId, metadata } = parsed.data;
+  const {
+    organizationId,
+    name,
+    description,
+    credits,
+    price,
+    currency,
+    creditSystemId,
+    providerId,
+    metadata,
+  } = parsed.data;
   const db = c.get("db");
 
   const slug = name
@@ -94,7 +114,13 @@ app.post("/", async (c) => {
         ),
       });
       if (existing) {
-        return c.json({ success: false, error: `Credit pack with slug '${slug}' already exists` }, 409);
+        return c.json(
+          {
+            success: false,
+            error: `Credit pack with slug '${slug}' already exists`,
+          },
+          409,
+        );
       }
     }
 
@@ -118,7 +144,13 @@ app.post("/", async (c) => {
     return c.json({ success: true, data: pack });
   } catch (e: any) {
     if (e?.message?.includes("no such table")) {
-      return c.json({ success: false, error: "Credit packs table not yet created. Run migration 0004." }, 500);
+      return c.json(
+        {
+          success: false,
+          error: "Credit packs table not yet created. Run migration 0004.",
+        },
+        500,
+      );
     }
     return c.json({ success: false, error: e.message }, 500);
   }
@@ -127,11 +159,18 @@ app.post("/", async (c) => {
 // PATCH /:id — Update a credit pack
 app.patch("/:id", async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json();
+  const body = c.get("parsedBody") ?? (await c.req.json());
   const parsed = updatePackSchema.safeParse(body);
 
   if (!parsed.success) {
-    return c.json({ success: false, error: "Invalid input", details: parsed.error.flatten() }, 400);
+    return c.json(
+      {
+        success: false,
+        error: "Invalid input",
+        details: parsed.error.flatten(),
+      },
+      400,
+    );
   }
 
   const db = c.get("db");
@@ -144,13 +183,18 @@ app.patch("/:id", async (c) => {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
   }
-  if (parsed.data.description !== undefined) updates.description = parsed.data.description;
+  if (parsed.data.description !== undefined)
+    updates.description = parsed.data.description;
   if (parsed.data.credits !== undefined) updates.credits = parsed.data.credits;
   if (parsed.data.price !== undefined) updates.price = parsed.data.price;
-  if (parsed.data.currency !== undefined) updates.currency = parsed.data.currency;
-  if (parsed.data.creditSystemId !== undefined) updates.creditSystemId = parsed.data.creditSystemId;
-  if (parsed.data.isActive !== undefined) updates.isActive = parsed.data.isActive;
-  if (parsed.data.metadata !== undefined) updates.metadata = parsed.data.metadata;
+  if (parsed.data.currency !== undefined)
+    updates.currency = parsed.data.currency;
+  if (parsed.data.creditSystemId !== undefined)
+    updates.creditSystemId = parsed.data.creditSystemId;
+  if (parsed.data.isActive !== undefined)
+    updates.isActive = parsed.data.isActive;
+  if (parsed.data.metadata !== undefined)
+    updates.metadata = parsed.data.metadata;
 
   try {
     const [updated] = await (db as any)
@@ -166,7 +210,13 @@ app.patch("/:id", async (c) => {
     return c.json({ success: true, data: updated });
   } catch (e: any) {
     if (e?.message?.includes("no such table")) {
-      return c.json({ success: false, error: "Credit packs table not yet created. Run migration 0004." }, 500);
+      return c.json(
+        {
+          success: false,
+          error: "Credit packs table not yet created. Run migration 0004.",
+        },
+        500,
+      );
     }
     return c.json({ success: false, error: e.message }, 500);
   }
@@ -190,7 +240,13 @@ app.delete("/:id", async (c) => {
     return c.json({ success: true });
   } catch (e: any) {
     if (e?.message?.includes("no such table")) {
-      return c.json({ success: false, error: "Credit packs table not yet created. Run migration 0004." }, 500);
+      return c.json(
+        {
+          success: false,
+          error: "Credit packs table not yet created. Run migration 0004.",
+        },
+        500,
+      );
     }
     return c.json({ success: false, error: e.message }, 500);
   }
@@ -241,7 +297,10 @@ app.get("/purchases", async (c) => {
 
     return c.json({ success: true, data: purchases });
   } catch (e: any) {
-    if (e?.message?.includes("no such table") || e?.message?.includes("Cannot read properties")) {
+    if (
+      e?.message?.includes("no such table") ||
+      e?.message?.includes("Cannot read properties")
+    ) {
       return c.json({ success: true, data: [] });
     }
     return c.json({ success: false, error: e.message }, 500);
