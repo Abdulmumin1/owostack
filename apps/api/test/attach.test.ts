@@ -26,7 +26,9 @@ vi.mock("@owostack/db", () => ({
 }));
 
 vi.mock("../src/lib/api-keys", async () => {
-  const actual = await vi.importActual<any>("../src/lib/api-keys");
+  const actual = await vi.importActual<typeof import("../src/lib/api-keys")>(
+    "../src/lib/api-keys",
+  );
   return {
     ...actual,
     verifyApiKey: vi.fn(),
@@ -34,7 +36,9 @@ vi.mock("../src/lib/api-keys", async () => {
 });
 
 vi.mock("../src/lib/encryption", async () => {
-  const actual = await vi.importActual<any>("../src/lib/encryption");
+  const actual = await vi.importActual<typeof import("../src/lib/encryption")>(
+    "../src/lib/encryption",
+  );
   return {
     ...actual,
     decrypt: vi.fn(),
@@ -58,7 +62,24 @@ vi.mock("../src/lib/webhooks", () => ({
   WebhookHandler: class {},
 }));
 
-const mockEnv = {
+// Type definitions
+type ErrorResponse = {
+  success: boolean;
+  error: string | { code: string };
+};
+
+type HealthResponse = {
+  status: string;
+};
+
+const mockEnv: {
+  DB: Record<string, unknown>;
+  PAYSTACK_SECRET_KEY: string;
+  PAYSTACK_WEBHOOK_SECRET: string;
+  BETTER_AUTH_SECRET: string;
+  BETTER_AUTH_URL: string;
+  ENCRYPTION_KEY: string;
+} = {
   DB: {},
   PAYSTACK_SECRET_KEY: "sk_test",
   PAYSTACK_WEBHOOK_SECRET: "wh_secret",
@@ -102,11 +123,11 @@ describe("POST /v1/attach", () => {
         body: JSON.stringify({ email: "test@example.com", amount: 5000 }),
         headers: { "Content-Type": "application/json" },
       },
-      mockEnv as any,
+      mockEnv,
     );
 
     expect(res.status).toBe(401);
-    const json = (await res.json()) as any;
+    const json = (await res.json()) as ErrorResponse;
     expect(json.success).toBe(false);
     expect(json.error).toBe("Missing API Key");
   });
@@ -124,11 +145,11 @@ describe("POST /v1/attach", () => {
           Authorization: `Bearer ${validApiKey}`,
         },
       },
-      mockEnv as any,
+      mockEnv,
     );
 
     expect(res.status).toBe(401);
-    const json = (await res.json()) as any;
+    const json = (await res.json()) as ErrorResponse;
     expect(json.success).toBe(false);
     expect(json.error).toBe("Invalid API Key");
   });
@@ -144,13 +165,15 @@ describe("POST /v1/attach", () => {
           Authorization: `Bearer ${validApiKey}`,
         },
       },
-      mockEnv as any,
+      mockEnv,
     );
 
     expect(res.status).toBe(400);
-    const json = (await res.json()) as any;
+    const json = (await res.json()) as ErrorResponse;
     expect(json.success).toBe(false);
-    expect(json.error.code).toBe("ValidationError");
+    expect(json.error).toEqual(
+      expect.objectContaining({ code: "ValidationError" }),
+    );
   });
 
   it("should return 404 when requested plan is missing", async () => {
@@ -167,11 +190,11 @@ describe("POST /v1/attach", () => {
           Authorization: `Bearer ${validApiKey}`,
         },
       },
-      mockEnv as any,
+      mockEnv,
     );
 
     expect(res.status).toBe(404);
-    const json = (await res.json()) as any;
+    const json = (await res.json()) as ErrorResponse;
     expect(json.success).toBe(false);
     expect(json.error).toContain("Plan 'pro' not found");
   });
@@ -184,11 +207,11 @@ describe("Health Check", () => {
       {
         method: "GET",
       },
-      mockEnv as any,
+      mockEnv,
     );
 
     expect(res.status).toBe(200);
-    const json = (await res.json()) as any;
+    const json = (await res.json()) as HealthResponse;
     expect(json.status).toBe("healthy");
   });
 });

@@ -1,9 +1,28 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 import {
   calculateProration,
   detectSwitchType,
   provisionEntitlements,
 } from "./plan-switch";
+
+interface PlanFeature {
+  featureId: string;
+  limitValue?: number;
+  resetInterval?: string;
+  resetOnEnable?: boolean;
+  feature?: { id: string };
+}
+
+interface MockDb {
+  query: {
+    planFeatures: {
+      findMany: Mock;
+    };
+  };
+  transaction: Mock;
+  delete: Mock;
+  insert: Mock;
+}
 
 describe("detectSwitchType", () => {
   it("returns new when there is no current plan", () => {
@@ -109,7 +128,7 @@ describe("provisionEntitlements", () => {
     const valuesMock = vi.fn(async () => []);
     const insertMock = vi.fn(() => ({ values: valuesMock }));
 
-    const db: any = {
+    const db: MockDb = {
       query: {
         planFeatures: {
           findMany: vi

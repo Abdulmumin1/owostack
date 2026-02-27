@@ -1,2 +1,0 @@
-DROP INDEX `provider_accounts_provider_idx`;--> statement-breakpoint
-CREATE UNIQUE INDEX `provider_accounts_org_provider_env_uniq` ON `provider_accounts` (`organization_id`,`provider_id`,`environment`);

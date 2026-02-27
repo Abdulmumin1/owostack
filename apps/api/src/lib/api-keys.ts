@@ -9,7 +9,7 @@ type DB = ReturnType<typeof createDb>;
  * Middleware to validate API keys from Database
  */
 export function apiKeyAuth(): MiddlewareHandler {
-  return async (c, next) => {
+  return async (c, next): Promise<void | Response> => {
     const authHeader = c.req.header("Authorization");
 
     if (!authHeader) {

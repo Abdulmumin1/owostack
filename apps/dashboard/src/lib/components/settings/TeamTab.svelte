@@ -196,6 +196,8 @@
   </div>
 </div>
 
+{#if pendingInvites.length > 0}
+
 <div class="mb-8">
   <div class="flex items-center justify-between mb-4">
     <h3 class="text-sm font-bold text-text-primary flex items-center gap-2">
@@ -208,12 +210,8 @@
     {/if}
   </div>
   
-  {#if pendingInvites.length === 0}
-    <div class="text-sm text-text-dim p-4 bg-bg-secondary/50 border border-border rounded-lg">
-      No pending invitations
-    </div>
-  {:else}
-  
+ 
+
   <div class="border border-border rounded-lg overflow-hidden">
     <table class="w-full text-left">
       <thead class="bg-bg-secondary border-b border-border">
@@ -280,8 +278,8 @@
       </tbody>
     </table>
   </div>
-  {/if}
 </div>
+{/if}
 
 <div class="border border-border rounded-lg overflow-hidden">
   <table class="w-full text-left">

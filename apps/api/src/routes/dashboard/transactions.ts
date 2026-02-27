@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { listRecentEvents } from "../../lib/analytics-engine";
 import type { Env, Variables } from "../../index";
@@ -537,7 +537,7 @@ app.get("/:id", async (c) => {
           name: row.customer.name,
         },
         entitlements: [],
-        planFeatures: invoiceItems.map((item) => ({
+        planFeatures: invoiceItems.map((item: { featureId: string | null; description: string }) => ({
           featureId: item.featureId,
           featureName: item.description,
           featureSlug: null,

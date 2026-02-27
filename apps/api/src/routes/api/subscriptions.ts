@@ -3,13 +3,10 @@ import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
 import type { Env, Variables } from "../../index";
-import { resolveProvider } from "@owostack/adapters";
-import { getProviderRegistry, loadProviderAccounts } from "../../lib/providers";
 import { sendCheckoutEmail } from "../../lib/email";
 import { provisionEntitlements } from "../../lib/plan-switch";
 import { createCheckoutSessionForSubscription } from "../../lib/checkout-session";
 
-const providerRegistry = getProviderRegistry();
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // GET /v1/subscriptions/:id/activate
@@ -46,9 +43,6 @@ app.post("/:id/checkout", async (c) => {
 
   const keyRecord = await verifyApiKey(authDb, apiKey);
   if (!keyRecord) return c.json({ error: "Unauthorized" }, 401);
-
-  const organizationId = keyRecord.organizationId;
-  const workerEnv = c.env.ENVIRONMENT === "live" ? "live" : "test";
 
   try {
     const subscription = await db.query.subscriptions.findFirst({

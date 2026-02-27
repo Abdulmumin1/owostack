@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { Hono } from "hono";
 import walletRoute from "../src/routes/api/wallet";
 import { verifyApiKey } from "../src/lib/api-keys";
@@ -7,6 +7,26 @@ import {
   getProviderRegistry,
   loadProviderAccounts,
 } from "../src/lib/providers";
+
+interface MockDb {
+  query: {
+    customers: { findFirst: Mock };
+    paymentMethods: { findMany: Mock };
+  };
+  update: Mock;
+}
+
+interface MockAuthDb {
+  query: {
+    organizations: { findFirst: Mock };
+  };
+  update: Mock;
+}
+
+interface Env {
+  ENCRYPTION_KEY: string;
+  ENVIRONMENT: string;
+}
 
 vi.mock("@owostack/db", () => ({
   schema: {
@@ -47,7 +67,7 @@ describe("/wallet/setup behavior", () => {
   const dbUpdateSet = vi.fn(() => ({ where: dbUpdateWhere }));
   const dbUpdate = vi.fn(() => ({ set: dbUpdateSet }));
 
-  const mockDb: any = {
+  const mockDb: MockDb = {
     query: {
       customers: {
         findFirst: vi.fn(),
@@ -59,7 +79,7 @@ describe("/wallet/setup behavior", () => {
     update: dbUpdate,
   };
 
-  const mockAuthDb: any = {
+  const mockAuthDb: MockAuthDb = {
     query: {
       organizations: {
         findFirst: vi.fn(async () => ({
@@ -68,17 +88,38 @@ describe("/wallet/setup behavior", () => {
         })),
       },
     },
-    update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => []) })) })),
+    update: vi.fn(() => ({
+      set: vi.fn(() => ({ where: vi.fn(async () => []) })),
+    })),
   };
 
-  const env = {
+  const env: Env = {
     ENCRYPTION_KEY: "test_key",
     ENVIRONMENT: "test",
-  } as any;
+  };
 
   let app: Hono;
 
-  const polarAdapter = {
+  interface CustomerSessionResult {
+    id: string;
+    email: string;
+  }
+
+  interface CustomerSessionResponse {
+    url: string;
+    token: string;
+  }
+
+  interface PolarAdapter {
+    id: string;
+    defaultCurrency: string;
+    createPlan: Mock;
+    createCheckoutSession: Mock;
+    createCustomer: Mock;
+    createCustomerSession: Mock;
+  }
+
+  const polarAdapter: PolarAdapter = {
     id: "polar",
     defaultCurrency: "USD",
     createPlan: vi.fn(async () => ok({ id: "prod_should_not_be_created" })),
@@ -86,15 +127,18 @@ describe("/wallet/setup behavior", () => {
       err("checkout should not be used for Polar wallet setup"),
     ),
     createCustomer: vi.fn(async () =>
-      ok({ id: "cus_polar_1", email: "alice@example.com" }),
+      ok<CustomerSessionResult>({
+        id: "cus_polar_1",
+        email: "alice@example.com",
+      }),
     ),
     createCustomerSession: vi.fn(async () =>
-      ok({
+      ok<CustomerSessionResponse>({
         url: "https://polar.sh/customer-portal/session_1",
         token: "cssn_1",
       }),
     ),
-  } as any;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -110,13 +154,13 @@ describe("/wallet/setup behavior", () => {
     vi.mocked(verifyApiKey).mockResolvedValue({
       id: "key_1",
       organizationId: "org_1",
-    } as any);
+    });
 
     vi.mocked(getProviderRegistry).mockReturnValue({
       get: vi.fn((providerId: string) =>
         providerId === "polar" ? polarAdapter : undefined,
       ),
-    } as any);
+    });
 
     vi.mocked(loadProviderAccounts).mockResolvedValue([
       {
@@ -126,9 +170,9 @@ describe("/wallet/setup behavior", () => {
         environment: "test",
         credentials: { secretKey: "polar_test_token" },
       },
-    ] as any);
+    ]);
 
-    vi.mocked(deriveProviderEnvironment).mockReturnValue("test" as any);
+    vi.mocked(deriveProviderEnvironment).mockReturnValue("test");
 
     mockDb.query.customers.findFirst.mockResolvedValue({
       id: "cust_1",
@@ -159,7 +203,7 @@ describe("/wallet/setup behavior", () => {
 
     expect(res.status).toBe(200);
 
-    const body = (await res.json()) as any;
+    const body = (await res.json()) as { url: string; reference: string };
     expect(body.url).toBe("https://polar.sh/customer-portal/session_1");
     expect(body.reference).toBe("cssn_1");
 
