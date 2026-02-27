@@ -83,7 +83,7 @@ app.post("/", async (c) => {
 });
 
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
@@ -107,7 +107,7 @@ app.get("/", async (c) => {
 
 app.delete("/:id", async (c) => {
   const id = c.req.param("id");
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
 
   if (!organizationId) {
     return c.json({ success: false, error: "Organization ID required" }, 400);

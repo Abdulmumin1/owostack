@@ -1,9 +1,13 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { listRecentEvents } from "../../lib/analytics-engine";
-import { previewSwitch, executeSwitch } from "../../lib/plan-switch";
+import {
+  previewSwitch,
+  executeSwitch,
+  provisionEntitlements,
+} from "../../lib/plan-switch";
 import type { ProviderContext } from "../../lib/plan-switch";
 import {
   getProviderRegistry,
@@ -13,6 +17,7 @@ import {
 import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
+import { sendCheckoutEmail } from "../../lib/email";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -45,7 +50,7 @@ const createSubscriptionSchema = z.object({
   customerId: z.string(),
   planId: z.string(),
   status: z
-    .enum(["active", "canceled", "incomplete", "past_due"])
+    .enum(["active", "pending", "canceled", "incomplete", "past_due"])
     .default("active"),
   currentPeriodStart: z.string().optional(), // ISO Date
   currentPeriodEnd: z.string().optional(), // ISO Date
@@ -91,7 +96,10 @@ app.post("/", async (c) => {
 });
 
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
+  const limit = Number(c.req.query("limit")) || 25;
+  const offset = Number(c.req.query("offset")) || 0;
+
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
@@ -109,7 +117,6 @@ app.get("/", async (c) => {
     },
   });
 
-  // console.log(customers)
   const subscriptions = customers.flatMap((cust: any) =>
     cust.subscriptions
       .filter((sub: any) => {
@@ -137,7 +144,9 @@ app.get("/", async (c) => {
     return bCreatedAt - aCreatedAt;
   });
 
-  return c.json({ success: true, data: subscriptions });
+  const total = subscriptions.length;
+  const paged = subscriptions.slice(offset, offset + limit);
+  return c.json({ success: true, data: paged, total });
 });
 
 // =============================================================================
@@ -452,6 +461,7 @@ app.post("/cancel", async (c) => {
 
   const sub = await db.query.subscriptions.findFirst({
     where: eq(schema.subscriptions.id, subscriptionId),
+    with: { plan: true, customer: true },
   });
 
   if (!sub) {
@@ -521,6 +531,33 @@ app.post("/cancel", async (c) => {
         updatedAt: now,
       })
       .where(eq(schema.subscriptions.id, subscriptionId));
+
+    // Trigger workflow for scheduled cancellation with free plan downgrade
+    if (
+      sub.plan?.type !== "free" &&
+      sub.plan?.price !== 0 &&
+      sub.customer &&
+      c.env.CANCEL_DOWNGRADE_WORKFLOW
+    ) {
+      try {
+        const workflow = await c.env.CANCEL_DOWNGRADE_WORKFLOW.create({
+          params: {
+            subscriptionId,
+            customerId: sub.customer.id,
+            organizationId,
+            cancelAt: sub.currentPeriodEnd,
+          },
+        });
+        console.log(
+          `[subscriptions/cancel] Scheduled cancel downgrade workflow ${workflow.id} for sub ${subscriptionId}`,
+        );
+      } catch (e) {
+        console.warn(
+          `[subscriptions/cancel] Failed to schedule cancel downgrade workflow:`,
+          e,
+        );
+      }
+    }
   }
 
   // Invalidate cached subscriptions so /check and /track see the change immediately
@@ -533,13 +570,272 @@ app.post("/cancel", async (c) => {
     }
   }
 
+  // Auto-downgrade to free plan on immediate cancellation (not scheduled)
+  let freeSubId: string | undefined;
+  if (
+    immediate &&
+    sub.plan?.type !== "free" &&
+    sub.plan?.price !== 0 &&
+    sub.customer
+  ) {
+    try {
+      // CRITICAL: Set flag FIRST to prevent race condition with webhook
+      // This ensures any concurrent webhook sees the flag and skips
+      await db
+        .update(schema.subscriptions)
+        .set({
+          metadata: {
+            ...sub.metadata,
+            cancel_downgrade_initiated: true,
+            cancel_downgrade_at: now,
+          },
+          updatedAt: now,
+        })
+        .where(eq(schema.subscriptions.id, subscriptionId));
+
+      // Find organization's free plan
+      const freePlan = await db.query.plans.findFirst({
+        where: and(
+          eq(schema.plans.organizationId, organizationId),
+          eq(schema.plans.type, "free"),
+        ),
+      });
+
+      if (freePlan) {
+        // Check if customer already has an active free plan subscription
+        const existingFreeSub = await db.query.subscriptions.findFirst({
+          where: and(
+            eq(schema.subscriptions.customerId, sub.customer.id),
+            eq(schema.subscriptions.planId, freePlan.id),
+            eq(schema.subscriptions.status, "active"),
+          ),
+        });
+
+        if (existingFreeSub) {
+          // Customer already has active free plan, just provision entitlements
+          await provisionEntitlements(
+            db,
+            sub.customer.id,
+            freePlan.id,
+            sub.planId,
+          );
+          freeSubId = existingFreeSub.id;
+          console.log(
+            `[subscriptions/cancel] Customer ${sub.customer.id} already has free plan, provisioned entitlements only`,
+          );
+        } else {
+          // Create new free subscription
+          const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+          const [freeSub] = await db
+            .insert(schema.subscriptions)
+            .values({
+              id: crypto.randomUUID(),
+              customerId: sub.customer.id,
+              planId: freePlan.id,
+              providerId: sub.providerId,
+              status: "active",
+              currentPeriodStart: now,
+              currentPeriodEnd: now + thirtyDaysMs,
+              metadata: {
+                switched_from: sub.planId,
+                switch_type: "cancel_downgrade",
+                canceled_sub_id: sub.id,
+              },
+            })
+            .returning();
+
+          // Provision free plan entitlements
+          await provisionEntitlements(
+            db,
+            sub.customer.id,
+            freePlan.id,
+            sub.planId,
+          );
+
+          freeSubId = freeSub.id;
+
+          // Invalidate cache again for the new subscription
+          if (c.env.CACHE) {
+            try {
+              const cache = new EntitlementCache(c.env.CACHE);
+              await cache.invalidateSubscriptions(
+                organizationId,
+                sub.customer.id,
+              );
+            } catch (e) {
+              console.warn(
+                "[subscriptions/cancel] Cache invalidation failed:",
+                e,
+              );
+            }
+          }
+        }
+
+        // Set completion flag AFTER successful free plan creation
+        await db
+          .update(schema.subscriptions)
+          .set({
+            metadata: {
+              ...sub.metadata,
+              cancel_downgrade_initiated: true,
+              cancel_downgrade_at: now,
+              cancel_downgrade_complete: true,
+              free_subscription_id: freeSubId,
+            },
+            updatedAt: now,
+          })
+          .where(eq(schema.subscriptions.id, subscriptionId));
+      }
+    } catch (e) {
+      console.warn(
+        "[subscriptions/cancel] Failed to auto-downgrade to free plan:",
+        e,
+      );
+      // Don't fail the cancellation if downgrade fails, but flag was already set
+      // Webhook will see flag and skip, preventing duplicate attempts
+    }
+  }
+
   return c.json({
     success: true,
     data: {
       status: immediate ? "canceled" : "pending_cancel",
       cancelAt: immediate ? now : sub.currentPeriodEnd,
+      freeSubscriptionId: freeSubId,
     },
   });
+});
+// =============================================================================
+// Generate checkout link for a pending subscription
+// =============================================================================
+
+app.post("/:id/checkout", async (c) => {
+  const subscriptionId = c.req.param("id");
+  const db = c.get("db");
+
+  try {
+    // 1. Load the subscription with plan and customer
+    const subscription = await db.query.subscriptions.findFirst({
+      where: eq(schema.subscriptions.id, subscriptionId),
+      with: { plan: true, customer: true },
+    });
+
+    if (!subscription) {
+      return c.json({ success: false, error: "Subscription not found" }, 404);
+    }
+
+    if (subscription.status !== "pending") {
+      return c.json(
+        {
+          success: false,
+          error: `Subscription is ${subscription.status}, not pending`,
+        },
+        400,
+      );
+    }
+
+    const plan = subscription.plan;
+    const customer = subscription.customer;
+
+    if (plan.type === "free" || plan.price === 0) {
+      // Free plans: just activate directly
+      const now = Date.now();
+      await db
+        .update(schema.subscriptions)
+        .set({
+          status: "active",
+          currentPeriodStart: now,
+          currentPeriodEnd: now + 30 * 24 * 60 * 60 * 1000,
+          updatedAt: now,
+        })
+        .where(eq(schema.subscriptions.id, subscriptionId));
+
+      return c.json({
+        success: true,
+        activated: true,
+        message: "Free plan activated directly",
+      });
+    }
+
+    // 3. Generate activation link (our public API GET route)
+    const body = await c.req.json().catch(() => ({}));
+    const callbackUrl = body?.callbackUrl;
+
+    // Use URL from request to build the activation link
+    // We want the PUBLIC API origin here. If the dashboard is at dashboard.owostack.com,
+    // we might need to be smart. But usually the API is at api.owostack.com.
+    const url = new URL(c.req.url);
+    const activationUrl = `${url.origin}/v1/subscriptions/${subscriptionId}/activate${callbackUrl ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`;
+
+    // Simulate sending checkout email:
+    try {
+      await sendCheckoutEmail({
+        to: customer.email,
+        customerName: customer.name || undefined,
+        planName: plan.name,
+        checkoutUrl: activationUrl,
+        amount: plan.price,
+        currency: plan.currency,
+      });
+    } catch (e) {
+      console.warn("Failed to send checkout email:", e);
+    }
+
+    return c.json({
+      success: true,
+      checkoutUrl: activationUrl,
+    });
+  } catch (e: any) {
+    return c.json({ success: false, error: e.message }, 500);
+  }
+});
+
+// =============================================================================
+// Activate a pending subscription directly (for free plans or manual override)
+// =============================================================================
+
+app.post("/:id/activate", async (c) => {
+  const subscriptionId = c.req.param("id");
+  const db = c.get("db");
+
+  try {
+    const subscription = await db.query.subscriptions.findFirst({
+      where: eq(schema.subscriptions.id, subscriptionId),
+      with: { plan: true },
+    });
+
+    if (!subscription) {
+      return c.json({ success: false, error: "Subscription not found" }, 404);
+    }
+
+    if (subscription.status !== "pending") {
+      return c.json(
+        {
+          success: false,
+          error: `Subscription is ${subscription.status}, not pending`,
+        },
+        400,
+      );
+    }
+
+    const now = Date.now();
+    await db
+      .update(schema.subscriptions)
+      .set({
+        status: "active",
+        currentPeriodStart: now,
+        currentPeriodEnd: now + 30 * 24 * 60 * 60 * 1000,
+        updatedAt: now,
+      })
+      .where(eq(schema.subscriptions.id, subscriptionId));
+
+    return c.json({
+      success: true,
+      data: { status: "active" },
+    });
+  } catch (e: any) {
+    return c.json({ success: false, error: e.message }, 500);
+  }
 });
 
 export default app;

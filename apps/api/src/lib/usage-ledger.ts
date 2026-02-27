@@ -274,3 +274,25 @@ export async function usageCountForOrg(
     return null;
   }
 }
+
+export async function usageTimeseriesForOrg(
+  opts: UsageLedgerOptions,
+  createdAtFrom: number,
+  createdAtTo: number,
+  featureId?: string | null,
+  customerId?: string | null,
+): Promise<Array<{
+  date: string;
+  featureId: string;
+  totalUsage: number;
+}> | null> {
+  const stub = getStub(opts);
+  if (!stub) return null;
+
+  try {
+    return await stub.usageTimeseriesForOrg(createdAtFrom, createdAtTo, featureId, customerId);
+  } catch (error) {
+    console.error("[usage-ledger] usageTimeseriesForOrg failed:", error);
+    return null;
+  }
+}

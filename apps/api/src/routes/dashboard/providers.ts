@@ -53,7 +53,7 @@ const providerRuleSchema = z.object({
 });
 
 app.get("/accounts", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ success: false, error: "Organization ID required" }, 400);
   }
@@ -213,7 +213,7 @@ app.post("/accounts", async (c) => {
 });
 
 app.get("/rules", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ success: false, error: "Organization ID required" }, 400);
   }
@@ -343,7 +343,7 @@ app.patch("/accounts/:id", async (c) => {
 
 app.delete("/accounts/:id", async (c) => {
   const id = c.req.param("id");
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
 
   if (!organizationId) {
     return c.json({ success: false, error: "Organization ID required" }, 400);
@@ -427,7 +427,7 @@ app.patch("/rules/:id", async (c) => {
 
 app.delete("/rules/:id", async (c) => {
   const id = c.req.param("id");
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
 
   if (!organizationId) {
     return c.json({ success: false, error: "Organization ID required" }, 400);

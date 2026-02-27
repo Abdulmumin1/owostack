@@ -245,7 +245,102 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
     return;
   }
 
-  // 3. Handle PLAN UPGRADE (checkout-based upgrade flow)
+  // 3. Handle PENDING SUBSCRIPTION ACTIVATION (from dashboard checkout flow)
+  const isPendingActivation =
+    metadata.pending_activation === true ||
+    metadata.pending_activation === "true";
+  if (isPendingActivation && metadata.subscription_id) {
+    const pendingSubId = String(metadata.subscription_id);
+    console.log(
+      `[WEBHOOK] Pending subscription activation: sub=${pendingSubId}, customer=${dbCustomer.id}`,
+    );
+    try {
+      const planId = metadata.plan_id ? String(metadata.plan_id) : null;
+      let periodMs = 30 * 24 * 60 * 60 * 1000;
+
+      if (planId) {
+        const plan = await db.query.plans.findFirst({
+          where: eq(schema.plans.id, planId),
+        });
+        if (plan) {
+          periodMs = intervalToMs(plan.interval);
+        }
+      }
+
+      const startMs = safeParseDate(event.payment?.paidAt) || Date.now();
+      const endMs =
+        safeParseDate(event.subscription?.nextPaymentDate) ||
+        startMs + periodMs;
+
+      await db
+        .update(schema.subscriptions)
+        .set({
+          status: "active",
+          currentPeriodStart: startMs,
+          currentPeriodEnd: endMs,
+          providerId: event.provider,
+          providerSubscriptionId:
+            event.subscription?.providerSubscriptionId ||
+            event.subscription?.providerCode ||
+            event.payment?.reference ||
+            null,
+          providerSubscriptionCode:
+            event.subscription?.providerCode ||
+            event.payment?.reference ||
+            null,
+          paystackSubscriptionId:
+            event.provider === "paystack"
+              ? event.subscription?.providerCode ||
+                event.payment?.reference ||
+                null
+              : null,
+          paystackSubscriptionCode:
+            event.provider === "paystack"
+              ? event.subscription?.providerCode ||
+                event.payment?.reference ||
+                null
+              : null,
+          updatedAt: Date.now(),
+        })
+        .where(eq(schema.subscriptions.id, pendingSubId));
+
+      // Provision entitlements for newly activated subscription
+      if (metadata.plan_id) {
+        await provisionEntitlements(
+          db,
+          dbCustomer.id,
+          String(metadata.plan_id),
+        );
+      }
+
+      // Invalidate cache
+      if (ctx.cache) {
+        try {
+          await ctx.cache.invalidateSubscriptions(
+            ctx.organizationId,
+            dbCustomer.id,
+          );
+        } catch (e) {
+          console.warn(
+            `[WEBHOOK] Cache invalidation failed for pending activation:`,
+            e,
+          );
+        }
+      }
+
+      console.log(
+        `[WEBHOOK] Pending subscription activated: sub=${pendingSubId}`,
+      );
+    } catch (e) {
+      console.error(
+        `[WEBHOOK] Failed to activate pending subscription ${pendingSubId}:`,
+        e,
+      );
+    }
+    return;
+  }
+
+  // 4. Handle PLAN UPGRADE (checkout-based upgrade flow)
   if (metadata.type === "plan_upgrade") {
     await handlePlanUpgrade(ctx, dbCustomer);
     return;
@@ -832,6 +927,7 @@ async function handleSubscriptionPayment(
         status: "active",
         currentPeriodStart: startMs,
         currentPeriodEnd: startMs + periodMs,
+        providerId: (metadata.provider_id as string) || event.provider,
         updatedAt: Date.now(),
       })
       .where(eq(schema.subscriptions.id, existingSub.id));

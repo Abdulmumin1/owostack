@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq, sql, desc, and, gte } from "drizzle-orm";
+import { eq, sql, desc, and, gte, lte } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
 import { convertMrrTotal } from "../../lib/exchange-rates";
@@ -8,6 +8,7 @@ import {
   featureConsumptionForOrg,
   recentUsageForOrg,
   usageCountForOrg,
+  usageTimeseriesForOrg,
 } from "../../lib/usage-ledger";
 
 const USAGE_CACHE_TTL = 60; // seconds
@@ -33,7 +34,7 @@ type CustomerMetaRow = {
 // GET /  — Lightweight summary stats (loaded on page mount)
 // ---------------------------------------------------------------------------
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
@@ -277,10 +278,97 @@ app.get("/", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /timeseries  — Daily usage breakdown for charting
+// ---------------------------------------------------------------------------
+app.get("/timeseries", async (c) => {
+  const organizationId = c.get("organizationId");
+  if (!organizationId) {
+    return c.json({ error: "Organization ID required" }, 400);
+  }
+
+  const days = Math.min(Number(c.req.query("days")) || 30, 90);
+  const featureId = c.req.query("featureId") || null;
+  const customerId = c.req.query("customerId") || null;
+
+  const now = Date.now();
+  const fromTs = now - days * 24 * 60 * 60 * 1000;
+  const fromDate = new Date(fromTs).toISOString().split("T")[0];
+  const toDate = new Date(now).toISOString().split("T")[0];
+
+  const db = c.get("db");
+
+  // Try ledger DO first
+  const ledgerRows = await usageTimeseriesForOrg(
+    { usageLedger: c.env.USAGE_LEDGER, organizationId },
+    fromTs,
+    now,
+    featureId,
+    customerId,
+  );
+
+  let timeseriesData: Array<{ date: string; featureId: string; totalUsage: number }>;
+
+  if (ledgerRows) {
+    timeseriesData = ledgerRows;
+  } else {
+    // Fallback to D1
+    let query = db
+      .select({
+        date: schema.usageDailySummaries.date,
+        featureId: schema.usageDailySummaries.featureId,
+        totalUsage: sql<number>`COALESCE(sum(${schema.usageDailySummaries.amount}), 0)`,
+      })
+      .from(schema.usageDailySummaries)
+      .where(
+        and(
+          eq(schema.usageDailySummaries.organizationId, organizationId),
+          gte(schema.usageDailySummaries.date, fromDate),
+          lte(schema.usageDailySummaries.date, toDate),
+          ...(featureId ? [eq(schema.usageDailySummaries.featureId, featureId)] : []),
+          ...(customerId ? [eq(schema.usageDailySummaries.customerId, customerId)] : []),
+        ),
+      )
+      .groupBy(schema.usageDailySummaries.date, schema.usageDailySummaries.featureId)
+      .orderBy(schema.usageDailySummaries.date);
+
+    timeseriesData = await query;
+  }
+
+  // Enrich with feature names
+  const featureIds = [...new Set(timeseriesData.map((r) => r.featureId))];
+  let featureMeta: Array<{ id: string; name: string; slug: string }> = [];
+  if (featureIds.length > 0) {
+    featureMeta = await db
+      .select({
+        id: schema.features.id,
+        name: schema.features.name,
+        slug: schema.features.slug,
+      })
+      .from(schema.features)
+      .where(
+        and(
+          eq(schema.features.organizationId, organizationId),
+          sql`${schema.features.id} IN (${sql.join(
+            featureIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        ),
+      );
+  }
+
+  return c.json({
+    success: true,
+    data: timeseriesData,
+    features: featureMeta,
+    days,
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /activity  — Paginated recent activity (lazy-loaded by frontend)
 // ---------------------------------------------------------------------------
 app.get("/activity", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }

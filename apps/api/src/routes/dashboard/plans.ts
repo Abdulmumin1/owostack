@@ -297,7 +297,7 @@ app.post("/", async (c) => {
 });
 
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
@@ -307,6 +307,7 @@ app.get("/", async (c) => {
     where: eq(schema.plans.organizationId, organizationId),
     orderBy: [desc(schema.plans.createdAt)],
     with: {
+      subscriptions: true,
       planFeatures: {
         with: {
           feature: true,

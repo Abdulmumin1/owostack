@@ -4,6 +4,7 @@ import { createDb, schema } from "@owostack/db";
 import { eq, and } from "drizzle-orm";
 import { type User } from "better-auth";
 import { auth } from "./lib/auth";
+import { resolveOrganizationId } from "./lib/organization-resolver";
 import { WebhookHandler } from "./lib/webhooks";
 import { WebhookError, errorToResponse } from "./lib/errors";
 import { decrypt } from "./lib/encryption";
@@ -38,6 +39,7 @@ import apiWallet from "./routes/api/wallet";
 import apiPlans from "./routes/api/plans";
 import apiCustomers from "./routes/api/customers";
 import apiCreditSystems from "./routes/api/credit-systems";
+import apiSubscriptions from "./routes/api/subscriptions";
 import cliAuth from "./routes/cli-auth";
 
 // Durable Objects
@@ -50,11 +52,13 @@ import { TrialEndWorkflow } from "./lib/workflows/trial-end";
 import { DowngradeWorkflow } from "./lib/workflows/downgrade";
 import { PlanUpgradeWorkflow } from "./lib/workflows/plan-upgrade";
 import { OverageBillingWorkflow } from "./lib/workflows/overage-billing";
+import { CancelDowngradeWorkflow } from "./lib/workflows/cancel-downgrade";
 export {
   TrialEndWorkflow,
   DowngradeWorkflow,
   PlanUpgradeWorkflow,
   OverageBillingWorkflow,
+  CancelDowngradeWorkflow,
 };
 
 export type Env = {
@@ -68,6 +72,7 @@ export type Env = {
   TRIAL_END_WORKFLOW: Workflow;
   DOWNGRADE_WORKFLOW: Workflow;
   PLAN_UPGRADE_WORKFLOW: Workflow;
+  CANCEL_DOWNGRADE_WORKFLOW: Workflow;
   OVERAGE_BILLING_WORKFLOW: Workflow;
   OVERAGE_BILLING_QUEUE: Queue;
   BETTER_AUTH_SECRET: string;
@@ -82,6 +87,9 @@ export type Env = {
   PAYSTACK_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  DASHBOARD_URL?: string; // URL for redirects (e.g., after OAuth)
 };
 
 export type Variables = {
@@ -110,11 +118,10 @@ app.use(
         "http://localhost:5174",
         "http://localhost:3000",
         "http://localhost:4173",
-        "https://dash.owostack.com",
         "https://app.owostack.com",
         "https://owostack.com",
       ];
-      if (origin) {
+      if (origin && allowedOrigins.includes(origin)) {
         return origin;
       }
       // Fallback for non-browser requests (e.g., Postman)
@@ -148,7 +155,9 @@ app.use("*", async (c, next) => {
     threw = true;
     throw error;
   } finally {
-    const webhookMatch = c.req.path.match(/^\/webhooks\/([^/]+)(?:\/([^/]+))?$/);
+    const webhookMatch = c.req.path.match(
+      /^\/webhooks\/([^/]+)(?:\/([^/]+))?$/,
+    );
     let organizationId: string | null = null;
 
     try {
@@ -157,7 +166,11 @@ app.use("*", async (c, next) => {
       organizationId = null;
     }
 
-    organizationId = organizationId || c.req.query("organizationId") || webhookMatch?.[1] || null;
+    organizationId =
+      organizationId ||
+      c.req.query("organizationId") ||
+      webhookMatch?.[1] ||
+      null;
     const providerId = webhookMatch ? webhookMatch[2] || "paystack" : null;
 
     trackHttpMetric(c.env, {
@@ -200,7 +213,6 @@ dashboardRoutes.use(
         "http://localhost:5174",
         "http://localhost:3000",
         "http://localhost:4173",
-        "https://dash.owostack.com",
         "https://app.owostack.com",
         "https://owostack.com",
       ];
@@ -239,16 +251,25 @@ dashboardRoutes.use("*", async (c, next) => {
       organizationId = body?.organizationId;
     } catch {}
   }
+
   if (organizationId) {
     const db = c.get("db");
     const authDb = c.get("authDb");
+
+    // Resolve organization identifier (could be ID or slug)
+    const resolvedId = await resolveOrganizationId(db, organizationId);
+    const finalOrgId = resolvedId || organizationId;
+
+    // Store resolved ID in context for downstream handlers
+    c.set("organizationId", finalOrgId);
+
     const existing = await db.query.organizations.findFirst({
-      where: eq(schema.organizations.id, organizationId),
+      where: eq(schema.organizations.id, finalOrgId),
       columns: { id: true },
     });
     if (!existing) {
       const org = await authDb.query.organizations.findFirst({
-        where: eq(schema.organizations.id, organizationId),
+        where: eq(schema.organizations.id, finalOrgId),
       });
       if (org) {
         await db.insert(schema.organizations).values(org).onConflictDoNothing();
@@ -292,6 +313,8 @@ const v1Routes = new Hono<{ Bindings: Env; Variables: Variables }>();
 // Mount API modules
 // checkout.ts has `post('/attach')`.
 // entitlements.ts has `post('/check')` and `post('/track')`.
+// IMPORTANT: Mount specific routes BEFORE generic ones (e.g., customers has auth middleware on "*")
+v1Routes.route("/subscriptions", apiSubscriptions); // Public GET /activate must come before customers
 v1Routes.route("/", apiCheckout);
 v1Routes.route("/", apiEntitlements);
 v1Routes.route("/", apiAddon);
@@ -371,7 +394,8 @@ async function handleWebhookRequest(
 
   // 4. Resolve the webhook secret for this provider
   const project = await authDb.query.projects.findFirst({
-    where: (projects, { eq }) => eq(projects.organizationId, organizationId),
+    where: (projects: any, { eq }: any) =>
+      eq(projects.organizationId, organizationId),
   });
 
   if (!project) {
@@ -404,10 +428,9 @@ async function handleWebhookRequest(
       creds.webhookSecret.length > 0
     ) {
       try {
-        secret = (await decrypt(
-          creds.webhookSecret,
-          c.env.ENCRYPTION_KEY,
-        )).trim();
+        secret = (
+          await decrypt(creds.webhookSecret, c.env.ENCRYPTION_KEY)
+        ).trim();
         secretSource = "provider_account_webhook_secret_encrypted";
         secretAccountId = pa.id;
         console.log(

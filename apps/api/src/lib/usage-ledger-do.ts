@@ -480,4 +480,52 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
       .one();
     return Number(row?.count || 0);
   }
+
+  async usageTimeseriesForOrg(
+    createdAtFrom: number,
+    createdAtTo: number,
+    featureId?: string | null,
+    customerId?: string | null,
+  ): Promise<
+    Array<{
+      date: string;
+      featureId: string;
+      totalUsage: number;
+    }>
+  > {
+    this.ensureSchema();
+
+    let sqlText = `
+      SELECT date(created_at / 1000, 'unixepoch') AS day,
+             feature_id,
+             COALESCE(SUM(amount), 0) AS total_usage
+      FROM usage_records
+      WHERE created_at >= ? AND created_at <= ?
+    `;
+    const bindings: Array<string | number | null> = [createdAtFrom, createdAtTo];
+
+    if (featureId) {
+      sqlText += " AND feature_id = ?";
+      bindings.push(featureId);
+    }
+    if (customerId) {
+      sqlText += " AND customer_id = ?";
+      bindings.push(customerId);
+    }
+
+    sqlText += " GROUP BY day, feature_id ORDER BY day ASC";
+
+    const rows = this.ctx.storage.sql
+      .exec<{ day: string; feature_id: string; total_usage: number }>(
+        sqlText,
+        ...bindings,
+      )
+      .toArray();
+
+    return rows.map((row) => ({
+      date: row.day,
+      featureId: row.feature_id,
+      totalUsage: Number(row.total_usage || 0),
+    }));
+  }
 }

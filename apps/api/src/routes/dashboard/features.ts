@@ -49,7 +49,14 @@ app.post("/", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { organizationId, name, type, meterType, unit } = parsed.data;
+  const {
+    organizationId: orgIdFromData,
+    name,
+    type,
+    meterType,
+    unit,
+  } = parsed.data;
+  const organizationId = c.get("organizationId") || orgIdFromData;
   const db = c.get("db");
 
   // Generate slug
@@ -80,7 +87,7 @@ app.post("/", async (c) => {
 });
 
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
@@ -88,7 +95,7 @@ app.get("/", async (c) => {
   const db = c.get("db");
   const features = await db.query.features.findMany({
     where: eq(schema.features.organizationId, organizationId),
-    orderBy: (features, { desc }) => [desc(features.createdAt)],
+    orderBy: (f, { desc }) => [desc(f.createdAt)],
   });
 
   return c.json({ success: true, data: features });

@@ -61,6 +61,7 @@ const syncPlanSchema = z.object({
   interval: z.string(),
   planGroup: z.string().optional(),
   trialDays: z.number().optional(),
+  provider: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   features: z.array(syncPlanFeatureSchema),
 });
@@ -78,6 +79,7 @@ const syncCreditSystemSchema = z.object({
 });
 
 const syncPayloadSchema = z.object({
+  defaultProvider: z.string().optional(),
   features: z.array(syncFeatureSchema),
   creditSystems: z.array(syncCreditSystemSchema).optional(),
   plans: z.array(syncPlanSchema),
@@ -111,6 +113,7 @@ app.post("/", async (c) => {
     features: featureDefs,
     creditSystems: creditSystemDefs,
     plans: planDefs,
+    defaultProvider,
   } = parsed.data;
   const db = c.get("db");
   const organizationId = c.get("organizationId");
@@ -315,6 +318,8 @@ app.post("/", async (c) => {
                 planGroup: planDef.planGroup ?? null,
                 trialDays: planDef.trialDays ?? 0,
                 type: planDef.price === 0 ? "free" : "paid",
+                providerId:
+                  planDef.provider ?? defaultProvider ?? existing.providerId,
                 metadata: planDef.metadata ?? null,
                 source: "sdk",
                 updatedAt: Date.now(),
@@ -342,6 +347,8 @@ app.post("/", async (c) => {
             planGroup: planDef.planGroup ?? null,
             trialDays: planDef.trialDays ?? 0,
             type: planDef.price === 0 ? "free" : "paid",
+            providerId:
+              planDef.provider ?? defaultProvider ?? existing.providerId,
             metadata: planDef.metadata ?? null,
             source: "sdk",
             updatedAt: Date.now(),
@@ -426,6 +433,9 @@ app.post("/", async (c) => {
     } else {
       // Create new plan
       const planId = crypto.randomUUID();
+      // Determine provider: plan.provider overrides defaultProvider
+      const effectiveProvider = planDef.provider ?? defaultProvider ?? null;
+
       await db.insert(schema.plans).values({
         id: planId,
         organizationId,
@@ -438,6 +448,7 @@ app.post("/", async (c) => {
         planGroup: planDef.planGroup ?? null,
         trialDays: planDef.trialDays ?? 0,
         type: planDef.price === 0 ? "free" : "paid",
+        providerId: effectiveProvider,
         metadata: planDef.metadata ?? null,
         source: "sdk",
       });
@@ -495,9 +506,19 @@ async function reconcilePlanFeatures(
     }
 
     const existing = existingByFeatureId.get(feature.id);
+
+    // For boolean features, limit should be null (not 0)
+    const isBoolean = feature.type === "boolean";
+    const limitValue = isBoolean
+      ? null
+      : fd.limit !== undefined
+        ? fd.limit
+        : null;
+    const resetInterval = isBoolean ? null : (fd.reset ?? "monthly");
+
     const values = {
-      limitValue: fd.limit !== undefined ? fd.limit : null,
-      resetInterval: fd.reset ?? "monthly",
+      limitValue,
+      resetInterval,
       overage: fd.overage ?? "block",
       overagePrice: fd.overagePrice ?? null,
       maxOverageUnits: fd.maxOverageUnits ?? null,

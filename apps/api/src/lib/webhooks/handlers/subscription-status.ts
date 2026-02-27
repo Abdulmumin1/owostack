@@ -88,6 +88,7 @@ export function handleSubscriptionStatus(status: string) {
 
     const updates: Record<string, unknown> = {
       status,
+      providerId: event.provider,
       updatedAt: now,
     };
 
@@ -136,6 +137,153 @@ export function handleSubscriptionStatus(status: string) {
         await cache.invalidateSubscriptions(organizationId, sub.customerId);
       } catch (e) {
         console.warn(`[WEBHOOK] Status change cache invalidation failed:`, e);
+      }
+    }
+
+    // Auto-downgrade to free plan on cancellation (immediate)
+    if (status === "canceled") {
+      try {
+        // Guard: Check if dashboard or workflow already processing/has processed
+        // We check BOTH initiated and complete flags to handle race conditions
+        const isAlreadyProcessing =
+          sub.metadata?.cancel_downgrade_initiated === true ||
+          sub.metadata?.cancel_downgrade_complete === true;
+        if (isAlreadyProcessing) {
+          console.log(
+            `[WEBHOOK] Subscription ${sub.id} already has cancel_downgrade flag (initiated=${sub.metadata?.cancel_downgrade_initiated}, complete=${sub.metadata?.cancel_downgrade_complete}), skipping free plan creation`,
+          );
+          return;
+        }
+
+        // CRITICAL: Set initiated flag FIRST to prevent race conditions
+        // This ensures any concurrent dashboard/workflow requests see this flag
+        await db
+          .update(schema.subscriptions)
+          .set({
+            metadata: {
+              ...sub.metadata,
+              cancel_downgrade_initiated: true,
+              cancel_downgrade_at: now,
+            },
+            updatedAt: now,
+          })
+          .where(eq(schema.subscriptions.id, sub.id));
+
+        // Fetch the full subscription details with plan and customer
+        const canceledSub = await db.query.subscriptions.findFirst({
+          where: eq(schema.subscriptions.id, sub.id),
+          with: { plan: true, customer: true },
+        });
+
+        if (
+          canceledSub?.plan?.type !== "free" &&
+          canceledSub?.plan?.price !== 0 &&
+          canceledSub?.customer
+        ) {
+          // Find organization's free plan
+          const freePlan = await db.query.plans.findFirst({
+            where: and(
+              eq(schema.plans.organizationId, organizationId),
+              eq(schema.plans.type, "free"),
+            ),
+          });
+
+          if (freePlan) {
+            // Check if customer already has an active free plan subscription
+            const existingFreeSub = await db.query.subscriptions.findFirst({
+              where: and(
+                eq(schema.subscriptions.customerId, canceledSub.customer.id),
+                eq(schema.subscriptions.planId, freePlan.id),
+                eq(schema.subscriptions.status, "active"),
+              ),
+            });
+
+            let freeSubId: string | undefined;
+
+            if (existingFreeSub) {
+              // Customer already has active free plan, just provision entitlements
+              await provisionEntitlements(
+                db,
+                canceledSub.customer.id,
+                freePlan.id,
+                canceledSub.planId,
+              );
+              freeSubId = existingFreeSub.id;
+              console.log(
+                `[WEBHOOK] Customer ${canceledSub.customer.id} already has free plan ${freePlan.id}, provisioned entitlements only`,
+              );
+            } else {
+              // Create new free subscription
+              const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+              const [freeSub] = await db
+                .insert(schema.subscriptions)
+                .values({
+                  id: crypto.randomUUID(),
+                  customerId: canceledSub.customer.id,
+                  planId: freePlan.id,
+                  providerId: canceledSub.providerId,
+                  status: "active",
+                  currentPeriodStart: now,
+                  currentPeriodEnd: now + thirtyDaysMs,
+                  metadata: {
+                    switched_from: canceledSub.planId,
+                    switch_type: "webhook_cancel_downgrade",
+                    canceled_sub_id: canceledSub.id,
+                  },
+                })
+                .returning();
+
+              // Provision free plan entitlements
+              await provisionEntitlements(
+                db,
+                canceledSub.customer.id,
+                freePlan.id,
+                canceledSub.planId,
+              );
+
+              freeSubId = freeSub.id;
+              console.log(
+                `[WEBHOOK] Auto-downgraded customer ${canceledSub.customer.id} to free plan ${freePlan.id}, new sub=${freeSub.id}`,
+              );
+            }
+
+            // Mark the canceled subscription as complete with free sub ID
+            // We use sub.id (from outer scope) which is the definitive subscription ID
+            await db
+              .update(schema.subscriptions)
+              .set({
+                metadata: {
+                  ...sub.metadata,
+                  cancel_downgrade_initiated: true,
+                  cancel_downgrade_at: now,
+                  cancel_downgrade_complete: true,
+                  free_subscription_id: freeSubId,
+                },
+                updatedAt: now,
+              })
+              .where(eq(schema.subscriptions.id, sub.id));
+
+            // Invalidate cache again for the new subscription
+            if (cache) {
+              try {
+                await cache.invalidateSubscriptions(
+                  organizationId,
+                  canceledSub.customer.id,
+                );
+              } catch (e) {
+                console.warn(
+                  `[WEBHOOK] Free plan cache invalidation failed:`,
+                  e,
+                );
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(
+          `[WEBHOOK] Failed to auto-downgrade to free plan after cancellation:`,
+          e,
+        );
       }
     }
   };

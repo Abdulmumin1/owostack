@@ -17,7 +17,7 @@ function clampInt(
 }
 
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }
@@ -46,12 +46,19 @@ app.get("/", async (c) => {
     );
   }
 
-  return c.json({ success: true, data: result.data });
+  // Note: Analytics doesn't provide total count easily without a separate COUNT query
+  // For now, we return the data length as total (won't show proper pagination if there are more pages)
+  // TODO: Implement COUNT query for accurate pagination
+  return c.json({
+    success: true,
+    data: result.data,
+    total: result.data.length,
+  });
 });
 
 app.get("/:id", async (c) => {
   const id = c.req.param("id");
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
 
   const result = await getEventById(c.env, id, organizationId);
 

@@ -9,7 +9,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 // Export catalog — returns all org catalog data as JSON
 // =============================================================================
 app.get("/export", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ success: false, error: "Organization ID required" }, 400);
   }

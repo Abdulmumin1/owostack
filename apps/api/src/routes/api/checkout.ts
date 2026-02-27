@@ -272,11 +272,12 @@ app.post("/attach", async (c) => {
           or(
             eq(schema.subscriptions.status, "active"),
             eq(schema.subscriptions.status, "trialing"),
+            eq(schema.subscriptions.status, "pending"),
           ),
         ),
       });
 
-      if (existingSub) {
+      if (existingSub && existingSub.status !== "pending") {
         console.log(
           `[TRIAL] Existing subscription found: ${existingSub.id}, skipping trial creation`,
         );
@@ -301,30 +302,53 @@ app.post("/attach", async (c) => {
         `[TRIAL] Creating no-card trial: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}, endsAt=${new Date(trialEndMs).toISOString()}`,
       );
 
-      const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
-      const [subscription] = await db
-        .insert(schema.subscriptions)
-        .values({
-          id: crypto.randomUUID(),
-          customerId: customerRecord.id,
-          planId: plan.id,
-          providerId: selectedProviderId,
-          providerSubscriptionId: trialCode,
-          providerSubscriptionCode: trialCode,
-          paystackSubscriptionCode:
-            selectedProviderId === "paystack" ? trialCode : null,
-          status: "trialing",
-          currentPeriodStart: now,
-          currentPeriodEnd: trialEndMs,
-          metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
-        })
-        .returning();
+      let subscriptionId;
+
+      if (existingSub && existingSub.status === "pending") {
+        subscriptionId = existingSub.id;
+        const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
+        await db
+          .update(schema.subscriptions)
+          .set({
+            providerId: selectedProviderId,
+            providerSubscriptionId: trialCode,
+            providerSubscriptionCode: trialCode,
+            paystackSubscriptionCode:
+              selectedProviderId === "paystack" ? trialCode : null,
+            status: "trialing",
+            currentPeriodStart: now,
+            currentPeriodEnd: trialEndMs,
+            metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
+            updatedAt: now,
+          })
+          .where(eq(schema.subscriptions.id, existingSub.id));
+      } else {
+        const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
+        const [subscription] = await db
+          .insert(schema.subscriptions)
+          .values({
+            id: crypto.randomUUID(),
+            customerId: customerRecord.id,
+            planId: plan.id,
+            providerId: selectedProviderId,
+            providerSubscriptionId: trialCode,
+            providerSubscriptionCode: trialCode,
+            paystackSubscriptionCode:
+              selectedProviderId === "paystack" ? trialCode : null,
+            status: "trialing",
+            currentPeriodStart: now,
+            currentPeriodEnd: trialEndMs,
+            metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
+          })
+          .returning();
+        subscriptionId = subscription.id;
+      }
 
       // Dispatch trial-end workflow (sleeps until trial ends, then expires)
       try {
         await c.env.TRIAL_END_WORKFLOW.create({
           params: {
-            subscriptionId: subscription.id,
+            subscriptionId: subscriptionId,
             customerId: customerRecord.id,
             planId: plan.id,
             organizationId: keyRecord.organizationId,
@@ -338,11 +362,11 @@ app.post("/attach", async (c) => {
           },
         });
         console.log(
-          `[TRIAL] Trial end workflow dispatched: subscription=${subscription.id}, trialEnds=${new Date(trialEndMs).toISOString()}`,
+          `[TRIAL] Trial end workflow dispatched: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
         );
       } catch (wfErr) {
         console.error(
-          `[TRIAL] Failed to dispatch trial end workflow for subscription=${subscription.id}:`,
+          `[TRIAL] Failed to dispatch trial end workflow for subscription=${subscriptionId}:`,
           wfErr,
         );
       }
@@ -351,7 +375,7 @@ app.post("/attach", async (c) => {
       await provisionEntitlements(db, customerRecord.id, plan.id);
 
       console.log(
-        `[TRIAL] No-card trial activated: subscription=${subscription.id}, trialEnds=${new Date(trialEndMs).toISOString()}`,
+        `[TRIAL] No-card trial activated: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
       );
       return c.json({
         success: true,
@@ -360,7 +384,7 @@ app.post("/attach", async (c) => {
           trialUnit === "minutes"
             ? `${trialDays}-minute trial activated`
             : `${trialDays}-day trial activated`,
-        subscription_id: subscription.id,
+        subscription_id: subscriptionId,
         customer_id: customerRecord.id,
         trial_ends_at: new Date(trialEndMs).toISOString(),
       });
@@ -429,28 +453,60 @@ app.post("/attach", async (c) => {
             : now + trialDays * 24 * 60 * 60 * 1000;
 
         const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
-        const [subscription] = await db
-          .insert(schema.subscriptions)
-          .values({
-            id: crypto.randomUUID(),
-            customerId: customerRecord.id,
-            planId: plan.id,
-            providerId: selectedProviderId,
-            providerSubscriptionId: trialCode,
-            providerSubscriptionCode: trialCode,
-            paystackSubscriptionCode:
-              selectedProviderId === "paystack" ? trialCode : null,
-            status: "trialing",
-            currentPeriodStart: now,
-            currentPeriodEnd: trialEndMs,
-            metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
-          })
-          .returning();
+
+        // Find existing pending sub if it exists to prevent duplicates
+        const existingPendingSub = await db.query.subscriptions.findFirst({
+          where: and(
+            eq(schema.subscriptions.customerId, customerRecord.id),
+            eq(schema.subscriptions.planId, plan.id),
+            eq(schema.subscriptions.status, "pending"),
+          ),
+        });
+
+        let subscriptionId;
+
+        if (existingPendingSub) {
+          subscriptionId = existingPendingSub.id;
+          await db
+            .update(schema.subscriptions)
+            .set({
+              providerId: selectedProviderId,
+              providerSubscriptionId: trialCode,
+              providerSubscriptionCode: trialCode,
+              paystackSubscriptionCode:
+                selectedProviderId === "paystack" ? trialCode : null,
+              status: "trialing",
+              currentPeriodStart: now,
+              currentPeriodEnd: trialEndMs,
+              metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
+              updatedAt: now,
+            })
+            .where(eq(schema.subscriptions.id, existingPendingSub.id));
+        } else {
+          const [subscription] = await db
+            .insert(schema.subscriptions)
+            .values({
+              id: crypto.randomUUID(),
+              customerId: customerRecord.id,
+              planId: plan.id,
+              providerId: selectedProviderId,
+              providerSubscriptionId: trialCode,
+              providerSubscriptionCode: trialCode,
+              paystackSubscriptionCode:
+                selectedProviderId === "paystack" ? trialCode : null,
+              status: "trialing",
+              currentPeriodStart: now,
+              currentPeriodEnd: trialEndMs,
+              metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
+            })
+            .returning();
+          subscriptionId = subscription.id;
+        }
 
         try {
           await c.env.TRIAL_END_WORKFLOW.create({
             params: {
-              subscriptionId: subscription.id,
+              subscriptionId: subscriptionId,
               customerId: customerRecord.id,
               planId: plan.id,
               organizationId: keyRecord.organizationId,
@@ -480,7 +536,7 @@ app.post("/attach", async (c) => {
             trialUnit === "minutes"
               ? `${trialDays}-minute trial activated`
               : `${trialDays}-day trial activated`,
-          subscription_id: subscription.id,
+          subscription_id: subscriptionId,
           customer_id: customerRecord.id,
           trial_ends_at: new Date(trialEndMs).toISOString(),
         });

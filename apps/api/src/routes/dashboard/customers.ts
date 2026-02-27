@@ -35,7 +35,13 @@ app.post("/", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { organizationId, email, name, externalId } = parsed.data;
+  const {
+    organizationId: orgIdFromData,
+    email,
+    name,
+    externalId,
+  } = parsed.data;
+  const organizationId = c.get("organizationId") || orgIdFromData;
   const db = c.get("db");
 
   try {
@@ -50,6 +56,34 @@ app.post("/", async (c) => {
       })
       .returning();
 
+    // Auto-subscribe customer to all auto-enabled plans
+    const autoEnablePlans = await db.query.plans.findMany({
+      where: and(
+        eq(schema.plans.organizationId, organizationId),
+        eq(schema.plans.autoEnable, true),
+        eq(schema.plans.isActive, true),
+      ),
+    });
+
+    if (autoEnablePlans.length > 0) {
+      const now = Date.now();
+      const thirtyDaysFromNow = now + 30 * 24 * 60 * 60 * 1000;
+
+      for (const plan of autoEnablePlans) {
+        // Free plans → active immediately; Paid plans → pending (awaits payment)
+        const subscriptionStatus = plan.type === "free" ? "active" : "pending";
+
+        await db.insert(schema.subscriptions).values({
+          id: crypto.randomUUID(),
+          customerId: customer.id,
+          planId: plan.id,
+          status: subscriptionStatus,
+          currentPeriodStart: now,
+          currentPeriodEnd: thirtyDaysFromNow,
+        });
+      }
+    }
+
     return c.json({ success: true, data: customer });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
@@ -57,7 +91,7 @@ app.post("/", async (c) => {
 });
 
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
   }

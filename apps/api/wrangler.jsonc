@@ -135,7 +135,7 @@
       "vars": {
         "ENVIRONMENT": "test",
         "ANALYTICS_DATASET": "owostack_api_test",
-        "BETTER_AUTH_URL": "https://api-test.owostack.com",
+        "BETTER_AUTH_URL": "https://sandbox.owostack.com",
       },
       "d1_databases": [
         {

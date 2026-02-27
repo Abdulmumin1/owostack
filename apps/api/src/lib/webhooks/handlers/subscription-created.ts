@@ -5,13 +5,17 @@ import { upsertPaymentMethod } from "../../payment-methods";
 import type { WebhookContext } from "../types";
 import { safeParseDate } from "../types";
 
-export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<void> {
+export async function handleSubscriptionCreated(
+  ctx: WebhookContext,
+): Promise<void> {
   const { db, organizationId, event } = ctx;
   const providerCode = event.subscription?.providerCode;
   const planCode = event.plan?.providerPlanCode;
 
   if (!event.customer.email) {
-    console.warn(`[WEBHOOK] subscription.created/active with no customer email — skipping. provider=${event.provider}`);
+    console.warn(
+      `[WEBHOOK] subscription.created/active with no customer email — skipping. provider=${event.provider}`,
+    );
     return;
   }
 
@@ -33,7 +37,10 @@ export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<vo
         email,
         providerId: event.provider,
         providerCustomerId: event.customer.providerCustomerId,
-        paystackCustomerId: event.provider === "paystack" ? event.customer.providerCustomerId : null,
+        paystackCustomerId:
+          event.provider === "paystack"
+            ? event.customer.providerCustomerId
+            : null,
       })
       .returning();
     dbCustomer = newCustomer;
@@ -65,12 +72,17 @@ export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<vo
         ]);
       }
     } catch (e) {
-      console.warn(`[WEBHOOK] subscription.created customer cache invalidation failed:`, e);
+      console.warn(
+        `[WEBHOOK] subscription.created customer cache invalidation failed:`,
+        e,
+      );
     }
   }
 
   if (!planCode) {
-    console.warn(`[WEBHOOK] subscription.created without plan code for org ${organizationId}`);
+    console.warn(
+      `[WEBHOOK] subscription.created without plan code for org ${organizationId}`,
+    );
     // Try to link the subscription code to an existing active sub for this customer
     if (providerCode) {
       const existingSubForCustomer = await db.query.subscriptions.findFirst({
@@ -85,8 +97,15 @@ export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<vo
           .set({
             providerSubscriptionId: providerCode,
             providerSubscriptionCode: providerCode,
-            paystackSubscriptionId: event.provider === "paystack" ? providerCode : existingSubForCustomer.paystackSubscriptionId,
-            paystackSubscriptionCode: event.provider === "paystack" ? providerCode : existingSubForCustomer.paystackSubscriptionCode,
+            paystackSubscriptionId:
+              event.provider === "paystack"
+                ? providerCode
+                : existingSubForCustomer.paystackSubscriptionId,
+            paystackSubscriptionCode:
+              event.provider === "paystack"
+                ? providerCode
+                : existingSubForCustomer.paystackSubscriptionCode,
+            providerId: event.provider,
             updatedAt: Date.now(),
           })
           .where(eq(schema.subscriptions.id, existingSubForCustomer.id));
@@ -120,13 +139,22 @@ export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<vo
           .set({
             providerSubscriptionId: providerCode,
             providerSubscriptionCode: providerCode,
-            paystackSubscriptionId: event.provider === "paystack" ? providerCode : existingSubForCustomer.paystackSubscriptionId,
-            paystackSubscriptionCode: event.provider === "paystack" ? providerCode : existingSubForCustomer.paystackSubscriptionCode,
+            paystackSubscriptionId:
+              event.provider === "paystack"
+                ? providerCode
+                : existingSubForCustomer.paystackSubscriptionId,
+            paystackSubscriptionCode:
+              event.provider === "paystack"
+                ? providerCode
+                : existingSubForCustomer.paystackSubscriptionCode,
+            providerId: event.provider,
             updatedAt: Date.now(),
           })
           .where(eq(schema.subscriptions.id, existingSubForCustomer.id));
       } else {
-        console.warn(`Plan ${planCode} not found in org ${organizationId}, no existing sub to link`);
+        console.warn(
+          `Plan ${planCode} not found in org ${organizationId}, no existing sub to link`,
+        );
       }
     }
     return;
@@ -155,28 +183,60 @@ export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<vo
         or(
           eq(schema.subscriptions.status, "trialing"),
           eq(schema.subscriptions.status, "active"),
+          eq(schema.subscriptions.status, "pending"),
         ),
       ),
     });
 
     if (existingByPlan) {
+      const isActivatingPending = existingByPlan.status === "pending";
+
+      const now = Date.now();
+      const periodStart = safeParseDate(event.subscription?.startDate) || now;
+      const periodEnd =
+        safeParseDate(event.subscription?.nextPaymentDate) ||
+        periodStart + 30 * 24 * 60 * 60 * 1000;
+
       await db
         .update(schema.subscriptions)
         .set({
+          status: isActivatingPending ? "active" : undefined,
+          currentPeriodStart: isActivatingPending ? periodStart : undefined,
+          currentPeriodEnd: isActivatingPending ? periodEnd : undefined,
           providerSubscriptionId: providerCode,
           providerSubscriptionCode: providerCode,
-          paystackSubscriptionCode: event.provider === "paystack" ? providerCode : existingByPlan.paystackSubscriptionCode,
+          paystackSubscriptionCode:
+            event.provider === "paystack"
+              ? providerCode
+              : existingByPlan.paystackSubscriptionCode,
+          providerId: event.provider,
           updatedAt: Date.now(),
         })
         .where(eq(schema.subscriptions.id, existingByPlan.id));
-      console.log(`[WEBHOOK] subscription.created linked to existing sub ${existingByPlan.id} (was ${existingByPlan.status})`);
+
+      if (isActivatingPending) {
+        await provisionEntitlements(db, dbCustomer.id, dbPlan.id);
+        if (ctx.cache) {
+          try {
+            await ctx.cache.invalidateSubscriptions(
+              organizationId,
+              dbCustomer.id,
+            );
+          } catch (e) {}
+        }
+      }
+
+      console.log(
+        `[WEBHOOK] subscription.created linked to existing sub ${existingByPlan.id} (was ${existingByPlan.status})`,
+      );
       return;
     }
   }
 
   const now = Date.now();
   const periodStart = safeParseDate(event.subscription?.startDate) || now;
-  const periodEnd = safeParseDate(event.subscription?.nextPaymentDate) ||
+  const periodEnd =
+    safeParseDate(event.subscription?.nextPaymentDate) ||
     periodStart + 30 * 24 * 60 * 60 * 1000;
 
   const fallbackCode = providerCode || crypto.randomUUID();
@@ -188,8 +248,10 @@ export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<vo
       providerId: event.provider,
       providerSubscriptionId: fallbackCode,
       providerSubscriptionCode: fallbackCode,
-      paystackSubscriptionId: event.provider === "paystack" ? providerCode : null,
-      paystackSubscriptionCode: event.provider === "paystack" ? providerCode : null,
+      paystackSubscriptionId:
+        event.provider === "paystack" ? providerCode : null,
+      paystackSubscriptionCode:
+        event.provider === "paystack" ? providerCode : null,
       status: "active",
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
@@ -213,7 +275,9 @@ export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<vo
         type: "provider_managed",
       });
     } catch (pmErr) {
-      console.warn(`[WEBHOOK] Failed to upsert provider_managed payment method: ${pmErr}`);
+      console.warn(
+        `[WEBHOOK] Failed to upsert provider_managed payment method: ${pmErr}`,
+      );
     }
   }
 
@@ -222,7 +286,10 @@ export async function handleSubscriptionCreated(ctx: WebhookContext): Promise<vo
     try {
       await ctx.cache.invalidateSubscriptions(organizationId, dbCustomer.id);
     } catch (e) {
-      console.warn(`[WEBHOOK] subscription.created cache invalidation failed:`, e);
+      console.warn(
+        `[WEBHOOK] subscription.created cache invalidation failed:`,
+        e,
+      );
     }
   }
 }

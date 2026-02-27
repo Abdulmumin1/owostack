@@ -101,7 +101,7 @@ async function getCustomerEvents(env: Env, customerId: string) {
 // List all transactions (subscriptions + add-ons + invoices)
 // =============================================================================
 app.get("/", async (c) => {
-  const organizationId = c.req.query("organizationId");
+  const organizationId = c.get("organizationId");
   const limit = Number(c.req.query("limit")) || 20;
   const offset = Number(c.req.query("offset")) || 0;
 
@@ -287,8 +287,9 @@ app.get("/", async (c) => {
     ...invoiceTransactions,
   ].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
+  const total = combined.length;
   const paged = combined.slice(offset, offset + limit);
-  return c.json({ success: true, data: paged });
+  return c.json({ success: true, data: paged, total });
 });
 
 // =============================================================================
