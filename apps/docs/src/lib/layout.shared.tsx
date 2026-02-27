@@ -14,7 +14,7 @@ export function baseOptions(): Omit<DocsLayoutProps, "tree"> {
       transparentMode: "top",
     },
     sidebar: {
-      collapsible: false,
+      collapsible: true,
       tabs: [
         {
           title: "Core",

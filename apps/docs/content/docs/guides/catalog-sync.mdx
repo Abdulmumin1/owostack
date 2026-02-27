@@ -130,6 +130,25 @@ const { allowed } = await analytics.check("user_123");
 - **Tags resources** with `source: "sdk"` so the dashboard knows they're code-managed
 - **Idempotent** — running sync multiple times with the same config is safe
 
+## Conflict resolution
+
+Every feature and plan has a `source` field (`"dashboard"` or `"sdk"`). Sync follows a **code-wins** policy for resources it manages:
+
+| Scenario | What happens |
+|----------|-------------|
+| Feature exists only in code | Created on sync |
+| Feature exists only in dashboard | Untouched |
+| Feature exists in both, code changed | Code version wins |
+| Feature removed from code but exists in API | Nothing — resource stays |
+
+The dashboard shows a **"Managed by SDK"** badge for code-managed resources.
+
+## Recommended workflows
+
+**Small teams:** Use the catalog for everything. Define features and plans in code, sync on deploy. Dashboard is read-only for verification.
+
+**Larger teams:** Use the catalog for core features and plans. Let product managers create experimental plans in the dashboard. The two don't interfere.
+
 <Callout type="info">
   Resources created in the dashboard remain untouched by sync. Code-managed and dashboard-managed resources coexist safely.
 </Callout>

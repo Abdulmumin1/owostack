@@ -128,6 +128,27 @@ apiCalls.limit(10000, {
 
 With `overage: "charge"`, `track()` continues to accept usage beyond the limit and returns `code: "tracked_overage"`. The overage amount is billed at the end of the period.
 
+## Reset intervals
+
+How often the usage counter resets:
+
+- `monthly` — resets on the subscription billing cycle anchor
+- `weekly` — resets every week
+- `daily` — resets every day
+- `never` — usage accumulates indefinitely (good for lifetime limits)
+
+## Rollover
+
+Allow unused usage to carry over to the next period:
+
+```ts
+apiCalls.limit(10000, {
+  reset: "monthly",
+  rollover: true,
+  maxRollover: 20000, // cap at 2x monthly limit
+});
+```
+
 ## Show usage in your UI
 
 Use `check()` to display a usage bar or remaining count:

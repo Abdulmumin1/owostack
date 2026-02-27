@@ -1,12 +1,12 @@
 ---
-title: Sell credit packs
+title: Addon Packs
 description: Let customers purchase prepaid credit top-ups
 icon: Coins
 ---
 
-# How to sell credit packs
+# Addon Packs
 
-This guide shows how to create credit packs that customers can buy to top up a prepaid balance, then consume those credits through usage tracking.
+Credit packs are one-time purchasable bundles that top up a prepaid balance. Instead of simple counters (1 API call = 1 unit), you abstract usage into **credits** — customers buy credit packs (e.g. $10 for 1,000 credits) and features consume credits at different rates. This guide shows how to set them up and sell them.
 
 ## Set up a credit system
 
@@ -104,13 +104,30 @@ await owo.track({
 });
 ```
 
-For features with variable cost, multiply:
+## Variable credit costs
+
+Different features can consume credits at different rates within the same credit system:
 
 ```ts
-// GPT-4 costs 20 credits per call
+const gpt4 = metered("gpt-4");
+const dallE = metered("dall-e");
+
+const aiCredits = creditSystem("ai-credits", {
+  name: "AI Credits",
+  features: [
+    gpt4(20),  // 1 GPT-4 call costs 20 credits
+    dallE(50), // 1 DALL-E generation costs 50 credits
+  ],
+});
+```
+
+When you `track()` a feature in a credit system, Owostack deducts the calculated amount automatically:
+
+```ts
 await owo.track({
   customer: "user_123",
-  feature: "gpt-4-calls"
+  feature: "gpt-4",
 });
+// Deducts 20 credits from the "ai-credits" balance
 ```
 
