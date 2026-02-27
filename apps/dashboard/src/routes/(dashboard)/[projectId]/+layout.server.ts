@@ -47,7 +47,7 @@ export const load: LayoutServerLoad = async ({
 
     if (!orgsResponse.ok) {
       console.error(
-        "[Layout Server] Failed to fetch organizations:",
+        "[Layout Server] Failed to fetch organizations: " + PUBLIC_API_URL_LIVE + " " + PUBLIC_API_URL_TEST,
         await orgsResponse.text(),
       );
       throw error(500, "Failed to fetch organizations");
