@@ -1,0 +1,31 @@
+{
+  "fields": [
+    { "name": "_table", "type": "string", "required": true },
+    { "name": "timestamp", "type": "string", "required": true },
+    { "name": "environment", "type": "string", "required": true },
+    { "name": "method", "type": "string", "required": false },
+    { "name": "path", "type": "string", "required": false },
+    { "name": "status", "type": "int64", "required": false },
+    { "name": "status_bucket", "type": "string", "required": false },
+    { "name": "duration_ms", "type": "int64", "required": false },
+    { "name": "event", "type": "string", "required": false },
+    { "name": "outcome", "type": "string", "required": false },
+    { "name": "event_id", "type": "string", "required": false },
+    { "name": "event_type", "type": "string", "required": false },
+    { "name": "customer_id", "type": "string", "required": false },
+    { "name": "customer_email", "type": "string", "required": false },
+    { "name": "feature_id", "type": "string", "required": false },
+    { "name": "organization_id", "type": "string", "required": false },
+    { "name": "provider_id", "type": "string", "required": false },
+    { "name": "currency", "type": "string", "required": false },
+    { "name": "value", "type": "float64", "required": false },
+    { "name": "amount", "type": "float64", "required": false },
+    { "name": "period_start", "type": "int64", "required": false },
+    { "name": "period_end", "type": "int64", "required": false },
+    { "name": "entity_id", "type": "string", "required": false },
+    { "name": "invoice_id", "type": "string", "required": false },
+    { "name": "processed", "type": "bool", "required": false },
+    { "name": "payload", "type": "string", "required": false },
+    { "name": "created_at", "type": "int64", "required": false }
+  ]
+}

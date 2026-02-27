@@ -78,7 +78,15 @@ describe("Webhooks API", () => {
   const secret = "wh_secret";
   const orgId = "org-123";
 
-  const mockEnv = {
+  const mockEnv: {
+    DB: Record<string, unknown>;
+    API_KEYS: typeof mockKv;
+    PAYSTACK_SECRET_KEY: string;
+    PAYSTACK_WEBHOOK_SECRET: string;
+    BETTER_AUTH_SECRET: string;
+    BETTER_AUTH_URL: string;
+    ENCRYPTION_KEY: string;
+  } = {
     DB: {},
     API_KEYS: mockKv,
     PAYSTACK_SECRET_KEY: "sk_test",
@@ -101,11 +109,11 @@ describe("Webhooks API", () => {
         body: JSON.stringify({ event: "test" }),
         headers: { "Content-Type": "application/json" },
       },
-      mockEnv as any,
+      mockEnv,
     );
 
     expect(res.status).toBe(401);
-    const json = (await res.json()) as any;
+    const json = (await res.json()) as { error: { code: string } };
     expect(json.error.code).toBe("WebhookError");
   });
 
@@ -122,11 +130,11 @@ describe("Webhooks API", () => {
           "x-paystack-signature": "some_signature",
         },
       },
-      mockEnv as any,
+      mockEnv,
     );
 
     expect(res.status).toBe(404);
-    const json = (await res.json()) as any;
+    const json = (await res.json()) as { error: string };
     expect(json.error).toContain("not found");
   });
 
@@ -149,7 +157,7 @@ describe("Webhooks API", () => {
           "x-paystack-signature": "invalid_signature",
         },
       },
-      mockEnv as any,
+      mockEnv,
     );
 
     expect(res.status).toBe(401);
@@ -177,11 +185,11 @@ describe("Webhooks API", () => {
           "x-paystack-signature": signature,
         },
       },
-      mockEnv as any,
+      mockEnv,
     );
 
     expect(res.status).toBe(200);
-    const json = (await res.json()) as any;
+    const json = (await res.json()) as { success: boolean; received: boolean };
     expect(json.success).toBe(true);
     expect(json.received).toBe(true);
   });
@@ -212,7 +220,7 @@ describe("Webhooks API", () => {
           "x-paystack-signature": signature,
         },
       },
-      mockEnv as any,
+      mockEnv,
     );
 
     expect(res.status).toBe(200);

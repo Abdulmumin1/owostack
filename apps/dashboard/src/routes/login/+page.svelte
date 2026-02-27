@@ -78,15 +78,17 @@
   <title>Login - Owostack</title>
 </svelte:head>
 
-<div class="min-h-screen flex bg-bg-primary">
+<div class="h-screen flex bg-bg-primary">
   <!-- Left Side: Live Pulse Dashboard -->
   <div
-    class="hidden lg:flex lg:w-1/2 bg-bg-secondary border-r border-border flex-col justify-between relative overflow-hidden"
+    class="hidden  lg:flex lg:w-1/2 bg-bg-secondary border-r border-border flex-col justify-between relative overflow-hidden"
   >
-    <div class="flex-1 flex flex-col justify-center items-center relative z-10">
+    <div class="flex-1 flex flex-col justify-center items-center relative z-10 overflow-hidden">
       <img
-        src="https://mac-file.yaqeen.me/294121C8-Generated%20Image%20February%2026%2C%202026%20-%206_23PM.png"
+        src="https://mac-file.yaqeen.me/87C9A6BB-3D4410F0-72E6-46B0-9B54-142A675819EE_1_201_a.jpeg"
         alt=""
+        width="100%"
+        height="100%"
       />
     </div>
 

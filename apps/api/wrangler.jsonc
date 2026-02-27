@@ -36,11 +36,20 @@
     },
   ],
 
-  // Cloudflare Workers Analytics Engine (optional but recommended)
+  // Cloudflare Workers Analytics Engine (legacy — will be replaced by Pipelines)
   "analytics_engine_datasets": [
     {
       "binding": "ANALYTICS",
       "dataset": "owostack_api_dev",
+    },
+  ],
+
+  // Cloudflare Data Platform — Pipelines
+  // Analytics layer auto-switches from AE to Pipelines when this is enabled.
+  "pipelines": [
+    {
+      "binding": "EVENTS_PIPELINE",
+      "pipeline": "cfe7efb446fb450c8ad07179e9e3a696",
     },
   ],
 
@@ -137,6 +146,13 @@
         "ANALYTICS_DATASET": "owostack_api_test",
         "BETTER_AUTH_URL": "https://sandbox.owostack.com",
       },
+
+      "routes": [
+        {
+          "pattern": "sandbox.owostack.com",
+          "custom_domain": true,
+        },
+      ],
       "d1_databases": [
         {
           "binding": "DB",
@@ -159,6 +175,7 @@
       "analytics_engine_datasets": [
         { "binding": "ANALYTICS", "dataset": "owostack_api_test" },
       ],
+
       "queues": {
         "producers": [
           {
@@ -175,6 +192,43 @@
           },
         ],
       },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "USAGE_METER",
+            "class_name": "UsageMeterDO",
+          },
+          {
+            "name": "USAGE_LEDGER",
+            "class_name": "UsageLedgerDO",
+          },
+        ],
+      },
+      "workflows": [
+        {
+          "name": "trial-end-workflow",
+          "binding": "TRIAL_END_WORKFLOW",
+          "class_name": "TrialEndWorkflow",
+        },
+        {
+          "name": "downgrade-workflow",
+          "binding": "DOWNGRADE_WORKFLOW",
+          "class_name": "DowngradeWorkflow",
+        },
+        {
+          "name": "plan-upgrade-workflow",
+          "binding": "PLAN_UPGRADE_WORKFLOW",
+          "class_name": "PlanUpgradeWorkflow",
+        },
+        {
+          "name": "overage-billing-workflow",
+          "binding": "OVERAGE_BILLING_WORKFLOW",
+          "class_name": "OverageBillingWorkflow",
+        },
+      ],
+      // "pipelines": [
+      //   { "binding": "EVENTS_PIPELINE", "pipeline": "owostack-events-test" }
+      // ],
     },
     "live": {
       "name": "owostack-api-live",
@@ -205,6 +259,12 @@
       "analytics_engine_datasets": [
         { "binding": "ANALYTICS", "dataset": "owostack_api_live" },
       ],
+      "pipelines": [
+        {
+          "binding": "EVENTS_PIPELINE",
+          "pipeline": "cfe7efb446fb450c8ad07179e9e3a696",
+        },
+      ],
       "queues": {
         "producers": [
           {
@@ -221,6 +281,43 @@
           },
         ],
       },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "USAGE_METER",
+            "class_name": "UsageMeterDO",
+          },
+          {
+            "name": "USAGE_LEDGER",
+            "class_name": "UsageLedgerDO",
+          },
+        ],
+      },
+      "workflows": [
+        {
+          "name": "trial-end-workflow",
+          "binding": "TRIAL_END_WORKFLOW",
+          "class_name": "TrialEndWorkflow",
+        },
+        {
+          "name": "downgrade-workflow",
+          "binding": "DOWNGRADE_WORKFLOW",
+          "class_name": "DowngradeWorkflow",
+        },
+        {
+          "name": "plan-upgrade-workflow",
+          "binding": "PLAN_UPGRADE_WORKFLOW",
+          "class_name": "PlanUpgradeWorkflow",
+        },
+        {
+          "name": "overage-billing-workflow",
+          "binding": "OVERAGE_BILLING_WORKFLOW",
+          "class_name": "OverageBillingWorkflow",
+        },
+      ],
+      // "pipelines": [
+      //   { "binding": "EVENTS_PIPELINE", "pipeline": "owostack-events-live" }
+      // ],
     },
   },
 
@@ -231,4 +328,6 @@
   // GOOGLE_CLIENT_SECRET
   // CF_ACCOUNT_ID
   // CF_ANALYTICS_READ_TOKEN (Analytics:Read)
+  // R2_SQL_TOKEN (R2 SQL queries — needed when EVENTS_PIPELINE is enabled)
+  // R2_WAREHOUSE (R2 Data Catalog warehouse ID)
 }

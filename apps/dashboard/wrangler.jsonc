@@ -3,12 +3,17 @@
 	"name": "owostack-dashboard",
 	"main": ".svelte-kit/cloudflare/_worker.js",
 	"compatibility_date": "2026-01-31",
-	"compatibility_flags": ["nodejs_als"],
+	"compatibility_flags": ["nodejs_compat"],
 	"assets": {
 		"binding": "ASSETS",
 		"directory": ".svelte-kit/cloudflare"
 	},
 
+	"vars": {
+		"VITE_DOCS_URL": "https://owostack.com/docs",
+		"VITE_API_URL_TEST": "https://sandbox.owostack.com",
+		"VITE_API_URL_LIVE": "https://api.owostack.com"
+	},
 	
 	"routes": [
 		{

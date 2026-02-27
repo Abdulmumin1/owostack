@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { handleChargeSuccess } from "./charge-success";
 import { handleSubscriptionCreated } from "./subscription-created";
 import { handleRefund } from "./refund";
@@ -6,6 +6,19 @@ import { handleCustomerIdentified } from "./customer-identified";
 import { topUpScopedBalance } from "../../addon-credits";
 import { provisionEntitlements } from "../../plan-switch";
 import { upsertPaymentMethod } from "../../payment-methods";
+
+interface MockDb {
+  query: {
+    customers: { findFirst: Mock };
+    subscriptions: { findFirst: Mock; findMany: Mock };
+    plans: { findFirst: Mock };
+    credits: { findFirst: Mock };
+    creditPurchases: { findFirst: Mock };
+  };
+  insert: Mock;
+  update: Mock;
+  delete: Mock;
+}
 
 vi.mock("@owostack/db", () => ({
   schema: {
@@ -61,7 +74,7 @@ function createDbMock() {
     where: deleteWhereMock,
   }));
 
-  const db: any = {
+  const db: MockDb = {
     query: {
       customers: { findFirst: vi.fn() },
       subscriptions: { findFirst: vi.fn(), findMany: vi.fn() },
@@ -82,7 +95,43 @@ function createDbMock() {
   };
 }
 
-function makeCtx(db: any, event: any, extra?: Partial<any>) {
+interface WebhookEventData {
+  type: string;
+  provider: string;
+  customer: { email: string; providerCustomerId: string };
+  payment?: { amount: number; currency: string; reference: string };
+  subscription?: {
+    providerCode: string;
+    startDate?: string;
+    nextPaymentDate?: string;
+  };
+  plan?: { providerPlanCode: string };
+  checkout?: { lineItems: { quantity: number }[] };
+  refund?: {
+    amount: number;
+    currency: string;
+    reference: string;
+    reason?: string;
+  };
+  metadata: Record<string, unknown>;
+  raw: { event: string };
+}
+
+interface HandlerContext {
+  db: MockDb;
+  organizationId: string;
+  event: WebhookEventData;
+  adapter: unknown;
+  providerAccount: unknown;
+  workflows: { trialEnd: null; planUpgrade: null };
+  cache: unknown;
+}
+
+function makeCtx(
+  db: MockDb,
+  event: WebhookEventData,
+  extra?: Partial<HandlerContext>,
+) {
   return {
     db,
     organizationId: "org_1",
@@ -95,7 +144,7 @@ function makeCtx(db: any, event: any, extra?: Partial<any>) {
     },
     cache: null,
     ...extra,
-  } as any;
+  } as unknown as HandlerContext;
 }
 
 describe("Webhook handlers behavior", () => {
@@ -141,7 +190,12 @@ describe("Webhook handlers behavior", () => {
 
     await handleChargeSuccess(makeCtx(db, event));
 
-    expect(vi.mocked(topUpScopedBalance)).toHaveBeenCalledWith(db, "cus_1", "cs_1", 60);
+    expect(vi.mocked(topUpScopedBalance)).toHaveBeenCalledWith(
+      db,
+      "cus_1",
+      "cs_1",
+      60,
+    );
 
     const purchaseInsert = insertValuesMock.mock.calls[0]?.[0];
     expect(purchaseInsert.credits).toBe(60);
@@ -264,7 +318,11 @@ describe("Webhook handlers behavior", () => {
     expect(insertPayload.providerSubscriptionCode).toBe("dodo_sub_1");
     expect(insertPayload.status).toBe("active");
 
-    expect(vi.mocked(provisionEntitlements)).toHaveBeenCalledWith(db, "cus_2", "plan_db_1");
+    expect(vi.mocked(provisionEntitlements)).toHaveBeenCalledWith(
+      db,
+      "cus_2",
+      "plan_db_1",
+    );
     expect(vi.mocked(upsertPaymentMethod)).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
@@ -392,11 +450,21 @@ describe("Webhook handlers behavior", () => {
     });
 
     expect(deleteMock).toHaveBeenCalledTimes(1);
-    expect(cache.invalidateCustomer).toHaveBeenCalledWith("org_1", "full@example.com");
-    expect(cache.invalidateSubscriptions).toHaveBeenCalledWith("org_1", "cus_4");
+    expect(cache.invalidateCustomer).toHaveBeenCalledWith(
+      "org_1",
+      "full@example.com",
+    );
+    expect(cache.invalidateSubscriptions).toHaveBeenCalledWith(
+      "org_1",
+      "cus_4",
+    );
 
-    expect(updateSetMock.mock.calls.some((call) => call[0].status === "refunded")).toBe(true);
-    expect(updateSetMock.mock.calls.some((call) => call[0].balance !== undefined)).toBe(true);
+    expect(
+      updateSetMock.mock.calls.some((call) => call[0].status === "refunded"),
+    ).toBe(true);
+    expect(
+      updateSetMock.mock.calls.some((call) => call[0].balance !== undefined),
+    ).toBe(true);
   });
 
   it("customer.identified merges metadata and marks customer verified", async () => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { app } from "../src/index";
 import { decrypt } from "../src/lib/encryption";
 import { handleChargeSuccess } from "../src/lib/webhooks/handlers/charge-success";
@@ -22,13 +22,24 @@ function err(message: string) {
 
 const handlerHandleMock = vi.fn();
 
+interface MockDb {
+  query: {
+    organizations: { findFirst: Mock };
+    providerAccounts: { findMany: Mock };
+    projects: { findFirst: Mock };
+    customers: { findFirst: Mock };
+    creditPurchases: { findFirst: Mock };
+  };
+  insert: Mock;
+}
+
 const adapterMock = {
   signatureHeaderName: "x-paystack-signature",
   verifyWebhook: vi.fn(),
   parseWebhookEvent: vi.fn(),
 };
 
-const mockDb: any = {
+const mockDb: MockDb = {
   query: {
     organizations: { findFirst: vi.fn() },
     providerAccounts: { findMany: vi.fn() },
@@ -48,7 +59,10 @@ vi.mock("@owostack/db", () => ({
   schema: {
     organizations: { id: "id" },
     projects: { organizationId: "organizationId" },
-    providerAccounts: { organizationId: "organizationId", providerId: "providerId" },
+    providerAccounts: {
+      organizationId: "organizationId",
+      providerId: "providerId",
+    },
     customers: { id: "id", organizationId: "organizationId", email: "email" },
     creditPurchases: { paymentReference: "paymentReference" },
     events: { id: "id" },
@@ -67,10 +81,10 @@ vi.mock("../src/lib/auth", () => ({
 vi.mock("../src/lib/providers", () => ({
   getProviderRegistry: vi.fn(() => ({
     get: vi.fn((providerId: string) =>
-      providerId === "paystack" ? (adapterMock as any) : undefined,
+      providerId === "paystack" ? adapterMock : undefined,
     ),
   })),
-  buildProviderContext: vi.fn((params: any) => params),
+  buildProviderContext: vi.fn((params: unknown) => params),
   deriveProviderEnvironment: vi.fn(() => "test"),
   loadProviderAccounts: vi.fn(async () => []),
   loadProviderRules: vi.fn(async () => []),
@@ -95,8 +109,22 @@ vi.mock("../src/lib/webhooks", () => ({
   },
 }));
 
+interface Env {
+  DB: unknown;
+  DB_AUTH: unknown;
+  CACHE: undefined;
+  TRIAL_END_WORKFLOW: { create: Mock };
+  PLAN_UPGRADE_WORKFLOW: { create: Mock };
+  ENCRYPTION_KEY: string;
+  ENVIRONMENT: string;
+  BETTER_AUTH_SECRET: string;
+  BETTER_AUTH_URL: string;
+  PAYSTACK_SECRET_KEY: string;
+  PAYSTACK_WEBHOOK_SECRET: string;
+}
+
 describe("Webhook route pipeline behavior", () => {
-  const env = {
+  const env: Env = {
     DB: {},
     DB_AUTH: {},
     CACHE: undefined,
@@ -108,7 +136,7 @@ describe("Webhook route pipeline behavior", () => {
     BETTER_AUTH_URL: "http://localhost",
     PAYSTACK_SECRET_KEY: "sk_test",
     PAYSTACK_WEBHOOK_SECRET: "wh_test",
-  } as any;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -123,9 +151,26 @@ describe("Webhook route pipeline behavior", () => {
       liveSecretKey: null,
     });
 
-    vi.mocked(decrypt).mockImplementation(async (input: string) => `dec_${input}`);
+    vi.mocked(decrypt).mockImplementation(
+      async (input: string) => `dec_${input}`,
+    );
 
     adapterMock.verifyWebhook.mockResolvedValue(ok(true));
+    interface WebhookEvent {
+      type: string;
+      provider: string;
+      customer: {
+        email: string;
+        providerCustomerId: string;
+      };
+      payment: {
+        amount: number;
+        currency: string;
+        reference: string;
+      };
+      metadata: Record<string, unknown>;
+      raw: { event: string };
+    }
     adapterMock.parseWebhookEvent.mockReturnValue(
       ok({
         type: "charge.success",
@@ -141,7 +186,7 @@ describe("Webhook route pipeline behavior", () => {
         },
         metadata: {},
         raw: { event: "charge.success" },
-      } as any),
+      } as WebhookEvent),
     );
 
     handlerHandleMock.mockResolvedValue({
@@ -153,10 +198,12 @@ describe("Webhook route pipeline behavior", () => {
   it("duplicate webhook delivery dispatches twice but charge.success credit purchase is idempotent (no double top-up)", async () => {
     const processedRefs = new Set<string>();
 
-    mockDb.query.creditPurchases.findFirst.mockImplementation(async ({ where }: any) => {
-      void where;
-      return processedRefs.has("ref_credit_1") ? { id: "cp_1" } : null;
-    });
+    mockDb.query.creditPurchases.findFirst.mockImplementation(
+      async ({ where }: { where?: unknown }) => {
+        void where;
+        return processedRefs.has("ref_credit_1") ? { id: "cp_1" } : null;
+      },
+    );
     mockDb.query.customers.findFirst.mockResolvedValue({
       id: "cus_1",
       organizationId: "org_1",
@@ -164,8 +211,12 @@ describe("Webhook route pipeline behavior", () => {
     });
 
     // Capture credit purchase ledger writes
-    const insertValues = vi.fn(async (payload: any) => {
-      if (payload?.paymentReference) processedRefs.add(payload.paymentReference);
+    interface CreditPurchasePayload {
+      paymentReference?: string;
+    }
+    const insertValues = vi.fn(async (payload: CreditPurchasePayload) => {
+      if (payload?.paymentReference)
+        processedRefs.add(payload.paymentReference);
       return null;
     });
     mockDb.insert.mockImplementation(() => ({
@@ -197,10 +248,30 @@ describe("Webhook route pipeline behavior", () => {
           quantity: "1",
         },
         raw: { event: "charge.success" },
-      } as any),
+      }),
     );
 
-    handlerHandleMock.mockImplementation(async (event: any) => {
+    interface WebhookEventData {
+      type: string;
+      provider: string;
+      customer: { email: string; providerCustomerId: string };
+      payment: { amount: number; currency: string; reference: string };
+      checkout?: { lineItems: { quantity: number }[] };
+      metadata: Record<string, unknown>;
+      raw: { event: string };
+    }
+
+    interface HandlerContext {
+      db: MockDb;
+      organizationId: string;
+      event: WebhookEventData;
+      adapter: null;
+      providerAccount: null;
+      workflows: { trialEnd: null; planUpgrade: null };
+      cache: null;
+    }
+
+    handlerHandleMock.mockImplementation(async (event: WebhookEventData) => {
       await handleChargeSuccess({
         db: mockDb,
         organizationId: "org_1",
@@ -209,7 +280,7 @@ describe("Webhook route pipeline behavior", () => {
         providerAccount: null,
         workflows: { trialEnd: null, planUpgrade: null },
         cache: null,
-      } as any);
+      } as unknown as HandlerContext);
       return { isErr: () => false, isOk: () => true };
     });
 
@@ -230,7 +301,12 @@ describe("Webhook route pipeline behavior", () => {
 
     expect(handlerHandleMock).toHaveBeenCalledTimes(2);
     expect(vi.mocked(topUpScopedBalance)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(topUpScopedBalance)).toHaveBeenCalledWith(mockDb, "cus_1", "cs_1", 40);
+    expect(vi.mocked(topUpScopedBalance)).toHaveBeenCalledWith(
+      mockDb,
+      "cus_1",
+      "cs_1",
+      40,
+    );
     expect(insertValues).toHaveBeenCalledTimes(1);
   });
 
@@ -240,7 +316,10 @@ describe("Webhook route pipeline behavior", () => {
         id: "acct_1",
         organizationId: "org_1",
         providerId: "paystack",
-        credentials: { webhookSecret: "enc_provider_ws", secretKey: "enc_provider_sk" },
+        credentials: {
+          webhookSecret: "enc_provider_ws",
+          secretKey: "enc_provider_sk",
+        },
         environment: "test",
       },
     ]);
@@ -264,7 +343,10 @@ describe("Webhook route pipeline behavior", () => {
     expect(verifyArg.secret).toBe("dec_enc_provider_ws");
     expect(verifyArg.headers["x-extra-header"]).toBe("extra");
 
-    expect(vi.mocked(decrypt)).toHaveBeenCalledWith("enc_provider_ws", "test_key");
+    expect(vi.mocked(decrypt)).toHaveBeenCalledWith(
+      "enc_provider_ws",
+      "test_key",
+    );
     expect(handlerHandleMock).toHaveBeenCalledTimes(1);
   });
 
@@ -274,7 +356,10 @@ describe("Webhook route pipeline behavior", () => {
         id: "acct_1",
         organizationId: "org_1",
         providerId: "paystack",
-        credentials: { webhookSecret: "whsec_plain_secret", secretKey: "enc_provider_sk" },
+        credentials: {
+          webhookSecret: "whsec_plain_secret",
+          secretKey: "enc_provider_sk",
+        },
         environment: "test",
       },
     ]);
@@ -346,7 +431,10 @@ describe("Webhook route pipeline behavior", () => {
     const verifyArg = adapterMock.verifyWebhook.mock.calls[0]?.[0];
     expect(verifyArg.secret).toBe("dec_enc_test_ws");
     expect(vi.mocked(decrypt)).toHaveBeenCalledWith("enc_test_ws", "test_key");
-    expect(vi.mocked(decrypt)).not.toHaveBeenCalledWith("enc_live_ws", "test_key");
+    expect(vi.mocked(decrypt)).not.toHaveBeenCalledWith(
+      "enc_live_ws",
+      "test_key",
+    );
   });
 
   it("falls back to project webhookSecret when provider account webhookSecret is absent", async () => {
@@ -412,7 +500,10 @@ describe("Webhook route pipeline behavior", () => {
     expect(res.status).toBe(200);
     const verifyArg = adapterMock.verifyWebhook.mock.calls[0]?.[0];
     expect(verifyArg.secret).toBe("dec_enc_test_secret");
-    expect(vi.mocked(decrypt)).toHaveBeenCalledWith("enc_test_secret", "test_key");
+    expect(vi.mocked(decrypt)).toHaveBeenCalledWith(
+      "enc_test_secret",
+      "test_key",
+    );
   });
 
   it("acknowledges unhandled events when adapter parse fails and skips dispatch", async () => {
@@ -432,7 +523,7 @@ describe("Webhook route pipeline behavior", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = (await res.json()) as { success: boolean; skipped: boolean };
     expect(body.success).toBe(true);
     expect(body.skipped).toBe(true);
     expect(handlerHandleMock).not.toHaveBeenCalled();

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
+import type { Mock } from "vitest";
 import checkoutRoute from "../src/routes/api/checkout";
 import { verifyApiKey } from "../src/lib/api-keys";
 import { resolveOrCreateCustomer } from "../src/lib/customers";
@@ -10,6 +11,7 @@ import {
   loadProviderRules,
 } from "../src/lib/providers";
 import { resolveProvider } from "@owostack/adapters";
+import type { Adapter } from "@owostack/adapters";
 
 vi.mock("@owostack/db", () => ({
   schema: {
@@ -51,8 +53,40 @@ vi.mock("@owostack/adapters", () => ({
   resolveProvider: vi.fn(),
 }));
 
+// Mock types
+type MockDb = {
+  query: {
+    plans: {
+      findFirst: Mock;
+    };
+  };
+};
+
+type MockAuthDb = {
+  query: {
+    projects: {
+      findFirst: Mock;
+    };
+  };
+};
+
+type ProviderAccount = {
+  id: string;
+  providerId: string;
+  environment: string;
+  credentials: { secretKey: string };
+};
+
+type SwitchResult = {
+  success: boolean;
+  type: string;
+  requiresCheckout: boolean;
+  checkoutUrl?: string;
+  message: string;
+};
+
 describe("/attach behavior", () => {
-  const mockDb: any = {
+  const mockDb: MockDb = {
     query: {
       plans: {
         findFirst: vi.fn(),
@@ -60,10 +94,13 @@ describe("/attach behavior", () => {
     },
   };
 
-  const mockAuthDb: any = {
+  const mockAuthDb: MockAuthDb = {
     query: {
       projects: {
-        findFirst: vi.fn(async () => ({ id: "proj_1", activeEnvironment: "test" })),
+        findFirst: vi.fn(async () => ({
+          id: "proj_1",
+          activeEnvironment: "test",
+        })),
       },
     },
   };
@@ -73,20 +110,20 @@ describe("/attach behavior", () => {
     ENVIRONMENT: "test",
     TRIAL_END_WORKFLOW: { create: vi.fn(async () => null) },
     DOWNGRADE_WORKFLOW: { create: vi.fn(async () => null) },
-  } as any;
+  };
 
-  let app: Hono;
+  let app: Hono<{ Variables: { db: MockDb; authDb: MockAuthDb } }>;
 
-  const paystackAdapter = {
+  const paystackAdapter: Adapter & { createCheckoutSession: Mock } = {
     id: "paystack",
     supportsNativeTrials: false,
     createCheckoutSession: vi.fn(),
-  } as any;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    app = new Hono();
+    app = new Hono<{ Variables: { db: MockDb; authDb: MockAuthDb } }>();
     app.use("*", async (c, next) => {
       c.set("db", mockDb);
       c.set("authDb", mockAuthDb);
@@ -97,18 +134,20 @@ describe("/attach behavior", () => {
     vi.mocked(verifyApiKey).mockResolvedValue({
       id: "key_1",
       organizationId: "org_1",
-    } as any);
+    });
 
     vi.mocked(getProviderRegistry).mockReturnValue({
-      get: vi.fn((id: string) => (id === "paystack" ? paystackAdapter : undefined)),
-    } as any);
+      get: vi.fn((id: string) =>
+        id === "paystack" ? paystackAdapter : undefined,
+      ),
+    });
 
-    vi.mocked(loadProviderRules).mockResolvedValue([] as any);
-    vi.mocked(loadProviderAccounts).mockResolvedValue([] as any);
+    vi.mocked(loadProviderRules).mockResolvedValue([]);
+    vi.mocked(loadProviderAccounts).mockResolvedValue([]);
     vi.mocked(resolveProvider).mockReturnValue({
       isOk: () => false,
       isErr: () => true,
-    } as any);
+    } as ReturnType<typeof resolveProvider>);
   });
 
   it("bypasses provider resolution for free plan and executes switch with null provider context", async () => {
@@ -126,14 +165,14 @@ describe("/attach behavior", () => {
     vi.mocked(resolveOrCreateCustomer).mockResolvedValue({
       id: "cus_1",
       email: "free@example.com",
-    } as any);
+    });
 
     vi.mocked(executeSwitch).mockResolvedValue({
       success: true,
       type: "new",
       requiresCheckout: false,
       message: "Switched",
-    } as any);
+    } as SwitchResult);
 
     const res = await app.request(
       "/attach",
@@ -152,7 +191,10 @@ describe("/attach behavior", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = (await res.json()) as {
+      success: boolean;
+      customer_id: string;
+    };
     expect(body.success).toBe(true);
     expect(body.customer_id).toBe("cus_1");
     expect(vi.mocked(resolveProvider)).not.toHaveBeenCalled();
@@ -174,7 +216,7 @@ describe("/attach behavior", () => {
       providerId: null,
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([] as any);
+    vi.mocked(loadProviderAccounts).mockResolvedValue([]);
 
     const res = await app.request(
       "/attach",
@@ -194,7 +236,7 @@ describe("/attach behavior", () => {
     );
 
     expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
+    const body = (await res.json()) as { success: boolean; error: string };
     expect(body.success).toBe(false);
     expect(body.error).toContain("not configured");
     expect(vi.mocked(resolveOrCreateCustomer)).not.toHaveBeenCalled();
@@ -202,7 +244,7 @@ describe("/attach behavior", () => {
   });
 
   it("uses explicit provider account and passes resolved provider context into executeSwitch", async () => {
-    const providerAccount = {
+    const providerAccount: ProviderAccount = {
       id: "acct_1",
       providerId: "paystack",
       environment: "test",
@@ -223,12 +265,12 @@ describe("/attach behavior", () => {
       paystackPlanId: null,
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([providerAccount] as any);
+    vi.mocked(loadProviderAccounts).mockResolvedValue([providerAccount]);
 
     vi.mocked(resolveOrCreateCustomer).mockResolvedValue({
       id: "cus_2",
       email: "paid@example.com",
-    } as any);
+    });
 
     vi.mocked(executeSwitch).mockResolvedValue({
       success: true,
@@ -236,7 +278,7 @@ describe("/attach behavior", () => {
       requiresCheckout: true,
       checkoutUrl: "https://checkout.example.com/abc",
       message: "Checkout created",
-    } as any);
+    } as SwitchResult);
 
     const res = await app.request(
       "/attach",
@@ -257,7 +299,10 @@ describe("/attach behavior", () => {
 
     expect(res.status).toBe(200);
 
-    const providerCtxArg = vi.mocked(executeSwitch).mock.calls[0]?.[3] as any;
+    const providerCtxArg = vi.mocked(executeSwitch).mock.calls[0]?.[3] as {
+      adapter: Adapter;
+      account: ProviderAccount;
+    };
     expect(providerCtxArg?.adapter?.id).toBe("paystack");
     expect(providerCtxArg?.account?.id).toBe("acct_1");
   });
@@ -275,8 +320,8 @@ describe("/attach behavior", () => {
       providerId: null,
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([] as any);
-    vi.mocked(loadProviderRules).mockResolvedValue([] as any);
+    vi.mocked(loadProviderAccounts).mockResolvedValue([]);
+    vi.mocked(loadProviderRules).mockResolvedValue([]);
 
     const res = await app.request(
       "/attach",
@@ -295,14 +340,14 @@ describe("/attach behavior", () => {
     );
 
     expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("No payment provider configured");
     expect(vi.mocked(resolveOrCreateCustomer)).not.toHaveBeenCalled();
     expect(vi.mocked(executeSwitch)).not.toHaveBeenCalled();
   });
 
   it("uses rules-based provider resolution when no explicit provider or plan provider is set", async () => {
-    const resolvedAccount = {
+    const resolvedAccount: ProviderAccount = {
       id: "acct_rule_paystack",
       providerId: "paystack",
       environment: "test",
@@ -323,8 +368,8 @@ describe("/attach behavior", () => {
       paystackPlanId: null,
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([resolvedAccount] as any);
-    vi.mocked(loadProviderRules).mockResolvedValue([{ id: "rule_1" }] as any);
+    vi.mocked(loadProviderAccounts).mockResolvedValue([resolvedAccount]);
+    vi.mocked(loadProviderRules).mockResolvedValue([{ id: "rule_1" }]);
     vi.mocked(resolveProvider).mockReturnValue({
       isOk: () => true,
       isErr: () => false,
@@ -333,12 +378,12 @@ describe("/attach behavior", () => {
         account: resolvedAccount,
         ruleId: "rule_1",
       },
-    } as any);
+    } as ReturnType<typeof resolveProvider>);
 
     vi.mocked(resolveOrCreateCustomer).mockResolvedValue({
       id: "cus_rule",
       email: "rule@example.com",
-    } as any);
+    });
 
     vi.mocked(executeSwitch).mockResolvedValue({
       success: true,
@@ -346,7 +391,7 @@ describe("/attach behavior", () => {
       requiresCheckout: true,
       checkoutUrl: "https://checkout.example.com/rule",
       message: "Checkout created",
-    } as any);
+    } as SwitchResult);
 
     const res = await app.request(
       "/attach",
@@ -368,12 +413,18 @@ describe("/attach behavior", () => {
     expect(res.status).toBe(200);
     expect(vi.mocked(resolveProvider)).toHaveBeenCalledTimes(1);
 
-    const resolverArg = vi.mocked(resolveProvider).mock.calls[0]?.[1] as any;
+    const resolverArg = vi.mocked(resolveProvider).mock.calls[0]?.[1] as {
+      context: { region: string; currency: string };
+      accounts: ProviderAccount[];
+    };
     expect(resolverArg.context.region).toBe("NG");
     expect(resolverArg.context.currency).toBe("USD");
     expect(resolverArg.accounts[0].id).toBe("acct_rule_paystack");
 
-    const providerCtxArg = vi.mocked(executeSwitch).mock.calls[0]?.[3] as any;
+    const providerCtxArg = vi.mocked(executeSwitch).mock.calls[0]?.[3] as {
+      adapter: Adapter;
+      account: ProviderAccount;
+    };
     expect(providerCtxArg?.adapter?.id).toBe("paystack");
     expect(providerCtxArg?.account?.id).toBe("acct_rule_paystack");
   });
