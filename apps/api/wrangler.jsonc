@@ -141,6 +141,7 @@
   "env": {
     "test": {
       "name": "owostack-api-test",
+      "observability": { "enabled": true },
       "vars": {
         "ENVIRONMENT": "test",
         "ANALYTICS_DATASET": "owostack_api_test",
@@ -224,6 +225,12 @@
           "name": "overage-billing-workflow",
           "binding": "OVERAGE_BILLING_WORKFLOW",
           "class_name": "OverageBillingWorkflow",
+        },
+      ],
+       "pipelines": [
+        {
+          "binding": "EVENTS_PIPELINE",
+          "pipeline": "cfe7efb446fb450c8ad07179e9e3a696",
         },
       ],
       // "pipelines": [

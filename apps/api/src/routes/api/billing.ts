@@ -42,7 +42,11 @@ const customerSchema = z.object({
 /**
  * Resolve customer by ID, externalId, or email
  */
-async function resolveCustomer(db: any, organizationId: string, customerId: string) {
+async function resolveCustomer(
+  db: any,
+  organizationId: string,
+  customerId: string,
+) {
   const customerIdLower = customerId.toLowerCase();
   return await db.query.customers.findFirst({
     where: and(
@@ -61,16 +65,22 @@ async function resolveCustomer(db: any, organizationId: string, customerId: stri
  */
 app.get("/usage", async (c) => {
   const customerId = c.req.query("customer");
-  
+
   if (!customerId) {
-    return c.json({ success: false, error: "customer query param required" }, 400);
+    return c.json(
+      { success: false, error: "customer query param required" },
+      400,
+    );
   }
 
   const db = c.get("db");
   const organizationId = c.get("organizationId");
 
   if (!organizationId) {
-    return c.json({ success: false, error: "Organization Context Missing" }, 500);
+    return c.json(
+      { success: false, error: "Organization Context Missing" },
+      500,
+    );
   }
 
   const customer = await resolveCustomer(db, organizationId, customerId);
@@ -81,7 +91,10 @@ app.get("/usage", async (c) => {
   const billingService = new BillingService(db, {
     usageLedger: c.env.USAGE_LEDGER,
   });
-  const result = await billingService.getUnbilledUsage(customer.id, organizationId);
+  const result = await billingService.getUnbilledUsage(
+    customer.id,
+    organizationId,
+  );
 
   if (result.isErr()) {
     return c.json({ success: false, error: result.error.message }, 500);
@@ -108,10 +121,17 @@ app.post("/invoice", async (c) => {
   const organizationId = c.get("organizationId");
 
   if (!organizationId) {
-    return c.json({ success: false, error: "Organization Context Missing" }, 500);
+    return c.json(
+      { success: false, error: "Organization Context Missing" },
+      500,
+    );
   }
 
-  const customer = await resolveCustomer(db, organizationId, parsed.data.customer);
+  const customer = await resolveCustomer(
+    db,
+    organizationId,
+    parsed.data.customer,
+  );
   if (!customer) {
     return c.json({ success: false, error: "Customer not found" }, 404);
   }
@@ -119,7 +139,10 @@ app.post("/invoice", async (c) => {
   const billingService = new BillingService(db, {
     usageLedger: c.env.USAGE_LEDGER,
   });
-  const result = await billingService.generateInvoice(customer.id, organizationId);
+  const result = await billingService.generateInvoice(
+    customer.id,
+    organizationId,
+  );
 
   if (result.isErr()) {
     const noUsage = result.error.message.includes("Unbilled usage");
@@ -131,7 +154,10 @@ app.post("/invoice", async (c) => {
     });
 
     if (result.error.message.includes("Unbilled usage")) {
-      return c.json({ success: false, error: "No unbilled usage to invoice" }, 400);
+      return c.json(
+        { success: false, error: "No unbilled usage to invoice" },
+        400,
+      );
     }
     return c.json({ success: false, error: result.error.message }, 500);
   }
@@ -156,16 +182,22 @@ app.post("/invoice", async (c) => {
  */
 app.get("/invoices", async (c) => {
   const customerId = c.req.query("customer");
-  
+
   if (!customerId) {
-    return c.json({ success: false, error: "customer query param required" }, 400);
+    return c.json(
+      { success: false, error: "customer query param required" },
+      400,
+    );
   }
 
   const db = c.get("db");
   const organizationId = c.get("organizationId");
 
   if (!organizationId) {
-    return c.json({ success: false, error: "Organization Context Missing" }, 500);
+    return c.json(
+      { success: false, error: "Organization Context Missing" },
+      500,
+    );
   }
 
   const customer = await resolveCustomer(db, organizationId, customerId);
@@ -201,11 +233,13 @@ app.post("/invoice/:id/pay", async (c) => {
   const parsed = payInvoiceSchema.safeParse(body);
 
   const db = c.get("db");
-  const authDb = c.get("authDb");
   const organizationId = c.get("organizationId");
 
   if (!organizationId) {
-    return c.json({ success: false, error: "Organization Context Missing" }, 500);
+    return c.json(
+      { success: false, error: "Organization Context Missing" },
+      500,
+    );
   }
 
   // 1. Load the invoice
@@ -254,7 +288,13 @@ app.post("/invoice/:id/pay", async (c) => {
       organizationId,
       customerId: invoice.customerId,
     });
-    return c.json({ success: false, error: `Invoice is ${invoice.status} — only open invoices can be paid` }, 400);
+    return c.json(
+      {
+        success: false,
+        error: `Invoice is ${invoice.status} — only open invoices can be paid`,
+      },
+      400,
+    );
   }
 
   if (!invoice.amountDue || invoice.amountDue <= 0) {
@@ -264,7 +304,10 @@ app.post("/invoice/:id/pay", async (c) => {
       organizationId,
       customerId: invoice.customerId,
     });
-    return c.json({ success: false, error: "Invoice has no outstanding balance" }, 400);
+    return c.json(
+      { success: false, error: "Invoice has no outstanding balance" },
+      400,
+    );
   }
 
   // 2. Load customer
@@ -280,7 +323,11 @@ app.post("/invoice/:id/pay", async (c) => {
   const subscription = await db.query.subscriptions.findFirst({
     where: and(
       eq(schema.subscriptions.customerId, customer.id),
-      inArray(schema.subscriptions.status, ["active", "canceled", "pending_cancel"]),
+      inArray(schema.subscriptions.status, [
+        "active",
+        "canceled",
+        "pending_cancel",
+      ]),
     ),
   });
 
@@ -291,23 +338,25 @@ app.post("/invoice/:id/pay", async (c) => {
       organizationId,
       customerId: customer.id,
     });
-    return c.json({ success: false, error: "No provider configured for this customer" }, 400);
+    return c.json(
+      { success: false, error: "No provider configured for this customer" },
+      400,
+    );
   }
 
-  const project = await authDb.query.projects.findFirst({
-    where: eq(schema.projects.organizationId, organizationId),
-  });
-
-  const providerEnv = deriveProviderEnvironment(
-    c.env.ENVIRONMENT,
-    project?.activeEnvironment,
-  );
+  // Environment comes directly from ENVIRONMENT variable
+  const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
 
   const registry = getProviderRegistry();
   const adapter = registry.get(subscription.providerId);
-  const accounts = await loadProviderAccounts(db, organizationId, c.env.ENCRYPTION_KEY);
+  const accounts = await loadProviderAccounts(
+    db,
+    organizationId,
+    c.env.ENCRYPTION_KEY,
+  );
   const account = accounts.find(
-    (a) => a.providerId === subscription.providerId && a.environment === providerEnv,
+    (a) =>
+      a.providerId === subscription.providerId && a.environment === providerEnv,
   );
 
   if (!adapter || !account) {
@@ -318,7 +367,10 @@ app.post("/invoice/:id/pay", async (c) => {
       customerId: customer.id,
       providerId: subscription.providerId,
     });
-    return c.json({ success: false, error: "Payment provider not configured" }, 400);
+    return c.json(
+      { success: false, error: "Payment provider not configured" },
+      400,
+    );
   }
 
   // 4. Try auto-charge if customer has a saved payment method
@@ -333,10 +385,17 @@ app.post("/invoice/:id/pay", async (c) => {
         ),
       });
       if (!freshInvoice) {
-        return c.json({ success: true, paid: true, invoice: {
-          id: invoice.id, number: invoice.number, total: invoice.total,
-          currency: invoice.currency, status: "paid",
-        }});
+        return c.json({
+          success: true,
+          paid: true,
+          invoice: {
+            id: invoice.id,
+            number: invoice.number,
+            total: invoice.total,
+            currency: invoice.currency,
+            status: "paid",
+          },
+        });
       }
 
       const chargeRef = `inv-${invoice.id.slice(0, 8)}-${Date.now()}`;
@@ -396,7 +455,10 @@ app.post("/invoice/:id/pay", async (c) => {
       }
 
       // Charge failed — fall through to checkout
-      console.warn(`[billing] Auto-charge failed for invoice ${invoice.id}:`, chargeResult.error.message);
+      console.warn(
+        `[billing] Auto-charge failed for invoice ${invoice.id}:`,
+        chargeResult.error.message,
+      );
       trackBusinessEvent(c.env, {
         event: "billing.invoice.pay",
         outcome: "auto_charge_failed",
@@ -453,12 +515,15 @@ app.post("/invoice/:id/pay", async (c) => {
       value: Number(invoice.amountDue || 0),
       currency: invoice.currency || null,
     });
-    return c.json({
-      success: false,
-      error: hasAuthCode
-        ? `Auto-charge failed and checkout unavailable for this provider: ${checkoutResult.error.message}`
-        : `No payment method on file and checkout creation failed: ${checkoutResult.error.message}`,
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error: hasAuthCode
+          ? `Auto-charge failed and checkout unavailable for this provider: ${checkoutResult.error.message}`
+          : `No payment method on file and checkout creation failed: ${checkoutResult.error.message}`,
+      },
+      500,
+    );
   }
 
   trackBusinessEvent(c.env, {
