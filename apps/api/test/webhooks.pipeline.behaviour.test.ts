@@ -26,7 +26,6 @@ interface MockDb {
   query: {
     organizations: { findFirst: Mock };
     providerAccounts: { findMany: Mock };
-    projects: { findFirst: Mock };
     customers: { findFirst: Mock };
     creditPurchases: { findFirst: Mock };
   };
@@ -43,7 +42,6 @@ const mockDb: MockDb = {
   query: {
     organizations: { findFirst: vi.fn() },
     providerAccounts: { findMany: vi.fn() },
-    projects: { findFirst: vi.fn() },
     customers: { findFirst: vi.fn() },
     creditPurchases: { findFirst: vi.fn() },
   },
@@ -58,7 +56,6 @@ vi.mock("@owostack/db", () => ({
   createDb: () => mockDb,
   schema: {
     organizations: { id: "id" },
-    projects: { organizationId: "organizationId" },
     providerAccounts: {
       organizationId: "organizationId",
       providerId: "providerId",
@@ -141,15 +138,13 @@ describe("Webhook route pipeline behavior", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockDb.query.organizations.findFirst.mockResolvedValue({ id: "org_1" });
-    mockDb.query.providerAccounts.findMany.mockResolvedValue([]);
-    mockDb.query.projects.findFirst.mockResolvedValue({
-      id: "proj_1",
-      organizationId: "org_1",
+    mockDb.query.organizations.findFirst.mockResolvedValue({
+      id: "org_1",
       webhookSecret: "project_wh_secret",
       testSecretKey: null,
       liveSecretKey: null,
     });
+    mockDb.query.providerAccounts.findMany.mockResolvedValue([]);
 
     vi.mocked(decrypt).mockImplementation(
       async (input: string) => `dec_${input}`,
@@ -448,9 +443,8 @@ describe("Webhook route pipeline behavior", () => {
       },
     ]);
 
-    mockDb.query.projects.findFirst.mockResolvedValue({
-      id: "proj_1",
-      organizationId: "org_1",
+    mockDb.query.organizations.findFirst.mockResolvedValue({
+      id: "org_1",
       webhookSecret: "project_secret_plain",
       testSecretKey: "enc_test_key",
       liveSecretKey: null,
@@ -476,9 +470,8 @@ describe("Webhook route pipeline behavior", () => {
 
   it("falls back to decrypted environment secret key when no webhook secrets are configured", async () => {
     mockDb.query.providerAccounts.findMany.mockResolvedValue([]);
-    mockDb.query.projects.findFirst.mockResolvedValue({
-      id: "proj_1",
-      organizationId: "org_1",
+    mockDb.query.organizations.findFirst.mockResolvedValue({
+      id: "org_1",
       webhookSecret: null,
       testSecretKey: "enc_test_secret",
       liveSecretKey: null,
