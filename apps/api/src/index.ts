@@ -115,12 +115,6 @@ app.onError((err, c) => {
   );
 });
 
-// Temporary: verify deployment is active and logs are captured
-app.use("*", async (c, next) => {
-  console.error("[DEBUG-DEPLOY] Hit:", c.req.method, c.req.path);
-  await next();
-});
-
 app.get("/", (c) => {
   return c.json({ status: "healthy" });
 });
@@ -200,6 +194,21 @@ app.use("*", async (c, next) => {
       providerId,
     });
   }
+});
+
+app.get("/api/organizations/slug-check/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  if (!slug || slug.length < 3) {
+    return c.json({ available: false, error: "Invalid slug" });
+  }
+
+  const authDb = c.get("authDb");
+  const existing = await authDb.query.organizations.findFirst({
+    where: eq(schema.organizations.slug, slug),
+    columns: { id: true },
+  });
+
+  return c.json({ available: !existing });
 });
 
 app.get("/api/auth/debug-routes", (c) => {
