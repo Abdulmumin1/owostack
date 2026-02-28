@@ -12,8 +12,8 @@ app.get("/config/active-environment", async (c) => {
     return c.json({ success: false, error: "Organization ID required" }, 400);
   }
 
-  const db = c.get("db");
-  const org = await db.query.organizations.findFirst({
+  const authDb = c.get("authDb");
+  const org = await authDb.query.organizations.findFirst({
     where: eq(schema.organizations.id, organizationId),
     columns: { metadata: true },
   });
@@ -39,6 +39,7 @@ app.post("/switch-environment", async (c) => {
   }
 
   const db = c.get("db");
+  const authDb = c.get("authDb");
 
   // Check if target environment is configured via provider accounts
   const providerAccount = await db.query.providerAccounts.findFirst({
@@ -61,8 +62,8 @@ app.post("/switch-environment", async (c) => {
     );
   }
 
-  // Get current metadata
-  const org = await db.query.organizations.findFirst({
+  // Get current metadata from authDb
+  const org = await authDb.query.organizations.findFirst({
     where: eq(schema.organizations.id, organizationId),
     columns: { metadata: true },
   });
@@ -71,14 +72,14 @@ app.post("/switch-environment", async (c) => {
     return c.json({ success: false, error: "Organization not found" }, 404);
   }
 
-  // Update active environment in metadata
+  // Update active environment in metadata via authDb
   const existingMetadata = (org.metadata as Record<string, unknown>) || {};
   const newMetadata = {
     ...existingMetadata,
     activeEnvironment: environment,
   };
 
-  await db
+  await authDb
     .update(schema.organizations)
     .set({ metadata: newMetadata })
     .where(eq(schema.organizations.id, organizationId));
@@ -97,7 +98,10 @@ app.get("/config/default-currency", async (c) => {
   }
 
   const db = c.get("db");
-  const org = await db.query.organizations.findFirst({
+  const authDb = c.get("authDb");
+
+  // Organizations are in authDb
+  const org = await authDb.query.organizations.findFirst({
     where: eq(schema.organizations.id, organizationId),
     columns: { metadata: true },
   });
@@ -143,8 +147,9 @@ app.put("/config/default-currency", async (c) => {
     );
   }
 
-  const db = c.get("db");
-  const org = await db.query.organizations.findFirst({
+  // Organizations are in authDb, not business db
+  const authDb = c.get("authDb");
+  const org = await authDb.query.organizations.findFirst({
     where: eq(schema.organizations.id, organizationId),
     columns: { metadata: true },
   });
@@ -159,7 +164,7 @@ app.put("/config/default-currency", async (c) => {
     defaultCurrency: defaultCurrency.toUpperCase(),
   };
 
-  await db
+  await authDb
     .update(schema.organizations)
     .set({ metadata: newMetadata })
     .where(eq(schema.organizations.id, organizationId));
