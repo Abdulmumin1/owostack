@@ -465,7 +465,7 @@ describe("Webhook route pipeline behavior", () => {
 
     expect(res.status).toBe(200);
     const verifyArg = adapterMock.verifyWebhook.mock.calls[0]?.[0];
-    expect(verifyArg.secret).toBe("project_secret_plain");
+    expect(verifyArg.secret).toBe("dec_enc_provider_sk_only");
   });
 
   it("falls back to decrypted environment secret key when no webhook secrets are configured", async () => {
