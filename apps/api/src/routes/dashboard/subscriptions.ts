@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { listRecentEvents } from "../../lib/analytics-engine";
 import {
@@ -67,6 +67,31 @@ app.post("/", async (c) => {
   const { customerId, planId, status, currentPeriodStart, currentPeriodEnd } =
     parsed.data;
   const db = c.get("db");
+
+  // Check if customer already has an active or trialing subscription for this plan
+  // to prevent duplicate subscriptions
+  const existingSubscription = await db.query.subscriptions.findFirst({
+    where: and(
+      eq(schema.subscriptions.customerId, customerId),
+      eq(schema.subscriptions.planId, planId),
+      or(
+        eq(schema.subscriptions.status, "active"),
+        eq(schema.subscriptions.status, "trialing"),
+        eq(schema.subscriptions.status, "pending"),
+      ),
+    ),
+  });
+
+  if (existingSubscription) {
+    return c.json(
+      {
+        success: false,
+        error: "Customer already has an active subscription for this plan",
+        data: existingSubscription,
+      },
+      409,
+    );
+  }
 
   // Default dates — schema expects integer timestamps (ms)
   const start = currentPeriodStart
@@ -382,39 +407,29 @@ app.post("/switch-plan", async (c) => {
   // Use resolved organization ID from context (middleware resolves slug to UUID)
   const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
   const db = c.get("db");
-  const authDb = c.get("authDb");
 
-  // Fetch project once for credentials + environment
-  const project = await authDb.query.projects.findFirst({
-    where: eq(schema.projects.organizationId, organizationId),
-  });
-
-  const providerEnv = deriveProviderEnvironment(
-    c.env.ENVIRONMENT,
-    project?.activeEnvironment,
-  );
+  // Environment comes directly from ENVIRONMENT variable
+  const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
 
   // Build provider context from DB-stored provider accounts
   let providerCtx: ProviderContext | null = null;
   try {
-    if (project) {
-      const registry = getProviderRegistry();
+    const registry = getProviderRegistry();
 
-      const providerAccounts = await loadProviderAccounts(
-        db,
-        organizationId,
-        c.env.ENCRYPTION_KEY,
-      );
+    const providerAccounts = await loadProviderAccounts(
+      db,
+      organizationId,
+      c.env.ENCRYPTION_KEY,
+    );
 
-      const dbAccount = providerAccounts.find(
-        (a) => a.environment === providerEnv,
-      );
+    const dbAccount = providerAccounts.find(
+      (a) => a.environment === providerEnv,
+    );
 
-      if (dbAccount) {
-        const adapter = registry.get(dbAccount.providerId);
-        if (adapter) {
-          providerCtx = { adapter, account: dbAccount };
-        }
+    if (dbAccount) {
+      const adapter = registry.get(dbAccount.providerId);
+      if (adapter) {
+        providerCtx = { adapter, account: dbAccount };
       }
     }
   } catch (e) {
@@ -476,41 +491,33 @@ app.post("/cancel", async (c) => {
   const subCode = sub.providerSubscriptionCode || sub.paystackSubscriptionCode;
   if (subCode && subCode !== "one-time" && !subCode.startsWith("trial-")) {
     try {
-      const project = await authDb.query.projects.findFirst({
-        where: eq(schema.projects.organizationId, organizationId),
-      });
+      // Environment comes directly from ENVIRONMENT variable
+      const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
 
-      if (project) {
-        const providerEnv = deriveProviderEnvironment(
-          c.env.ENVIRONMENT,
-          project.activeEnvironment,
+      const registry = getProviderRegistry();
+
+      const resolvedProviderId = sub.providerId || "paystack";
+      const adapter = registry.get(resolvedProviderId);
+
+      if (adapter) {
+        // Try provider accounts from DB first
+        const providerAccounts = await loadProviderAccounts(
+          db,
+          organizationId,
+          c.env.ENCRYPTION_KEY,
+        );
+        let account = providerAccounts.find(
+          (a) =>
+            a.providerId === resolvedProviderId &&
+            a.environment === providerEnv,
         );
 
-        const registry = getProviderRegistry();
-
-        const resolvedProviderId = sub.providerId || "paystack";
-        const adapter = registry.get(resolvedProviderId);
-
-        if (adapter) {
-          // Try provider accounts from DB first
-          const providerAccounts = await loadProviderAccounts(
-            db,
-            organizationId,
-            c.env.ENCRYPTION_KEY,
-          );
-          let account = providerAccounts.find(
-            (a) =>
-              a.providerId === resolvedProviderId &&
-              a.environment === providerEnv,
-          );
-
-          if (account) {
-            await adapter.cancelSubscription({
-              subscription: { id: subCode, status: sub.status || "active" },
-              environment: providerEnv,
-              account,
-            });
-          }
+        if (account) {
+          await adapter.cancelSubscription({
+            subscription: { id: subCode, status: sub.status || "active" },
+            environment: providerEnv,
+            account,
+          });
         }
       }
     } catch (e) {

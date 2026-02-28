@@ -265,6 +265,16 @@
         attachCustomerSearch = "";
         attachCustomerResults = [];
         await loadSubscribers();
+      } else if (res.error) {
+        // Handle conflict (409) - subscription already exists
+        if ((res.error as any).status === 409) {
+          showAttachCustomerPanel = false;
+          attachCustomerSearch = "";
+          attachCustomerResults = [];
+          await loadSubscribers();
+        } else {
+          alert(res.error.message || "Failed to attach customer to plan");
+        }
       }
     } catch (e) {
       console.error("Failed to attach customer", e);

@@ -61,6 +61,10 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
     data: res.ok ? data : null,
     error: res.ok
       ? null
-      : { message: data.error || data.message || "Request failed" },
+      : {
+          message: data.error || data.message || "Request failed",
+          status: res.status,
+          data,
+        },
   };
 }
