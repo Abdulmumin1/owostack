@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
 
@@ -14,7 +14,10 @@ app.get("/config/active-environment", async (c) => {
 
   const authDb = c.get("authDb");
   const org = await authDb.query.organizations.findFirst({
-    where: eq(schema.organizations.id, organizationId),
+    where: or(
+      eq(schema.organizations.id, organizationId),
+      eq(schema.organizations.slug, organizationId),
+    ),
     columns: { metadata: true },
   });
 
@@ -64,7 +67,10 @@ app.post("/switch-environment", async (c) => {
 
   // Get current metadata from authDb
   const org = await authDb.query.organizations.findFirst({
-    where: eq(schema.organizations.id, organizationId),
+    where: or(
+      eq(schema.organizations.id, organizationId),
+      eq(schema.organizations.slug, organizationId),
+    ),
     columns: { metadata: true },
   });
 
@@ -82,7 +88,10 @@ app.post("/switch-environment", async (c) => {
   await authDb
     .update(schema.organizations)
     .set({ metadata: newMetadata })
-    .where(eq(schema.organizations.id, organizationId));
+    .where(or(
+      eq(schema.organizations.id, organizationId),
+      eq(schema.organizations.slug, organizationId),
+    ));
 
   return c.json({
     success: true,
@@ -102,7 +111,10 @@ app.get("/config/default-currency", async (c) => {
 
   // Organizations are in authDb
   const org = await authDb.query.organizations.findFirst({
-    where: eq(schema.organizations.id, organizationId),
+    where: or(
+      eq(schema.organizations.id, organizationId),
+      eq(schema.organizations.slug, organizationId)
+    ),
     columns: { metadata: true },
   });
 
@@ -150,7 +162,10 @@ app.put("/config/default-currency", async (c) => {
   // Organizations are in authDb, not business db
   const authDb = c.get("authDb");
   const org = await authDb.query.organizations.findFirst({
-    where: eq(schema.organizations.id, organizationId),
+    where:or(
+      eq(schema.organizations.id, organizationId),
+      eq(schema.organizations.slug, organizationId)
+    ),
     columns: { metadata: true },
   });
 
@@ -167,7 +182,8 @@ app.put("/config/default-currency", async (c) => {
   await authDb
     .update(schema.organizations)
     .set({ metadata: newMetadata })
-    .where(eq(schema.organizations.id, organizationId));
+    .where(or(eq(schema.organizations.id, organizationId),
+      eq(schema.organizations.slug, organizationId)));
 
   return c.json({
     success: true,
