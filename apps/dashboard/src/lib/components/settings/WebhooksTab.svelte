@@ -23,7 +23,6 @@
   }
 </script>
 
-<h2 class="text-lg font-bold text-text-primary mb-6">Webhook Configuration</h2>
 
 <div class="space-y-6">
   <div class="bg-info-bg border border-info p-5 rounded-lg flex gap-4">

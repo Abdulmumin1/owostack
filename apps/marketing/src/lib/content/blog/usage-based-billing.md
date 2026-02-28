@@ -1,13 +1,14 @@
 ---
-title: '"_Just charge customers for what they use_"'
+title: "Just charge customers for what they use they said!"
 excerpt: "Lessons learned from implementing real-time metering for thousands of AI SaaS customers."
 date: "2026-02-15"
 readTime: "6 min read"
 category: "Engineering"
 layout: blog
+thumbnail: "/images/blog/usage-based-billing.png"
 ---
 
-# _Just charge customers for what they use\_
+# \_Just charge customers for what they use\_
 
 Usage-based billing sounds simple, right? "Just charge people for what they use."
 
@@ -184,7 +185,7 @@ Your support team will thank you. Your customers will stay longer.
 
 ## Conclusion
 
-Usage-based billing is _really\_ hard, but a rewarding experience. Any product doing this needs: real-time visibility so customers know what they're spending, flexible reset intervals or _rate limits\_ instead of forcing everyone into monthly cycles. 
+Usage-based billing is \_really\_ hard, but a rewarding experience. Any product doing this needs: real-time visibility so customers know what they're spending, flexible reset intervals or \_rate limits\_ instead of forcing everyone into monthly cycles.
 
 OpenAI recently publised how they built their billing system: [Beyond Rate Limits](https://openai.com/index/beyond-rate-limits/).
 
