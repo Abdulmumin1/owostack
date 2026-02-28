@@ -48,7 +48,6 @@
   ];
 </script>
 
-<h2 class="text-base font-bold text-text-primary mb-5">Overage Billing</h2>
 
 <div class="space-y-6 ">
   <!-- Billing Interval -->
