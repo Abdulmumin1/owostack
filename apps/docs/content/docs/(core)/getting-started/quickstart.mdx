@@ -41,26 +41,27 @@ https://api.owostack.com/webhooks/<your-org-id>/<provider-id>
 Paste it into your provider's webhook settings page. If your provider asks for events, select **all events**.
 
 <Callout type="warning">
-  Without webhooks, Owostack cannot confirm payments. Every step after this depends on webhooks working.
+  Without webhooks, Owostack cannot confirm payments. Every step after this
+  depends on webhooks working.
 </Callout>
 
 ## 3. Create a plan with features
 
 1. Go to **Features** and create two features:
 
-| Name | Slug | Type |
-|------|------|------|
+| Name      | Slug        | Type    |
+| --------- | ----------- | ------- |
 | API Calls | `api-calls` | Metered |
 | Analytics | `analytics` | Boolean |
 
 2. Go to **Plans** and click **Create Plan**:
 
-| Field | Value |
-|-------|-------|
-| Name | Starter |
-| Price | 500 (in your currency's minor unit) |
-| Interval | Monthly |
-| Plan Group | main |
+| Field      | Value                               |
+| ---------- | ----------------------------------- |
+| Name       | Starter                             |
+| Price      | 500 (in your currency's minor unit) |
+| Interval   | Monthly                             |
+| Plan Group | main                                |
 
 3. Attach the features:
    - `api-calls` → limit **100**, reset **monthly**
@@ -201,8 +202,8 @@ Everything else — webhook processing, entitlement provisioning, period resets 
 ## Next steps
 
 <Cards>
-  <Card title="How to set up checkout" href="/docs/guides/checkout" />
-  <Card title="How to switch plans" href="/docs/guides/plan-switching" />
-  <Card title="How it works" href="/docs/concepts/how-it-works" />
-  <Card title="SDK Reference" href="/docs/sdk/attach" />
+  <Card title="How to set up checkout" href="/guides/checkout" />
+  <Card title="How to switch plans" href="/guides/plan-switching" />
+  <Card title="How it works" href="/concepts/how-it-works" />
+  <Card title="SDK Reference" href="/sdk/attach" />
 </Cards>

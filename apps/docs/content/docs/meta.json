@@ -1,11 +1,6 @@
 {
   "pages": [
-    "index",
-    "getting-started",
-    "concepts",
-    "guides",
-    "dashboard",
-    "sdk",
-    "cli"
+    "(core)",
+    "api-reference"
   ]
 }

@@ -1,0 +1,14 @@
+{
+  "title": "Core",
+  "description": "The core for Owostack",
+  "root": true,
+  "pages": [
+    "index",
+    "getting-started",
+    "concepts",
+    "guides",
+    "dashboard",
+    "sdk",
+    "cli"
+  ]
+}

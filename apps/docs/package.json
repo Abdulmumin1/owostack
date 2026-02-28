@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "types:check": "fumadocs-mdx && tsc --noEmit",
     "generate:api": "tsx scripts/generate-openapi.ts",
-    "postinstall": "fumadocs-mdx"
+    "postinstall": "tsx scripts/generate-openapi.ts && fumadocs-mdx"
   },
   "dependencies": {
     "@tanstack/react-router": "1.157.16",
