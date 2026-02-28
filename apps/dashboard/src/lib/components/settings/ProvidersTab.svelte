@@ -51,8 +51,7 @@
 
 <div class="flex items-center justify-between mb-6">
   <div>
-    <h2 class="text-lg font-bold text-text-primary">Payment Providers</h2>
-    <p class="text-xs text-text-dim mt-1">Connect payment gateways to process transactions</p>
+   
   </div>
   <button class="btn btn-primary" onclick={onAdd}><Plus size={14} weight="fill" /> Add Provider</button>
 </div>

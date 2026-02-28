@@ -7,6 +7,7 @@
     Lightning,
     Lock,
     Users,
+    Plug,
   } from "phosphor-svelte";
   import Logo from "$lib/components/ui/Logo.svelte";
   import InteractiveDemo from "$lib/components/marketing/InteractiveDemo.svelte";
@@ -58,8 +59,6 @@
   });
 
   import { tick } from "svelte";
-
-
 </script>
 
 <svelte:head>
@@ -72,7 +71,7 @@
   <!-- Abstract Background Art -->
   <div class="absolute inset-0 pointer-events-none overflow-hidden">
     <!-- Gradient Orbs -->
-    <div class="orb orb-1"></div>
+    <!-- <div class="orb orb-1"></div> -->
 
     <!-- Subtle Grid -->
     <div class="grid-pattern"></div>
@@ -165,13 +164,15 @@
           >Docs</a
         >
         <a
-          href="{import.meta.env.VITE_GITHUB_URL}"
+          href={import.meta.env.VITE_GITHUB_URL}
           class="hidden sm:flex items-center gap-1.5 hover:text-text-primary transition-colors"
         >
           <GithubLogo size={13} weight="duotone" />
           GitHub
         </a>
-        <a href="{import.meta.env.VITE_APP_URL}" class="btn btn-primary">get started</a>
+        <a href={import.meta.env.VITE_APP_URL} class="btn btn-primary"
+          >Dashboard</a
+        >
       </nav>
     </div>
   </header>
@@ -198,7 +199,7 @@
         >
       </h1>
       <div
-        class="text-base md:text-lg text-text-secondary max-w-xl leading-relaxed mb-10"
+        class="text-base md:text-lg text-text-secondary max-w-xl leading-relaxed mb-4"
       >
         <span>Add </span>
         <span
@@ -221,6 +222,17 @@
         </span>
         <span> to your app.</span>
       </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <a href="/signup" class="btn btn-primary">Get Started</a>
+        <a href={import.meta.env.VITE_DOCS_URL} class="btn btn-secondary">
+          Read the docs
+          <ArrowRight
+            size={14}
+            class="group-hover:translate-x-0.5 transition-transform"
+            weight="fill"
+          />
+        </a>
+      </div>
     </div>
   </section>
 
@@ -240,8 +252,8 @@
               class="text-text-secondary italic"
               >// Subscribe a customer to a plan</span
             >
-<span class="text-accent font-medium">await</span> owo.<span class="text-black dark:text-white"
-              >attach</span
+<span class="text-accent font-medium">await</span> owo.<span
+              class="text-black dark:text-white">attach</span
             >(&#123;
   customer: <span class="text-amber-400">"user@acme.com"</span>,
   product:  <span class="text-amber-400">"pro"</span>,
@@ -258,8 +270,8 @@
 &#125;);
 
 <span class="text-text-secondary italic">// Record usage</span>
-<span class="text-accent font-medium">await</span> owo.<span class="text-black dark:text-white"
-              >track</span
+<span class="text-accent font-medium">await</span> owo.<span
+              class="text-black dark:text-white">track</span
             >(&#123;
   customer: <span class="text-amber-400">"user@acme.com"</span>,
   feature:  <span class="text-amber-400">"gpu-inference"</span>,
@@ -271,19 +283,126 @@
 
   <!-- Interactive Demo -->
   <!-- Billing Patterns - Interactive Demo -->
-  <section class="px-6 py-20 md:py-32 relative bg-bg-secondary/30 overflow-hidden">
+  <section
+    class="px-6 py-20 md:py-32 relative bg-bg-secondary/30 overflow-hidden"
+  >
     <div class="max-w-6xl mx-auto relative z-10">
       <div class="text-center mb-16">
         <h2 class="text-2xl md:text-4xl font-bold text-text-primary mb-4">
           Built for the way AI get billed
         </h2>
         <p class="text-text-secondary max-w-lg mx-auto text-sm">
-          Real-time metering, subscription management, and invoicing—all handled by one simple SDK.
+          Real-time metering, subscription management, and invoicing—all handled
+          by one simple SDK.
         </p>
       </div>
 
       <div class="flex justify-center">
         <InteractiveDemo />
+      </div>
+    </div>
+  </section>
+
+  <!-- Provider Agnostic -->
+  <section
+    class="px-6 py-20 md:py-32 relative overflow-hidden bg-bg-primary border-t border-border/30"
+  >
+    <div class="max-w-3xl mx-auto text-center relative z-10">
+      <div class="flex items-center justify-center gap-3 md:gap-6 mb-10">
+        <!-- Owostack -->
+        <div
+          class="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-bg-secondary/50 border border-border/40 flex items-center justify-center shadow-sm relative group transition-all hover:bg-bg-secondary"
+        >
+          <Logo
+            size={32}
+            class="text-accent transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3"
+          />
+          <div
+            class="absolute inset-0 rounded-2xl ring-1 ring-inset ring-accent/10 group-hover:ring-accent/30 transition-all duration-500"
+          ></div>
+        </div>
+
+        <!-- Connection -->
+        <div class="flex items-center gap-1.5 md:gap-2">
+          <div
+            class="w-1.5 h-1.5 md:w-2.5 md:h-2.5 rounded-full bg-border/40 animate-pulse"
+            style="animation-delay: 0ms"
+          ></div>
+          <div
+            class="w-1.5 h-1.5 md:w-2.5 md:h-2.5 rounded-full bg-border/60 animate-pulse"
+            style="animation-delay: 150ms"
+          ></div>
+          <div
+            class="w-1.5 h-1.5 md:w-2.5 md:h-2.5 rounded-full bg-accent shadow-[0_0_10px_var(--color-accent)] animate-pulse"
+            style="animation-delay: 300ms"
+          ></div>
+        </div>
+
+        <!-- Provider -->
+        <div
+          class="w-16 h-16 md:w-20 md:h-20 rounded-2xl border-2 border-dashed border-border/60 flex items-center justify-center bg-bg-secondary/10 relative group overflow-hidden cursor-crosshair hover:border-accent/50 hover:bg-accent/5 transition-all duration-500"
+        >
+          <div
+            class="absolute inset-0 flex flex-col items-center justify-center transition-all duration-500 group-hover:-translate-y-full opacity-100 group-hover:opacity-0"
+          >
+            <Plug size={28} class="text-text-secondary" weight="duotone" />
+          </div>
+          <div
+            class="absolute inset-0 flex flex-col items-center justify-center translate-y-full transition-all duration-500 group-hover:translate-y-0 text-sm font-bold font-mono text-accent opacity-0 group-hover:opacity-100"
+          >
+            ANY
+          </div>
+        </div>
+      </div>
+
+      <h2
+        class="text-3xl md:text-4xl font-bold text-text-primary mb-5 tracking-tight"
+      >
+        Bring your own provider.
+      </h2>
+      <p
+        class="text-text-secondary max-w-lg mx-auto text-sm md:text-base leading-relaxed mb-10 text-balance"
+      >
+        Owostack is Provider Agnostic, Bring the provider of your choice.
+        combine multiple to achive true regional experience for your customers
+      </p>
+
+      <div class="flex flex-wrap justify-center items-center gap-3 md:gap-4">
+        <div
+          class="px-4 py-2 rounded-full border border-border/40 bg-bg-secondary/30 text-xs font-medium flex items-center gap-2 hover:border-[#0BA4DB]/40 transition-colors cursor-default"
+        >
+          <img
+            src="/paystack_logo.png"
+            alt="Paystack logo"
+            class="w-4 h-4 object-contain"
+          />
+          Paystack
+        </div>
+        <div
+          class="px-4 py-2 rounded-full border border-border/40 bg-bg-secondary/30 text-xs font-medium flex items-center gap-2 hover:border-[#1264FF]/40 transition-colors cursor-default"
+        >
+          <img
+            src="/dodo_logo.jpeg"
+            alt="Dodo Payments logo"
+            class="w-4 h-4 rounded-sm object-contain"
+          />
+          Dodo Payments
+        </div>
+        <div
+          class="px-4 py-2 rounded-full border border-border/40 bg-bg-secondary/30 text-xs font-medium flex items-center gap-2 hover:border-[#e41d34]/40 transition-colors cursor-default"
+        >
+          <img
+            src="/polar_logo.png"
+            alt="Polar logo"
+            class="w-4 h-4 object-contain"
+          />
+          Polar
+        </div>
+        <div
+          class="px-4 py-2 rounded-full border border-dashed border-border/30 bg-bg-secondary/10 text-xs font-medium flex items-center gap-2 text-text-muted cursor-default"
+        >
+          <span class="opacity-60">+ More soon...</span>
+        </div>
       </div>
     </div>
   </section>
@@ -297,11 +416,12 @@
         >A product of The Thirdpen Company</span
       >
       <div class="flex items-center gap-6 text-xs text-text-secondary">
-        <a href="{import.meta.env.DOCS_URL}" class="hover:text-text-primary transition-colors"
-          >Docs</a
+        <a
+          href={import.meta.env.DOCS_URL}
+          class="hover:text-text-primary transition-colors">Docs</a
         >
         <a
-          href="{import.meta.env.GITHUB_URL}"
+          href={import.meta.env.GITHUB_URL}
           class="hover:text-text-primary transition-colors">GitHub</a
         >
       </div>

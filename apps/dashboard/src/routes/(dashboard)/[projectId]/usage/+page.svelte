@@ -203,21 +203,21 @@
   <div class="flex items-end justify-between gap-4 mb-4">
     <div>
       <h3
-        class="text-[10px] font-bold text-text-primary uppercase tracking-widest"
+        class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-4"
       >
-        Feature Usage Over Time
+        <!-- Feature Usage Over Time -->
       </h3>
       {#if !isLoadingTimeseries && timeseriesData.length > 0}
         <div class="flex items-center gap-4 mt-2 flex-wrap">
           <div class="flex items-center gap-1.5">
-            <TrendUp size={12} class="text-accent" weight="fill" />
+            <TrendUp size={12} class="text-accent" weight="duotone" />
             <span class="text-xs text-text-secondary font-semibold"
               >{formatNumber(totalTimeseriesUsage)}</span
             >
             <span class="text-[10px] text-text-dim">total</span>
           </div>
           <div class="flex items-center gap-1.5">
-            <Pulse size={12} class="text-secondary" weight="fill" />
+            <Pulse size={12} class="text-secondary" weight="duotone" />
             <span class="text-xs text-text-secondary font-semibold"
               >{formatNumber(avgDailyUsage)}</span
             >
@@ -225,7 +225,7 @@
           </div>
           {#if peakDayUsage.value > 0}
             <div class="flex items-center gap-1.5">
-              <Lightning size={12} class="text-warning" weight="fill" />
+              <Lightning size={12} class="text-warning" weight="duotone" />
               <span class="text-xs text-text-secondary font-semibold"
                 >{formatNumber(peakDayUsage.value)}</span
               >
@@ -236,7 +236,7 @@
           {/if}
           {#if !isLoading && usage?.mrrTotal}
             <div class="flex items-center gap-1.5">
-              <CurrencyDollar size={12} class="text-success" weight="fill" />
+              <CurrencyDollar size={12} class="text-success" weight="duotone" />
               <span class="text-xs text-text-secondary font-semibold"
                 >{formatCurrency(
                   usage.mrrTotal.amount,

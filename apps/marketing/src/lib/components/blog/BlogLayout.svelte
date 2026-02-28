@@ -2,7 +2,7 @@
   import { ArrowLeft } from "phosphor-svelte";
   import Logo from "$lib/components/ui/Logo.svelte";
 
-  let { children } = $props();
+  let { children, thumbnail, title } = $props();
 </script>
 
 <div class="min-h-screen bg-bg-primary text-text-primary font-sans">
@@ -26,6 +26,17 @@
   <!-- Blog Post Content -->
   <main class="px-6 py-12">
     <div class="max-w-3xl mx-auto">
+      {#if thumbnail}
+        <div
+          class="mb-5 w-full overflow-hidden bg-bg-secondary"
+        >
+          <img
+            src={thumbnail}
+            alt={title || "Blog cover"}
+            class="w-full h-auto  object-cover"
+          />
+        </div>
+      {/if}
       <article class="prose prose-lg max-w-none">
         {@render children()}
       </article>
@@ -46,7 +57,7 @@
   :global(.prose) {
     color: var(--color-text-primary);
   }
-  
+
   :global(.prose h1) {
     font-family: var(--font-display);
     font-weight: 700;
@@ -55,7 +66,7 @@
     margin-bottom: 1rem;
     color: var(--color-text-primary);
   }
-  
+
   :global(.prose h2) {
     font-family: var(--font-display);
     font-weight: 600;
@@ -65,7 +76,7 @@
     margin-bottom: 1rem;
     color: var(--color-text-primary);
   }
-  
+
   :global(.prose h3) {
     font-family: var(--font-display);
     font-weight: 600;
@@ -75,34 +86,34 @@
     margin-bottom: 0.75rem;
     color: var(--color-text-primary);
   }
-  
+
   :global(.prose p) {
     margin-bottom: 1rem;
     line-height: 1.7;
     color: var(--color-text-secondary);
   }
-  
+
   :global(.prose a) {
     color: var(--color-accent-hover);
     text-decoration: underline;
     text-underline-offset: 2px;
     transition: color 0.15s ease;
   }
-  
+
   :global(.prose a:hover) {
     color: var(--color-accent);
   }
-  
+
   :global(.prose ul, .prose ol) {
     margin-bottom: 1rem;
     padding-left: 1.5rem;
   }
-  
+
   :global(.prose li) {
     margin-bottom: 0.5rem;
     color: var(--color-text-secondary);
   }
-  
+
   :global(.prose code) {
     font-family: var(--font-mono);
     background: var(--color-bg-secondary);
@@ -111,7 +122,7 @@
     font-size: 0.875em;
     color: var(--color-accent-hover);
   }
-  
+
   :global(.prose pre) {
     background: var(--color-bg-secondary);
     padding: 1rem;
@@ -119,13 +130,13 @@
     overflow-x: auto;
     margin-bottom: 1rem;
   }
-  
+
   :global(.prose pre code) {
     background: transparent;
     padding: 0;
     color: var(--color-text-primary);
   }
-  
+
   :global(.prose blockquote) {
     border-left: 3px solid var(--color-accent);
     padding-left: 1rem;
@@ -134,22 +145,24 @@
     font-style: italic;
     color: var(--color-text-muted);
   }
-  
+
   :global(.prose hr) {
     border: none;
     border-top: 1px solid var(--color-border);
     margin: 2rem 0;
   }
-  
+
   :global(.prose img) {
     max-width: 100%;
     height: auto;
     border-radius: 8px;
     margin: 1.5rem 0;
     display: block;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    box-shadow:
+      0 4px 6px -1px rgba(0, 0, 0, 0.1),
+      0 2px 4px -1px rgba(0, 0, 0, 0.06);
   }
-  
+
   :global(.prose img + em) {
     display: block;
     text-align: center;
@@ -158,19 +171,19 @@
     margin-top: -1rem;
     margin-bottom: 1.5rem;
   }
-  
+
   :global(.prose table) {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 1rem;
   }
-  
+
   :global(.prose th, .prose td) {
     padding: 0.75rem;
     border: 1px solid var(--color-border);
     text-align: left;
   }
-  
+
   :global(.prose th) {
     background: var(--color-bg-secondary);
     font-weight: 600;

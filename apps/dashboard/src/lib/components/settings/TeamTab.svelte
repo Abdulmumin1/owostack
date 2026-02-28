@@ -150,7 +150,7 @@
 </script>
 
 <div class="flex items-center justify-between mb-6">
-  <h2 class="text-lg font-bold text-text-primary">Team Members</h2>
+<div></div>
   <div class="flex items-center gap-3">
     {#if isLoadingInvites}
       <CircleNotch size={14} class="animate-spin text-text-dim" />

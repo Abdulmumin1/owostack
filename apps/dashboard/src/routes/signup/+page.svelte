@@ -81,6 +81,11 @@
   });
 
   async function handleSubmit(e: Event) {
+    isLoading = false
+
+    error = "Signup in private beta"
+    return 
+
     e.preventDefault();
     isLoading = true;
     error = null;
@@ -108,6 +113,12 @@
 <svelte:head>
   <title>Sign Up - Owostack</title>
 </svelte:head>
+
+
+
+<div class="h-screen bg-accent w-screen overflow-hidden fixed top-0 left-0 z-50">
+  
+</div>
 
 <div class="min-h-screen flex bg-bg-primary">
   <!-- Left Side: Interactive Feature Showcase -->
