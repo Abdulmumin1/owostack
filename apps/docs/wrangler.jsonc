@@ -6,8 +6,8 @@
   "main": "@tanstack/react-start/server-entry",
   "routes": [
     {
-        "pattern": "owostack.com/docs/*",
-      "zone_name": "owostack.com"
+      "pattern": "docs.owostack.com",
+      "custom_domain": true
     }
   ]
 }

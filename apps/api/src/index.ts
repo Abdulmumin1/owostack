@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createDb, schema } from "@owostack/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { type User } from "better-auth";
 import { auth } from "./lib/auth";
 import { resolveOrganizationId } from "./lib/organization-resolver";
@@ -63,7 +63,7 @@ export {
 
 export type Env = {
   DB: D1Database; // Per-environment business data (customers, plans, subs, etc.)
-  DB_AUTH: D1Database; // Shared auth data (users, sessions, orgs, projects)
+  DB_AUTH: D1Database; // Shared auth data (users, sessions, orgs)
   CACHE: KVNamespace; // Per-environment cache
   CACHE_SHARED: KVNamespace; // Shared cache across all environments (CLI auth, etc.)
   ANALYTICS?: AnalyticsEngineDataset; // Optional Cloudflare Analytics Engine dataset
@@ -113,12 +113,6 @@ app.onError((err, c) => {
     { success: false, error: err?.message || "Internal server error" },
     500,
   );
-});
-
-// Temporary: verify deployment is active and logs are captured
-app.use("*", async (c, next) => {
-  console.error("[DEBUG-DEPLOY] Hit:", c.req.method, c.req.path);
-  await next();
 });
 
 app.get("/", (c) => {
@@ -200,6 +194,21 @@ app.use("*", async (c, next) => {
       providerId,
     });
   }
+});
+
+app.get("/api/organizations/slug-check/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  if (!slug || slug.length < 3) {
+    return c.json({ available: false, error: "Invalid slug" });
+  }
+
+  const authDb = c.get("authDb");
+  const existing = await authDb.query.organizations.findFirst({
+    where: eq(schema.organizations.slug, slug),
+    columns: { id: true },
+  });
+
+  return c.json({ available: !existing });
 });
 
 app.get("/api/auth/debug-routes", (c) => {
@@ -396,30 +405,32 @@ async function handleWebhookRequest(
   const db = c.get("db");
   const authDb = c.get("authDb");
 
-  // 3. Ensure organization row exists in billing DB
-  const existingOrg = await db.query.organizations.findFirst({
-    where: eq(schema.organizations.id, organizationId),
-    columns: { id: true },
-  });
-  if (!existingOrg) {
-    const org = await authDb.query.organizations.findFirst({
-      where: eq(schema.organizations.id, organizationId),
-    });
-    if (org) {
-      await db.insert(schema.organizations).values(org).onConflictDoNothing();
-    }
-  }
-
-  // 4. Resolve the webhook secret for this provider
-  const project = await authDb.query.projects.findFirst({
-    where: (projects: any, { eq }: any) =>
-      eq(projects.organizationId, organizationId),
+  // 3. Resolve organization from auth DB to get webhook secrets
+  const org = await authDb.query.organizations.findFirst({
+    where: or(
+      eq(schema.organizations.id, organizationId),
+      eq(schema.organizations.slug, organizationId),
+    ),
   });
 
-  if (!project) {
+  if (!org) {
     return c.json({ error: "Organization not found" }, 404);
   }
 
+  // Ensure organization row exists in billing DB for FK constraints
+  const existingOrgInBilling = await db.query.organizations.findFirst({
+    where: or(
+      eq(schema.organizations.id, organizationId),
+      eq(schema.organizations.slug, organizationId),
+    ),
+    columns: { id: true },
+  });
+
+  if (!existingOrgInBilling) {
+    await db.insert(schema.organizations).values(org).onConflictDoNothing();
+  }
+
+  // 4. Resolve the webhook secret for this provider
   const workerEnv = c.env.ENVIRONMENT === "live" ? "live" : "test";
   let secret: string | null = null;
   let secretSource: string | null = null;
@@ -471,34 +482,35 @@ async function handleWebhookRequest(
     }
   }
 
-  // 4b. Fallback: project-level webhookSecret
+  // 4b. Fallback: organization-level webhookSecret
   if (!secret) {
-    secret = project.webhookSecret;
+    const orgWebhookSecret =
+      workerEnv === "live" ? org.liveWebhookSecret : org.testWebhookSecret;
+    secret = orgWebhookSecret || org.webhookSecret; // Use specific env or deprecated global field
     if (secret) {
-      secretSource = "project_webhook_secret";
+      secretSource = "organization_webhook_secret";
     }
   }
 
-  // 4c. Fallback: provider API secret key (e.g. Paystack uses this for HMAC)
+  // 4c. Fallback: organization API secret key (if relevant for this provider)
   if (!secret) {
     const encryptedKey =
-      workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
-    console.log(
-      `[WEBHOOK-ROUTE] No webhookSecret, falling back to ${workerEnv} secret key (hasKey=${!!encryptedKey})`,
-    );
-
+      workerEnv === "live" ? org.liveSecretKey : org.testSecretKey;
     if (encryptedKey) {
       try {
         secret = (await decrypt(encryptedKey, c.env.ENCRYPTION_KEY)).trim();
-        secretSource = `project_${workerEnv}_secret_key_encrypted`;
+        secretSource = `organization_${workerEnv}_secret_key_encrypted`;
+        console.log(
+          `[WEBHOOK-ROUTE] No webhookSecret, falling back to ${workerEnv} secret key for org=${organizationId}`,
+        );
       } catch (e) {
         console.error(
           `[WEBHOOK-ROUTE] Failed to decrypt key for verification:`,
           e,
         );
-        // Backward compatibility: allow plaintext project secret keys.
+        // Backward compatibility
         secret = encryptedKey.trim();
-        secretSource = `project_${workerEnv}_secret_key_plaintext`;
+        secretSource = `organization_${workerEnv}_secret_key_plaintext`;
       }
     }
   }

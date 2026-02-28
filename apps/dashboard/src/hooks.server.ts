@@ -25,6 +25,7 @@ const PROTECTED_ROUTES = [
   "/usage",
   "/events",
   "/accept-invitation",
+  "/onboarding",
 ];
 
 // Routes that are only for non-authenticated users (login, signup, etc.)

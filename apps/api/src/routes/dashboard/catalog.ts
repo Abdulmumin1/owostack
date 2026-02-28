@@ -37,7 +37,8 @@ app.get("/export", async (c) => {
     (db.query as any).creditPacks?.findMany({
       where: eq(schema.creditPacks.organizationId, organizationId),
     }) ?? Promise.resolve([]),
-    (db.query as any).overageSettings?.findFirst({
+    // Read overage settings from business db table
+    db.query.overageSettings.findFirst({
       where: eq(schema.overageSettings.organizationId, organizationId),
     }) ?? Promise.resolve(null),
   ]);
@@ -401,12 +402,10 @@ app.post("/import", async (c) => {
     }
 
     // =====================================================================
-    // 5. Overage Settings — single row per org, skip if exists
+    // 5. Overage Settings — insert into business db table
     // =====================================================================
     if (catalog.overageSettings) {
-      const existingOverage = await (
-        db.query as any
-      ).overageSettings?.findFirst({
+      const existingOverage = await db.query.overageSettings.findFirst({
         where: eq(schema.overageSettings.organizationId, organizationId),
       });
 

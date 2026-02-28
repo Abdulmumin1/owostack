@@ -81,7 +81,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     name: "Dodo Payments",
     description: "Global payment processing for digital products",
     color: "violet",
-    docsUrl: "https://docs.dodopayments.com",
+    docsUrl: "https://app.dodopayments.com/developers/api-keys",
     fields: [
       {
         key: "secretKey",
@@ -103,7 +103,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     name: "Polar",
     description: "Global billing and subscriptions for digital products",
     color: "rose",
-    docsUrl: "https://docs.polar.sh",
+    docsUrl: "https://polar.sh/dashboard",
     fields: [
       {
         key: "secretKey",

@@ -36,11 +36,11 @@ A **feature** is a product capability defined once (e.g. "API Calls", "Analytics
 
 The same feature can appear across multiple plans with different configurations:
 
-| Plan | Feature: api-calls | Feature: analytics |
-|------|-------------------|--------------------|
-| Free | limit: 100, reset: monthly | disabled |
-| Pro | limit: 10,000, reset: monthly, overage: charge | enabled |
-| Enterprise | unlimited | enabled |
+| Plan       | Feature: api-calls                             | Feature: analytics |
+| ---------- | ---------------------------------------------- | ------------------ |
+| Free       | limit: 100, reset: monthly                     | disabled           |
+| Pro        | limit: 10,000, reset: monthly, overage: charge | enabled            |
+| Enterprise | unlimited                                      | enabled            |
 
 This separation means you can change a feature's limit on the Pro plan without touching the Free or Enterprise plans.
 
@@ -69,7 +69,7 @@ This means you can define plans freely without worrying about provider-side rate
 
 ## Code-managed vs dashboard-managed
 
-Plans can be created through the dashboard or defined in code using the catalog. Both coexist safely. See [Catalog & Sync Model](/docs/concepts/catalog-sync) for details on how conflicts are resolved.
+Plans can be created through the dashboard or defined in code using the catalog. Both coexist safely. See [Catalog & Sync Model](/guides/catalog-sync) for details on how conflicts are resolved.
 
 ## Updating plans
 
@@ -77,5 +77,5 @@ Changing a plan’s features affects entitlements immediately for customers on t
 
 See:
 
-- [Plans (Dashboard)](/docs/dashboard/plans)
-- [Plan switching](/docs/guides/plan-switching)
+- [Plans (Dashboard)](/dashboard/plans)
+- [Plan switching](/guides/plan-switching)

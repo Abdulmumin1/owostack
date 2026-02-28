@@ -10,23 +10,23 @@ import { app } from "../src/index";
 const mockVerify = vi.fn();
 const mockHandle = vi.fn();
 
-const mockProject = {
-  id: "project-123",
-  organizationId: "org-123",
+const mockOrg = {
+  id: "org-123",
+  name: "Test Org",
+  slug: "test-org",
   webhookSecret: "wh_secret",
-  paystackSecretKey: "encrypted_key",
-  environment: "test",
+  testSecretKey: "encrypted_key",
+  testWebhookSecret: "wh_secret",
 };
 
 const mockDb = {
   insert: vi.fn().mockReturnThis(),
   values: vi.fn().mockResolvedValue([]),
   query: {
-    organizations: { findFirst: vi.fn().mockResolvedValue({ id: "org-123" }) },
+    organizations: { findFirst: vi.fn().mockResolvedValue(mockOrg) },
     providerAccounts: { findMany: vi.fn().mockResolvedValue([]) },
     customers: { findFirst: vi.fn() },
     plans: { findFirst: vi.fn() },
-    projects: { findFirst: vi.fn().mockResolvedValue(mockProject) },
   },
 };
 
@@ -39,7 +39,6 @@ vi.mock("@owostack/db", () => ({
     customers: {},
     plans: {},
     subscriptions: {},
-    projects: { organizationId: {} },
   },
 }));
 
@@ -86,6 +85,7 @@ describe("Webhooks API", () => {
     BETTER_AUTH_SECRET: string;
     BETTER_AUTH_URL: string;
     ENCRYPTION_KEY: string;
+    ENVIRONMENT: string;
   } = {
     DB: {},
     API_KEYS: mockKv,
@@ -94,11 +94,12 @@ describe("Webhooks API", () => {
     BETTER_AUTH_SECRET: "secret",
     BETTER_AUTH_URL: "http://localhost",
     ENCRYPTION_KEY: "test_key",
+    ENVIRONMENT: "test",
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDb.query.projects.findFirst.mockResolvedValue(mockProject);
+    mockDb.query.organizations.findFirst.mockResolvedValue(mockOrg);
   });
 
   it("should reject requests without signature", async () => {
@@ -118,7 +119,7 @@ describe("Webhooks API", () => {
   });
 
   it("should return 404 for unknown organization", async () => {
-    mockDb.query.projects.findFirst.mockResolvedValue(null);
+    mockDb.query.organizations.findFirst.mockResolvedValue(null);
 
     const res = await app.request(
       `/webhooks/unknown-org`,
@@ -197,9 +198,9 @@ describe("Webhooks API", () => {
   it("should use the organization-specific webhook secret", async () => {
     // Using a different secret for this org
     const orgSecret = "org_specific_secret";
-    mockDb.query.projects.findFirst.mockResolvedValue({
-      ...mockProject,
-      webhookSecret: orgSecret,
+    mockDb.query.organizations.findFirst.mockResolvedValue({
+      ...mockOrg,
+      testWebhookSecret: orgSecret,
     });
 
     mockVerify.mockResolvedValue(Result.ok(true));

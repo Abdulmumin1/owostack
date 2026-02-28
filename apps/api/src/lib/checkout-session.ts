@@ -18,7 +18,6 @@ export async function createCheckoutSessionForSubscription(
   },
 ) {
   const db = c.get("db");
-  const authDb = c.get("authDb");
 
   // 1. Load the subscription with plan and customer
   const subscription = await db.query.subscriptions.findFirst({
@@ -40,24 +39,14 @@ export async function createCheckoutSessionForSubscription(
   const organizationId = options.organizationId || plan.organizationId;
 
   // 2. Resolve environment
-  const project = await authDb.query.projects.findFirst({
-    where: eq(schema.projects.organizationId, organizationId),
-  });
-
   const workerEnv = c.env.ENVIRONMENT === "live" ? "live" : "test";
-  const providerEnv = deriveProviderEnvironment(
-    c.env.ENVIRONMENT,
-    project?.activeEnvironment,
-  );
+  const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
 
   // 3. Resolve provider
   const registry = getProviderRegistry();
 
   const explicitProvider =
-    subscription.providerId ||
-    plan.providerId ||
-    project?.defaultProvider ||
-    "paystack";
+    subscription.providerId || plan.providerId || "paystack";
 
   const accounts = await loadProviderAccounts(
     db,
@@ -105,7 +94,6 @@ export async function createCheckoutSessionForSubscription(
       plan_id: plan.id,
       customer_id: customer.id,
       organization_id: organizationId,
-      project_id: project?.id,
       environment: workerEnv,
       provider_id: selectedAccount.providerId,
       ...(typeof subscription.metadata === "object"

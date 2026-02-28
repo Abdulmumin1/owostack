@@ -28,14 +28,12 @@ function err(message: string) {
 
 interface MockDb {
   query: {
-    projects: { findFirst: Mock };
     creditPacks: { findFirst: Mock };
   };
 }
 
 const mockDb: MockDb = {
   query: {
-    projects: { findFirst: vi.fn() },
     creditPacks: { findFirst: vi.fn() },
   },
 };
@@ -43,7 +41,6 @@ const mockDb: MockDb = {
 vi.mock("@owostack/db", () => ({
   createDb: () => mockDb,
   schema: {
-    projects: { organizationId: "organizationId" },
     creditPacks: {
       organizationId: "organizationId",
       slug: "slug",
@@ -122,12 +119,6 @@ describe("POST /v1/addon behavior", () => {
     vi.mocked(verifyApiKey).mockResolvedValue({
       id: "key_1",
       organizationId: "org_1",
-    });
-
-    mockDb.query.projects.findFirst.mockResolvedValue({
-      id: "proj_1",
-      organizationId: "org_1",
-      activeEnvironment: "test",
     });
 
     vi.mocked(getProviderRegistry).mockReturnValue({

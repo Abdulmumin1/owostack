@@ -97,7 +97,6 @@ interface MockDb {
   insert: Mock;
   query: {
     organizations: { findFirst: Mock };
-    projects: { findFirst: Mock };
     providerAccounts: { findMany: Mock };
     providerRules: { findMany: Mock };
     plans: { findFirst: Mock; findMany: Mock };
@@ -110,12 +109,6 @@ const mockDb: MockDb = {
   query: {
     organizations: {
       findFirst: vi.fn(async () => ({ id: "org_123" })),
-    },
-    projects: {
-      findFirst: vi.fn(async () => ({
-        id: "proj_123",
-        activeEnvironment: "test",
-      })),
     },
     providerAccounts: {
       findMany: vi.fn(async () => []),
