@@ -6,20 +6,21 @@ export function FloatingNav() {
   const pathname = location.pathname;
 
   const links = [
-    { text: "Docs", url: "/docs" },
-    { text: "SDK", url: "/docs/sdk/configuration" },
-    { text: "Reference", url: "/docs/api-reference" },
-    { text: "CLI", url: "/docs/cli" },
+    { text: "Docs", url: "/" },
+    { text: "SDK", url: "/sdk/configuration" },
+    { text: "Reference", url: "/api-reference" },
+    { text: "CLI", url: "/cli" },
   ];
 
   const isActive = (url: string) => {
-    if (url === "/docs") {
+    if (url === "/") {
       return (
-        pathname === "/docs" ||
-        (pathname.startsWith("/docs") &&
-          !pathname.startsWith("/docs/sdk") &&
-          !pathname.startsWith("/docs/cli") &&
-          !pathname.startsWith("/docs/api-reference"))
+        pathname === "/" ||
+        (pathname !== "/" &&
+          !pathname.startsWith("/sdk") &&
+          !pathname.startsWith("/cli") &&
+          !pathname.startsWith("/api-reference") &&
+          !pathname.startsWith("/api/"))
       );
     }
     return pathname.startsWith(url);
