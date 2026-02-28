@@ -81,17 +81,8 @@ app.post("/attach", async (c) => {
       return c.json({ success: false, error: "Invalid API Key" }, 401);
     }
 
-    // Get project config from shared auth DB
-    const project = await authDb.query.projects.findFirst({
-      where: eq(schema.projects.organizationId, keyRecord.organizationId),
-    });
-
-    if (!project) {
-      return c.json(
-        { success: false, error: "Project configuration not found" },
-        500,
-      );
-    }
+    // Environment comes directly from ENVIRONMENT variable
+    const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
 
     // Parse Body
     let body;
@@ -148,11 +139,6 @@ app.post("/attach", async (c) => {
       db,
       keyRecord.organizationId,
       c.env.ENCRYPTION_KEY,
-    );
-
-    const providerEnv = deriveProviderEnvironment(
-      c.env.ENVIRONMENT,
-      project.activeEnvironment,
     );
 
     // ---------- Provider Resolution ----------
@@ -587,7 +573,6 @@ app.post("/attach", async (c) => {
       const trialMetadata = {
         ...metadata,
         organization_id: keyRecord.organizationId,
-        project_id: project.id,
         plan_id: plan.id,
         plan_slug: plan.slug,
         customer_id: customerRecord.id,
@@ -672,7 +657,6 @@ app.post("/attach", async (c) => {
           metadata: {
             ...metadata,
             organization_id: keyRecord.organizationId,
-            project_id: project.id,
             environment: providerEnv,
             provider_id: selectedProviderId,
           },

@@ -107,6 +107,20 @@ export type Variables = {
 
 export const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+app.onError((err, c) => {
+  console.error("[GLOBAL] Unhandled error:", err?.message, err?.stack);
+  return c.json(
+    { success: false, error: err?.message || "Internal server error" },
+    500,
+  );
+});
+
+// Temporary: verify deployment is active and logs are captured
+app.use("*", async (c, next) => {
+  console.error("[DEBUG-DEPLOY] Hit:", c.req.method, c.req.path);
+  await next();
+});
+
 app.get("/", (c) => {
   return c.json({ status: "healthy" });
 });

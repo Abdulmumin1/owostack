@@ -366,13 +366,10 @@ app.post("/", async (c) => {
           try {
             const registry = getProviderRegistry();
             const adapter = registry.get(existing.providerId);
-            const authDb = c.get("authDb");
-            const project = await authDb.query.projects.findFirst({
-              where: eq(schema.projects.organizationId, organizationId),
-            });
+            // Environment comes directly from ENVIRONMENT variable
             const providerEnv = deriveProviderEnvironment(
               c.env.ENVIRONMENT,
-              project?.activeEnvironment,
+              null,
             );
             const providerAccounts = await loadProviderAccounts(
               db,
