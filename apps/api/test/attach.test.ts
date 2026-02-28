@@ -9,7 +9,6 @@ import { decrypt } from "../src/lib/encryption";
 
 const mockDb = {
   query: {
-    projects: { findFirst: vi.fn() },
     plans: { findFirst: vi.fn() },
   },
 };
@@ -17,7 +16,6 @@ const mockDb = {
 vi.mock("@owostack/db", () => ({
   createDb: () => mockDb,
   schema: {
-    projects: { organizationId: "organizationId" },
     plans: {
       organizationId: "organizationId",
       slug: "slug",
@@ -100,14 +98,6 @@ describe("POST /v1/attach", () => {
     vi.mocked(verifyApiKey).mockResolvedValue({
       id: "key_123",
       organizationId: "org_123",
-    });
-    mockDb.query.projects.findFirst.mockResolvedValue({
-      id: "proj_123",
-      organizationId: "org_123",
-      activeEnvironment: "test",
-      liveSecretKey: null,
-      testSecretKey: "encrypted_test_key",
-      webhookSecret: "wh_secret",
     });
     mockDb.query.plans.findFirst.mockResolvedValue(null);
     vi.mocked(decrypt).mockResolvedValue("sk_decrypted");

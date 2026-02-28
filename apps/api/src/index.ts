@@ -63,7 +63,7 @@ export {
 
 export type Env = {
   DB: D1Database; // Per-environment business data (customers, plans, subs, etc.)
-  DB_AUTH: D1Database; // Shared auth data (users, sessions, orgs, projects)
+  DB_AUTH: D1Database; // Shared auth data (users, sessions, orgs)
   CACHE: KVNamespace; // Per-environment cache
   CACHE_SHARED: KVNamespace; // Shared cache across all environments (CLI auth, etc.)
   ANALYTICS?: AnalyticsEngineDataset; // Optional Cloudflare Analytics Engine dataset
@@ -407,7 +407,10 @@ async function handleWebhookRequest(
 
   // 3. Resolve organization from auth DB to get webhook secrets
   const org = await authDb.query.organizations.findFirst({
-    where: or(eq(schema.organizations.id, organizationId), eq(schema.organizations.slug, organizationId)),
+    where: or(
+      eq(schema.organizations.id, organizationId),
+      eq(schema.organizations.slug, organizationId),
+    ),
   });
 
   if (!org) {
@@ -416,10 +419,13 @@ async function handleWebhookRequest(
 
   // Ensure organization row exists in billing DB for FK constraints
   const existingOrgInBilling = await db.query.organizations.findFirst({
-    where: or(eq(schema.organizations.id, organizationId), eq(schema.organizations.slug, organizationId)),
+    where: or(
+      eq(schema.organizations.id, organizationId),
+      eq(schema.organizations.slug, organizationId),
+    ),
     columns: { id: true },
   });
-  
+
   if (!existingOrgInBilling) {
     await db.insert(schema.organizations).values(org).onConflictDoNothing();
   }
