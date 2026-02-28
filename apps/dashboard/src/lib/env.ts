@@ -5,7 +5,7 @@
  *   - Test API  (sandbox data, test provider keys, own D1)
  *   - Live API  (production data, live provider keys, own D1)
  *
- * Both workers share a DB_AUTH binding (users, sessions, orgs, projects)
+ * Both workers share a DB_AUTH binding (users, sessions, orgs)
  * and use cross-subdomain cookies, so auth works on either endpoint.
  *
  * Configure via Vite env vars in .env (or Cloudflare Pages env):
@@ -13,8 +13,7 @@
  *   VITE_API_URL_LIVE   – e.g. https://api.owostack.com
  */
 
-
-import { PUBLIC_API_URL_LIVE, PUBLIC_API_URL_TEST } from '$env/static/public';
+import { PUBLIC_API_URL_LIVE, PUBLIC_API_URL_TEST } from "$env/static/public";
 
 export type AppEnvironment = "test" | "live";
 
@@ -51,12 +50,15 @@ export async function setActiveEnvironment(env: AppEnvironment) {
   if (!_projectId) return;
 
   try {
-    const res = await fetch(`${API_URLS[prev]}/api/dashboard/switch-environment`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ organizationId: _projectId, environment: env }),
-    });
+    const res = await fetch(
+      `${API_URLS[prev]}/api/dashboard/switch-environment`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ organizationId: _projectId, environment: env }),
+      },
+    );
     const data = await res.json();
     if (!res.ok || !data.success) {
       // Rollback on failure

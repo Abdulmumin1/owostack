@@ -177,7 +177,8 @@ export async function getUnbilledOverageAmount(
   for (const row of result?.results || []) {
     const usage = Number(row.total_usage || 0);
     const included = Number(row.limit_value || 0);
-    const billable = row.usage_model === "included" ? Math.max(0, usage - included) : usage;
+    const billable =
+      row.usage_model === "included" ? Math.max(0, usage - included) : usage;
     if (billable === 0) continue;
 
     const pricePerUnit = Number(row.price_per_unit || row.overage_price || 0);
@@ -211,6 +212,7 @@ export async function getCustomerOverageLimit(
 
 /**
  * Get the org's overage settings (threshold, billing interval, etc.).
+ * Reads from overage_settings table in business database.
  */
 export async function getOrgOverageSettings(
   db: any,
@@ -221,19 +223,24 @@ export async function getOrgOverageSettings(
   autoCollect: boolean;
   gracePeriodHours: number;
 } | null> {
-  const result = await (db as any).run(
-    sql`SELECT billing_interval, threshold_amount, auto_collect, grace_period_hours
-        FROM overage_settings
-        WHERE organization_id = ${organizationId} LIMIT 1`,
-  );
-  const row = result?.results?.[0];
-  if (!row) return null;
-  return {
-    billingInterval: row.billing_interval || "end_of_period",
-    thresholdAmount: row.threshold_amount,
-    autoCollect: !!row.auto_collect,
-    gracePeriodHours: row.grace_period_hours || 0,
-  };
+  try {
+    const settings = await db.query.overageSettings.findFirst({
+      where: (schema: any) =>
+        schema.overageSettings.organizationId.equals(organizationId),
+    });
+
+    if (!settings) return null;
+
+    return {
+      billingInterval: settings.billingInterval || "end_of_period",
+      thresholdAmount: settings.thresholdAmount,
+      autoCollect: settings.autoCollect,
+      gracePeriodHours: settings.gracePeriodHours || 0,
+    };
+  } catch (e) {
+    console.error("[getOrgOverageSettings] Error:", e);
+    return null;
+  }
 }
 
 /**
@@ -265,12 +272,17 @@ export async function checkOverageAllowed(
   if (!hasCard) {
     return {
       allowed: false,
-      reason: "No payment method on file. Add a card to enable overage billing.",
+      reason:
+        "No payment method on file. Add a card to enable overage billing.",
     };
   }
 
   // 2. Feature-level max overage units check
-  if (maxOverageUnits !== null && maxOverageUnits !== undefined && maxOverageUnits > 0) {
+  if (
+    maxOverageUnits !== null &&
+    maxOverageUnits !== undefined &&
+    maxOverageUnits > 0
+  ) {
     const overageUsed = await getOverageUnitsUsed(
       db,
       customerId,
@@ -290,7 +302,11 @@ export async function checkOverageAllowed(
 
   // 3. Customer spending cap check
   const customerLimit = await getCustomerOverageLimit(db, customerId);
-  if (customerLimit?.maxOverageAmount !== null && customerLimit?.maxOverageAmount !== undefined && customerLimit.maxOverageAmount > 0) {
+  if (
+    customerLimit?.maxOverageAmount !== null &&
+    customerLimit?.maxOverageAmount !== undefined &&
+    customerLimit.maxOverageAmount > 0
+  ) {
     const currentAmount = await getUnbilledOverageAmount(db, customerId, opts);
     if (currentAmount >= customerLimit.maxOverageAmount) {
       if (customerLimit.onLimitReached === "block") {

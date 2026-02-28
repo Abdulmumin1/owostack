@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
@@ -18,10 +18,15 @@ app.get("/", async (c) => {
 
   const db = c.get("db");
 
+  console.log("organizationId", organizationId);
+
   try {
-    const settings = await (db.query as any).overageSettings?.findFirst?.({
-      where: eq((schema as any).overageSettings.organizationId, organizationId),
+    // Use proper schema typing
+    const settings = await db.query.overageSettings.findFirst({
+      where: eq(schema.overageSettings.organizationId, organizationId),
     });
+
+    console.log("settings", settings);
 
     return c.json({
       success: true,
@@ -33,6 +38,7 @@ app.get("/", async (c) => {
       },
     });
   } catch (e: any) {
+    console.error("[overage-settings] GET error:", e);
     if (e?.message?.includes("no such table")) {
       return c.json({
         success: true,
@@ -69,30 +75,43 @@ app.put("/", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const {
-    organizationId,
-    billingInterval,
-    thresholdAmount,
-    autoCollect,
-    gracePeriodHours,
-  } = parsed.data;
+  const { billingInterval, thresholdAmount, autoCollect, gracePeriodHours } =
+    parsed.data;
+
+  // Use resolved organization ID from context (middleware resolves slug to UUID)
+  const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
+
   const db = c.get("db");
   const now = Date.now();
 
   try {
-    await db.run(sql`
-      INSERT INTO overage_settings (id, organization_id, billing_interval, threshold_amount, auto_collect, grace_period_hours, created_at, updated_at)
-      VALUES (${crypto.randomUUID()}, ${organizationId}, ${billingInterval}, ${thresholdAmount ?? null}, ${autoCollect ? 1 : 0}, ${gracePeriodHours}, ${now}, ${now})
-      ON CONFLICT (organization_id) DO UPDATE SET
-        billing_interval = excluded.billing_interval,
-        threshold_amount = excluded.threshold_amount,
-        auto_collect = excluded.auto_collect,
-        grace_period_hours = excluded.grace_period_hours,
-        updated_at = excluded.updated_at
-    `);
+    // Upsert using Drizzle
+    await db
+      .insert(schema.overageSettings)
+      .values({
+        id: crypto.randomUUID(),
+        organizationId,
+        billingInterval,
+        thresholdAmount: thresholdAmount ?? null,
+        autoCollect,
+        gracePeriodHours,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: schema.overageSettings.organizationId,
+        set: {
+          billingInterval,
+          thresholdAmount: thresholdAmount ?? null,
+          autoCollect,
+          gracePeriodHours,
+          updatedAt: now,
+        },
+      });
 
     return c.json({ success: true });
   } catch (e: any) {
+    console.error("[overage-settings] PUT error:", e);
     return c.json({ success: false, error: e.message }, 500);
   }
 });
@@ -113,18 +132,16 @@ app.get("/customer-limits", async (c) => {
   const db = c.get("db");
 
   try {
-    const limit = await (db.query as any).customerOverageLimits?.findFirst?.({
+    const limit = await db.query.customerOverageLimits.findFirst({
       where: and(
-        eq((schema as any).customerOverageLimits.customerId, customerId),
-        eq(
-          (schema as any).customerOverageLimits.organizationId,
-          organizationId,
-        ),
+        eq(schema.customerOverageLimits.customerId, customerId),
+        eq(schema.customerOverageLimits.organizationId, organizationId),
       ),
     });
 
     return c.json({ success: true, data: limit || null });
   } catch (e: any) {
+    console.error("[overage-settings] GET customer-limits error:", e);
     if (e?.message?.includes("no such table")) {
       return c.json({ success: true, data: null });
     }
@@ -156,17 +173,29 @@ app.put("/customer-limits", async (c) => {
   const now = Date.now();
 
   try {
-    await db.run(sql`
-      INSERT INTO customer_overage_limits (id, customer_id, organization_id, max_overage_amount, on_limit_reached, created_at, updated_at)
-      VALUES (${crypto.randomUUID()}, ${customerId}, ${organizationId}, ${maxOverageAmount ?? null}, ${onLimitReached}, ${now}, ${now})
-      ON CONFLICT (customer_id) DO UPDATE SET
-        max_overage_amount = excluded.max_overage_amount,
-        on_limit_reached = excluded.on_limit_reached,
-        updated_at = excluded.updated_at
-    `);
+    await db
+      .insert(schema.customerOverageLimits)
+      .values({
+        id: crypto.randomUUID(),
+        customerId,
+        organizationId,
+        maxOverageAmount: maxOverageAmount ?? null,
+        onLimitReached,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: schema.customerOverageLimits.customerId,
+        set: {
+          maxOverageAmount: maxOverageAmount ?? null,
+          onLimitReached,
+          updatedAt: now,
+        },
+      });
 
     return c.json({ success: true });
   } catch (e: any) {
+    console.error("[overage-settings] PUT customer-limits error:", e);
     return c.json({ success: false, error: e.message }, 500);
   }
 });

@@ -15,7 +15,6 @@ import type { Adapter } from "@owostack/adapters";
 
 vi.mock("@owostack/db", () => ({
   schema: {
-    projects: { organizationId: "organizationId" },
     plans: { organizationId: "organizationId", slug: "slug" },
   },
 }));
@@ -64,7 +63,7 @@ type MockDb = {
 
 type MockAuthDb = {
   query: {
-    projects: {
+    organizations: {
       findFirst: Mock;
     };
   };
@@ -96,11 +95,8 @@ describe("/attach behavior", () => {
 
   const mockAuthDb: MockAuthDb = {
     query: {
-      projects: {
-        findFirst: vi.fn(async () => ({
-          id: "proj_1",
-          activeEnvironment: "test",
-        })),
+      organizations: {
+        findFirst: vi.fn(async () => ({ id: "org_1" })),
       },
     },
   };
