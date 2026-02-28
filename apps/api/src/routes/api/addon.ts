@@ -17,7 +17,6 @@ import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 import { ensureCreditPackSynced } from "../../lib/credit-pack-sync";
 
-
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 const addonSchema = z.object({
@@ -74,18 +73,6 @@ app.post("/addon", async (c) => {
     return c.json({ success: false, error: "Invalid API Key" }, 401);
   }
 
-  // Get project config
-  const project = await authDb.query.projects.findFirst({
-    where: eq(schema.projects.organizationId, keyRecord.organizationId),
-  });
-
-  if (!project) {
-    return c.json(
-      { success: false, error: "Project configuration not found" },
-      500,
-    );
-  }
-
   // Parse Body
   const body = await c.req.json();
   const parsed = addonSchema.safeParse(body);
@@ -110,7 +97,10 @@ app.post("/addon", async (c) => {
     if ((db.query as any).creditPacks) {
       creditPack = await (db.query as any).creditPacks.findFirst({
         where: and(
-          eq((schema as any).creditPacks.organizationId, keyRecord.organizationId),
+          eq(
+            (schema as any).creditPacks.organizationId,
+            keyRecord.organizationId,
+          ),
           eq((schema as any).creditPacks.slug, pack),
           eq((schema as any).creditPacks.isActive, true),
         ),
@@ -120,7 +110,10 @@ app.post("/addon", async (c) => {
         creditPack = await (db.query as any).creditPacks.findFirst({
           where: and(
             eq((schema as any).creditPacks.id, pack),
-            eq((schema as any).creditPacks.organizationId, keyRecord.organizationId),
+            eq(
+              (schema as any).creditPacks.organizationId,
+              keyRecord.organizationId,
+            ),
             eq((schema as any).creditPacks.isActive, true),
           ),
         });
@@ -130,11 +123,16 @@ app.post("/addon", async (c) => {
       const rows = await (db as any)
         .select()
         .from((schema as any).creditPacks)
-        .where(and(
-          eq((schema as any).creditPacks.organizationId, keyRecord.organizationId),
-          eq((schema as any).creditPacks.slug, pack),
-          eq((schema as any).creditPacks.isActive, true),
-        ))
+        .where(
+          and(
+            eq(
+              (schema as any).creditPacks.organizationId,
+              keyRecord.organizationId,
+            ),
+            eq((schema as any).creditPacks.slug, pack),
+            eq((schema as any).creditPacks.isActive, true),
+          ),
+        )
         .limit(1);
       creditPack = rows[0] || null;
 
@@ -142,18 +140,29 @@ app.post("/addon", async (c) => {
         const byIdRows = await (db as any)
           .select()
           .from((schema as any).creditPacks)
-          .where(and(
-            eq((schema as any).creditPacks.id, pack),
-            eq((schema as any).creditPacks.organizationId, keyRecord.organizationId),
-            eq((schema as any).creditPacks.isActive, true),
-          ))
+          .where(
+            and(
+              eq((schema as any).creditPacks.id, pack),
+              eq(
+                (schema as any).creditPacks.organizationId,
+                keyRecord.organizationId,
+              ),
+              eq((schema as any).creditPacks.isActive, true),
+            ),
+          )
           .limit(1);
         creditPack = byIdRows[0] || null;
       }
     }
   } catch (e: any) {
     if (e?.message?.includes("no such table")) {
-      return c.json({ success: false, error: "Credit packs not yet configured. Run migration 0004." }, 500);
+      return c.json(
+        {
+          success: false,
+          error: "Credit packs not yet configured. Run migration 0004.",
+        },
+        500,
+      );
     }
     throw e;
   }
@@ -167,13 +176,22 @@ app.post("/addon", async (c) => {
 
   if (!creditPack.creditSystemId) {
     return c.json(
-      { success: false, error: `Credit pack '${pack}' is not attached to a credit system. Every add-on pack must have a creditSystemId.` },
+      {
+        success: false,
+        error: `Credit pack '${pack}' is not attached to a credit system. Every add-on pack must have a creditSystemId.`,
+      },
       400,
     );
   }
 
-  return handleAddonPurchase(c, db, keyRecord, project, creditPack, {
-    customer, quantity, currency, metadata, callbackUrl, provider, region,
+  return handleAddonPurchase(c, db, keyRecord, creditPack, {
+    customer,
+    quantity,
+    currency,
+    metadata,
+    callbackUrl,
+    provider,
+    region,
   });
 });
 
@@ -181,7 +199,6 @@ async function handleAddonPurchase(
   c: any,
   db: any,
   keyRecord: any,
-  project: any,
   creditPack: any,
   opts: {
     customer: string;
@@ -193,7 +210,15 @@ async function handleAddonPurchase(
     region?: string;
   },
 ) {
-  const { customer, quantity, currency, metadata, callbackUrl, provider, region } = opts;
+  const {
+    customer,
+    quantity,
+    currency,
+    metadata,
+    callbackUrl,
+    provider,
+    region,
+  } = opts;
   const totalCredits = creditPack.credits * quantity;
   const totalPrice = creditPack.price * quantity;
   const registry = getProviderRegistry();
@@ -211,10 +236,8 @@ async function handleAddonPurchase(
     c.env.ENCRYPTION_KEY,
   );
 
-  const providerEnv = deriveProviderEnvironment(
-    c.env.ENVIRONMENT,
-    project.activeEnvironment,
-  );
+  // Environment comes directly from ENVIRONMENT variable
+  const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
 
   // ---------- Provider Resolution ----------
   // Prefer: explicit request param > pack's stored provider > rules/fallback
@@ -225,11 +248,15 @@ async function handleAddonPurchase(
   // 1. Explicit provider
   if (selectedProviderId) {
     selectedAccount = providerAccounts.find(
-      (a) => a.providerId === selectedProviderId && a.environment === providerEnv,
+      (a) =>
+        a.providerId === selectedProviderId && a.environment === providerEnv,
     );
     if (!selectedAccount) {
       return c.json(
-        { success: false, error: `Provider '${selectedProviderId}' not configured` },
+        {
+          success: false,
+          error: `Provider '${selectedProviderId}' not configured`,
+        },
         400,
       );
     }
@@ -271,7 +298,10 @@ async function handleAddonPurchase(
   const resolvedAdapter = registry.get(selectedProviderId);
   if (!resolvedAdapter) {
     return c.json(
-      { success: false, error: `Provider '${selectedProviderId}' not registered` },
+      {
+        success: false,
+        error: `Provider '${selectedProviderId}' not registered`,
+      },
       400,
     );
   }
@@ -325,7 +355,12 @@ async function handleAddonPurchase(
 
   // Always use checkout for credit pack purchases (auto-charge reserved for overages only)
   // Try to sync credit pack to provider for native line-item checkout
-  const syncResult = await ensureCreditPackSynced(db, creditPack, resolvedAdapter, selectedAccount);
+  const syncResult = await ensureCreditPackSynced(
+    db,
+    creditPack,
+    resolvedAdapter,
+    selectedAccount,
+  );
 
   const checkoutResult = await resolvedAdapter.createCheckoutSession({
     customer: { id: customerRef, email: customerRecord.email },
@@ -335,13 +370,17 @@ async function handleAddonPurchase(
     callbackUrl: callbackUrl,
     metadata: purchaseMetadata,
     // If provider supports native products, use lineItems for adjustable quantity
-    ...(syncResult ? {
-      lineItems: [{
-        priceId: syncResult.priceId,
-        quantity,
-        adjustableQuantity: { enabled: true, minimum: 1, maximum: 100 },
-      }],
-    } : {}),
+    ...(syncResult
+      ? {
+          lineItems: [
+            {
+              priceId: syncResult.priceId,
+              quantity,
+              adjustableQuantity: { enabled: true, minimum: 1, maximum: 100 },
+            },
+          ],
+        }
+      : {}),
     environment: selectedAccount.environment,
     account: selectedAccount,
   });

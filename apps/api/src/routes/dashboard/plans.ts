@@ -161,16 +161,9 @@ app.post("/", async (c) => {
     }
 
     try {
-      const authDb = c.get("authDb");
-      const project = await authDb.query.projects.findFirst({
-        where: eq(schema.projects.organizationId, organizationId),
-      });
-
       const registry = getProviderRegistry();
-      const providerEnv = deriveProviderEnvironment(
-        c.env.ENVIRONMENT,
-        project?.activeEnvironment,
-      );
+      // Environment comes directly from ENVIRONMENT variable
+      const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
       const providerAccounts = await loadProviderAccounts(
         db,
         organizationId,
@@ -421,17 +414,10 @@ app.patch("/:id", async (c) => {
       }
 
       try {
-        const authDb = c.get("authDb");
-        const project = await authDb.query.projects.findFirst({
-          where: eq(schema.projects.organizationId, updated.organizationId),
-        });
-
         const registry = getProviderRegistry();
         const adapter = registry.get(updated.providerId);
-        const providerEnv = deriveProviderEnvironment(
-          c.env.ENVIRONMENT,
-          project?.activeEnvironment,
-        );
+        // Environment comes directly from ENVIRONMENT variable
+        const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
         const providerAccounts = await loadProviderAccounts(
           db,
           updated.organizationId,
