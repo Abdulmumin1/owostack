@@ -1,5 +1,6 @@
 <script lang="ts">
   import Logo from "$lib/components/ui/Logo.svelte";
+  import { Rocket, ArrowRight } from "phosphor-svelte";
 
   interface BlogPost {
     slug: string;
@@ -46,20 +47,40 @@
 </svelte:head>
 
 <div class="h-screen flex bg-bg-primary overflow-hidden">
-  <!-- Left Side: Cover Image -->
+  <!-- Left Side: Abstract Graphic and Context -->
   <div
-    class="hidden lg:flex lg:w-1/2 bg-bg-secondary border-r border-border relative overflow-hidden flex-col justify-between"
+    class="hidden lg:flex w-1/3 bg-bg-secondary border-r border-border p-12 flex-col justify-between relative overflow-hidden"
   >
-    <!-- Image -->
+    <!-- Abstract Background -->
     <div
-      class="flex-1 flex flex-col justify-center items-center relative z-10 w-full h-full"
+      class="absolute inset-0 opacity-10 pointer-events-none grayscale brightness-50 contrast-125"
     >
       <img
-        src="https://mac-file.yaqeen.me/87C9A6BB-3D4410F0-72E6-46B0-9B54-142A675819EE_1_201_a.jpeg"
-        alt="Blog Cover"
+        src="https://mac-file.yaqeen.me/3F36AAD9-image.png"
+        alt=""
         class="w-full h-full object-cover"
       />
     </div>
+
+    <div class="relative z-10">
+      <div class="mb-12">
+        <a href="/">
+          <Logo size={32} />
+        </a>
+      </div>
+
+      <div class="space-y-4">
+        <h2 class="text-2xl font-bold text-text-primary tracking-tight">
+          Writings
+        </h2>
+        <p class="text-text-secondary text-sm leading-relaxed max-w-xs">
+          Engineering notes and thoughts on building the billing layer for
+          modern AI SaaS.
+        </p>
+      </div>
+    </div>
+
+    <div class="relative z-10 text-text-muted">@ wwo</div>
   </div>
 
   <!-- Right Side: Content -->
@@ -70,75 +91,48 @@
     <header
       class="px-6 lg:px-12 py-5 border-b border-border/30 sticky top-0 bg-bg-primary/95 backdrop-blur-md z-30"
     >
-      <div class="flex items-center justify-between max-w-2xl mx-auto">
-        <a href="/" class="flex items-center gap-2">
-          <Logo size={24} class="text-accent" />
-          <span class="text-sm font-bold tracking-tight">Owostack</span>
-        </a>
+      <div class="flex items-center justify-between max-w-3xl mx-auto">
+        <div class="lg:hidden">
+          <a href="/" class="flex items-center gap-2">
+            <Logo size={24} class="text-accent" />
+            <span class="text-sm font-bold tracking-tight">Owostack</span>
+          </a>
+        </div>
+        <div class="hidden lg:block"></div>
+        <!-- Spacer -->
         <nav class="flex items-center gap-6 text-xs text-text-secondary">
-          <!-- <a href="/" class="hover:text-text-primary transition-colors">Home</a> -->
-          <a href="/docs" class="hover:text-text-primary transition-colors"
+          <a
+            href="/docs"
+            class="hover:text-text-primary transition-colors font-bold uppercase tracking-widest text-[10px]"
             >Docs</a
           >
           <a
             href="https://app.owostack.com"
-            
-            class="btn btn-primary"
+            class="btn btn-primary text-[10px] uppercase tracking-widest py-2 px-4"
             >Dashboard</a
           >
         </nav>
       </div>
     </header>
 
-    <main class="flex-1 px-6 lg:px-12 py-10 lg:py-24">
-      <div class="max-w-2xl mx-auto">
-        <div class="mb-5">
-          <h1
-            class="text-xl font-bold mb-1 tracking-tight text-text-primary font-display"
-          >
-            Writings
-          </h1>
-          <p class="text-text-secondary text-sm">
-            Thoughts on billing, subscriptions, and building for AI SaaS.
-          </p>
-        </div>
-
+    <main class="flex-1 p-1">
+      <div class="max-w-4xl mx-auto">
         {#if posts.length > 0}
           <div class="flex flex-col gap-0 border-t border-border/20">
             {#each posts as post (post.slug)}
-              <article
-                class="py-8 border-b border-border/20 group flex flex-col sm:flex-row gap-6 sm:items-center"
-              >
-                {#if post.thumbnail}
-                  <a
-                    href={`/blog/${post.slug}`}
-                    class="block w-full sm:w-48 shrink-0 overflow-hidden"
-                  >
-                    <img
-                      src={post.thumbnail}
-                      alt={post.title}
-                      class="w-full h-auto aspect-video object-cover transition-transform duration-700 ease-out group-hover:scale-105"
-                      loading="lazy"
-                    />
-                  </a>
-                {/if}
-                <div class="flex-1">
-                 
-                  <h3 class="text-xl lg:text-2xl font-display font-medium mb-3">
-                    <a
-                      href={`/blog/${post.slug}`}
-                      class="text-text-primary group-hover:text-accent transition-colors leading-tight block"
+              <article class="py-12 border-b border-border/20 group">
+                <div class="flex flex-col sm:flex-row gap-10 items-start">
+                  <div class="flex-1 pt-1">
+                    <h3
+                      class="text-2xl lg:text-3xl font-bold mb-5 tracking-tight"
                     >
-                      {post.title}
-                    </a>
-                  </h3>
-                
-                  <div class="text-xs text-text-muted font-mono">
-                    {new Date(post.date).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
+                      <a
+                        href={`/blog/${post.slug}`}
+                        class="text-text-primary group-hover:text-accent transition-colors leading-[1.15] block"
+                      >
+                        {post.title}
+                      </a>
+                    </h3>
                   </div>
                 </div>
               </article>
@@ -146,33 +140,19 @@
           </div>
         {:else}
           <div
-            class="text-center py-20 border border-dashed border-border/50 rounded-2xl"
+            class="text-center py-24 border border-dashed border-border/30 rounded-sm bg-bg-secondary/30"
           >
-            <p class="text-text-secondary">
-              No blog posts yet. Check back soon!
+            <p
+              class="text-text-dim text-xs uppercase tracking-widest font-bold"
+            >
+              Journal is empty
+            </p>
+            <p class="text-[10px] text-text-dim mt-2 italic">
+              Check back soon for new articles.
             </p>
           </div>
         {/if}
       </div>
     </main>
-
-    <!-- Footer -->
-    <footer class="px-6 lg:px-12 py-8 mt-auto">
-      <div
-        class="max-w-2xl mx-auto flex items-center justify-between border-t border-border/20 pt-8"
-      >
-        <span
-          class="text-[10px] text-text-muted font-bold uppercase tracking-widest"
-          >© {new Date().getFullYear()} Owostack</span
-        >
-        <div class="flex gap-4">
-          <a
-            href="https://github.com/Abdulmumin1/owostack"
-            class="text-[10px] text-text-muted font-bold uppercase tracking-widest hover:text-text-primary transition-colors"
-            >GitHub</a
-          >
-        </div>
-      </div>
-    </footer>
   </div>
 </div>

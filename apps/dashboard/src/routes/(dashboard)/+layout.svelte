@@ -52,6 +52,7 @@
   import { getProviderConfig } from "$lib/providers";
   import { defaultCurrency } from "$lib/stores/currency";
   import Avatar from "$components/ui/Avatar.svelte";
+  import CreateOrganizationModal from "$lib/components/dashboard/CreateOrganizationModal.svelte";
   import SettingsModal from "$lib/components/settings/SettingsModal.svelte";
 
   let { children } = $props();
@@ -69,6 +70,7 @@
   });
 
   let showSettingsModal = $state(false);
+  let showCreateOrgModal = $state(false);
   let settingsActiveTab = $state("general");
 
   let activeEnvironment = $state<"test" | "live">("test");
@@ -526,7 +528,7 @@
             >
               {#each projects as project}
                 <a
-                  href="/{project.slug || project.id}"
+                  href="/{project.slug || project.id}/plans"
                   class="block px-3 py-1 text-xs text-text-secondary hover:bg-bg-card-hover hover:text-text-primary transition-colors border-l-2 border-transparent hover:border-accent {project.id ===
                     projectIdentifier || project.slug === projectIdentifier
                     ? 'border-accent bg-bg-card-hover text-text-primary'
@@ -538,6 +540,10 @@
               {/each}
               <button
                 class="w-full text-left px-3 py-2 text-text-dim hover:text-text-primary hover:bg-bg-card-hover border-t border-border mt-1"
+                onclick={() => {
+                  showCreateOrgModal = true;
+                  showProjectDropdown = false;
+                }}
               >
                 + New Organization
               </button>
@@ -1080,6 +1086,8 @@
     </div>
   {/if}
 </div>
+
+<CreateOrganizationModal bind:open={showCreateOrgModal} />
 
 <SettingsModal
   {projectId}
