@@ -244,6 +244,12 @@
         "ANALYTICS_DATASET": "owostack_api_live",
         "BETTER_AUTH_URL": "https://api.owostack.com",
       },
+      "routes": [
+        {
+          "pattern": "api.owostack.com",
+          "custom_domain": true,
+        },
+      ],
       "d1_databases": [
         {
           "binding": "DB",
