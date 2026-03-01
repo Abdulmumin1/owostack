@@ -399,6 +399,33 @@
         </div>
       </div>
 
+      <!-- Free Plan Config (Currency for overages) -->
+      {#if planType === "free"}
+        <div class="pt-2" transition:fly={{ y: -10, duration: 200 }}>
+          <label
+            class="block text-xs font-medium text-text-dim mb-1.5"
+            for="freeCurrencySelect">Default Currency</label
+          >
+          <div class="input-icon-wrapper">
+            <select
+              id="freeCurrencySelect"
+              bind:value={currency}
+              class="input appearance-none"
+            >
+              {#each availableCurrencies as c}
+                <option value={c.code}>{c.code}</option>
+              {:else}
+                <option value="USD">USD</option>
+              {/each}
+            </select>
+          </div>
+          <p class="text-[10px] text-text-dim mt-1.5 leading-relaxed">
+            This currency will be used for any overage charges or linked billing
+            on this free plan.
+          </p>
+        </div>
+      {/if}
+
       <!-- Paid Config -->
       {#if planType === "paid"}
         <div class="space-y-4 pt-2" transition:fly={{ y: -10, duration: 200 }}>

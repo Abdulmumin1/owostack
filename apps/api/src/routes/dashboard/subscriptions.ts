@@ -334,6 +334,7 @@ app.get("/:id", async (c) => {
           currency: subscription.plan.currency,
           interval: subscription.plan.interval,
           planGroup: subscription.plan.planGroup,
+          type: subscription.plan.type,
         },
         customer: {
           id: subscription.customer.id,
