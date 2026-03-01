@@ -1,12 +1,11 @@
 import { Resend } from "resend";
-import { env } from "$env/dynamic/private";
 import { json } from "@sveltejs/kit";
 
-const resend = new Resend(env.RESEND_API_KEY);
 
 export async function POST({ request }) {
   try {
     const { email } = await request.json();
+const resend = new Resend(process.env.RESEND_API_KEY);
 
     if (!email) {
       return json({ error: "Email is required" }, { status: 400 });
