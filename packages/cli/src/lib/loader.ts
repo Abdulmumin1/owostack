@@ -1,6 +1,8 @@
 import { resolve, isAbsolute } from "node:path";
-import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
+import { createJiti } from "jiti";
+
+const jiti = createJiti(import.meta.url);
 
 export function resolveConfigPath(configPath: string): string {
   return isAbsolute(configPath)
@@ -9,10 +11,9 @@ export function resolveConfigPath(configPath: string): string {
 }
 
 export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
-  let configModule: any;
   try {
-    const fileUrl = pathToFileURL(fullPath).href;
-    configModule = await import(fileUrl);
+    const configModule: any = await jiti.import(fullPath);
+    return configModule.default || configModule.owo;
   } catch (e: any) {
     console.error(`\n  ❌ Failed to load config from ${fullPath}`);
     console.error(`     ${e.message}\n`);
@@ -28,7 +29,6 @@ export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
     );
     process.exit(1);
   }
-  return configModule.default || configModule.owo;
 }
 
 export interface ConfigSettings {
