@@ -1,6 +1,8 @@
 import { createAuthClient } from "better-auth/svelte";
 import { organizationClient } from "better-auth/client/plugins";
 import { getApiUrl } from "$lib/env";
+import { sentinelClient } from "@better-auth/infra/client";
+
 
 /**
  * Auth client with dynamic base URL resolution.

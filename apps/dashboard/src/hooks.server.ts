@@ -24,7 +24,6 @@ const PROTECTED_ROUTES = [
   "/transactions",
   "/usage",
   "/events",
-  "/accept-invitation",
   "/onboarding",
 ];
 

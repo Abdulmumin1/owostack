@@ -7,6 +7,7 @@
     Globe,
     Receipt,
     Users,
+    User,
     X,
   } from "phosphor-svelte";
   import { organization, apiFetch, authClient } from "$lib/auth-client";
@@ -15,6 +16,7 @@
   import { fade, scale } from "svelte/transition";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import GeneralTab from "./GeneralTab.svelte";
+  import AccountTab from "./AccountTab.svelte";
   import KeysTab from "./KeysTab.svelte";
   import TeamTab from "./TeamTab.svelte";
   import ProvidersTab from "./ProvidersTab.svelte";
@@ -49,6 +51,13 @@
       label: "General",
       icon: Gear,
       description: "",
+      color: "text-zinc-500",
+    },
+    {
+      id: "account",
+      label: "Account Settings",
+      icon: User,
+      description: "Personal profile",
       color: "text-zinc-500",
     },
     {
@@ -154,24 +163,34 @@
   }
 
   async function loadOrganization() {
-    console.log("[SettingsModal] Loading organization for projectId:", projectId);
+    console.log(
+      "[SettingsModal] Loading organization for projectId:",
+      projectId,
+    );
     const { data, error } = await organization.list();
-    
+
     if (error) {
       console.error("[SettingsModal] Failed to list organizations:", error);
       return;
     }
-    
+
     console.log("[SettingsModal] Got organizations:", data?.length || 0, data);
     const currentOrg = data?.find((o: any) => o.slug === projectId);
-    
+
     if (currentOrg) {
-      console.log("[SettingsModal] Found matching org:", currentOrg.id, currentOrg.name);
+      console.log(
+        "[SettingsModal] Found matching org:",
+        currentOrg.id,
+        currentOrg.name,
+      );
       projectName = currentOrg.name;
       projectSlug = currentOrg.slug;
       organizationId = currentOrg.id;
     } else {
-      console.error("[SettingsModal] No organization found with slug:", projectId);
+      console.error(
+        "[SettingsModal] No organization found with slug:",
+        projectId,
+      );
     }
   }
 
@@ -375,6 +394,25 @@
                   initialSlug={projectSlug}
                   initialCurrency={orgCurrency}
                 />
+              </div>
+            {/if}
+
+            {#if activeTab === "account"}
+              <div
+                class="p-8 sm:p-10 max-w-3xl mx-auto w-full absolute inset-0 overflow-auto"
+                in:fade={{ duration: 150 }}
+              >
+                <div class="mb-8">
+                  <h2 class="text-xl font-bold text-text-primary mb-1">
+                    Account Settings
+                  </h2>
+                  <p
+                    class="text-xs font-bold text-text-dim uppercase tracking-widest"
+                  >
+                    Personal profile settings
+                  </p>
+                </div>
+                <AccountTab />
               </div>
             {/if}
 
