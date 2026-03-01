@@ -76,7 +76,7 @@ await owo.track({
 
 ## Related Packages
 
-- [owocli](https://www.npmjs.com/package/owocli) - CLI for catalog sync and project initialization.
+- [owosk](https://www.npmjs.com/package/owosk) - CLI for catalog sync and project initialization.
 - [@owostack/types](https://www.npmjs.com/package/@owostack/types) - Shared type definitions.
 
 ## Documentation

@@ -6,7 +6,7 @@
   ],
   "commit": false,
   "fixed": [],
-  "linked": [["@owostack/types", "owostack", "owocli"]],
+  "linked": [["@owostack/types", "owostack", "owosk"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

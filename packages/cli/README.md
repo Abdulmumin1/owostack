@@ -1,4 +1,4 @@
-# owocli
+# owosk
 
 The primary tool for managing your Owostack billing configuration from the terminal. Use it to synchronize your local catalog, validate your configuration, and manage your billing infrastructure.
 
@@ -7,7 +7,7 @@ The primary tool for managing your Owostack billing configuration from the termi
 Install the CLI globally:
 
 ```bash
-npm install -g owocli
+npm install -g owosk
 ```
 
 Or use it directly with npx:
