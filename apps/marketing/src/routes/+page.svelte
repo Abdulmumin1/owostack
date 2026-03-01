@@ -63,6 +63,42 @@
 
 <svelte:head>
   <title>Owostack — Billing Infrastructure for AI SaaS</title>
+  <meta
+    name="description"
+    content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
+  />
+  <link rel="canonical" href="https://owostack.com/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://owostack.com/" />
+  <meta property="og:title" content="Owostack — Billing Infrastructure for AI SaaS" />
+  <meta
+    property="og:description"
+    content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
+  />
+  <meta property="og:image" content="https://owostack.com/logo.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://owostack.com/" />
+  <meta name="twitter:title" content="Owostack — Billing Infrastructure for AI SaaS" />
+  <meta
+    name="twitter:description"
+    content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
+  />
+  <meta name="twitter:image" content="https://owostack.com/logo.svg" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Owostack",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "description": "Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+  </script>
 </svelte:head>
 
 <div
