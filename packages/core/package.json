@@ -1,8 +1,8 @@
 {
-  "name": "@owostack/core",
+  "name": "owostack",
   "version": "0.1.0",
   "description": "Core SDK for Owostack billing infrastructure",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/Abdulmumin1/owostack.git",
@@ -12,7 +12,6 @@
   "files": [
     "dist"
   ],
-  "private": true,
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,11 +28,11 @@
     "lint": "eslint src/"
   },
   "keywords": [
-    "paystack",
     "billing",
+    "saas",
     "subscriptions",
     "usage-based",
-    "africa",
+    "metering",
     "payments"
   ],
   "dependencies": {

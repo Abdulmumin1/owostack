@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Owostack } from "@owostack/core";
+  import { Owostack } from "owostack";
 
   let secretKey = $state("");
   let apiUrl = $state("http://localhost:8787/api/v1");

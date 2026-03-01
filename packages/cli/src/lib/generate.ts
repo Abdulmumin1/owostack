@@ -250,7 +250,7 @@ export function generateConfig(
     : "";
 
   return [
-    `import { Owostack, metered, boolean, creditSystem, plan } from "@owostack/core";`,
+    `import { Owostack, metered, boolean, creditSystem, plan } from "owostack";`,
     ``,
     ...featureLines,
     ...(hasCreditSystems ? ["", ...creditSystemLines] : []),

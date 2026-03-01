@@ -548,7 +548,7 @@
                     class="bg-bg-secondary border border-border p-3 flex items-center justify-between group"
                   >
                     <code class="text-xs font-mono text-text-primary"
-                      >npm install @owostack/core</code
+                      >npm install owostack</code
                     >
                     <CheckCircle
                       size={14}
@@ -575,7 +575,7 @@
                     </div>
                     <pre
                       class="p-4 text-[11px] font-mono text-text-secondary leading-relaxed overflow-x-auto"><code
-                        >import &#123; Owostack &#125; from '@owostack/core';
+                        >import &#123; Owostack &#125; from 'owostack';
 
 const client = new Owostack(&#123; 
   organizationId: "{orgSlug || "..."}",

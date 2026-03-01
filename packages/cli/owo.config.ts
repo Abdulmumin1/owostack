@@ -1,4 +1,4 @@
-import { Owostack, metered, boolean, creditSystem, plan } from "@owostack/core";
+import { Owostack, metered, boolean, creditSystem, plan } from "owostack";
 
 export const sso = boolean("sso", { name: "sso" });
 export const thirdpen = metered("thirdpen", { name: "Thirdpen" });

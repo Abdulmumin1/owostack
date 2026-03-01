@@ -36,7 +36,7 @@ import type {
 import { bindFeatureHandles, buildSyncPayload } from "./catalog.js";
 
 /**
- * Owostack - Billing infrastructure for Africa
+ * Owostack - Billing infrastructure for modern SaaS
  *
  * Three methods to rule them all:
  * - attach(): Start checkout or manage subscriptions

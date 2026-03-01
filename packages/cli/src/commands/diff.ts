@@ -36,7 +36,7 @@ export async function runDiff(options: DiffOptions) {
     const owo = await loadOwostackFromConfig(fullPath);
     s.stop("Configuration loaded");
 
-    const { buildSyncPayload } = (await import("@owostack/core").catch(() => ({
+    const { buildSyncPayload } = (await import("owostack").catch(() => ({
       buildSyncPayload: null,
     }))) as any;
     const localPayload = buildSyncPayload(owo._config.catalog);
@@ -53,7 +53,7 @@ export async function runDiff(options: DiffOptions) {
     const owo = await loadOwostackFromConfig(fullPath);
     s.stop("Configuration loaded");
 
-    const { buildSyncPayload } = (await import("@owostack/core").catch(() => ({
+    const { buildSyncPayload } = (await import("owostack").catch(() => ({
       buildSyncPayload: null,
     }))) as any;
     const localPayload = buildSyncPayload(owo._config.catalog);

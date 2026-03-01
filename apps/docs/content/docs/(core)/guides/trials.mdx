@@ -13,7 +13,7 @@ This guide shows how to offer a free trial period so customers can try your prod
 In the dashboard, set the **Trial Days** field when creating or editing a plan. Alternatively, define it in code:
 
 ```ts
-import { plan, metered, boolean } from "@owostack/core";
+import { plan, metered, boolean } from "owostack";
 
 const apiCalls = metered("api-calls");
 const analytics = boolean("analytics");
