@@ -110,7 +110,9 @@ export async function loadConfigSettings(
       filters: owo._config.filters,
       connect: owo._config.connect,
     };
-  } catch {
+  } catch (e) {
+    // If we fail to load the config (e.g. missing owostack package in fresh project),
+    // we just return empty settings and let the CLI continue with defaults.
     return {};
   }
 }

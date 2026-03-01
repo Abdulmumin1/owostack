@@ -39,7 +39,19 @@ export async function runDiff(options: DiffOptions) {
     const liveUrl = getApiUrl(configSettings.environments?.live);
 
     s.start("Loading local configuration...");
-    const owo = await loadOwostackFromConfig(fullPath);
+    let owo: any;
+    try {
+      owo = await loadOwostackFromConfig(fullPath);
+    } catch (e: any) {
+      s.stop(pc.red("Failed to load configuration"));
+      p.log.error(pc.red(`Error: ${e.message}`));
+      p.log.info(
+        pc.dim(
+          "Make sure 'owostack' is installed in your project: 'npm install owostack'",
+        ),
+      );
+      process.exit(1);
+    }
     s.stop("Configuration loaded");
 
     const { buildSyncPayload } = (await import("owostack").catch(() => ({
@@ -56,7 +68,19 @@ export async function runDiff(options: DiffOptions) {
     printDiff(diffPlans(localPayload?.plans ?? [], livePlans));
   } else {
     s.start("Loading local configuration...");
-    const owo = await loadOwostackFromConfig(fullPath);
+    let owo: any;
+    try {
+      owo = await loadOwostackFromConfig(fullPath);
+    } catch (e: any) {
+      s.stop(pc.red("Failed to load configuration"));
+      p.log.error(pc.red(`Error: ${e.message}`));
+      p.log.info(
+        pc.dim(
+          "Make sure 'owostack' is installed in your project: 'npm install owostack'",
+        ),
+      );
+      process.exit(1);
+    }
     s.stop("Configuration loaded");
 
     const { buildSyncPayload } = (await import("owostack").catch(() => ({
