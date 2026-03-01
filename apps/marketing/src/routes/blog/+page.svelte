@@ -44,6 +44,23 @@
     name="description"
     content="Thoughts on billing, subscriptions, and building for AI SaaS."
   />
+  <link rel="canonical" href="https://owostack.com/blog" />
+  <meta property="og:type" content="blog" />
+  <meta property="og:url" content="https://owostack.com/blog" />
+  <meta property="og:title" content="Blog — Owostack" />
+  <meta
+    property="og:description"
+    content="Thoughts on billing, subscriptions, and building for AI SaaS."
+  />
+  <meta property="og:image" content="https://owostack.com/logo.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://owostack.com/blog" />
+  <meta name="twitter:title" content="Blog — Owostack" />
+  <meta
+    name="twitter:description"
+    content="Thoughts on billing, subscriptions, and building for AI SaaS."
+  />
+  <meta name="twitter:image" content="https://owostack.com/logo.svg" />
 </svelte:head>
 
 <div class="h-screen flex bg-bg-primary overflow-hidden">
@@ -57,7 +74,7 @@
     >
       <img
         src="https://mac-file.yaqeen.me/3F36AAD9-image.png"
-        alt=""
+        alt="Abstract engineering background pattern"
         class="w-full h-full object-cover"
       />
     </div>

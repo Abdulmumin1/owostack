@@ -9,7 +9,7 @@ import { WebhookHandler } from "./lib/webhooks";
 import { WebhookError, errorToResponse } from "./lib/errors";
 import { decrypt } from "./lib/encryption";
 import { trackHttpMetric } from "./lib/analytics-engine";
-import type { ProviderAccount } from "@owostack/adapters";
+
 import { getProviderRegistry } from "./lib/providers";
 
 // Provider registry — single source of truth in lib/providers.ts
@@ -439,7 +439,7 @@ async function handleWebhookRequest(
   // (e.g. Dodo Payments uses a separate webhookSecret, not the API key)
   const allProviderAccounts = await db.query.providerAccounts.findMany({
     where: and(
-      eq(schema.providerAccounts.organizationId, organizationId),
+      eq(schema.providerAccounts.organizationId, org.id),
       eq(schema.providerAccounts.providerId, providerId),
     ),
   });
@@ -447,35 +447,37 @@ async function handleWebhookRequest(
     const env = pa?.environment;
     return !env || env === workerEnv;
   });
+
   const scopedProviderAccounts =
     providerAccounts.length > 0 ? providerAccounts : allProviderAccounts;
   let secretAccountId: string | null = null;
   for (const pa of scopedProviderAccounts) {
     const creds = (pa as any).credentials || {};
-    if (
-      typeof creds.webhookSecret === "string" &&
-      creds.webhookSecret.length > 0
-    ) {
+    // Fallback to secretKey for Paystack if webhookSecret isn't explicitly set
+    const potentialSecret =
+      creds.webhookSecret ||
+      (providerId === "paystack" ? creds.secretKey : null);
+
+    if (typeof potentialSecret === "string" && potentialSecret.length > 0) {
       try {
-        secret = (
-          await decrypt(creds.webhookSecret, c.env.ENCRYPTION_KEY)
-        ).trim();
-        secretSource = "provider_account_webhook_secret_encrypted";
+        secret = (await decrypt(potentialSecret, c.env.ENCRYPTION_KEY)).trim();
+        secretSource = creds.webhookSecret
+          ? "provider_account_webhook_secret_encrypted"
+          : "provider_account_api_key_encrypted";
         secretAccountId = pa.id;
         console.log(
-          `[WEBHOOK-ROUTE] Using provider account webhookSecret for org=${organizationId}, provider=${providerId}`,
+          `[WEBHOOK-ROUTE] Using provider account secret (${secretSource}) for org=${organizationId}, provider=${providerId}`,
         );
       } catch (e) {
-        console.warn(
-          `[WEBHOOK-ROUTE] Failed to decrypt provider webhookSecret:`,
-          e,
-        );
+        console.warn(`[WEBHOOK-ROUTE] Failed to decrypt provider secret:`, e);
         // Backward compatibility: older rows may have been stored as plaintext.
-        secret = creds.webhookSecret.trim();
-        secretSource = "provider_account_webhook_secret_plaintext";
+        secret = potentialSecret.trim();
+        secretSource = creds.webhookSecret
+          ? "provider_account_webhook_secret_plaintext"
+          : "provider_account_api_key_plaintext";
         secretAccountId = pa.id;
         console.warn(
-          `[WEBHOOK-ROUTE] Falling back to raw provider webhookSecret for org=${organizationId}, provider=${providerId}`,
+          `[WEBHOOK-ROUTE] Falling back to raw provider secret for org=${organizationId}, provider=${providerId}`,
         );
       }
       break;
@@ -590,11 +592,17 @@ async function handleWebhookRequest(
     `[WEBHOOK-ROUTE] Event: ${normalizedEvent.type}, provider=${normalizedEvent.provider}, ref=${normalizedEvent.payment?.reference || "n/a"}`,
   );
 
-  // 7. Build provider account for API calls (cancel sub, etc.)
+  // 7. Build provider context for API calls (cancel sub, etc.)
   // Provider accounts are loaded from the DB — no legacy fallback.
-  let providerAccount: ProviderAccount | undefined;
-  if (scopedProviderAccounts.length > 0) {
-    const pa = scopedProviderAccounts[0] as any;
+  let selectedAccount: any | undefined;
+  const accountToUse = secretAccountId
+    ? scopedProviderAccounts.find((a: any) => a.id === secretAccountId)
+    : scopedProviderAccounts.length > 0
+      ? scopedProviderAccounts[0]
+      : undefined;
+
+  if (accountToUse) {
+    const pa = accountToUse as any;
     const creds = { ...(pa.credentials || {}) };
     // Decrypt the secretKey for API calls
     if (typeof creds.secretKey === "string" && creds.secretKey.length > 0) {
@@ -604,29 +612,22 @@ async function handleWebhookRequest(
         ).trim();
       } catch (e) {
         console.warn(
-          `[WEBHOOK-ROUTE] Failed to decrypt provider secretKey:`,
+          `[WEBHOOK-ROUTE] Failed to decrypt provider secretKey for org=${organizationId}:`,
           e,
         );
         creds.secretKey = creds.secretKey.trim();
       }
     }
-    providerAccount = {
-      id: pa.id,
-      organizationId: pa.organizationId,
-      providerId: pa.providerId,
-      environment: pa.environment || workerEnv,
-      displayName: pa.displayName,
+    selectedAccount = {
+      ...pa,
       credentials: creds,
-      metadata: pa.metadata,
-      createdAt: pa.createdAt,
-      updatedAt: pa.updatedAt,
     };
   }
 
   // 8. Handle via provider-agnostic WebhookHandler
-  const handler = new WebhookHandler(db, organizationId, {
+  const handler = new WebhookHandler(db, org.id, {
     adapter,
-    account: providerAccount,
+    account: selectedAccount,
     trialEndWorkflow: c.env.TRIAL_END_WORKFLOW,
     planUpgradeWorkflow: c.env.PLAN_UPGRADE_WORKFLOW,
     cache: c.env.CACHE,
