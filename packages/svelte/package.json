@@ -1,6 +1,7 @@
 {
   "name": "@owostack/svelte",
   "version": "0.1.0",
+  "private": true,
   "description": "Svelte stores and components for Owostack",
   "license": "Apache-2.0",
   "type": "module",
