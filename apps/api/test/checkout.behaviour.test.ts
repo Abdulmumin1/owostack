@@ -225,7 +225,6 @@ describe("/attach behavior", () => {
         body: JSON.stringify({
           customer: "paid@example.com",
           product: "pro",
-          provider: "paystack",
         }),
       },
       env,
@@ -287,7 +286,6 @@ describe("/attach behavior", () => {
         body: JSON.stringify({
           customer: "paid@example.com",
           product: "growth",
-          provider: "paystack",
         }),
       },
       env,
@@ -400,7 +398,6 @@ describe("/attach behavior", () => {
         body: JSON.stringify({
           customer: "rule@example.com",
           product: "team",
-          region: "NG",
         }),
       },
       env,

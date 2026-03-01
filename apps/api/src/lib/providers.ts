@@ -89,12 +89,10 @@ export async function loadProviderRules(
 }
 
 export function buildProviderContext(params: {
-  region?: string;
   currency?: string;
   metadata?: Record<string, unknown>;
 }): AttachRequestContext {
   return {
-    region: params.region,
     currency: params.currency,
     metadata: params.metadata,
   };

@@ -62,12 +62,6 @@ export interface AttachParams {
 
   /** Optional: Redirect URL after successful payment */
   callbackUrl?: string;
-
-  /** Optional: Region selector for provider routing */
-  region?: string;
-
-  /** Optional: Override provider selection */
-  provider?: string;
 }
 
 export interface AttachResult {
@@ -450,12 +444,6 @@ export interface AddonParams {
 
   /** Optional: Redirect URL after checkout */
   callbackUrl?: string;
-
-  /** Optional: Override provider selection */
-  provider?: string;
-
-  /** Optional: Region for provider routing */
-  region?: string;
 
   /** Optional: Custom metadata */
   metadata?: Record<string, unknown>;

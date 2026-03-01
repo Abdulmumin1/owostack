@@ -23,9 +23,10 @@ function toCardInfo(row: any) {
     id: row.id,
     last4: row.cardLast4,
     brand: row.cardBrand || "unknown",
-    exp: row.cardExpMonth && row.cardExpYear
-      ? `${row.cardExpMonth}/${row.cardExpYear}`
-      : "",
+    exp:
+      row.cardExpMonth && row.cardExpYear
+        ? `${row.cardExpMonth}/${row.cardExpYear}`
+        : "",
     provider: row.providerId,
   };
 }
@@ -55,7 +56,11 @@ async function resolveAuth(c: any) {
   return { keyRecord, authDb };
 }
 
-async function resolveCustomer(db: any, organizationId: string, customer: string) {
+async function resolveCustomer(
+  db: any,
+  organizationId: string,
+  customer: string,
+) {
   return db.query.customers.findFirst({
     where: and(
       eq(schema.customers.organizationId, organizationId),
@@ -77,7 +82,10 @@ app.get("/wallet", async (c) => {
 
   const customer = c.req.query("customer");
   if (!customer) {
-    return c.json({ success: false, error: "customer query param required" }, 400);
+    return c.json(
+      { success: false, error: "customer query param required" },
+      400,
+    );
   }
 
   const db = c.get("db");
@@ -123,7 +131,10 @@ app.post("/wallet/setup", async (c) => {
   const body = await c.req.json();
   const parsed = setupSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ success: false, error: parsed.error.flatten().fieldErrors }, 400);
+    return c.json(
+      { success: false, error: parsed.error.flatten().fieldErrors },
+      400,
+    );
   }
 
   const { customer, callbackUrl, provider } = parsed.data;
@@ -145,19 +156,26 @@ app.post("/wallet/setup", async (c) => {
   // Resolve provider account from provider_accounts table
   const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
   const registry = getProviderRegistry();
-  const providerAccounts = await loadProviderAccounts(db, organizationId, c.env.ENCRYPTION_KEY);
+  const providerAccounts = await loadProviderAccounts(
+    db,
+    organizationId,
+    c.env.ENCRYPTION_KEY,
+  );
 
   let selectedProviderId = provider || dbCustomer.providerId || null;
   let selectedAccount: ProviderAccount | undefined;
 
   if (selectedProviderId) {
     selectedAccount = providerAccounts.find(
-      (a) => a.providerId === selectedProviderId && a.environment === providerEnv,
+      (a) =>
+        a.providerId === selectedProviderId && a.environment === providerEnv,
     );
   }
 
   if (!selectedAccount) {
-    const fallback = providerAccounts.find((a) => a.environment === providerEnv);
+    const fallback = providerAccounts.find(
+      (a) => a.environment === providerEnv,
+    );
     if (fallback) {
       selectedProviderId = fallback.providerId;
       selectedAccount = fallback;
@@ -165,12 +183,21 @@ app.post("/wallet/setup", async (c) => {
   }
 
   if (!selectedAccount || !selectedProviderId) {
-    return c.json({ success: false, error: "No payment provider configured" }, 400);
+    return c.json(
+      { success: false, error: "No payment provider configured" },
+      400,
+    );
   }
 
   const adapter = registry.get(selectedProviderId);
   if (!adapter) {
-    return c.json({ success: false, error: `Provider '${selectedProviderId}' not registered` }, 400);
+    return c.json(
+      {
+        success: false,
+        error: `Provider '${selectedProviderId}' not registered`,
+      },
+      400,
+    );
   }
 
   // Use the adapter's default currency for card setup (e.g. NGN for Paystack, USD for Dodo)
@@ -203,7 +230,10 @@ app.post("/wallet/setup", async (c) => {
       });
 
       if (createCustomerResult.isErr()) {
-        return c.json({ success: false, error: createCustomerResult.error.message }, 400);
+        return c.json(
+          { success: false, error: createCustomerResult.error.message },
+          400,
+        );
       }
 
       providerCustomerId = createCustomerResult.value.id;
@@ -219,8 +249,14 @@ app.post("/wallet/setup", async (c) => {
           })
           .where(eq(schema.customers.id, dbCustomer.id));
       } catch (error) {
-        console.error("[wallet] Failed to persist Polar customer reference:", error);
-        return c.json({ success: false, error: "Failed to save customer payment profile" }, 500);
+        console.error(
+          "[wallet] Failed to persist Polar customer reference:",
+          error,
+        );
+        return c.json(
+          { success: false, error: "Failed to save customer payment profile" },
+          500,
+        );
       }
     }
 
@@ -235,7 +271,10 @@ app.post("/wallet/setup", async (c) => {
     });
 
     if (sessionResult.isErr()) {
-      return c.json({ success: false, error: sessionResult.error.message }, 400);
+      return c.json(
+        { success: false, error: sessionResult.error.message },
+        400,
+      );
     }
 
     c.header("Cache-Control", "no-store");
@@ -271,7 +310,13 @@ app.post("/wallet/setup", async (c) => {
       });
 
       if (planResult.isErr()) {
-        return c.json({ success: false, error: `Failed to create card-setup product: ${planResult.error.message}` }, 400);
+        return c.json(
+          {
+            success: false,
+            error: `Failed to create card-setup product: ${planResult.error.message}`,
+          },
+          400,
+        );
       }
 
       productId = planResult.value.id;
@@ -294,7 +339,10 @@ app.post("/wallet/setup", async (c) => {
 
   const result = await adapter.createCheckoutSession({
     customer: {
-      id: dbCustomer.providerCustomerId || dbCustomer.paystackCustomerId || dbCustomer.email,
+      id:
+        dbCustomer.providerCustomerId ||
+        dbCustomer.paystackCustomerId ||
+        dbCustomer.email,
       email: dbCustomer.email,
     },
     plan: null,
@@ -337,7 +385,10 @@ app.post("/wallet/remove", async (c) => {
   const body = await c.req.json();
   const parsed = removeSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ success: false, error: parsed.error.flatten().fieldErrors }, 400);
+    return c.json(
+      { success: false, error: parsed.error.flatten().fieldErrors },
+      400,
+    );
   }
 
   const { customer, id } = parsed.data;

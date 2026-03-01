@@ -27,9 +27,6 @@ const attachSchema = z.object({
   customer: z.string(), // Email or customer ID
   // Product identification
   product: z.string(), // Plan slug or ID
-  // Optional provider selection
-  provider: z.string().optional(),
-  region: z.string().optional(),
   // Optional overrides
   currency: z.string().min(3).optional(),
   channels: z.array(z.string()).optional(),
@@ -100,16 +97,8 @@ app.post("/attach", async (c) => {
       return c.json(zodErrorToResponse(parsed.error), 400);
     }
 
-    const {
-      customer,
-      product,
-      currency,
-      channels,
-      metadata,
-      callbackUrl,
-      provider,
-      region,
-    } = parsed.data;
+    const { customer, product, currency, channels, metadata, callbackUrl } =
+      parsed.data;
 
     // 1. Resolve Plan (Price)
     const plan = await db.query.plans.findFirst({
@@ -129,7 +118,6 @@ app.post("/attach", async (c) => {
     const registry = getProviderRegistry();
 
     const providerContext = buildProviderContext({
-      region,
       currency: currency || plan.currency,
       metadata,
     });
@@ -146,30 +134,11 @@ app.post("/attach", async (c) => {
     // For paid plans we must resolve a provider account.
     const isFree = plan.type === "free" || plan.price === 0;
 
-    const explicitProvider = provider || null;
-    let selectedProviderId: string | null = explicitProvider;
+    let selectedProviderId: string | null = null;
     let selectedAccount: ProviderAccount | undefined;
 
     if (!isFree) {
-      // 1. Explicit provider requested
-      if (selectedProviderId) {
-        selectedAccount = providerAccounts.find(
-          (a) =>
-            a.providerId === selectedProviderId &&
-            a.environment === providerEnv,
-        );
-        if (!selectedAccount) {
-          return c.json(
-            {
-              success: false,
-              error: `Provider '${selectedProviderId}' not configured`,
-            },
-            400,
-          );
-        }
-      }
-
-      // 2. Plan's own provider — use the provider the plan was created on
+      // 1. Plan's own provider — use the provider the plan was created on
       if (!selectedAccount && plan.providerId) {
         selectedAccount = providerAccounts.find(
           (a) =>
@@ -180,7 +149,7 @@ app.post("/attach", async (c) => {
         }
       }
 
-      // 3. Try rules-based resolution
+      // 2. Try rules-based resolution
       if (!selectedAccount && providerRules.length > 0) {
         const selectionResult = resolveProvider(registry, {
           organizationId: keyRecord.organizationId,

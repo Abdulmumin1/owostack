@@ -20,21 +20,19 @@ await owo.attach({
     metadata?: Record<string, unknown>,
   },
   metadata?: object,   // Optional metadata to attach
-  provider?: string,   // Optional provider override
   callbackUrl?: string,
 }): Promise<AttachResult>
 ```
 
 ## Parameters
 
-| Parameter  | Type     | Required | Description                               |
-| ---------- | -------- | -------- | ----------------------------------------- |
-| `customer` | `string` | ✅       | Your internal user ID                      |
-| `product`  | `string` | ✅       | Plan slug or ID                            |
-| `customerData` | `object` | -    | Auto-create customer payload               |
-| `metadata` | `object` | -        | Custom data to attach to the subscription  |
-| `provider` | `string` | -        | Optional provider override                 |
-| `callbackUrl` | `string` | -     | Redirect URL after payment                 |
+| Parameter      | Type     | Required | Description                               |
+| -------------- | -------- | -------- | ----------------------------------------- |
+| `customer`     | `string` | ✅       | Your internal user ID                     |
+| `product`      | `string` | ✅       | Plan slug or ID                           |
+| `customerData` | `object` | -        | Auto-create customer payload              |
+| `metadata`     | `object` | -        | Custom data to attach to the subscription |
+| `callbackUrl`  | `string` | -        | Redirect URL after payment                |
 
 ## Response
 
