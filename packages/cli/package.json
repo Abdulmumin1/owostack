@@ -13,6 +13,7 @@
     "dist"
   ],
   "bin": {
+    "owosk": "./dist/index.js",
     "owostack": "./dist/index.js",
     "owo": "./dist/index.js",
     "owos": "./dist/index.js",
