@@ -3,6 +3,8 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins";
 import { createDb, schema } from "@owostack/db";
 import type { Env } from "../index";
+import { dash } from "@better-auth/infra";
+import { sendEmail } from "./email";
 
 /**
  * Wrap a D1Database binding so that any Date objects passed to
@@ -54,6 +56,7 @@ export function auth(env: Env) {
     env.BETTER_AUTH_URL && !env.BETTER_AUTH_URL.includes("localhost");
 
   return betterAuth({
+    appName: "Owostack",
     database: drizzleAdapter(db, {
       provider: "sqlite",
       schema: {
@@ -83,6 +86,29 @@ export function auth(env: Env) {
 
         console.log(`[AUTH] 🔑 Password reset requested for ${user.email}`);
         console.log(`[AUTH] 🔗 Reset URL: ${resetURL}`);
+
+        await sendEmail(env, {
+          to: user.email,
+          subject: "Reset your Owostack password",
+          text: `Hi,\n\nYou requested a password reset for your Owostack account. Click the link below to set a new password:\n\n${resetURL}\n\nIf you didn't request this, you can safely ignore this email.\n\nThanks!`,
+          html: `
+            <div style="background-color: #fafaf5; padding: 48px 24px; font-family: 'Outfit', 'DM Sans', system-ui, sans-serif; color: #1a1a1a;">
+              <div style="max-width: 480px; margin: 0 auto; background-color: #ffffff; padding: 32px; border: 1px solid #e0d9cc; border-radius: 12px; box-shadow: 6px 6px 0 0 #e0d9cc;">
+                <h2 style="font-size: 20px; margin: 0 0 16px 0; font-weight: 700; color: #1a1a1a;">Reset Your Password</h2>
+                <p style="font-size: 14px; line-height: 1.6; color: #3d3d3d; margin-bottom: 24px;">
+                  Hi,<br><br>
+                  You requested a password reset for your Owostack account. Click the button below to set a new password:
+                </p>
+                <a href="${resetURL}" style="display: inline-block; background-color: #e8a855; color: #1a1a1a; padding: 12px 24px; border: 1px solid #c07515; border-radius: 4px; text-decoration: none; font-weight: 700; font-size: 14px; box-shadow: 0 4px 0 0 #c07515;">
+                  Reset Password →
+                </a>
+                <p style="font-size: 12px; color: #8b8b8b; margin-top: 32px; border-top: 1px solid #ede9df; padding-top: 16px;">
+                  If you didn't request this, you can safely ignore this email.
+                </p>
+              </div>
+            </div>
+          `.trim(),
+        });
       },
     },
 
@@ -104,6 +130,13 @@ export function auth(env: Env) {
       "http://localhost:5176",
       "https://app.owostack.com",
     ],
+
+    advanced: {
+      ipAddress: {
+        // For Cloudflare
+        ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
+      },
+    },
 
     // Cross-subdomain cookies so session works on both sandbox and api workers
     ...(isProduction
@@ -130,21 +163,37 @@ export function auth(env: Env) {
             env.DASHBOARD_URL ||
             env.BETTER_AUTH_URL?.replace(/localhost:\d+/, "localhost:5173") ||
             "http://localhost:5173";
-          const inviteLink = `${dashboardUrl}/accept-invitation/${data.id}`;
+          const inviteLink = `${dashboardUrl}/join/${data.id}`;
           console.log(
             `[AUTH] 📧 Organization invitation sent to ${data.email}`,
           );
           console.log(`[AUTH] 🔗 Invite link: ${inviteLink}`);
-          console.log(`[AUTH] 📋 Invitation data:`, {
-            email: data.email,
-            organization: data.organization.name,
-            invitedBy: data.inviter.user.email,
-            role: data.role,
+
+          await sendEmail(env, {
+            to: data.email,
+            subject: `Join ${data.organization.name} on Owostack`,
+            text: `Hi,\n\n${data.inviter.user.email} has invited you to join the organization "${data.organization.name}" on Owostack as a ${data.role}.\n\nClick the link below to accept the invitation:\n\n${inviteLink}\n\nThanks!`,
+            html: `
+              <div style="background-color: #fafaf5; padding: 48px 24px; font-family: 'Outfit', 'DM Sans', system-ui, sans-serif; color: #1a1a1a;">
+                <div style="max-width: 480px; margin: 0 auto; background-color: #ffffff; padding: 32px; border: 1px solid #e0d9cc; border-radius: 12px; box-shadow: 6px 6px 0 0 #e0d9cc;">
+                  <h2 style="font-size: 20px; margin: 0 0 16px 0; font-weight: 700; color: #1a1a1a;">Organization Invitation</h2>
+                  <p style="font-size: 14px; line-height: 1.6; color: #3d3d3d; margin-bottom: 24px;">
+                    Hi,<br><br>
+                    <strong>${data.inviter.user.email}</strong> has invited you to join the organization <strong>${data.organization.name}</strong> on Owostack as a <strong>${data.role}</strong>.
+                  </p>
+                  <a href="${inviteLink}" style="display: inline-block; background-color: #e8a855; color: #1a1a1a; padding: 12px 24px; border: 1px solid #c07515; border-radius: 4px; text-decoration: none; font-weight: 700; font-size: 14px; box-shadow: 0 4px 0 0 #c07515;">
+                    Join Organization →
+                  </a>
+                  <p style="font-size: 12px; color: #8b8b8b; margin-top: 32px; border-top: 1px solid #ede9df; padding-top: 16px;">
+                    If you didn't expect this invitation, you can safely ignore this email.
+                  </p>
+                </div>
+              </div>
+            `.trim(),
           });
-          // TODO: Implement actual email sending via your email service
-          // Example: await sendEmail({ to: data.email, subject: "...", body: "..." });
         },
       }),
+      dash(),
     ],
   });
 }
