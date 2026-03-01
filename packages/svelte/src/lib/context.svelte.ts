@@ -1,4 +1,4 @@
-import { Owostack } from "@owostack/core";
+import { Owostack } from "owostack";
 import type { OwostackConfig } from "@owostack/types";
 import { getContext, setContext } from "svelte";
 

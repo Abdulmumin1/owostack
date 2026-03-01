@@ -1,8 +1,8 @@
-import { Owostack } from "@owostack/core";
+import { Owostack } from "owostack";
 import type { OwostackConfig } from "@owostack/types";
 
 // Re-export for convenience
-export { Owostack } from "@owostack/core";
+export { Owostack } from "owostack";
 export type * from "@owostack/types";
 
 // Svelte stores and utilities

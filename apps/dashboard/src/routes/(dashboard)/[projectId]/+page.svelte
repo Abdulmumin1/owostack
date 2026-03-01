@@ -50,7 +50,7 @@
   ]);
 
   function copyInstall() {
-    navigator.clipboard.writeText("npm install @owostack/core");
+    navigator.clipboard.writeText("npm install owostack");
   }
 </script>
 
@@ -159,7 +159,7 @@
           <h3 class="font-bold text-text-primary text-sm uppercase tracking-tight">Install the SDK</h3>
         </div>
         <div class="bg-[var(--color-bg-code)] border border-border p-4 flex items-center justify-between group">
-          <code class="font-mono text-sm text-[var(--color-text-code)]">npm install @owostack/core</code>
+          <code class="font-mono text-sm text-[var(--color-text-code)]">npm install owostack</code>
           <button class="text-text-dim hover:text-text-primary transition-colors" onclick={copyInstall}>
             <Copy   size={16}  weight="fill" />
           </button>
@@ -173,7 +173,7 @@
           <h3 class="font-bold text-text-primary text-sm uppercase tracking-tight">Initialize</h3>
         </div>
         <div class="bg-[var(--color-bg-code)] border border-border p-4 overflow-x-auto">
-          <pre class="font-mono text-sm text-[var(--color-text-code)]"><code>import &#123; Owostack &#125; from '@owostack/core';
+          <pre class="font-mono text-sm text-[var(--color-text-code)]"><code>import &#123; Owostack &#125; from 'owostack';
 
 const client = new Owostack(&#123; 
   secretKey: "owosk_..." 

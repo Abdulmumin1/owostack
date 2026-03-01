@@ -11,7 +11,7 @@ Configure the Owostack SDK with your API keys and environment settings.
 ## Initialization
 
 ```ts
-import { Owostack } from "@owostack/core";
+import { Owostack } from "owostack";
 
 const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY,
@@ -89,7 +89,7 @@ const owo = new Owostack({
 Pass a declarative catalog for plan/feature management:
 
 ```ts
-import { metered, boolean, plan } from "@owostack/core";
+import { metered, boolean, plan } from "owostack";
 
 const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY,

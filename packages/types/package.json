@@ -2,14 +2,16 @@
   "name": "@owostack/types",
   "version": "0.1.0",
   "description": "Shared TypeScript types for Owostack",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/Abdulmumin1/owostack.git",
     "directory": "packages/types"
   },
   "type": "module",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

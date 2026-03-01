@@ -84,14 +84,14 @@ OWOSTACK_API_KEY=owo_sk_xxxxxxxxxxxxxxxx
 ```bash
 mkdir owostack-tutorial && cd owostack-tutorial
 npm init -y
-npm install @owostack/core dotenv
+npm install owostack dotenv
 ```
 
 Create `index.mjs`:
 
 ```js
 import "dotenv/config";
-import { Owostack } from "@owostack/core";
+import { Owostack } from "owostack";
 
 const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
 

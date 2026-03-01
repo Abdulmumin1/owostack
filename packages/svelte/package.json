@@ -2,6 +2,7 @@
   "name": "@owostack/svelte",
   "version": "0.1.0",
   "description": "Svelte stores and components for Owostack",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,12 +19,17 @@
     "dev": "svelte-package -o dist --watch",
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
-  "keywords": ["svelte", "owostack", "paystack", "billing"],
+  "keywords": [
+    "svelte",
+    "owostack",
+    "paystack",
+    "billing"
+  ],
   "peerDependencies": {
     "svelte": "^5.0.0"
   },
   "dependencies": {
-    "@owostack/core": "workspace:*",
+    "owostack": "workspace:*",
     "@owostack/types": "workspace:*"
   },
   "devDependencies": {
