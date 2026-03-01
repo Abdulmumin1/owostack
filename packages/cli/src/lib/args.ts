@@ -1,7 +1,7 @@
 import { getApiUrl, getDashboardUrl } from "./config";
 
 export interface SyncArgs {
-  configPath: string;
+  configPath?: string;
   dryRun: boolean;
   apiKey: string;
   apiUrl: string;
@@ -9,7 +9,7 @@ export interface SyncArgs {
 }
 
 export interface PullArgs {
-  configPath: string;
+  configPath?: string;
   apiKey: string;
   force: boolean;
   dryRun: boolean;
@@ -17,13 +17,13 @@ export interface PullArgs {
 }
 
 export interface DiffArgs {
-  configPath: string;
+  configPath?: string;
   apiKey: string;
   prod: boolean;
 }
 
 export interface ValidateArgs {
-  configPath: string;
+  configPath?: string;
   prod: boolean;
 }
 
@@ -35,7 +35,7 @@ export interface ConnectArgs {
 }
 
 export function parseSyncArgs(args: string[]): SyncArgs {
-  let configPath = "./owo.config.ts";
+  let configPath: string | undefined;
   let dryRun = false;
   let apiKey = "";
   let apiUrl = "";
@@ -62,7 +62,7 @@ export function parseSyncArgs(args: string[]): SyncArgs {
 }
 
 export function parsePullArgs(args: string[]): PullArgs {
-  let configPath = "./owo.config.ts";
+  let configPath: string | undefined;
   let apiKey = "";
   let force = false;
   let dryRun = false;
@@ -93,7 +93,7 @@ export function parsePullArgs(args: string[]): PullArgs {
 }
 
 export function parseDiffArgs(args: string[]): DiffArgs {
-  let configPath = "./owo.config.ts";
+  let configPath: string | undefined;
   let apiKey = "";
   let prod = false;
 
@@ -115,7 +115,7 @@ export function parseDiffArgs(args: string[]): DiffArgs {
 }
 
 export function parseValidateArgs(args: string[]): ValidateArgs {
-  let configPath = "./owo.config.ts";
+  let configPath: string | undefined;
   let prod = false;
 
   for (let i = 0; i < args.length; i++) {

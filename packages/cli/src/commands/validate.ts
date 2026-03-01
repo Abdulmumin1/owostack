@@ -10,7 +10,7 @@ import { getApiKey, getApiUrl, getTestApiUrl } from "../lib/config.js";
 import { printBrand } from "../lib/brand.js";
 
 interface ValidateOptions {
-  config: string;
+  config?: string;
   prod?: boolean;
 }
 
@@ -18,9 +18,15 @@ export async function runValidate(options: ValidateOptions) {
   p.intro(pc.bgYellow(pc.black(" validate ")));
 
   const fullPath = resolveConfigPath(options.config);
+
+  if (!fullPath) {
+    p.log.error(pc.red("No configuration file found."));
+    process.exit(1);
+  }
+
   const s = p.spinner();
 
-  s.start(`Loading ${pc.cyan(options.config)}`);
+  s.start(`Loading ${pc.cyan(fullPath)}`);
   const owo = await loadOwostackFromConfig(fullPath);
 
   if (!owo || typeof owo.sync !== "function") {

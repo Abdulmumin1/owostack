@@ -11,7 +11,7 @@ import { diffPlans, printDiff } from "../lib/diff.js";
 import { printBrand } from "../lib/brand.js";
 
 interface DiffOptions {
-  config: string;
+  config?: string;
   key?: string;
   prod?: boolean;
 }
@@ -20,6 +20,12 @@ export async function runDiff(options: DiffOptions) {
   p.intro(pc.bgYellow(pc.black(" diff ")));
 
   const fullPath = resolveConfigPath(options.config);
+
+  if (!fullPath) {
+    p.log.error(pc.red("No configuration file found."));
+    process.exit(1);
+  }
+
   const apiKey = getApiKey(options.key);
   const configSettings = await loadConfigSettings(options.config);
   const baseUrl = getApiUrl(configSettings.apiUrl);

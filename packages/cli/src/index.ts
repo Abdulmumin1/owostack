@@ -20,7 +20,7 @@ program
 program
   .command("sync")
   .description("Push catalog to the API")
-  .option("--config <path>", "Path to config file", "./owo.config.ts")
+  .option("--config <path>", "Path to config file")
   .option("--key <api-key>", "API secret key")
   .option("--prod", "Execute in both test and live environments")
   .option("--dry-run", "Show what would change without applying")
@@ -29,7 +29,7 @@ program
 program
   .command("pull")
   .description("Pull plans from dashboard into owo.config.ts")
-  .option("--config <path>", "Path to config file", "./owo.config.ts")
+  .option("--config <path>", "Path to config file")
   .option("--key <api-key>", "API secret key")
   .option("--force", "Overwrite existing config file", false)
   .option("--prod", "Execute in both test and live environments")
@@ -39,7 +39,7 @@ program
 program
   .command("diff")
   .description("Compare local config to dashboard plans")
-  .option("--config <path>", "Path to config file", "./owo.config.ts")
+  .option("--config <path>", "Path to config file")
   .option("--key <api-key>", "API secret key")
   .option("--prod", "Execute in both test and live environments")
   .action(runDiff);
@@ -47,7 +47,7 @@ program
 program
   .command("init")
   .description("Initialize owo.config.ts from dashboard")
-  .option("--config <path>", "Path to config file", "./owo.config.ts")
+  .option("--config <path>", "Path to config file")
   .option("--key <api-key>", "API secret key")
   .option("--force", "Overwrite existing config file", false)
   .action(runInit);
@@ -55,7 +55,7 @@ program
 program
   .command("validate")
   .description("Validate local config without syncing")
-  .option("--config <path>", "Path to config file", "./owo.config.ts")
+  .option("--config <path>", "Path to config file")
   .option("--prod", "Execute in both test and live environments")
   .action(runValidate);
 

@@ -9,14 +9,14 @@ import {
 import { printBrand } from "../lib/brand.js";
 
 interface SyncOptions {
-  config: string;
+  config?: string;
   dryRun?: boolean;
   key?: string;
   prod?: boolean;
 }
 
 async function runSyncSingle(options: {
-  configPath: string;
+  configPath?: string;
   dryRun: boolean;
   apiKey: string;
   apiUrl: string;
@@ -25,8 +25,17 @@ async function runSyncSingle(options: {
   const apiKey = getApiKey(options.apiKey);
   const fullPath = resolveConfigPath(configPath);
 
+  if (!fullPath) {
+    p.log.error(
+      pc.red(
+        `Configuration file not found.${configPath ? ` looked at ${configPath}` : " searched defaults."}`,
+      ),
+    );
+    process.exit(1);
+  }
+
   const s = p.spinner();
-  s.start(`Loading ${pc.cyan(configPath)}`);
+  s.start(`Loading ${pc.cyan(fullPath)}`);
 
   const owo = await loadOwostackFromConfig(fullPath);
 

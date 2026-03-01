@@ -62,14 +62,22 @@ function slugToIdentifier(slug: string, used: Set<string>): string {
   return candidate;
 }
 
+export type ConfigFormat = "ts" | "esm" | "cjs";
+
 export function generateConfig(
   plans: any[],
   creditSystems: any[] = [],
   defaultProvider?: string,
+  format: ConfigFormat = "ts",
 ): string {
+  const isTs = format === "ts";
+  const isCjs = format === "cjs";
+
   // Build a map of credit systems by slug
   const creditSystemSlugs = new Set(creditSystems.map((cs) => cs.slug));
   const creditSystemBySlug = new Map(creditSystems.map((cs) => [cs.slug, cs]));
+
+  // ... (rest of logic mostly same, but need to adjust imports and exports)
 
   // Collect all features, excluding credit system pseudo-features
   const featuresBySlug = new Map<
@@ -113,14 +121,17 @@ export function generateConfig(
     const nameArg = feature.name
       ? `, { name: ${JSON.stringify(feature.name)} }`
       : "";
-    if (feature.type === "boolean") {
-      featureLines.push(
-        `export const ${varName} = boolean(${JSON.stringify(feature.slug)}${nameArg});`,
-      );
+
+    const decl =
+      feature.type === "boolean"
+        ? `boolean(${JSON.stringify(feature.slug)}${nameArg})`
+        : `metered(${JSON.stringify(feature.slug)}${nameArg})`;
+
+    if (isCjs) {
+      featureLines.push(`const ${varName} = ${decl};`);
+      featureLines.push(`exports.${varName} = ${varName};`);
     } else {
-      featureLines.push(
-        `export const ${varName} = metered(${JSON.stringify(feature.slug)}${nameArg});`,
-      );
+      featureLines.push(`export const ${varName} = ${decl};`);
     }
   }
 
@@ -148,9 +159,14 @@ export function generateConfig(
       `features: [${featureEntries.join(", ")}]`,
     ].filter(Boolean);
 
-    creditSystemLines.push(
-      `export const ${varName} = creditSystem(${JSON.stringify(cs.slug)}, { ${optsParts.join(", ")} });`,
-    );
+    const decl = `creditSystem(${JSON.stringify(cs.slug)}, { ${optsParts.join(", ")} })`;
+
+    if (isCjs) {
+      creditSystemLines.push(`const ${varName} = ${decl};`);
+      creditSystemLines.push(`exports.${varName} = ${varName};`);
+    } else {
+      creditSystemLines.push(`export const ${varName} = ${decl};`);
+    }
   }
 
   const planLines: string[] = [];
@@ -249,19 +265,35 @@ export function generateConfig(
     ? `  provider: ${JSON.stringify(defaultProvider)},\n`
     : "";
 
+  const imports = isCjs
+    ? `const { Owostack, metered, boolean, creditSystem, plan } = require("owostack");`
+    : `import { Owostack, metered, boolean, creditSystem, plan } from "owostack";`;
+
+  const tsCheck = !isTs ? `// @ts-check` : "";
+  const jsDoc = !isTs ? `/** @type {import('owostack').Owostack} */` : "";
+
+  const owoDecl = isCjs ? "exports.owo =" : "export const owo =";
+  const secretKey = isTs
+    ? "process.env.OWOSTACK_SECRET_KEY!"
+    : "process.env.OWOSTACK_SECRET_KEY";
+
   return [
-    `import { Owostack, metered, boolean, creditSystem, plan } from "owostack";`,
+    tsCheck,
+    imports,
     ``,
     ...featureLines,
     ...(hasCreditSystems ? ["", ...creditSystemLines] : []),
     ``,
-    `export const owo = new Owostack({`,
-    `  secretKey: process.env.OWOSTACK_SECRET_KEY!,`,
+    jsDoc,
+    `${owoDecl} new Owostack({`,
+    `  secretKey: ${secretKey},`,
     providerLine,
     `  catalog: [`,
     `    ${planLines.join(",\n    ")}`,
     `  ],`,
     `});`,
     ``,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

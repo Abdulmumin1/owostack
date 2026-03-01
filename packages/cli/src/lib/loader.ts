@@ -1,32 +1,81 @@
-import { resolve, isAbsolute } from "node:path";
+import { resolve, isAbsolute, extname } from "node:path";
 import { existsSync } from "node:fs";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url);
 
-export function resolveConfigPath(configPath: string): string {
-  return isAbsolute(configPath)
-    ? configPath
-    : resolve(process.cwd(), configPath);
+export const DEFAULT_CONFIG_NAMES = [
+  "owo.config.ts",
+  "owo.config.js",
+  "owo.config.mjs",
+  "owo.config.cjs",
+  "owo.config.mts",
+  "owo.config.cts",
+];
+
+export function resolveConfigPath(configPath?: string): string | null {
+  if (configPath) {
+    const fullPath = isAbsolute(configPath)
+      ? configPath
+      : resolve(process.cwd(), configPath);
+
+    if (existsSync(fullPath)) return fullPath;
+    return null;
+  }
+
+  // Try defaults
+  for (const name of DEFAULT_CONFIG_NAMES) {
+    const fullPath = resolve(process.cwd(), name);
+    if (existsSync(fullPath)) return fullPath;
+  }
+
+  return null;
 }
 
 export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
   try {
     const configModule: any = await jiti.import(fullPath);
-    return configModule.default || configModule.owo;
+
+    // Handle ESM default export or named export 'owo'
+    // Also handle CJS module.exports or exports.owo
+    const instance = configModule.default || configModule.owo || configModule;
+
+    if (instance && typeof instance.sync === "function") {
+      return instance;
+    }
+
+    // If the module itself is the instance (common in CJS)
+    if (typeof configModule.sync === "function") {
+      return configModule;
+    }
+
+    return null;
   } catch (e: any) {
     console.error(`\n  ❌ Failed to load config from ${fullPath}`);
     console.error(`     ${e.message}\n`);
     console.error(
       `  Make sure the file exports an Owostack instance as default or named 'owo'.`,
     );
-    console.error(`  Example owo.config.ts:\n`);
-    console.error(
-      `    import { Owostack, metered, boolean, plan } from "owostack";`,
-    );
-    console.error(
-      `    export default new Owostack({ secretKey: "...", catalog: [...] });\n`,
-    );
+    const ext = extname(fullPath);
+    const isTs = ext === ".ts" || ext === ".mts" || ext === ".cts";
+
+    if (isTs) {
+      console.error(`  Example owo.config.ts:\n`);
+      console.error(
+        `    import { Owostack, metered, boolean, plan } from "owostack";`,
+      );
+      console.error(
+        `    export default new Owostack({ secretKey: "...", catalog: [...] });\n`,
+      );
+    } else {
+      console.error(`  Example owo.config.js:\n`);
+      console.error(
+        `    const { Owostack, metered, boolean, plan } = require("owostack");`,
+      );
+      console.error(
+        `    module.exports = new Owostack({ secretKey: "...", catalog: [...] });\n`,
+      );
+    }
     process.exit(1);
   }
 }
@@ -48,11 +97,11 @@ export interface ConfigSettings {
 }
 
 export async function loadConfigSettings(
-  configPath: string,
+  configPath?: string,
 ): Promise<ConfigSettings> {
   try {
     const fullPath = resolveConfigPath(configPath);
-    if (!existsSync(fullPath)) return {};
+    if (!fullPath) return {};
     const owo = await loadOwostackFromConfig(fullPath);
     if (!owo || !owo._config) return {};
     return {
