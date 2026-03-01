@@ -49,7 +49,7 @@ async function runSyncSingle(options: {
     if (dryRun) {
       s.stop(pc.yellow("Dry run mode (showing catalog payload)"));
 
-      const { buildSyncPayload } = (await import("@owostack/core").catch(() => {
+      const { buildSyncPayload } = (await import("owostack").catch(() => {
         return { buildSyncPayload: null };
       })) as any;
 

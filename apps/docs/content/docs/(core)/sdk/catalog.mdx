@@ -13,7 +13,7 @@ Builder functions for defining features and plans declaratively. Features become
 Create a metered feature handle. Metered features have numeric limits that reset on a schedule.
 
 ```ts
-import { metered } from "@owostack/core";
+import { metered } from "owostack";
 
 const apiCalls = metered("api-calls", { name: "API Calls" });
 ```
@@ -103,7 +103,7 @@ Returns `Promise<TrackResult>`.
 Create a boolean feature handle. Boolean features are either enabled or disabled per plan — no usage tracking.
 
 ```ts
-import { boolean } from "@owostack/core";
+import { boolean } from "owostack";
 
 const analytics = boolean("analytics", { name: "Analytics Dashboard" });
 ```
@@ -151,7 +151,7 @@ Returns `Promise<CheckResult>`.
 Create a credit system definition. A credit system abstracts usage across multiple features into a single "credit" balance.
 
 ```ts
-import { creditSystem, metered } from "@owostack/core";
+import { creditSystem, metered } from "owostack";
 
 const gpt4 = metered("gpt-4");
 const dallE = metered("dall-e");
@@ -191,7 +191,7 @@ aiCredits.credits(1000, { reset: "monthly", overage: "charge" });
 Create a plan definition for the catalog.
 
 ```ts
-import { plan } from "@owostack/core";
+import { plan } from "owostack";
 
 plan("pro", {
   name: "Pro",
@@ -265,7 +265,7 @@ npx owo sync [options]
 
 ```ts
 // owo.config.ts
-import { Owostack, metered, boolean, creditSystem, plan } from "@owostack/core";
+import { Owostack, metered, boolean, creditSystem, plan } from "owostack";
 
 const apiCalls = metered("api-calls");
 const aiCredits = creditSystem("ai-credits", {

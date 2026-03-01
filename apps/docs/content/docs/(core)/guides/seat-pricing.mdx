@@ -16,7 +16,7 @@ This guide shows a common setup:
 ## 1. Define features
 
 ```ts
-import { metered, plan, Owostack } from "@owostack/core";
+import { metered, plan, Owostack } from "owostack";
 
 export const seats = metered("seats", { name: "Team Seats" });
 export const aiCredits = metered("ai-credits", { name: "AI Credits" });
@@ -142,7 +142,7 @@ await owo.track({
 ## Complete example
 
 ```ts
-import { Owostack } from "@owostack/core";
+import { Owostack } from "owostack";
 
 const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY!,

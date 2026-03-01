@@ -2,6 +2,7 @@
   "name": "@owostack/db",
   "version": "0.1.0",
   "description": "Database schema and utilities for Owostack",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

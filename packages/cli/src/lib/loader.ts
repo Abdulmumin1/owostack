@@ -21,7 +21,7 @@ export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
     );
     console.error(`  Example owo.config.ts:\n`);
     console.error(
-      `    import { Owostack, metered, boolean, plan } from "@owostack/core";`,
+      `    import { Owostack, metered, boolean, plan } from "owostack";`,
     );
     console.error(
       `    export default new Owostack({ secretKey: "...", catalog: [...] });\n`,

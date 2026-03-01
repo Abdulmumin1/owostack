@@ -11,14 +11,14 @@ Define your features and plans in TypeScript and push them to Owostack with a si
 ## Prerequisites
 
 - An Owostack organization with an API key
-- `@owostack/core` installed in your project
+- `owostack` installed in your project
 
 ## 1. Define your features
 
 Create a file (e.g. `src/billing/features.ts`) and define your features using `metered()` and `boolean()`:
 
 ```ts
-import { metered, boolean } from "@owostack/core";
+import { metered, boolean } from "owostack";
 
 export const apiCalls = metered("api-calls", { name: "API Calls" });
 export const analytics = boolean("analytics", { name: "Analytics Dashboard" });
@@ -30,7 +30,7 @@ export const seats = metered("seats", { name: "Team Seats" });
 Create a config file (e.g. `owo.config.ts`) that assembles features into plans:
 
 ```ts
-import { Owostack, plan } from "@owostack/core";
+import { Owostack, plan } from "owostack";
 import { apiCalls, analytics, seats } from "./src/billing/features";
 
 export default new Owostack({

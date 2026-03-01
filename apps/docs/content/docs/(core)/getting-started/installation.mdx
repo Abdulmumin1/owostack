@@ -11,7 +11,7 @@ Install the Owostack SDK in your Node.js project. This guide covers SDK setup; p
 ## Package Manager
 
 ```npm
-npm i @owostack/core
+npm i owostack
 ```
 
 ## Configuration
@@ -19,7 +19,7 @@ npm i @owostack/core
 Initialize the SDK with your API key:
 
 ```ts
-import { Owostack } from "@owostack/core";
+import { Owostack } from "owostack";
 
 const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY,
@@ -44,7 +44,7 @@ import {
   AttachResult,
   CheckResult,
   TrackResult,
-} from "@owostack/core";
+} from "owostack";
 
 const owo = new Owostack({ secretKey: "..." });
 

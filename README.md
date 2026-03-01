@@ -10,22 +10,22 @@ Owostack is a developer-friendly billing infrastructure that lets you implement 
 
 Owostack supports multiple payment gateways while providing first-class features for:
 
-- 🚀 **Usage Metering** (track tokens, API calls, seats)
-- 🏦 **Flexible Resets** (hourly, daily, monthly quotas)
-- 📱 **Credit Systems** (shared balances across features)
-- 💰 **Multi-provider** (Paystack, Dodo Payments, Polar)
-- ⚡ **Edge-native** (Cloudflare Workers for global speed)
+- **Usage Metering** (track tokens, API calls, seats)
+- **Flexible Resets** (hourly, daily, monthly quotas)
+- **Credit Systems** (shared balances across features)
+- **Multi-provider** (Paystack, Dodo Payments, Polar)
+- **Edge-native** (Cloudflare Workers for global speed)
 
 ## Quick Start
 
 ```bash
 # Install SDK
-pnpm add @owostack/core
+pnpm add owostack
 ```
 
 ```typescript
 // Initialize
-import { Owostack } from "@owostack/core";
+import { Owostack } from "owostack";
 
 const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY,
@@ -115,8 +115,4 @@ This reduces reliance on D1 `usage_records` for overage and invoice-critical cal
 
 ## License
 
-MIT
-
----
-
-**Built with ❤️ for African developers**
+Apache-2.0

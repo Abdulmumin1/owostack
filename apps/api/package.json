@@ -2,6 +2,7 @@
   "name": "owostack-api",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
@@ -20,7 +21,7 @@
     "@better-auth/infra": "^0.1.8",
     "@owostack/adapters": "workspace:*",
     "@owostack/analytics": "workspace:*",
-    "@owostack/core": "workspace:*",
+    "owostack": "workspace:*",
     "@owostack/db": "workspace:*",
     "@owostack/types": "workspace:*",
     "better-auth": "^1.5.0",

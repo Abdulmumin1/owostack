@@ -39,12 +39,12 @@ export async function runValidate(options: ValidateOptions) {
     pc.green(`Configuration loaded (${owo._config.catalog.length} entries)`),
   );
 
-  const { buildSyncPayload } = (await import("@owostack/core").catch(() => ({
+  const { buildSyncPayload } = (await import("owostack").catch(() => ({
     buildSyncPayload: null,
   }))) as any;
 
   if (!buildSyncPayload) {
-    p.log.error("buildSyncPayload unavailable from @owostack/core.");
+    p.log.error("buildSyncPayload unavailable from owostack.");
     process.exit(1);
   }
 

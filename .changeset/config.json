@@ -6,16 +6,19 @@
   ],
   "commit": false,
   "fixed": [],
-  "linked": [["@owostack/types", "@owostack/core", "@owostack/cli"]],
+  "linked": [["@owostack/types", "owostack", "owosk"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
     "owostack-api",
     "owostack-dashboard",
-    "docs",
+    "owostack-docs",
+    "owostack-marketing",
     "demo-app",
     "@owostack/db",
-    "@owostack/adapters"
+    "@owostack/adapters",
+    "@owostack/svelte",
+    "@owostack/analytics"
   ]
 }

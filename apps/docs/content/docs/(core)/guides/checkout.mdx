@@ -13,7 +13,7 @@ This guide shows how to use `attach()` to start a subscription checkout, handle 
 Call `attach()` with a customer identifier and a plan slug. If payment is required, you get back a `checkoutUrl`.
 
 ```ts
-import { Owostack } from "@owostack/core";
+import { Owostack } from "owostack";
 
 const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
 
