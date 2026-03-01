@@ -21,7 +21,19 @@ export async function runValidate(options: ValidateOptions) {
   const s = p.spinner();
 
   s.start(`Loading ${pc.cyan(options.config)}`);
-  const owo = await loadOwostackFromConfig(fullPath);
+  let owo: any;
+  try {
+    owo = await loadOwostackFromConfig(fullPath);
+  } catch (e: any) {
+    s.stop(pc.red("Failed to load configuration"));
+    p.log.error(pc.red(`Error: ${e.message}`));
+    p.log.info(
+      pc.dim(
+        "Make sure 'owostack' is installed in your project: 'npm install owostack'",
+      ),
+    );
+    process.exit(1);
+  }
 
   if (!owo || typeof owo.sync !== "function") {
     s.stop(pc.red("Invalid configuration"));

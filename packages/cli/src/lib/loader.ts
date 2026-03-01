@@ -9,25 +9,8 @@ export function resolveConfigPath(configPath: string): string {
 }
 
 export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
-  let configModule: any;
-  try {
-    const fileUrl = pathToFileURL(fullPath).href;
-    configModule = await import(fileUrl);
-  } catch (e: any) {
-    console.error(`\n  ❌ Failed to load config from ${fullPath}`);
-    console.error(`     ${e.message}\n`);
-    console.error(
-      `  Make sure the file exports an Owostack instance as default or named 'owo'.`,
-    );
-    console.error(`  Example owo.config.ts:\n`);
-    console.error(
-      `    import { Owostack, metered, boolean, plan } from "owostack";`,
-    );
-    console.error(
-      `    export default new Owostack({ secretKey: "...", catalog: [...] });\n`,
-    );
-    process.exit(1);
-  }
+  const fileUrl = pathToFileURL(fullPath).href;
+  const configModule = await import(fileUrl);
   return configModule.default || configModule.owo;
 }
 
@@ -50,9 +33,10 @@ export interface ConfigSettings {
 export async function loadConfigSettings(
   configPath: string,
 ): Promise<ConfigSettings> {
+  const fullPath = resolveConfigPath(configPath);
+  if (!existsSync(fullPath)) return {};
+
   try {
-    const fullPath = resolveConfigPath(configPath);
-    if (!existsSync(fullPath)) return {};
     const owo = await loadOwostackFromConfig(fullPath);
     if (!owo || !owo._config) return {};
     return {
@@ -61,7 +45,9 @@ export async function loadConfigSettings(
       filters: owo._config.filters,
       connect: owo._config.connect,
     };
-  } catch {
+  } catch (e) {
+    // If we fail to load the config (e.g. missing owostack package in fresh project),
+    // we just return empty settings and let the CLI continue with defaults.
     return {};
   }
 }
