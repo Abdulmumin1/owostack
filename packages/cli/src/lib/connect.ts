@@ -25,23 +25,32 @@ export async function initiateDeviceFlow(
   options: ConnectOptions,
 ): Promise<DeviceCode> {
   const url = `${options.apiUrl}/api/auth/cli/device`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-  });
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
 
-  const data = await response.json();
-  if (!response.ok || !data?.success) {
-    const message =
-      data?.error || data?.message || "Failed to initiate device flow";
-    throw new Error(message);
+    const data = await response.json();
+    if (!response.ok || !data?.success) {
+      const message =
+        data?.error || data?.message || "Failed to initiate device flow";
+      throw new Error(message);
+    }
+
+    return {
+      deviceCode: data.deviceCode,
+      userCode: data.userCode,
+      expiresIn: data.expiresIn || 300,
+    };
+  } catch (error: any) {
+    if (error.name === "TypeError" && error.message.includes("fetch failed")) {
+      throw new Error(
+        `Could not reach the API at ${options.apiUrl}. Please check your internet connection or ensure the API is running.`,
+      );
+    }
+    throw error;
   }
-
-  return {
-    deviceCode: data.deviceCode,
-    userCode: data.userCode,
-    expiresIn: data.expiresIn || 300,
-  };
 }
 
 export async function pollForToken(
@@ -55,22 +64,35 @@ export async function pollForToken(
 
   while (Date.now() - startTime < timeoutMs) {
     const url = `${options.apiUrl}/api/auth/cli/token?deviceCode=${deviceCode}`;
-    const response = await fetch(url, { method: "GET" });
-    const data = await response.json();
+    try {
+      const response = await fetch(url, { method: "GET" });
+      const data = await response.json();
 
-    if (data?.success && data?.apiKey) {
-      return {
-        success: true,
-        apiKey: data.apiKey,
-        organizationId: data.organizationId,
-      };
-    }
+      if (data?.success && data?.apiKey) {
+        return {
+          success: true,
+          apiKey: data.apiKey,
+          organizationId: data.organizationId,
+        };
+      }
 
-    if (data?.error === "expired") {
-      throw new Error("Device code expired. Please try again.");
-    }
-    if (data?.error === "denied") {
-      throw new Error("Connection was denied by user.");
+      if (data?.error === "expired") {
+        throw new Error("Device code expired. Please try again.");
+      }
+      if (data?.error === "denied") {
+        throw new Error("Connection was denied by user.");
+      }
+    } catch (error: any) {
+      if (
+        error.name === "TypeError" &&
+        error.message.includes("fetch failed")
+      ) {
+        // Silently continue polling if it's a transient network error,
+        // or throw if it persists? For polling, it's safer to just let it retry
+        // unless we want to inform the user.
+      } else {
+        throw error;
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, pollInterval));

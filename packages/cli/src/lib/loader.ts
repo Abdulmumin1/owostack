@@ -50,9 +50,10 @@ export interface ConfigSettings {
 export async function loadConfigSettings(
   configPath: string,
 ): Promise<ConfigSettings> {
+  const fullPath = resolveConfigPath(configPath);
+  if (!existsSync(fullPath)) return {};
+
   try {
-    const fullPath = resolveConfigPath(configPath);
-    if (!existsSync(fullPath)) return {};
     const owo = await loadOwostackFromConfig(fullPath);
     if (!owo || !owo._config) return {};
     return {
@@ -61,7 +62,9 @@ export async function loadConfigSettings(
       filters: owo._config.filters,
       connect: owo._config.connect,
     };
-  } catch {
+  } catch (e) {
+    // If we fail to load the config (e.g. missing owostack package in fresh project),
+    // we just return empty settings and let the CLI continue with defaults.
     return {};
   }
 }

@@ -1,3 +1,5 @@
+import pc from "picocolors";
+
 export interface FetchPlanOptions {
   apiKey: string;
   apiUrl: string;
@@ -21,19 +23,36 @@ export async function fetchPlans(options: FetchPlanOptions): Promise<any[]> {
   if (options.currency) url.searchParams.set("currency", options.currency);
   if (options.includeInactive) url.searchParams.set("includeInactive", "true");
 
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    headers: { Authorization: `Bearer ${options.apiKey}` },
-  });
+  try {
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { Authorization: `Bearer ${options.apiKey}` },
+    });
 
-  const data = await response.json();
-  if (!response.ok || !data?.success) {
-    const message = data?.error || data?.message || "Request failed";
-    console.error(`\n  ❌ Failed to fetch plans: ${message}\n`);
+    const data = await response.json();
+    if (!response.ok || !data?.success) {
+      const message = data?.error || data?.message || "Request failed";
+      console.error(`\n  ❌ Failed to fetch plans: ${message}\n`);
+      process.exit(1);
+    }
+
+    return data?.plans || [];
+  } catch (error: any) {
+    if (error.name === "TypeError" && error.message.includes("fetch failed")) {
+      console.error(
+        `\n  ❌ Connection failed: Could not reach the API at ${pc.cyan(options.apiUrl)}`,
+      );
+      console.error(
+        `     Please check your internet connection or ensure the API is running.`,
+      );
+      console.error(
+        `     You can override the API URL by setting the ${pc.bold("OWOSTACK_API_URL")} environment variable.\n`,
+      );
+    } else {
+      console.error(`\n  ❌ Unexpected error: ${error.message}\n`);
+    }
     process.exit(1);
   }
-
-  return data?.plans || [];
 }
 
 export async function fetchCreditSystems(
