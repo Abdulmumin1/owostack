@@ -29,7 +29,7 @@
     "keygen": "tsx scripts/generate-key.ts",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "turbo build --filter='@owostack/*' && changeset publish"
+    "release": "turbo build --filter='owostack' --filter='owosk' --filter='@owostack/types' && changeset publish"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",
