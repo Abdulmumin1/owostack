@@ -86,11 +86,7 @@
         <div in:fade>
           <div class="mb-8">
             <div class="flex items-center gap-2 mb-3">
-              <Sparkle size={18} class="text-accent" weight="duotone" />
-              <span
-                class="text-[10px] font-bold text-accent uppercase tracking-widest"
-                >Private Beta</span
-              >
+              <img src="https://mac-file.yaqeen.me/407C7F04-annotely_image%20%284%29.png" alt="" class="h-20 w-20 object-contain">
             </div>
             <h1
               class="text-2xl font-bold mb-2 uppercase tracking-tight text-text-primary"
@@ -162,7 +158,8 @@
           <div
             class="w-20 h-20 rounded-full bg-success-bg flex items-center justify-center mb-6 border border-success/20"
           >
-            <CheckCircle size={40} class="text-success" weight="fill" />
+            <img src="https://mac-file.yaqeen.me/407C7F04-annotely_image%20%284%29.png" alt="" class="h-full w-full object-contain">
+
           </div>
           <h2
             class="text-2xl font-bold text-text-primary uppercase tracking-tight mb-2"

@@ -1078,10 +1078,12 @@ app.post("/check", async (c) => {
         code: "access_granted",
         usage: doResult.usage,
         limit: doResult.limit,
-        balance:
-          doResult.limit === null ? null : doResult.limit - doResult.usage,
+        balance: doResult.limit === null ? null : doResult.balance,
         resetsAt,
         resetInterval: planFeature.resetInterval,
+        ...(doResult.rolloverBalance > 0
+          ? { rolloverBalance: doResult.rolloverBalance }
+          : {}),
         ...(addonCreditsBalance !== undefined
           ? { addonCredits: addonCreditsBalance }
           : {}),
@@ -1853,10 +1855,7 @@ app.post("/track", async (c) => {
               },
               "track:addon-fallback",
             );
-            const addonDoUsage =
-              planFeature.limitValue !== null
-                ? planFeature.limitValue - doResult.balance
-                : null;
+            const addonDoUsage = doResult.usage ?? null;
             return c.json({
               success: true,
               allowed: true,
@@ -1866,6 +1865,9 @@ app.post("/track", async (c) => {
               balance: doResult.balance,
               resetsAt: new Date(periodEnd).toISOString(),
               resetInterval: planFeature.resetInterval,
+              ...(doResult.rolloverBalance > 0
+                ? { rolloverBalance: doResult.rolloverBalance }
+                : {}),
               addonCredits: deductResult.remaining,
               planCredits: {
                 used: addonDoUsage ?? 0,
@@ -1897,10 +1899,7 @@ app.post("/track", async (c) => {
           );
 
           if (!overageGuard.allowed) {
-            const guardUsage =
-              planFeature.limitValue !== null
-                ? planFeature.limitValue - doResult.balance
-                : null;
+            const guardUsage = doResult.usage ?? null;
             return c.json({
               success: false,
               allowed: false,
@@ -1910,6 +1909,9 @@ app.post("/track", async (c) => {
               balance: doResult.balance,
               resetsAt: new Date(periodEnd).toISOString(),
               resetInterval: planFeature.resetInterval,
+              ...(doResult.rolloverBalance > 0
+                ? { rolloverBalance: doResult.rolloverBalance }
+                : {}),
               details: buildTrackDetails(
                 overageGuard.reason ||
                   `Overage not allowed. ${doResult.balance} remaining.`,
@@ -1919,10 +1921,7 @@ app.post("/track", async (c) => {
           // Guard passed — continue to persist overage usage record below
         } else {
           // overage is "block" and addon credits insufficient — block
-          const blockUsage =
-            planFeature.limitValue !== null
-              ? planFeature.limitValue - doResult.balance
-              : null;
+          const blockUsage = doResult.usage ?? null;
           const trackBlockAddonCredits = trackCreditMapping
             ? await getAddonBalance(
                 db,
@@ -1939,6 +1938,9 @@ app.post("/track", async (c) => {
             balance: doResult.balance,
             resetsAt: new Date(periodEnd).toISOString(),
             resetInterval: planFeature.resetInterval,
+            ...(doResult.rolloverBalance > 0
+              ? { rolloverBalance: doResult.rolloverBalance }
+              : {}),
             ...(trackBlockAddonCredits !== undefined
               ? { addonCredits: trackBlockAddonCredits }
               : {}),
@@ -2027,10 +2029,7 @@ app.post("/track", async (c) => {
       );
     }
 
-    const successUsage =
-      doResult && planFeature.limitValue !== null
-        ? planFeature.limitValue - (doResult.balance ?? 0)
-        : null;
+    const successUsage = doResult ? doResult.usage : null;
 
     return c.json({
       success: true,
@@ -2041,6 +2040,9 @@ app.post("/track", async (c) => {
       balance: doResult?.balance ?? null,
       resetsAt: new Date(periodEnd).toISOString(),
       resetInterval: planFeature.resetInterval,
+      ...(doResult && doResult.rolloverBalance > 0
+        ? { rolloverBalance: doResult.rolloverBalance }
+        : {}),
       details: isOverage
         ? buildTrackDetails(`Usage tracked as overage (will be billed).`, {
             overage: { type: planFeature.overage, willBeBilled: true },

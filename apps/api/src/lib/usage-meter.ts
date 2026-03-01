@@ -25,6 +25,7 @@ interface TrackResult {
   usage: number;
   limit: number | null;
   code: string;
+  rolloverBalance: number;
 }
 
 // Type for serialized storage (plain objects instead of Maps)
@@ -204,6 +205,7 @@ if (currentAlarm !== null) {
         usage: 0,
         limit: null,
         code: "feature_not_found",
+        rolloverBalance: 0,
       };
     }
 
@@ -218,6 +220,7 @@ if (currentAlarm !== null) {
         usage: state.usage,
         limit: null,
         code: "unlimited",
+        rolloverBalance: state.rolloverBalance,
       };
     }
 
@@ -234,6 +237,7 @@ if (currentAlarm !== null) {
       usage: state.usage,
       limit: state.limit,
       code: allowed ? "allowed" : "insufficient_balance",
+      rolloverBalance: state.rolloverBalance,
     };
   }
 
@@ -259,6 +263,7 @@ if (currentAlarm !== null) {
         usage: 0,
         limit: null,
         code: "feature_not_found",
+        rolloverBalance: 0,
       };
     }
 
@@ -279,6 +284,7 @@ if (currentAlarm !== null) {
         usage: state.usage,
         limit: null,
         code: "tracked",
+        rolloverBalance: state.rolloverBalance,
       };
     }
 
@@ -292,6 +298,7 @@ if (currentAlarm !== null) {
         usage: state.usage,
         limit: state.limit,
         code: "insufficient_balance",
+        rolloverBalance: state.rolloverBalance,
       };
     }
 
@@ -313,6 +320,7 @@ if (currentAlarm !== null) {
       usage: state.usage,
       limit: state.limit,
       code: "tracked",
+      rolloverBalance: state.rolloverBalance,
     };
   }
 
