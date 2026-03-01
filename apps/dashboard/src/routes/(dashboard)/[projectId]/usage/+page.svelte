@@ -46,12 +46,13 @@
     Array<{ id: string; name: string; slug: string }>
   >([]);
 
-  async function loadUsage() {
+  async function loadUsage(days?: number) {
     isLoading = true;
     try {
-      const res = await apiFetch(
-        `/api/dashboard/usage?organizationId=${organizationId}`,
-      );
+      const params = new URLSearchParams();
+      params.set("organizationId", organizationId ?? "");
+      if (days) params.set("days", String(days));
+      const res = await apiFetch(`/api/dashboard/usage?${params.toString()}`);
       if (res.data) {
         usage = res.data.data;
       }
@@ -109,7 +110,7 @@
   let hasMounted = $state(false);
 
   onMount(() => {
-    loadUsage();
+    loadUsage(timeseriesDays);
     loadTimeseries();
     loadFilterOptions();
     hasMounted = true;
@@ -123,14 +124,16 @@
     const d = timeseriesDays;
     const f = timeseriesFeatureId;
     const c = timeseriesCustomerId;
-    if (
-      hasMounted &&
-      (d !== prevDays || f !== prevFeature || c !== prevCustomer)
-    ) {
-      prevDays = d;
-      prevFeature = f;
-      prevCustomer = c;
-      loadTimeseries();
+    if (hasMounted) {
+      if (d !== prevDays) {
+        prevDays = d;
+        loadTimeseries();
+        loadUsage(d);
+      } else if (f !== prevFeature || c !== prevCustomer) {
+        prevFeature = f;
+        prevCustomer = c;
+        loadTimeseries();
+      }
     }
   });
 
@@ -379,7 +382,9 @@
           </h3>
           <span
             class="text-[10px] text-text-dim font-bold uppercase tracking-widest"
-            >This month</span
+            >{timeseriesDays
+              ? `Last ${timeseriesDays} days`
+              : "This month"}</span
           >
         </div>
       </div>

@@ -1313,7 +1313,9 @@
             </p>
 
             {#if configRolloverEnabled}
-              <div class="p-4 bg-bg-card border border-border rounded space-y-2">
+              <div
+                class="p-4 bg-bg-card border border-border rounded space-y-2"
+              >
                 <label
                   for="rolloverMaxBalance"
                   class="text-[10px] font-bold text-text-dim uppercase tracking-widest"
@@ -1469,7 +1471,6 @@
               id="editCurrency"
               class="input font-bold"
               bind:value={editCurrency}
-              disabled={editType === "free"}
             >
               {#each COMMON_CURRENCIES as c}
                 <option value={c.code}>{c.code}</option>

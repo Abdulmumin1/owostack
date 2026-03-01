@@ -52,7 +52,9 @@ app.post("/:id/checkout", async (c) => {
       ),
       with: {
         plan: true,
-        customer: true,
+        customer: {
+          with: { organization: true },
+        },
       },
     });
 
@@ -97,13 +99,16 @@ app.post("/:id/checkout", async (c) => {
     const activationUrl = `${url.origin}/v1/subscriptions/${subscription.id}/activate${callbackUrl ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`;
 
     try {
-      await sendCheckoutEmail({
+      const organization = (customer as any).organization;
+      await sendCheckoutEmail(c.env, {
         to: customer.email,
         customerName: customer.name || undefined,
         planName: plan.name,
         checkoutUrl: activationUrl,
         amount: plan.price,
         currency: plan.currency,
+        organizationName: organization?.name || "The Merchant",
+        organizationLogo: organization?.logo || undefined,
       });
     } catch (e) {
       console.warn("Failed to send checkout email:", e);

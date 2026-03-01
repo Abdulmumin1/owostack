@@ -23,8 +23,6 @@ const addonSchema = z.object({
   customer: z.string(), // Email or customer ID
   pack: z.string(), // Credit pack slug or ID
   quantity: z.number().int().min(1).default(1),
-  provider: z.string().optional(),
-  region: z.string().optional(),
   currency: z.string().min(3).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   callbackUrl: z.string().url().optional(),
@@ -80,16 +78,8 @@ app.post("/addon", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const {
-    customer,
-    pack,
-    quantity,
-    currency,
-    metadata,
-    callbackUrl,
-    provider,
-    region,
-  } = parsed.data;
+  const { customer, pack, quantity, currency, metadata, callbackUrl } =
+    parsed.data;
 
   // 1. Resolve Credit Pack (by slug, then by ID)
   let creditPack: any = null;
@@ -190,8 +180,6 @@ app.post("/addon", async (c) => {
     currency,
     metadata,
     callbackUrl,
-    provider,
-    region,
   });
 });
 
@@ -206,25 +194,14 @@ async function handleAddonPurchase(
     currency?: string;
     metadata?: Record<string, unknown>;
     callbackUrl?: string;
-    provider?: string;
-    region?: string;
   },
 ) {
-  const {
-    customer,
-    quantity,
-    currency,
-    metadata,
-    callbackUrl,
-    provider,
-    region,
-  } = opts;
+  const { customer, quantity, currency, metadata, callbackUrl } = opts;
   const totalCredits = creditPack.credits * quantity;
   const totalPrice = creditPack.price * quantity;
   const registry = getProviderRegistry();
 
   const providerContext = buildProviderContext({
-    region,
     currency: currency || creditPack.currency,
     metadata,
   });
@@ -241,11 +218,10 @@ async function handleAddonPurchase(
 
   // ---------- Provider Resolution ----------
   // Prefer: explicit request param > pack's stored provider > rules/fallback
-  const explicitProvider = provider || creditPack.providerId || null;
-  let selectedProviderId: string | null = explicitProvider;
+  let selectedProviderId: string | null = creditPack.providerId || null;
   let selectedAccount: ProviderAccount | undefined;
 
-  // 1. Explicit provider
+  // 1. Pack's own provider
   if (selectedProviderId) {
     selectedAccount = providerAccounts.find(
       (a) =>

@@ -39,8 +39,17 @@ app.get("/", async (c) => {
     return c.json({ error: "Organization ID required" }, 400);
   }
 
+  const days = Number(c.req.query("days")) || 0;
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+  const fromTs =
+    days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : monthStart;
+  const fromDate = new Date(fromTs).toISOString().split("T")[0];
+
   // Try KV cache first
-  const cacheKey = `dashboard:usage:${organizationId}`;
+  const cacheKey = `dashboard:usage:${organizationId}:${days}`;
   if (c.env.CACHE) {
     const cached = await c.env.CACHE.get(cacheKey, "json");
     if (cached) {
@@ -60,11 +69,6 @@ app.get("/", async (c) => {
   });
 
   const db = c.get("db");
-
-  // Precompute timestamps used in multiple queries
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
   // Run all summary queries in parallel (5 queries — no recent activity)
   const [
@@ -128,7 +132,7 @@ app.get("/", async (c) => {
       .where(
         and(
           eq(schema.customers.organizationId, organizationId),
-          gte(schema.customers.createdAt, thirtyDaysAgo),
+          gte(schema.customers.createdAt, fromTs),
         ),
       )
       .groupBy(sql`date(${schema.customers.createdAt} / 1000, 'unixepoch')`)
@@ -153,10 +157,7 @@ app.get("/", async (c) => {
     .where(
       and(
         eq(schema.features.organizationId, organizationId),
-        gte(
-          schema.usageDailySummaries.date,
-          new Date(monthStart).toISOString().split("T")[0],
-        ),
+        gte(schema.usageDailySummaries.date, fromDate),
       ),
     )
     .groupBy(schema.features.id)
@@ -169,7 +170,7 @@ app.get("/", async (c) => {
       usageLedger: c.env.USAGE_LEDGER,
       organizationId,
     },
-    monthStart,
+    fromTs,
     FEATURE_CONSUMPTION_LIMIT,
   );
   if (ledgerFeatureRows) {
@@ -306,7 +307,11 @@ app.get("/timeseries", async (c) => {
     customerId,
   );
 
-  let timeseriesData: Array<{ date: string; featureId: string; totalUsage: number }>;
+  let timeseriesData: Array<{
+    date: string;
+    featureId: string;
+    totalUsage: number;
+  }>;
 
   if (ledgerRows) {
     timeseriesData = ledgerRows;
@@ -324,11 +329,18 @@ app.get("/timeseries", async (c) => {
           eq(schema.usageDailySummaries.organizationId, organizationId),
           gte(schema.usageDailySummaries.date, fromDate),
           lte(schema.usageDailySummaries.date, toDate),
-          ...(featureId ? [eq(schema.usageDailySummaries.featureId, featureId)] : []),
-          ...(customerId ? [eq(schema.usageDailySummaries.customerId, customerId)] : []),
+          ...(featureId
+            ? [eq(schema.usageDailySummaries.featureId, featureId)]
+            : []),
+          ...(customerId
+            ? [eq(schema.usageDailySummaries.customerId, customerId)]
+            : []),
         ),
       )
-      .groupBy(schema.usageDailySummaries.date, schema.usageDailySummaries.featureId)
+      .groupBy(
+        schema.usageDailySummaries.date,
+        schema.usageDailySummaries.featureId,
+      )
       .orderBy(schema.usageDailySummaries.date);
 
     timeseriesData = await query;

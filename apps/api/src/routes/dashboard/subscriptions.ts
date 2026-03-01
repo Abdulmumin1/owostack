@@ -334,6 +334,7 @@ app.get("/:id", async (c) => {
           currency: subscription.plan.currency,
           interval: subscription.plan.interval,
           planGroup: subscription.plan.planGroup,
+          type: subscription.plan.type,
         },
         customer: {
           id: subscription.customer.id,
@@ -725,10 +726,15 @@ app.post("/:id/checkout", async (c) => {
   const db = c.get("db");
 
   try {
-    // 1. Load the subscription with plan and customer
+    // 1. Load the subscription with plan, customer, and organization
     const subscription = await db.query.subscriptions.findFirst({
       where: eq(schema.subscriptions.id, subscriptionId),
-      with: { plan: true, customer: true },
+      with: {
+        plan: true,
+        customer: {
+          with: { organization: true },
+        },
+      },
     });
 
     if (!subscription) {
@@ -780,13 +786,16 @@ app.post("/:id/checkout", async (c) => {
 
     // Simulate sending checkout email:
     try {
-      await sendCheckoutEmail({
+      const organization = (subscription.customer as any)?.organization;
+      await sendCheckoutEmail(c.env, {
         to: customer.email,
         customerName: customer.name || undefined,
         planName: plan.name,
         checkoutUrl: activationUrl,
         amount: plan.price,
         currency: plan.currency,
+        organizationName: organization?.name || "The Merchant",
+        organizationLogo: organization?.logo || undefined,
       });
     } catch (e) {
       console.warn("Failed to send checkout email:", e);

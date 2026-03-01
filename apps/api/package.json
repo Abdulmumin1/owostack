@@ -17,16 +17,18 @@
     "db:migrate:remote": "pnpm db:migrate:auth && pnpm db:migrate:test && pnpm db:migrate:live"
   },
   "dependencies": {
+    "@better-auth/infra": "^0.1.8",
     "@owostack/adapters": "workspace:*",
     "@owostack/analytics": "workspace:*",
     "@owostack/core": "workspace:*",
     "@owostack/db": "workspace:*",
     "@owostack/types": "workspace:*",
-    "better-auth": "^1.2.7",
+    "better-auth": "^1.5.0",
     "better-auth-cloudflare": "^0.2.9",
     "better-result": "^2.7.0",
     "drizzle-orm": "^0.41.0",
     "hono": "^4.7.4",
+    "resend": "^6.9.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {

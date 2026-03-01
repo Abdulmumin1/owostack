@@ -29,6 +29,7 @@
   let projectName = $state("");
   let projectSlug = $state("");
   let orgCurrency = $state("");
+
   let isSaving = $state(false);
   let successMessage = $state<string | null>(null);
 

@@ -227,7 +227,7 @@
           "class_name": "OverageBillingWorkflow",
         },
       ],
-       "pipelines": [
+      "pipelines": [
         {
           "binding": "EVENTS_PIPELINE",
           "pipeline": "cfe7efb446fb450c8ad07179e9e3a696",
@@ -329,8 +329,8 @@
   },
 
   "observability": {
-		"enabled": true
-	}
+    "enabled": true,
+  },
 
   // Secrets (set via: wrangler secret put <NAME> [--env test|live])
   // ENCRYPTION_KEY
@@ -341,4 +341,5 @@
   // CF_ANALYTICS_READ_TOKEN (Analytics:Read)
   // R2_SQL_TOKEN (R2 SQL queries — needed when EVENTS_PIPELINE is enabled)
   // R2_WAREHOUSE (R2 Data Catalog warehouse ID)
+  // RESEND_API_KEY
 }
