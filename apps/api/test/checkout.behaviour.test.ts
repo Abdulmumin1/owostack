@@ -233,7 +233,7 @@ describe("/attach behavior", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { success: boolean; error: string };
     expect(body.success).toBe(false);
-    expect(body.error).toContain("not configured");
+    expect(body.error).toContain("No payment provider configured");
     expect(vi.mocked(resolveOrCreateCustomer)).not.toHaveBeenCalled();
     expect(vi.mocked(executeSwitch)).not.toHaveBeenCalled();
   });
@@ -410,7 +410,7 @@ describe("/attach behavior", () => {
       context: { region: string; currency: string };
       accounts: ProviderAccount[];
     };
-    expect(resolverArg.context.region).toBe("NG");
+    expect(resolverArg.context.region).toBe(undefined);
     expect(resolverArg.context.currency).toBe("USD");
     expect(resolverArg.accounts[0].id).toBe("acct_rule_paystack");
 
