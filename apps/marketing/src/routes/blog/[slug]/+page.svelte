@@ -1,65 +1,59 @@
 <script lang="ts">
   import type { ComponentType } from "svelte";
 
-  interface BlogMetadata {
-    title?: string;
-    excerpt?: string;
-    date?: string;
-    readTime?: string;
-    category?: string;
-  }
-
-  interface BlogModule {
-    default: ComponentType;
-    metadata?: BlogMetadata;
-  }
-
   let { data } = $props<{ 
     data: { 
-      metadata: BlogMetadata; 
-      slug: string 
+      metadata: {
+        title?: string;
+        excerpt?: string;
+        date?: string;
+        thumbnail?: string;
+      };
+      slug: string;
+      Component: ComponentType;
     } 
   }>();
 
-  // Load the component dynamically
-  let Component = $state<ComponentType | null>(null);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-
-  $effect(() => {
-    const loadComponent = async () => {
-      try {
-        loading = true;
-        error = null;
-        
-        // Dynamic import of the markdown file
-        const module = await import(`$lib/content/blog/${data.slug}.md`) as BlogModule;
-        Component = module.default;
-      } catch (err) {
-        console.error("Failed to load blog post:", err);
-        error = "Failed to load blog post";
-      } finally {
-        loading = false;
-      }
-    };
-
-    loadComponent();
-  });
+  const { Component } = data;
 </script>
 
 <svelte:head>
   <title>{data.metadata?.title || "Blog"} — Owostack</title>
   <meta name="description" content={data.metadata?.excerpt || ""} />
+  <link rel="canonical" href={`https://owostack.com/blog/${data.slug}`} />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content={`https://owostack.com/blog/${data.slug}`} />
+  <meta property="og:title" content={`${data.metadata?.title || "Blog"} — Owostack`} />
+  <meta property="og:description" content={data.metadata?.excerpt || ""} />
+  <meta property="og:image" content={data.metadata?.thumbnail ? `https://owostack.com${data.metadata.thumbnail}` : "https://owostack.com/logo.svg"} />
+  <meta property="article:published_time" content={data.metadata?.date} />
+  <meta property="article:author" content="Owostack Team" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content={`https://owostack.com/blog/${data.slug}`} />
+  <meta name="twitter:title" content={`${data.metadata?.title || "Blog"} — Owostack`} />
+  <meta name="twitter:description" content={data.metadata?.excerpt || ""} />
+  <meta name="twitter:image" content={data.metadata?.thumbnail ? `https://owostack.com${data.metadata.thumbnail}` : "https://owostack.com/logo.svg"} />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      "headline": "{data.metadata?.title || "Blog"}",
+      "description": "{data.metadata?.excerpt || ""}",
+      "datePublished": "{data.metadata?.date}",
+      "author": {
+        "@type": "Organization",
+        "name": "Owostack"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Owostack",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://owostack.com/logo.svg"
+        }
+      }
+    }
+  </script>
 </svelte:head>
 
-{#if loading}
-  <div class="min-h-screen bg-bg-primary flex items-center justify-center">
-    <div class="text-text-secondary">Loading...</div>
-  </div>
-{:else if error}
-  <div class="min-h-screen bg-bg-primary flex items-center justify-center">
-    <div class="text-error">{error}</div>
-  </div>
-{:else if Component}
-  <Component />
-{/if}
+<Component />
