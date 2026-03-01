@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Abdulmumin1/owostack.git",
+    "url": "https://github.com/Abdulmumin1/owostack",
     "directory": "packages/core"
   },
   "type": "module",
