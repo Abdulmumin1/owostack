@@ -13,11 +13,13 @@
     "deploy": "wrangler pages deploy .svelte-kit/cloudflare"
   },
   "dependencies": {
+    "@better-auth/infra": "^0.1.8",
     "@owostack/types": "workspace:*",
-    "better-auth": "^1.4.18",
+    "better-auth": "^1.5.0",
     "better-result": "^2.7.0",
     "chart.js": "^4.4.7",
-    "phosphor-svelte": "^3.1.0"
+    "phosphor-svelte": "^3.1.0",
+    "resend": "^6.9.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250214.0",

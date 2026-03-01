@@ -296,6 +296,7 @@
   const hasPendingDowngrade = $derived(
     !!(data?.subscription?.metadata as any)?.scheduled_downgrade,
   );
+  const isFree = $derived(data?.plan?.type === "free");
   const isOneTime = $derived(
     (data?.subscription?.metadata as any)?.billing_type === "one_time" ||
       ((data?.subscription?.providerSubscriptionCode ||
@@ -382,7 +383,12 @@
             <Envelope size={10} weight="duotone" />
             {data.customer.email}
           </span>
-          {#if !isOneTime}
+          {#if isFree}
+            <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
+              <Clock size={10} weight="duotone" />
+              Active since {formatDate(data.subscription.currentPeriodStart)}
+            </span>
+          {:else if !isOneTime}
             <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
               <Clock size={10} weight="duotone" />
               {formatDate(data.subscription.currentPeriodStart)} – {formatDate(
@@ -500,7 +506,7 @@
               <ArrowsClockwise size={11} weight="fill" />
               Switch Plan
             </button>
-            {#if !hasPendingCancel}
+            {#if !isFree && !hasPendingCancel}
               <button
                 class="btn btn-secondary gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5"
                 disabled={actionLoading !== null}

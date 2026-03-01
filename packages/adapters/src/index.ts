@@ -45,7 +45,6 @@ export interface ProviderRule {
 }
 
 export interface AttachRequestContext {
-  region?: string;
   currency?: string;
   metadata?: Record<string, unknown>;
   environment?: ProviderEnvironment;
@@ -367,14 +366,6 @@ function matchesConditions(
   conditions: Record<string, unknown>,
   context: AttachRequestContext,
 ): boolean {
-  const region = conditions.region;
-  if (typeof region === "string" && context.region !== region) {
-    return false;
-  }
-  if (Array.isArray(region) && !region.includes(context.region)) {
-    return false;
-  }
-
   const currency = conditions.currency;
   if (typeof currency === "string" && context.currency !== currency) {
     return false;

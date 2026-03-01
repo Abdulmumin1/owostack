@@ -81,9 +81,11 @@
 <div class="h-screen flex bg-bg-primary">
   <!-- Left Side: Live Pulse Dashboard -->
   <div
-    class="hidden  lg:flex lg:w-1/2 bg-bg-secondary border-r border-border flex-col justify-between relative overflow-hidden"
+    class="hidden lg:flex lg:w-1/2 bg-bg-secondary border-r border-border flex-col justify-between relative overflow-hidden"
   >
-    <div class="flex-1 flex flex-col justify-center items-center relative z-10 overflow-hidden">
+    <div
+      class="flex-1 flex flex-col justify-center items-center relative z-10 overflow-hidden"
+    >
       <img
         src="https://mac-file.yaqeen.me/87C9A6BB-3D4410F0-72E6-46B0-9B54-142A675819EE_1_201_a.jpeg"
         alt=""
@@ -192,14 +194,14 @@
         </button>
       </form>
 
-      <div class="flex items-center my-6">
+      <!-- <div class="flex items-center my-6">
         <div class="flex-1 h-px bg-border"></div>
         <span
           class="px-4 text-text-dim text-[10px] font-bold uppercase tracking-widest"
           >or</span
         >
         <div class="flex-1 h-px bg-border"></div>
-      </div>
+      </div> -->
 
       {#if isOAuthLoading}
         <div class="flex items-center justify-center gap-2 py-4 text-text-dim">
@@ -207,7 +209,7 @@
           <span class="text-sm">Connecting to {isOAuthLoading}...</span>
         </div>
       {:else}
-        <button
+        <!-- <button
           type="button"
           class="btn btn-secondary w-full py-4"
           onclick={() => handleSocialLogin("google")}
@@ -244,7 +246,7 @@
             />
           </svg>
           Continue with GitHub
-        </button>
+        </button> -->
       {/if}
 
       <p
@@ -253,7 +255,7 @@
         New here? <a
           href="/signup"
           class="text-accent hover:text-accent-hover underline underline-offset-4"
-          >Create account</a
+          >Request invite</a
         >
       </p>
     </div>

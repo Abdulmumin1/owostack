@@ -118,6 +118,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
         secret: true,
       },
     ],
+    supportedCurrencies: ["USD"],
   },
 ];
 

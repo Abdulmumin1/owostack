@@ -58,7 +58,7 @@
   let { children } = $props();
 
   const session = useSession();
-
+  
   // Auth is now handled server-side in hooks.server.ts
   // No client-side redirect needed here
 
