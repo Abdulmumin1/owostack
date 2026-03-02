@@ -4,6 +4,9 @@
  */
 
 const DEFAULT_TTL = 60; // seconds
+const FEATURE_TTL = 300; // 5 min — rarely changes, invalidated on dashboard edits
+const PLAN_FEATURE_TTL = 300; // 5 min — rarely changes, invalidated on plan edits
+const SUBSCRIPTION_TTL = 120; // 2 min — more dynamic, invalidated on mutations
 
 type CacheKey =
   | `org:${string}:customer:${string}`
@@ -82,7 +85,7 @@ export class EntitlementCache {
     return cached as T | null;
   }
 
-  async setFeature<T>(orgId: string, featureId: string, data: T, ttl = DEFAULT_TTL): Promise<void> {
+  async setFeature<T>(orgId: string, featureId: string, data: T, ttl = FEATURE_TTL): Promise<void> {
     await this.kv.put(
       this.key("feature", orgId, featureId),
       JSON.stringify(data),
@@ -103,7 +106,7 @@ export class EntitlementCache {
     return cached as T | null;
   }
 
-  async setSubscriptions<T>(orgId: string, customerId: string, data: T, ttl = DEFAULT_TTL): Promise<void> {
+  async setSubscriptions<T>(orgId: string, customerId: string, data: T, ttl = SUBSCRIPTION_TTL): Promise<void> {
     await this.kv.put(
       this.key("subscriptions", orgId, customerId),
       JSON.stringify(data),
@@ -124,7 +127,7 @@ export class EntitlementCache {
     return cached as T | null;
   }
 
-  async setPlanFeatures<T>(orgId: string, cacheKey: string, data: T, ttl = DEFAULT_TTL): Promise<void> {
+  async setPlanFeatures<T>(orgId: string, cacheKey: string, data: T, ttl = PLAN_FEATURE_TTL): Promise<void> {
     await this.kv.put(
       this.key("planFeatures", orgId, cacheKey),
       JSON.stringify(data),

@@ -259,8 +259,8 @@
         <span> to your app.</span>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <a href="/signup" class="btn btn-primary">Get Started</a>
-        <a href={import.meta.env.VITE_DOCS_URL} class="btn btn-secondary">
+        <a href="https://app.owostack.com" class="btn btn-primary">Get Started</a>
+        <a href="https://docs.owostack.com" class="btn btn-secondary">
           Read the docs
           <ArrowRight
             size={14}

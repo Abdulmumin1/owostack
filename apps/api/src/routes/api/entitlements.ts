@@ -380,15 +380,47 @@ app.post("/check", async (c) => {
     );
   }
 
-  // 1. Resolve Customer (cache-first, then DB, auto-create if customerData provided)
-  const customer = await resolveOrCreateCustomer({
-    db,
-    organizationId,
-    customerId,
-    customerData,
-    cache,
-    waitUntil: (p) => c.executionCtx.waitUntil(p),
-  });
+  // 1 & 2. Resolve Customer and Feature in parallel
+  const [customer, featureResult] = await Promise.all([
+    resolveOrCreateCustomer({
+      db,
+      organizationId,
+      customerId,
+      customerData,
+      cache,
+      waitUntil: (p) => c.executionCtx.waitUntil(p),
+    }),
+    (async () => {
+      let f = cache
+        ? await cache.getFeature<typeof schema.features.$inferSelect>(
+            organizationId,
+            featureId,
+          )
+        : null;
+
+      if (!f) {
+        f =
+          (await db.query.features.findFirst({
+            where: and(
+              eq(schema.features.organizationId, organizationId),
+              or(
+                eq(schema.features.id, featureId),
+                eq(schema.features.slug, featureId),
+              ),
+            ),
+          })) ?? null;
+
+        if (f && cache) {
+          scheduleCacheOp(
+            c,
+            cache.setFeature(organizationId, featureId, f),
+            "setFeature(/check)",
+          );
+        }
+      }
+      return f;
+    })(),
+  ]);
 
   if (!customer) {
     return c.json({
@@ -405,34 +437,7 @@ app.post("/check", async (c) => {
     });
   }
 
-  // 2. Resolve Feature (cache-first, then DB)
-  let feature = cache
-    ? await cache.getFeature<typeof schema.features.$inferSelect>(
-        organizationId,
-        featureId,
-      )
-    : null;
-
-  if (!feature) {
-    feature =
-      (await db.query.features.findFirst({
-        where: and(
-          eq(schema.features.organizationId, organizationId),
-          or(
-            eq(schema.features.id, featureId),
-            eq(schema.features.slug, featureId),
-          ),
-        ),
-      })) ?? null;
-
-    if (feature && cache) {
-      scheduleCacheOp(
-        c,
-        cache.setFeature(organizationId, featureId, feature),
-        "setFeature(/check)",
-      );
-    }
-  }
+  const feature = featureResult;
 
   if (!feature) {
     return c.json({
@@ -447,68 +452,74 @@ app.post("/check", async (c) => {
     });
   }
 
-  // 3. Validate Entity (if provided, must exist)
-  // Allow both active and pending_removal for check() since it's read-only
-  if (entity) {
-    const existingEntity = await db.query.entities.findFirst({
-      where: and(
-        eq(schema.entities.customerId, customer.id),
-        eq(schema.entities.featureId, feature.id),
-        eq(schema.entities.entityId, entity),
-        or(
-          eq(schema.entities.status, "active"),
-          eq(schema.entities.status, "pending_removal"),
-        ),
-      ),
-    });
-
-    if (!existingEntity) {
-      return c.json({
-        allowed: false,
-        code: "entity_not_found",
-        usage: null,
-        limit: null,
-        balance: null,
-        resetsAt: null,
-        resetInterval: null,
-        details: {
-          message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
-        },
-      });
-    }
-  }
-
-  // 4. Check Subscription & Plans (cache-first, then DB)
+  // 3 & 4. Validate Entity and fetch Subscriptions in parallel
   const subsCacheKey = customer.id;
-  let subscriptions = cache
-    ? await cache.getSubscriptions<
-        Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
-      >(organizationId, subsCacheKey)
-    : null;
+  const [entityValid, subscriptionsResult] = await Promise.all([
+    // 3. Validate Entity (if provided, must exist)
+    entity
+      ? db.query.entities.findFirst({
+          where: and(
+            eq(schema.entities.customerId, customer.id),
+            eq(schema.entities.featureId, feature.id),
+            eq(schema.entities.entityId, entity),
+            or(
+              eq(schema.entities.status, "active"),
+              eq(schema.entities.status, "pending_removal"),
+            ),
+          ),
+        })
+      : true,
+    // 4. Check Subscription & Plans (cache-first, then DB)
+    (async () => {
+      let subs = cache
+        ? await cache.getSubscriptions<
+            Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
+          >(organizationId, subsCacheKey)
+        : null;
 
-  if (!subscriptions) {
-    subscriptions = await db.query.subscriptions.findMany({
-      where: and(
-        eq(schema.subscriptions.customerId, customer.id),
-        inArray(schema.subscriptions.status, [
-          "active",
-          "trialing",
-          "pending_cancel",
-        ]),
-      ),
-      with: {
-        plan: true,
+      if (!subs) {
+        subs = await db.query.subscriptions.findMany({
+          where: and(
+            eq(schema.subscriptions.customerId, customer.id),
+            inArray(schema.subscriptions.status, [
+              "active",
+              "trialing",
+              "pending_cancel",
+            ]),
+          ),
+          with: {
+            plan: true,
+          },
+        });
+
+        if (subs.length > 0 && cache) {
+          scheduleCacheOp(
+            c,
+            cache.setSubscriptions(organizationId, subsCacheKey, subs),
+            "setSubscriptions(/check)",
+          );
+        }
+      }
+      return subs;
+    })(),
+  ]);
+
+  if (entity && !entityValid) {
+    return c.json({
+      allowed: false,
+      code: "entity_not_found",
+      usage: null,
+      limit: null,
+      balance: null,
+      resetsAt: null,
+      resetInterval: null,
+      details: {
+        message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
       },
     });
-
-    if (subscriptions.length > 0 && cache) {
-      scheduleCacheOp(
-        c,
-        cache.setSubscriptions(organizationId, subsCacheKey, subscriptions),
-        "setSubscriptions(/check)",
-      );
-    }
   }
+
+  let subscriptions = subscriptionsResult;
 
   // Filter out expired trialing subscriptions and scheduled cancellations past their effective date
   const now = Date.now();
@@ -1395,15 +1406,49 @@ app.post("/track", async (c) => {
     );
   }
 
-  // 1. Resolve Customer (cache-first, then DB, auto-create if customerData provided)
-  const customer = await resolveOrCreateCustomer({
-    db,
-    organizationId,
-    customerId,
-    customerData,
-    cache,
-    waitUntil: (p) => c.executionCtx.waitUntil(p),
-  });
+  // 1 & 2. Resolve Customer and Feature in parallel
+  const [trackCustomer, trackFeatureResult] = await Promise.all([
+    resolveOrCreateCustomer({
+      db,
+      organizationId,
+      customerId,
+      customerData,
+      cache,
+      waitUntil: (p) => c.executionCtx.waitUntil(p),
+    }),
+    (async () => {
+      let f = cache
+        ? await cache.getFeature<typeof schema.features.$inferSelect>(
+            organizationId,
+            featureId,
+          )
+        : null;
+
+      if (!f) {
+        f =
+          (await db.query.features.findFirst({
+            where: and(
+              eq(schema.features.organizationId, organizationId),
+              or(
+                eq(schema.features.id, featureId),
+                eq(schema.features.slug, featureId),
+              ),
+            ),
+          })) ?? null;
+
+        if (f && cache) {
+          scheduleCacheOp(
+            c,
+            cache.setFeature(organizationId, featureId, f),
+            "setFeature(/track)",
+          );
+        }
+      }
+      return f;
+    })(),
+  ]);
+
+  const customer = trackCustomer;
 
   if (!customer) {
     return c.json(
@@ -1424,34 +1469,7 @@ app.post("/track", async (c) => {
     );
   }
 
-  // 2. Resolve Feature (cache-first, then DB)
-  let feature = cache
-    ? await cache.getFeature<typeof schema.features.$inferSelect>(
-        organizationId,
-        featureId,
-      )
-    : null;
-
-  if (!feature) {
-    feature =
-      (await db.query.features.findFirst({
-        where: and(
-          eq(schema.features.organizationId, organizationId),
-          or(
-            eq(schema.features.id, featureId),
-            eq(schema.features.slug, featureId),
-          ),
-        ),
-      })) ?? null;
-
-    if (feature && cache) {
-      scheduleCacheOp(
-        c,
-        cache.setFeature(organizationId, featureId, feature),
-        "setFeature(/track)",
-      );
-    }
-  }
+  const feature = trackFeatureResult;
 
   if (!feature) {
     return c.json(
@@ -1470,68 +1488,73 @@ app.post("/track", async (c) => {
     );
   }
 
-  // 3. Validate Entity (if provided, must exist)
-  if (entity) {
-    const existingEntity = await db.query.entities.findFirst({
-      where: and(
-        eq(schema.entities.customerId, customer.id),
-        eq(schema.entities.featureId, feature.id),
-        eq(schema.entities.entityId, entity),
-        eq(schema.entities.status, "active"),
-      ),
-    });
-
-    if (!existingEntity) {
-      return c.json(
-        {
-          success: false,
-          allowed: false,
-          code: "entity_not_found",
-          usage: null,
-          limit: null,
-          balance: null,
-          resetsAt: null,
-          resetInterval: null,
-          details: {
-            message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
-          },
-        },
-        404,
-      );
-    }
-  }
-
-  // 4. Find active/trialing subscriptions (cache-first, then DB)
+  // 3 & 4. Validate Entity and fetch Subscriptions in parallel
   const subsCacheKey = customer.id;
-  let subscriptions = cache
-    ? await cache.getSubscriptions<
-        Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
-      >(organizationId, subsCacheKey)
-    : null;
+  const [trackEntityValid, trackSubsResult] = await Promise.all([
+    entity
+      ? db.query.entities.findFirst({
+          where: and(
+            eq(schema.entities.customerId, customer.id),
+            eq(schema.entities.featureId, feature.id),
+            eq(schema.entities.entityId, entity),
+            eq(schema.entities.status, "active"),
+          ),
+        })
+      : true,
+    (async () => {
+      let subs = cache
+        ? await cache.getSubscriptions<
+            Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
+          >(organizationId, subsCacheKey)
+        : null;
 
-  if (!subscriptions) {
-    subscriptions = await db.query.subscriptions.findMany({
-      where: and(
-        eq(schema.subscriptions.customerId, customer.id),
-        inArray(schema.subscriptions.status, [
-          "active",
-          "trialing",
-          "pending_cancel",
-        ]),
-      ),
-      with: {
-        plan: true,
+      if (!subs) {
+        subs = await db.query.subscriptions.findMany({
+          where: and(
+            eq(schema.subscriptions.customerId, customer.id),
+            inArray(schema.subscriptions.status, [
+              "active",
+              "trialing",
+              "pending_cancel",
+            ]),
+          ),
+          with: {
+            plan: true,
+          },
+        });
+
+        if (subs.length > 0 && cache) {
+          scheduleCacheOp(
+            c,
+            cache.setSubscriptions(organizationId, subsCacheKey, subs),
+            "setSubscriptions(/track)",
+          );
+        }
+      }
+      return subs;
+    })(),
+  ]);
+
+  if (entity && !trackEntityValid) {
+    return c.json(
+      {
+        success: false,
+        allowed: false,
+        code: "entity_not_found",
+        usage: null,
+        limit: null,
+        balance: null,
+        resetsAt: null,
+        resetInterval: null,
+        details: {
+          message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
+        },
       },
-    });
-
-    if (subscriptions.length > 0 && cache) {
-      scheduleCacheOp(
-        c,
-        cache.setSubscriptions(organizationId, subsCacheKey, subscriptions),
-        "setSubscriptions(/track)",
-      );
-    }
+      404,
+    );
   }
+
+  let subscriptions = trackSubsResult;
 
   // Filter out expired trialing subscriptions and scheduled cancellations past their effective date
   const trackNow = Date.now();

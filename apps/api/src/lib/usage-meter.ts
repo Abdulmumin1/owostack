@@ -96,7 +96,10 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
       // If config hasn't changed, skip entirely (no persist, no write)
       const configChanged =
         oldConfig?.resetInterval !== config.resetInterval ||
-        oldConfig?.limit !== config.limit;
+        oldConfig?.limit !== config.limit ||
+        oldConfig?.rolloverEnabled !== config.rolloverEnabled ||
+        oldConfig?.rolloverMaxBalance !== config.rolloverMaxBalance ||
+        oldConfig?.creditCost !== config.creditCost;
 
       if (!configChanged) {
         return { success: true };
@@ -447,7 +450,7 @@ if (currentAlarm !== null) {
     }
 
     // Re-schedule for the next soonest reset across all features
-    await this.scheduleResetAlarm();
+    // await this.scheduleResetAlarm();
   }
 
   /**
