@@ -206,7 +206,7 @@
           <GithubLogo size={13} weight="duotone" />
           GitHub
         </a>
-        <a href={import.meta.env.VITE_APP_URL} class="btn btn-primary"
+        <a href="https://app.owostack.com" class="btn btn-primary"
           >Dashboard</a
         >
       </nav>

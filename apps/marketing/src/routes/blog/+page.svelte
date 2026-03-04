@@ -133,15 +133,15 @@
     </header>
 
     <main class="flex-1 p-1">
-      <div class="max-w-4xl mx-auto">
+      <div class="max-w-4xl mx-auto mt-10">
         {#if posts.length > 0}
-          <div class="flex flex-col gap-0 border-t border-border/20">
+          <div class="flex flex-col gap-0">
             {#each posts as post (post.slug)}
-              <article class="py-12 border-b border-border/20 group">
+              <article class="py-3 border-b border-border/20 group">
                 <div class="flex flex-col sm:flex-row gap-10 items-start">
                   <div class="flex-1 pt-1">
                     <h3
-                      class="text-2xl lg:text-3xl font-bold mb-5 tracking-tight"
+                      class="text-2xl lg:text-3xl font-bold tracking-tight"
                     >
                       <a
                         href={`/blog/${post.slug}`}
@@ -150,6 +150,7 @@
                         {post.title}
                       </a>
                     </h3>
+                    <p class="text-text-dim text-sm">{post.date}</p>
                   </div>
                 </div>
               </article>
