@@ -1,0 +1,55 @@
+---
+title: Data model
+description: Key objects Owostack stores and how they relate
+icon: Database
+---
+
+# Data model
+
+Owostack's data model is designed to answer two questions instantly:
+
+1. **Access:** Can the customer use feature X right now?
+2. **Accounting:** If they use feature X, how do we track it?
+
+## Object graph
+
+```text
+Organization
+ ├── Provider Account (Stripe, Paystack, Dodo, etc.)
+ ├── Plan
+ │    └── Plan Feature (limit, reset schedule, overage rules)
+ ├── Feature (boolean, metered, static)
+ ├── Credit System (shared balance across multiple features)
+ ├── Credit Pack (prepaid top-up)
+ └── Customer
+      ├── Subscription (links customer to plan)
+      ├── Entitlement (resolved permissions)
+      ├── Meter State (current usage counter)
+      ├── Credit Balance (current prepaid credits)
+      └── Payment Method (card on file)
+```
+
+## Core Concepts
+
+- **Organization**: Your top-level container holding API keys, webhooks, and all billing state.
+- **Customer**: A user or team in your app. Auto-created when you pass `customerData` to SDK methods.
+- **Plan**: A subscription tier (e.g., "Pro"). Plans belong to a **Plan Group**.
+  - _Rule:_ Customers can only have one active plan per group. Switching plans in the same group triggers upgrades/downgrades.
+- **Feature**: A product capability.
+  - `boolean`: On/off access (e.g., "SSO").
+  - `metered`: Numeric limit (e.g., "1,000 API calls").
+  - `static`: Fixed configuration value.
+- **Subscription**: Links a Customer to a Plan. Tracks the billing period and payment state.
+- **Entitlement**: The computed access permission for a customer, derived from their active subscription.
+- **Meter State**: Fast, race-free counters tracking usage per feature.
+- **Credit System**: A prepaid balance that multiple features can draw from (e.g., AI compute credits). Customers buy **Credit Packs** to top up.
+
+## Provider Sync
+
+Owostack manages dual IDs to seamlessly bridge your app and your payment provider:
+
+- `providerPlanId` (e.g., Dodo product ID)
+- `providerSubscriptionCode` (e.g., Paystack sub ID)
+- `providerCustomerId`
+
+This dual-reference design handles all webhook reconciliation automatically. You never have to parse provider-specific IDs in your application code.
