@@ -94,4 +94,4 @@ This one really challenged our design, and reminded me that, if we had truely st
 
 But the above proposal is not implemented in any of our test environment yet, i'm still actively battling alot of issues and edge cases that this has, though the result (when it works) makes me think this might be work it.
 
-Would love to know your ideas and opinions on this. Join our discord.. https://discord.gg/zSdXxv9n
+Would love to know your ideas and opinions on this. Join our discord.. https://discord.gg/jQ3TyEn6WR
