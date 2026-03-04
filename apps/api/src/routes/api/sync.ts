@@ -38,6 +38,7 @@ const syncFeatureSchema = z.object({
   slug: z.string().min(1),
   type: z.enum(["metered", "boolean"]),
   name: z.string().min(1),
+  meterType: z.enum(["consumable", "non_consumable"]).optional(),
 });
 
 const syncPlanFeatureSchema = z.object({
@@ -163,13 +164,15 @@ app.post("/", async (c) => {
       // Check if anything changed
       const nameChanged = existing.name !== featureDef.name;
       const typeChanged = existing.type !== featureDef.type;
+      const meterTypeChanged = existing.meterType !== (featureDef.meterType || "consumable");
 
-      if (nameChanged || typeChanged) {
+      if (nameChanged || typeChanged || meterTypeChanged) {
         await db
           .update(schema.features)
           .set({
             name: featureDef.name,
             type: featureDef.type,
+            meterType: featureDef.meterType || "consumable",
             source: "sdk",
           })
           .where(eq(schema.features.id, existing.id));
@@ -198,6 +201,7 @@ app.post("/", async (c) => {
         name: featureDef.name,
         slug: featureDef.slug,
         type: featureDef.type,
+        meterType: featureDef.meterType || "consumable",
         source: "sdk",
       });
       result.features.created.push(featureDef.slug);

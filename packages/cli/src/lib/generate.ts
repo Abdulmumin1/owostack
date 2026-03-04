@@ -82,7 +82,7 @@ export function generateConfig(
   // Collect all features, excluding credit system pseudo-features
   const featuresBySlug = new Map<
     string,
-    { slug: string; name?: string; type: string }
+    { slug: string; name?: string; type: string; meterType?: string }
   >();
   for (const plan of plans) {
     for (const f of plan.features || []) {
@@ -93,6 +93,7 @@ export function generateConfig(
           slug: f.slug,
           name: f.name,
           type: f.type || "metered",
+          meterType: f.meterType,
         });
       }
     }
@@ -122,10 +123,13 @@ export function generateConfig(
       ? `, { name: ${JSON.stringify(feature.name)} }`
       : "";
 
-    const decl =
-      feature.type === "boolean"
-        ? `boolean(${JSON.stringify(feature.slug)}${nameArg})`
-        : `metered(${JSON.stringify(feature.slug)}${nameArg})`;
+    const isEntity = feature.meterType === "non_consumable";
+    const builder = feature.type === "boolean"
+      ? "boolean"
+      : isEntity
+        ? "entity"
+        : "metered";
+    const decl = `${builder}(${JSON.stringify(feature.slug)}${nameArg})`;
 
     if (isCjs) {
       featureLines.push(`const ${varName} = ${decl};`);
@@ -232,9 +236,14 @@ export function generateConfig(
         continue;
       }
 
+      const isEntityFeature = globalFeature?.meterType === "non_consumable";
       const config: Record<string, unknown> = {};
       if (pf.limit !== undefined) config.limit = pf.limit;
-      config.reset = pf.resetInterval || pf.reset || "monthly";
+      // Entity features default to reset: "never", so omit reset for them
+      if (!isEntityFeature) {
+        const reset = pf.resetInterval || pf.reset || "monthly";
+        if (reset !== "none") config.reset = reset;
+      }
       if (pf.overage) config.overage = pf.overage;
       if (pf.overagePrice !== undefined) config.overagePrice = pf.overagePrice;
 
@@ -261,13 +270,20 @@ export function generateConfig(
   }
 
   const hasCreditSystems = creditSystemLines.length > 0;
+  const hasEntities = Array.from(featuresBySlug.values()).some(
+    (f) => f.meterType === "non_consumable",
+  );
   const providerLine = defaultProvider
     ? `  provider: ${JSON.stringify(defaultProvider)},\n`
     : "";
 
+  const importParts = ["Owostack", "metered", "boolean"];
+  if (hasEntities) importParts.push("entity");
+  importParts.push("creditSystem", "plan");
+
   const imports = isCjs
-    ? `const { Owostack, metered, boolean, creditSystem, plan } = require("owostack");`
-    : `import { Owostack, metered, boolean, creditSystem, plan } from "owostack";`;
+    ? `const { ${importParts.join(", ")} } = require("owostack");`
+    : `import { ${importParts.join(", ")} } from "owostack";`;
 
   const tsCheck = !isTs ? `// @ts-check` : "";
   const jsDoc = !isTs ? `/** @type {import('owostack').Owostack} */` : "";

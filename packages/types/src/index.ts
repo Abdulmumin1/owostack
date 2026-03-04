@@ -955,6 +955,7 @@ export interface SyncPayload {
     slug: string;
     type: "metered" | "boolean";
     name: string;
+    meterType?: "consumable" | "non_consumable";
   }>;
   creditSystems: Array<{
     slug: string;

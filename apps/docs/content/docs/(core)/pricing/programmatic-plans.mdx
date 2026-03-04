@@ -15,14 +15,14 @@ Define your features and plans in TypeScript and push them to Owostack with a si
 
 ## 1. Define your features
 
-Create a file (e.g. `src/billing/features.ts`) and define your features using `metered()` and `boolean()`:
+Create a file (e.g. `src/billing/features.ts`) and define your features using `metered()`, `boolean()`, and `entity()`:
 
 ```ts
-import { metered, boolean } from "owostack";
+import { metered, boolean, entity } from "owostack";
 
 export const apiCalls = metered("api-calls", { name: "API Calls" });
 export const analytics = boolean("analytics", { name: "Analytics Dashboard" });
-export const seats = metered("seats", { name: "Team Seats" });
+export const seats = entity("seats", { name: "Team Seats" });
 ```
 
 ## 2. Define your plans
@@ -44,7 +44,7 @@ export default new Owostack({
       features: [
         apiCalls.limit(1000),
         analytics.off(),
-        seats.limit(3, { reset: "never" }),
+        seats.limit(3),
       ],
     }),
     plan("pro", {
@@ -55,7 +55,7 @@ export default new Owostack({
       features: [
         apiCalls.limit(50000, { overage: "charge", overagePrice: 100 }),
         analytics.on(),
-        seats.limit(20, { reset: "never" }),
+        seats.limit(20),
       ],
     }),
     plan("enterprise", {

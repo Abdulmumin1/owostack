@@ -580,11 +580,12 @@ export class OwostackError extends Error {
 export {
   metered,
   boolean,
+  entity,
   creditSystem,
   plan,
   buildSyncPayload,
 } from "./catalog.js";
-export { MeteredHandle, BooleanHandle, CreditSystemHandle } from "./catalog.js";
+export { MeteredHandle, BooleanHandle, EntityHandle, CreditSystemHandle } from "./catalog.js";
 
 // Re-export types for convenience
 export type {

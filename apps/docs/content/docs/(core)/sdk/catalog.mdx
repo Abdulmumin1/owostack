@@ -1,6 +1,6 @@
 ---
 title: Create plans & features
-description: "Reference: metered(), boolean(), creditSystem(), plan() — define features and plans as code"
+description: "Reference: metered(), boolean(), entity(), creditSystem(), plan() — define features and plans as code"
 icon: Blocks
 ---
 
@@ -146,6 +146,120 @@ Returns `Promise<CheckResult>`.
 
 ---
 
+## `entity(slug, opts?)`
+
+Create a non-consumable feature handle. Entity features represent persistent resources like seats, projects, or workspaces — things you add and remove, not consume.
+
+```ts
+import { entity } from "owostack";
+
+const seats = entity("seats", { name: "Team Seats" });
+const projects = entity("projects", { name: "Projects" });
+```
+
+### Parameters
+
+Same as `metered()`.
+
+### Plan methods
+
+#### `.limit(value, config?)`
+
+Set the maximum number of entities allowed.
+
+```ts
+seats.limit(5);
+seats.limit(5, { overage: "charge", overagePrice: 500 });
+```
+
+| Parameter             | Type                  | Default   | Description                             |
+| --------------------- | --------------------- | --------- | --------------------------------------- |
+| `value`               | `number`              | —         | Maximum entities allowed                |
+| `config.overage`      | `"block" \| "charge"` | `"block"` | What happens when limit is exceeded     |
+| `config.overagePrice` | `number`              | —         | Price per extra entity (minor currency) |
+
+<Callout type="info">
+  Entity features default to `reset: "never"` — the count reflects current state, not periodic usage.
+</Callout>
+
+#### `.unlimited()`
+
+No limit on the number of entities.
+
+```ts
+seats.unlimited();
+```
+
+### Runtime methods
+
+#### `.add(customer, opts)`
+
+Add an entity (e.g., a seat). Validates against the plan limit.
+
+```ts
+const result = await seats.add("org@acme.com", {
+  entity: "user_123",
+  name: "John Doe",
+  email: "john@acme.com",
+  metadata: { role: "admin" },
+});
+
+console.log(result.count);     // 3
+console.log(result.remaining); // 2
+```
+
+| Parameter       | Type                      | Required | Description                  |
+| --------------- | ------------------------- | -------- | ---------------------------- |
+| `customer`      | `string`                  | Yes      | Customer ID or email         |
+| `opts.entity`   | `string`                  | Yes      | Unique entity ID             |
+| `opts.name`     | `string`                  | No       | Display name                 |
+| `opts.email`    | `string`                  | No       | Email address                |
+| `opts.metadata` | `Record<string, unknown>` | No       | Custom metadata              |
+
+Returns `Promise<AddEntityResult>`.
+
+#### `.remove(customer, entity)`
+
+Remove an entity. Frees the slot immediately.
+
+```ts
+await seats.remove("org@acme.com", "user_123");
+```
+
+Returns `Promise<RemoveEntityResult>`.
+
+#### `.list(customer)`
+
+List all active entities for this feature.
+
+```ts
+const { entities, total } = await seats.list("org@acme.com");
+
+for (const seat of entities) {
+  console.log(seat.id, seat.name, seat.status);
+}
+```
+
+Returns `Promise<ListEntitiesResult>`.
+
+#### `.check(customer, opts?)`
+
+Check how many entities exist and if more can be added.
+
+```ts
+const result = await seats.check("org@acme.com");
+console.log(result.allowed); // true if under limit
+console.log(result.balance); // remaining slots
+```
+
+Returns `Promise<CheckResult>`.
+
+<Callout type="info">
+  Entity features have no `.track()` method — entities are managed via `.add()` and `.remove()`. The type system enforces this.
+</Callout>
+
+---
+
 ## `creditSystem(slug, config)`
 
 Create a credit system definition. A credit system abstracts usage across multiple features into a single "credit" balance.
@@ -202,7 +316,7 @@ plan("pro", {
     apiCalls.limit(50000, { overage: "charge", overagePrice: 100 }),
     aiCredits.credits(1000),
     analytics.on(),
-    seats.limit(20, { reset: "never" }),
+    seats.limit(20),
   ],
 });
 ```
@@ -265,7 +379,7 @@ npx owo sync [options]
 
 ```ts
 // owo.config.ts
-import { Owostack, metered, boolean, creditSystem, plan } from "owostack";
+import { Owostack, metered, boolean, entity, creditSystem, plan } from "owostack";
 
 const apiCalls = metered("api-calls");
 const aiCredits = creditSystem("ai-credits", {
