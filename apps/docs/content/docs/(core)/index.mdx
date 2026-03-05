@@ -13,6 +13,7 @@ Owostack is a billing infrastructure for subscriptions, usage, and entitlements.
 - **Subscription lifecycle** without bespoke webhook code
 - **Entitlements** that gate features by plan
 - **Usage metering** for API calls, credits, or quotas
+- **Entity management** for per-seat, per-project, or per-workspace billing
 - **Code-first plans** with an SDK that syncs your definitions with a single command
 
 ## Core primitives
@@ -60,7 +61,11 @@ Owostack receives provider webhooks, normalizes events, and keeps subscription s
     href="/getting-started/webhook-setup"
     icon="Webhook"
   />
-  <Card title="How It Works" href="/getting-started/how-it-works" icon="Workflow" />
+  <Card
+    title="How It Works"
+    href="/getting-started/how-it-works"
+    icon="Workflow"
+  />
 </Cards>
 
 ## Supported billing models
@@ -71,4 +76,4 @@ Owostack receives provider webhooks, normalizes events, and keeps subscription s
 | Usage-based (metered)   | ✅ Supported |
 | Credits / prepaid       | ✅ Supported |
 | Trials & freemium       | ✅ Supported |
-| Per-seat pricing        | 🔜 Planned   |
+| Per-seat (entities)     | ✅ Supported |

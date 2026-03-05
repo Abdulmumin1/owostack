@@ -6,7 +6,9 @@ icon: Users
 
 # Entity Management
 
-Entities represent scoped resources like seats, workspaces, or team members. Use these methods to manage entities for per-seat billing and entity-scoped usage tracking.
+Entities represent scoped, **non-consumable** resources like seats, workspaces, or team members. Use these methods to manage entities for per-seat billing and entity-scoped usage tracking.
+
+Unlike metered features which are consumed over time, entity features represent fixed capacity. You add entities when they are created and remove them when they are deleted. Owostack tracks the current count against the plan limit.
 
 ## Flat API
 

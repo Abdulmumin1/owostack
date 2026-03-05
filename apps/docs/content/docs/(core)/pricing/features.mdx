@@ -11,11 +11,30 @@ In Owostack, **features** are the capabilities in your product and **entitlement
 ## Feature types
 
 - `boolean`
-  - On/off access
+  - On/off access (e.g. "Analytics Dashboard", "API Access")
 - `metered`
-  - A limit that can be checked and incremented (usage)
+  - A limit that can be checked and incremented. These are **consumable** features (e.g. "API Calls", "Emails Sent").
+- `entity` (non-consumable)
+  - Persistent resources that are added and removed. These are **non-consumable** features (e.g. "Seats", "Projects", "Workspaces").
 - `static`
-  - A fixed value (configuration)
+  - A fixed value (configuration) (e.g. "Environment Variable", "Support Level").
+
+## Consumable vs. Non-consumable
+
+Owostack distinguishes between features that are "used up" and features that represent "capacity":
+
+### Consumable features (`metered`)
+
+These features reset on a schedule (e.g. 1,000 emails per month). When you call `track()`, usage increments and the remaining balance decreases. Once the limit is reached, access is blocked or overages are charged.
+
+### Non-consumable features (`entity`)
+
+These features represent persistent items that you manage. Instead of `track()`, you use `add()` and `remove()`.
+
+- **Seats:** Add/remove users from an organization.
+- **Projects:** Create/delete projects in a workspace.
+- **Limits:** If you have a limit of 5 seats, you can have up to 5 users active at any time. Removing one user frees a slot for another.
+- **Reset:** These features default to `reset: "never"` because they represent current state, not periodic usage.
 
 ## Where entitlements come from
 
@@ -35,7 +54,7 @@ const { allowed, code, balance } = await owo.check({
 
 - `allowed` is the main signal you should gate on.
 - `balance` is useful for UX (show usage).
-- `code` helps you decide *why* access was denied (upgrade, top-up, etc.).
+- `code` helps you decide _why_ access was denied (upgrade, top-up, etc.).
 
 ### Response codes
 
