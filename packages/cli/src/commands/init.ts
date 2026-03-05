@@ -120,7 +120,7 @@ export async function runInit(options: InitOptions) {
 
     p.outro(
       pc.cyan(
-        `Next step: Run ${pc.bold("owostack sync")} to apply your catalog.`,
+        `Next step: Run ${pc.bold("owosk sync")} to apply your catalog.`,
       ),
     );
   } catch (e: any) {
