@@ -64,6 +64,8 @@ const syncPlanSchema = z.object({
   trialDays: z.number().optional(),
   provider: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  autoEnable: z.boolean().optional(),
+  isAddon: z.boolean().optional(),
   features: z.array(syncPlanFeatureSchema),
 });
 
@@ -79,10 +81,23 @@ const syncCreditSystemSchema = z.object({
   features: z.array(syncCreditSystemFeatureSchema),
 });
 
+const syncCreditPackSchema = z.object({
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  credits: z.number().int().min(1),
+  price: z.number().int().min(0),
+  currency: z.string().min(3),
+  creditSystem: z.string().min(1),
+  provider: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
 const syncPayloadSchema = z.object({
   defaultProvider: z.string().optional(),
   features: z.array(syncFeatureSchema),
   creditSystems: z.array(syncCreditSystemSchema).optional(),
+  creditPacks: z.array(syncCreditPackSchema).optional(),
   plans: z.array(syncPlanSchema),
 });
 
@@ -90,41 +105,24 @@ const syncPayloadSchema = z.object({
  * POST /sync
  *
  * Reconciles features and plans from the SDK catalog with the database.
- * - Creates missing features and plans
- * - Updates existing SDK-managed features and plans
- * - Never deletes anything
- * - Tags created/updated resources with source: "sdk"
  */
 app.post("/", async (c) => {
   const body = await c.req.json();
   const parsed = syncPayloadSchema.safeParse(body);
 
   if (!parsed.success) {
-    return c.json(
-      {
-        success: false,
-        error: "Invalid sync payload",
-        details: parsed.error.flatten(),
-      },
-      400,
-    );
+    return c.json({ success: false, error: parsed.error.format() }, 400);
   }
 
   const {
     features: featureDefs,
     creditSystems: creditSystemDefs,
+    creditPacks: creditPackDefs,
     plans: planDefs,
     defaultProvider,
   } = parsed.data;
-  const db = c.get("db");
   const organizationId = c.get("organizationId");
-
-  if (!organizationId) {
-    return c.json(
-      { success: false, error: "Organization context missing" },
-      500,
-    );
-  }
+  const db = c.get("db");
 
   const result = {
     success: true,
@@ -138,6 +136,11 @@ app.post("/", async (c) => {
       updated: [] as string[],
       unchanged: [] as string[],
     },
+    creditPacks: {
+      created: [] as string[],
+      updated: [] as string[],
+      unchanged: [] as string[],
+    },
     plans: {
       created: [] as string[],
       updated: [] as string[],
@@ -146,9 +149,7 @@ app.post("/", async (c) => {
     warnings: [] as string[],
   };
 
-  // =========================================================================
   // 1. Sync Features
-  // =========================================================================
   for (const featureDef of featureDefs) {
     const existing = await db.query.features.findFirst({
       where: and(
@@ -161,10 +162,10 @@ app.post("/", async (c) => {
     });
 
     if (existing) {
-      // Check if anything changed
       const nameChanged = existing.name !== featureDef.name;
       const typeChanged = existing.type !== featureDef.type;
-      const meterTypeChanged = existing.meterType !== (featureDef.meterType || "consumable");
+      const meterTypeChanged =
+        existing.meterType !== (featureDef.meterType || "consumable");
 
       if (nameChanged || typeChanged || meterTypeChanged) {
         await db
@@ -184,7 +185,6 @@ app.post("/", async (c) => {
           );
         }
       } else {
-        // Mark as SDK-managed even if nothing changed
         if (existing.source !== "sdk") {
           await db
             .update(schema.features)
@@ -194,7 +194,6 @@ app.post("/", async (c) => {
         result.features.unchanged.push(featureDef.slug);
       }
     } else {
-      // Create new feature
       await db.insert(schema.features).values({
         id: crypto.randomUUID(),
         organizationId,
@@ -208,9 +207,7 @@ app.post("/", async (c) => {
     }
   }
 
-  // =========================================================================
   // 2. Sync Credit Systems
-  // =========================================================================
   if (creditSystemDefs && creditSystemDefs.length > 0) {
     for (const csDef of creditSystemDefs) {
       const existing = await db.query.creditSystems.findFirst({
@@ -239,7 +236,6 @@ app.post("/", async (c) => {
           result.creditSystems.unchanged.push(csDef.slug);
         }
 
-        // Sync credit system features
         await reconcileCreditSystemFeatures(
           db,
           organizationId,
@@ -247,7 +243,6 @@ app.post("/", async (c) => {
           csDef.features,
         );
       } else {
-        // Create new credit system
         const csId = crypto.randomUUID();
         await db.insert(schema.creditSystems).values({
           id: csId,
@@ -256,35 +251,138 @@ app.post("/", async (c) => {
           slug: csDef.slug,
           description: csDef.description ?? null,
         });
-
-        // Sync credit system features
         await reconcileCreditSystemFeatures(
           db,
           organizationId,
           csId,
           csDef.features,
         );
-        result.creditSystems.created.push(csDef.slug);
+        result.creditSystems.created.push(csDef.slug as string);
+      }
+
+      // Ensure a corresponding feature exists for this credit system
+      // This allows plans to include this credit system as a "feature" (e.g. 50 credits/month)
+      const existingFeature = await db.query.features.findFirst({
+        where: and(
+          eq(schema.features.organizationId, organizationId),
+          eq(schema.features.slug, csDef.slug),
+        ),
+      });
+
+      if (existingFeature) {
+        if (
+          existingFeature.name !== csDef.name ||
+          existingFeature.type !== "metered" ||
+          existingFeature.meterType !== "consumable"
+        ) {
+          await db
+            .update(schema.features)
+            .set({
+              name: csDef.name,
+              type: "metered",
+              meterType: "consumable",
+              source: "sdk",
+            })
+            .where(eq(schema.features.id, existingFeature.id));
+        }
+      } else {
+        await db.insert(schema.features).values({
+          id: crypto.randomUUID(),
+          organizationId,
+          name: csDef.name,
+          slug: csDef.slug,
+          type: "metered",
+          meterType: "consumable",
+          source: "sdk",
+        });
       }
     }
   }
 
-  // =========================================================================
-  // 3. Sync Plans
-  // =========================================================================
+  // 3. Sync Credit Packs
+  if (creditPackDefs && creditPackDefs.length > 0) {
+    for (const packDef of creditPackDefs) {
+      // First, resolve the credit system by slug
+      const creditSystem = await db.query.creditSystems.findFirst({
+        where: and(
+          eq(schema.creditSystems.organizationId, organizationId),
+          eq(schema.creditSystems.slug, packDef.creditSystem),
+        ),
+      });
+
+      if (!creditSystem) {
+        result.warnings.push(
+          `Credit pack '${packDef.slug}' references unknown credit system '${packDef.creditSystem}'. Skipping.`,
+        );
+        continue;
+      }
+
+      const existing = await db.query.creditPacks.findFirst({
+        where: and(
+          eq(schema.creditPacks.organizationId, organizationId),
+          eq(schema.creditPacks.slug, packDef.slug),
+        ),
+      });
+
+      if (existing) {
+        const changed =
+          existing.name !== packDef.name ||
+          existing.credits !== packDef.credits ||
+          existing.price !== packDef.price ||
+          existing.currency !== packDef.currency ||
+          existing.creditSystemId !== creditSystem.id ||
+          existing.description !== (packDef.description ?? null);
+
+        if (changed) {
+          await db
+            .update(schema.creditPacks)
+            .set({
+              name: packDef.name,
+              description: packDef.description ?? null,
+              credits: packDef.credits,
+              price: packDef.price,
+              currency: packDef.currency,
+              creditSystemId: creditSystem.id,
+              providerId:
+                packDef.provider ?? defaultProvider ?? existing.providerId,
+              metadata: packDef.metadata ?? null,
+              updatedAt: Date.now(),
+            })
+            .where(eq(schema.creditPacks.id, existing.id));
+          result.creditPacks.updated.push(packDef.slug);
+        } else {
+          result.creditPacks.unchanged.push(packDef.slug);
+        }
+      } else {
+        await db.insert(schema.creditPacks).values({
+          id: crypto.randomUUID(),
+          organizationId,
+          name: packDef.name,
+          slug: packDef.slug,
+          description: packDef.description ?? null,
+          credits: packDef.credits,
+          price: packDef.price,
+          currency: packDef.currency,
+          creditSystemId: creditSystem.id,
+          providerId: packDef.provider ?? defaultProvider ?? null,
+          metadata: packDef.metadata ?? null,
+          isActive: true,
+        });
+        result.creditPacks.created.push(packDef.slug);
+      }
+    }
+  }
+
+  // 4. Sync Plans
   for (const planDef of planDefs) {
     const existing = await db.query.plans.findFirst({
       where: and(
         eq(schema.plans.organizationId, organizationId),
-        or(
-          eq(schema.plans.slug, planDef.slug),
-          eq(schema.plans.id, planDef.slug),
-        ),
+        eq(schema.plans.slug, planDef.slug),
       ),
     });
 
     if (existing) {
-      // Check if core properties changed
       const changed =
         existing.name !== planDef.name ||
         existing.price !== planDef.price ||
@@ -292,10 +390,11 @@ app.post("/", async (c) => {
         existing.interval !== planDef.interval ||
         existing.description !== (planDef.description ?? null) ||
         existing.planGroup !== (planDef.planGroup ?? null) ||
-        existing.trialDays !== (planDef.trialDays ?? 0);
+        existing.trialDays !== (planDef.trialDays ?? 0) ||
+        existing.autoEnable !== (planDef.autoEnable ?? false) ||
+        existing.isAddon !== (planDef.isAddon ?? false);
 
       if (changed) {
-        // Validate minimum charge amount if price changed and plan has a provider
         if (
           existing.price !== planDef.price &&
           planDef.price > 0 &&
@@ -311,7 +410,6 @@ app.post("/", async (c) => {
             result.warnings.push(
               `Plan '${planDef.slug}' price ${planDef.price / 100} ${planDef.currency} is below the minimum charge amount of ${minDisplay} ${planDef.currency} for ${existing.providerId}. Price update skipped.`,
             );
-            // Skip price update but continue with other changes
             await db
               .update(schema.plans)
               .set({
@@ -325,6 +423,8 @@ app.post("/", async (c) => {
                 providerId:
                   planDef.provider ?? defaultProvider ?? existing.providerId,
                 metadata: planDef.metadata ?? null,
+                autoEnable: planDef.autoEnable ?? false,
+                isAddon: planDef.isAddon ?? false,
                 source: "sdk",
                 updatedAt: Date.now(),
               })
@@ -354,6 +454,8 @@ app.post("/", async (c) => {
             providerId:
               planDef.provider ?? defaultProvider ?? existing.providerId,
             metadata: planDef.metadata ?? null,
+            autoEnable: planDef.autoEnable ?? false,
+            isAddon: planDef.isAddon ?? false,
             source: "sdk",
             updatedAt: Date.now(),
           })
@@ -365,12 +467,11 @@ app.post("/", async (c) => {
           );
         }
 
-        // Sync price/name changes with payment provider
+        // Provider sync
         if (existing.providerPlanId && existing.providerId) {
           try {
             const registry = getProviderRegistry();
             const adapter = registry.get(existing.providerId);
-            // Environment comes directly from ENVIRONMENT variable
             const providerEnv = deriveProviderEnvironment(
               c.env.ENVIRONMENT,
               null,
@@ -385,7 +486,7 @@ app.post("/", async (c) => {
             );
 
             if (adapter?.updatePlan && account) {
-              const updateResult = await adapter.updatePlan({
+              await adapter.updatePlan({
                 planId: existing.providerPlanId,
                 name: planDef.name,
                 amount: planDef.price,
@@ -395,46 +496,41 @@ app.post("/", async (c) => {
                 environment: providerEnv,
                 account,
               });
-
-              if (updateResult.isOk()) {
-                console.log(
-                  `[sync] Updated plan on ${existing.providerId}: ${existing.providerPlanId}`,
-                );
-              } else {
-                console.warn(
-                  `[sync] Failed to update plan on ${existing.providerId}:`,
-                  updateResult.error,
-                );
-              }
             }
           } catch (e) {
-            console.warn("[sync] Provider sync error during plan update:", e);
+            console.warn("[sync] Provider sync error:", e);
           }
         }
-
         result.plans.updated.push(planDef.slug);
       } else {
-        // Mark as SDK-managed
         if (existing.source !== "sdk") {
           await db
             .update(schema.plans)
             .set({ source: "sdk" })
             .where(eq(schema.plans.id, existing.id));
         }
-        result.plans.unchanged.push(planDef.slug);
       }
 
-      // Reconcile plan features
-      await reconcilePlanFeatures(
+      const featuresChanged = await reconcilePlanFeatures(
         db,
         organizationId,
         existing.id,
         planDef.features,
       );
+
+      if (changed || featuresChanged) {
+        const unchangedIndex = result.plans.unchanged.indexOf(planDef.slug);
+        if (unchangedIndex > -1) {
+          result.plans.unchanged.splice(unchangedIndex, 1);
+        }
+        if (!result.plans.updated.includes(planDef.slug)) {
+          result.plans.updated.push(planDef.slug);
+        }
+      } else {
+        result.plans.unchanged.push(planDef.slug);
+      }
     } else {
-      // Create new plan
       const planId = crypto.randomUUID();
-      // Determine provider: plan.provider overrides defaultProvider
       const effectiveProvider = planDef.provider ?? defaultProvider ?? null;
 
       await db.insert(schema.plans).values({
@@ -451,10 +547,11 @@ app.post("/", async (c) => {
         type: planDef.price === 0 ? "free" : "paid",
         providerId: effectiveProvider,
         metadata: planDef.metadata ?? null,
+        autoEnable: planDef.autoEnable ?? false,
+        isAddon: planDef.isAddon ?? false,
         source: "sdk",
       });
 
-      // Create plan features
       await reconcilePlanFeatures(db, organizationId, planId, planDef.features);
       result.plans.created.push(planDef.slug);
     }
@@ -463,59 +560,53 @@ app.post("/", async (c) => {
   return c.json(result);
 });
 
-/**
- * Reconcile plan features — upsert plan_features entries for a given plan.
- * Matches features by slug, creates missing plan_feature rows, updates existing ones.
- */
 async function reconcilePlanFeatures(
   db: any,
   organizationId: string,
   planId: string,
   featureDefs: z.infer<typeof syncPlanFeatureSchema>[],
-) {
-  // Load all features for this org to resolve slugs → IDs
+): Promise<boolean> {
+  let hasChanges = false;
   const orgFeatures = await db.query.features.findMany({
     where: eq(schema.features.organizationId, organizationId),
   });
   const featureBySlug = new Map<string, any>();
-  for (const f of orgFeatures) {
-    featureBySlug.set(f.slug, f);
-  }
+  for (const f of orgFeatures) featureBySlug.set(f.slug, f);
 
-  // Load existing plan features
   const existingPlanFeatures = await db.query.planFeatures.findMany({
     where: eq(schema.planFeatures.planId, planId),
   });
   const existingByFeatureId = new Map<string, any>();
-  for (const pf of existingPlanFeatures) {
+  for (const pf of existingPlanFeatures)
     existingByFeatureId.set(pf.featureId, pf);
-  }
+
+  const seenFeatureIds = new Set<string>();
 
   for (const fd of featureDefs) {
     const feature = featureBySlug.get(fd.slug);
-    if (!feature) continue; // Feature should exist from step 1
+    if (!feature) continue;
+
+    seenFeatureIds.add(feature.id);
 
     if (!fd.enabled) {
-      // If feature is disabled, remove the plan_feature if it exists
       const existing = existingByFeatureId.get(feature.id);
       if (existing) {
         await db
           .delete(schema.planFeatures)
           .where(eq(schema.planFeatures.id, existing.id));
+        hasChanges = true;
       }
       continue;
     }
 
     const existing = existingByFeatureId.get(feature.id);
-
-    // For boolean features, limit should be null (not 0)
     const isBoolean = feature.type === "boolean";
     const limitValue = isBoolean
       ? null
       : fd.limit !== undefined
         ? fd.limit
         : null;
-    const resetInterval = isBoolean ? null : (fd.reset ?? "monthly");
+    const resetInterval = isBoolean ? "never" : (fd.reset ?? "monthly");
 
     const values = {
       limitValue,
@@ -528,55 +619,72 @@ async function reconcilePlanFeatures(
     };
 
     if (existing) {
-      // Update existing plan feature
-      await db
-        .update(schema.planFeatures)
-        .set(values)
-        .where(eq(schema.planFeatures.id, existing.id));
+      const isChanged =
+        existing.limitValue !== values.limitValue ||
+        existing.resetInterval !== values.resetInterval ||
+        existing.overage !== values.overage ||
+        existing.overagePrice !== values.overagePrice ||
+        existing.maxOverageUnits !== values.maxOverageUnits ||
+        existing.billingUnits !== values.billingUnits ||
+        existing.creditCost !== values.creditCost;
+
+      if (isChanged) {
+        await db
+          .update(schema.planFeatures)
+          .set(values)
+          .where(eq(schema.planFeatures.id, existing.id));
+        hasChanges = true;
+      }
     } else {
-      // Create new plan feature
       await db.insert(schema.planFeatures).values({
         id: crypto.randomUUID(),
         planId,
         featureId: feature.id,
         ...values,
       });
+      hasChanges = true;
     }
   }
+
+  // Cleanup: Remove features that were missing from config
+  for (const [featureId, pf] of existingByFeatureId.entries()) {
+    if (!seenFeatureIds.has(featureId)) {
+      await db
+        .delete(schema.planFeatures)
+        .where(eq(schema.planFeatures.id, pf.id));
+      hasChanges = true;
+    }
+  }
+
+  return hasChanges;
 }
 
-/**
- * Reconcile credit system features — upsert credit_system_features entries.
- * Links features to a credit system with their credit cost.
- */
 async function reconcileCreditSystemFeatures(
   db: any,
   organizationId: string,
   creditSystemId: string,
   featureDefs: z.infer<typeof syncCreditSystemFeatureSchema>[],
 ) {
-  // Load all features for this org to resolve slugs → IDs
   const orgFeatures = await db.query.features.findMany({
     where: eq(schema.features.organizationId, organizationId),
   });
   const featureBySlug = new Map<string, any>();
-  for (const f of orgFeatures) {
-    featureBySlug.set(f.slug, f);
-  }
+  for (const f of orgFeatures) featureBySlug.set(f.slug, f);
 
-  // Load existing credit system features
   const existingCsFeatures = await db.query.creditSystemFeatures.findMany({
     where: eq(schema.creditSystemFeatures.creditSystemId, creditSystemId),
   });
   const existingByFeatureId = new Map<string, any>();
-  for (const csf of existingCsFeatures) {
+  for (const csf of existingCsFeatures)
     existingByFeatureId.set(csf.featureId, csf);
-  }
+
+  const seenFeatureIds = new Set<string>();
 
   for (const fd of featureDefs) {
     const feature = featureBySlug.get(fd.feature);
     if (!feature) continue;
 
+    seenFeatureIds.add(feature.id);
     const existing = existingByFeatureId.get(feature.id);
 
     if (existing) {
@@ -593,6 +701,15 @@ async function reconcileCreditSystemFeatures(
         featureId: feature.id,
         cost: fd.creditCost,
       });
+    }
+  }
+
+  // Cleanup
+  for (const [featureId, csf] of existingByFeatureId.entries()) {
+    if (!seenFeatureIds.has(featureId)) {
+      await db
+        .delete(schema.creditSystemFeatures)
+        .where(eq(schema.creditSystemFeatures.id, csf.id));
     }
   }
 }

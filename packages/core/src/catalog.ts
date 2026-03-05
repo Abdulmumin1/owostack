@@ -5,6 +5,7 @@ import type {
   PlanFeatureEntry,
   PlanDefinition,
   CreditSystemDefinition,
+  CreditPackDefinition,
   Currency,
   PlanInterval,
   ResetInterval,
@@ -263,10 +264,7 @@ export class EntityHandle {
     });
   }
 
-  async remove(
-    customer: string,
-    entity: string,
-  ): Promise<RemoveEntityResult> {
+  async remove(customer: string, entity: string): Promise<RemoveEntityResult> {
     if (!this._client) {
       throw new Error(
         `Feature '${this.slug}' is not bound to an Owostack client.`,
@@ -436,10 +434,36 @@ export function plan(
     trialDays?: number;
     provider?: string;
     metadata?: Record<string, unknown>;
+    autoEnable?: boolean;
+    isAddon?: boolean;
   },
 ): PlanDefinition {
   return {
     _type: "plan",
+    slug,
+    ...config,
+  };
+}
+
+/**
+ * Create a credit pack definition.
+ * Credit packs are one-time purchases that add credits to a customer's balance.
+ */
+export function creditPack(
+  slug: string,
+  config: {
+    name: string;
+    description?: string;
+    credits: number;
+    price: number;
+    currency: Currency;
+    creditSystem: string;
+    provider?: string;
+    metadata?: Record<string, unknown>;
+  },
+): CreditPackDefinition {
+  return {
+    _type: "credit_pack",
     slug,
     ...config,
   };
@@ -461,7 +485,12 @@ export function buildSyncPayload(
 ): SyncPayload {
   const featureMap = new Map<
     string,
-    { slug: string; type: "metered" | "boolean"; name: string; meterType?: "consumable" | "non_consumable" }
+    {
+      slug: string;
+      type: "metered" | "boolean";
+      name: string;
+      meterType?: "consumable" | "non_consumable";
+    }
   >();
 
   for (const entry of catalog) {
@@ -474,7 +503,9 @@ export function buildSyncPayload(
           slug: f.slug,
           type: f.featureType,
           name: f.name || slugToName(f.slug),
-          ...(handle instanceof EntityHandle && { meterType: "non_consumable" as const }),
+          ...(handle instanceof EntityHandle && {
+            meterType: "non_consumable" as const,
+          }),
         });
       }
     }
@@ -518,6 +549,8 @@ export function buildSyncPayload(
       trialDays: p.trialDays ?? undefined,
       provider: p.provider ?? undefined,
       metadata: p.metadata ?? undefined,
+      autoEnable: p.autoEnable ?? undefined,
+      isAddon: p.isAddon ?? undefined,
       features: p.features.map((f: PlanFeatureEntry) => ({
         slug: f.slug,
         enabled: f.enabled,
@@ -543,10 +576,25 @@ export function buildSyncPayload(
       })),
     }));
 
+  const creditPacks = catalog
+    .filter((e): e is CreditPackDefinition => e._type === "credit_pack")
+    .map((cp) => ({
+      slug: cp.slug,
+      name: cp.name,
+      description: cp.description ?? undefined,
+      credits: cp.credits,
+      price: cp.price,
+      currency: cp.currency,
+      creditSystem: cp.creditSystem,
+      provider: cp.provider ?? undefined,
+      metadata: cp.metadata ?? undefined,
+    }));
+
   return {
     defaultProvider,
     features: Array.from(featureMap.values()),
     creditSystems,
+    creditPacks,
     plans,
   };
 }

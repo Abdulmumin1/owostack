@@ -67,6 +67,7 @@ export type ConfigFormat = "ts" | "esm" | "cjs";
 export function generateConfig(
   plans: any[],
   creditSystems: any[] = [],
+  creditPacks: any[] = [],
   defaultProvider?: string,
   format: ConfigFormat = "ts",
 ): string {
@@ -124,11 +125,8 @@ export function generateConfig(
       : "";
 
     const isEntity = feature.meterType === "non_consumable";
-    const builder = feature.type === "boolean"
-      ? "boolean"
-      : isEntity
-        ? "entity"
-        : "metered";
+    const builder =
+      feature.type === "boolean" ? "boolean" : isEntity ? "entity" : "metered";
     const decl = `${builder}(${JSON.stringify(feature.slug)}${nameArg})`;
 
     if (isCjs) {
@@ -188,6 +186,8 @@ export function generateConfig(
       configLines.push(`trialDays: ${plan.trialDays}`);
     if (plan.provider)
       configLines.push(`provider: ${JSON.stringify(plan.provider)}`);
+    if (plan.autoEnable) configLines.push(`autoEnable: true`);
+    if (plan.isAddon) configLines.push(`isAddon: true`);
 
     const featureEntries: string[] = [];
     for (const pf of plan.features || []) {
@@ -269,7 +269,31 @@ export function generateConfig(
     );
   }
 
+  // Generate credit pack definitions
+  const creditPackLines: string[] = [];
+  for (const pack of creditPacks) {
+    const configLines: string[] = [];
+    configLines.push(`name: ${JSON.stringify(pack.name)}`);
+    if (pack.description)
+      configLines.push(`description: ${JSON.stringify(pack.description)}`);
+    configLines.push(`credits: ${pack.credits}`);
+    configLines.push(`price: ${pack.price}`);
+    configLines.push(`currency: ${JSON.stringify(pack.currency)}`);
+    configLines.push(
+      `creditSystem: ${JSON.stringify(pack.creditSystemId || pack.creditSystem)}`,
+    );
+    if (pack.provider)
+      configLines.push(`provider: ${JSON.stringify(pack.provider)}`);
+    if (pack.metadata)
+      configLines.push(`metadata: ${JSON.stringify(pack.metadata)}`);
+
+    creditPackLines.push(
+      `creditPack(${JSON.stringify(pack.slug)}, {\n      ${configLines.join(",\n      ")}\n    })`,
+    );
+  }
+
   const hasCreditSystems = creditSystemLines.length > 0;
+  const hasCreditPacks = creditPackLines.length > 0;
   const hasEntities = Array.from(featuresBySlug.values()).some(
     (f) => f.meterType === "non_consumable",
   );
@@ -279,7 +303,7 @@ export function generateConfig(
 
   const importParts = ["Owostack", "metered", "boolean"];
   if (hasEntities) importParts.push("entity");
-  importParts.push("creditSystem", "plan");
+  importParts.push("creditSystem", "creditPack", "plan");
 
   const imports = isCjs
     ? `const { ${importParts.join(", ")} } = require("owostack");`
@@ -299,13 +323,15 @@ export function generateConfig(
     ``,
     ...featureLines,
     ...(hasCreditSystems ? ["", ...creditSystemLines] : []),
+    ...(hasCreditPacks ? ["", ...creditPackLines] : []),
     ``,
     jsDoc,
     `${owoDecl} new Owostack({`,
     `  secretKey: ${secretKey},`,
     providerLine,
     `  catalog: [`,
-    `    ${planLines.join(",\n    ")}`,
+    `    ${planLines.join(",\n    ")}${hasCreditPacks ? "," : ""}`,
+    ...(hasCreditPacks ? [`    ${creditPackLines.join(",\n    ")}`] : []),
     `  ],`,
     `});`,
     ``,

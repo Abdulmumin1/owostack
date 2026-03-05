@@ -39,7 +39,41 @@ This separation lets you change a feature's limit on the Pro plan without affect
 
 ## Add-ons and Credit Packs
 
-Add-ons stack on top of a base subscription. The primary add-on type is a **credit pack** — a one-time purchase of credits tied to a specific credit system. Credit balances persist across billing periods and do not reset.
+Owostack supports two types of add-ons:
+
+### Credit Packs
+
+**Credit packs** are one-time purchases of credits that top up a prepaid balance. They're tied to a credit system and can be purchased at any time. See [Addon Packs](/pricing/credits) for details.
+
+```ts
+const starterPack = creditPack("starter-credits", {
+  name: "Starter Credits",
+  credits: 500,
+  price: 1000, // $10.00
+  currency: "USD",
+  creditSystem: "api-credits",
+});
+```
+
+### Recurring Add-ons
+
+You can also create **recurring add-on plans** by setting `isAddon: true`. These are subscription plans that stack on top of a base plan instead of replacing it.
+
+```ts
+plan("priority-support", {
+  name: "Priority Support",
+  price: 5000, // $50.00/month
+  currency: "USD",
+  interval: "monthly",
+  isAddon: true, // Stacks on existing subscription
+  features: [
+    supportTickets.limit(10),
+    responseTime.limit(1, { reset: "hourly" }),
+  ],
+});
+```
+
+A customer can subscribe to a base plan and multiple addon plans simultaneously.
 
 ## Creation & Synchronization
 

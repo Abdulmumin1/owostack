@@ -38,7 +38,8 @@ export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
 
     // Handle ESM default export or named export 'owo'
     // Also handle CJS module.exports or exports.owo
-    const instance = configModule.default || configModule.owo || configModule;
+    // Try to extract the actual instance, giving priority to explicit export names
+    const instance = configModule.owo || configModule.default || configModule;
 
     if (instance && typeof instance.sync === "function") {
       return instance;

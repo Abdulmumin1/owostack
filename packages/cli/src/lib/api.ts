@@ -80,3 +80,29 @@ export async function fetchCreditSystems(
     return [];
   }
 }
+
+export async function fetchCreditPacks(
+  apiKey: string,
+  apiUrl: string,
+): Promise<any[]> {
+  if (!apiKey) {
+    return [];
+  }
+
+  try {
+    const url = `${apiUrl}/credit-packs`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data?.success) {
+      return [];
+    }
+
+    return data?.data || [];
+  } catch {
+    return [];
+  }
+}

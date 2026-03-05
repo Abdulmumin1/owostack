@@ -86,6 +86,7 @@ app.get("/", async (c) => {
     planGroup: p.planGroup || null,
     trialDays: p.trialDays ?? 0,
     provider: p.providerId || null,
+    autoEnable: p.autoEnable ?? false,
     features: (p.planFeatures || []).map((pf: any) => {
       const featureType = pf.feature?.type ?? "metered";
       const isBoolean = featureType === "boolean";

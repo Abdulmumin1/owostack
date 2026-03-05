@@ -8,7 +8,7 @@ import {
 } from "../lib/config.js";
 import { loadConfigSettings, resolveConfigPath } from "../lib/loader.js";
 import { executeConnectFlow } from "../lib/connect.js";
-import { printBrand } from "../lib/brand.js";
+
 
 interface ConnectOptions {
   browser?: boolean;

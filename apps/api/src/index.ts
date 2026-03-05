@@ -39,6 +39,7 @@ import apiWallet from "./routes/api/wallet";
 import apiPlans from "./routes/api/plans";
 import apiCustomers from "./routes/api/customers";
 import apiCreditSystems from "./routes/api/credit-systems";
+import apiCreditPacks from "./routes/api/credit-packs";
 import apiSubscriptions from "./routes/api/subscriptions";
 import cliAuth from "./routes/cli-auth";
 
@@ -352,6 +353,7 @@ v1Routes.route("/", apiWallet);
 v1Routes.route("/plans", apiPlans);
 v1Routes.route("/", apiCustomers);
 v1Routes.route("/credit-systems", apiCreditSystems);
+v1Routes.route("/credit-packs", apiCreditPacks);
 
 apiRoutes.route("/v1", v1Routes);
 

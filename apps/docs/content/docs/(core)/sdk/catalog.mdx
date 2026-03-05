@@ -1,6 +1,6 @@
 ---
 title: Create plans & features
-description: "Reference: metered(), boolean(), entity(), creditSystem(), plan() — define features and plans as code"
+description: "Reference: metered(), boolean(), entity(), creditSystem(), creditPack(), plan() — define features and plans as code"
 icon: Blocks
 ---
 
@@ -179,7 +179,8 @@ seats.limit(5, { overage: "charge", overagePrice: 500 });
 | `config.overagePrice` | `number`              | —         | Price per extra entity (minor currency) |
 
 <Callout type="info">
-  Entity features default to `reset: "never"` — the count reflects current state, not periodic usage.
+  Entity features default to `reset: "never"` — the count reflects current
+  state, not periodic usage.
 </Callout>
 
 #### `.unlimited()`
@@ -204,17 +205,17 @@ const result = await seats.add("org@acme.com", {
   metadata: { role: "admin" },
 });
 
-console.log(result.count);     // 3
+console.log(result.count); // 3
 console.log(result.remaining); // 2
 ```
 
-| Parameter       | Type                      | Required | Description                  |
-| --------------- | ------------------------- | -------- | ---------------------------- |
-| `customer`      | `string`                  | Yes      | Customer ID or email         |
-| `opts.entity`   | `string`                  | Yes      | Unique entity ID             |
-| `opts.name`     | `string`                  | No       | Display name                 |
-| `opts.email`    | `string`                  | No       | Email address                |
-| `opts.metadata` | `Record<string, unknown>` | No       | Custom metadata              |
+| Parameter       | Type                      | Required | Description          |
+| --------------- | ------------------------- | -------- | -------------------- |
+| `customer`      | `string`                  | Yes      | Customer ID or email |
+| `opts.entity`   | `string`                  | Yes      | Unique entity ID     |
+| `opts.name`     | `string`                  | No       | Display name         |
+| `opts.email`    | `string`                  | No       | Email address        |
+| `opts.metadata` | `Record<string, unknown>` | No       | Custom metadata      |
 
 Returns `Promise<AddEntityResult>`.
 
@@ -255,7 +256,8 @@ console.log(result.balance); // remaining slots
 Returns `Promise<CheckResult>`.
 
 <Callout type="info">
-  Entity features have no `.track()` method — entities are managed via `.add()` and `.remove()`. The type system enforces this.
+  Entity features have no `.track()` method — entities are managed via `.add()`
+  and `.remove()`. The type system enforces this.
 </Callout>
 
 ---
@@ -300,6 +302,83 @@ aiCredits.credits(1000, { reset: "monthly", overage: "charge" });
 
 ---
 
+## `creditPack(slug, config)`
+
+Create a credit pack definition. Credit packs are one-time purchasable bundles of credits that top up a customer's prepaid balance. They're ideal for letting customers buy additional usage beyond their plan limits.
+
+```ts
+import { creditPack, creditSystem } from "owostack";
+
+const apiCredits = creditSystem("api-credits", {
+  name: "API Credits",
+  features: [apiCalls(1)],
+});
+
+const starterPack = creditPack("starter-pack", {
+  name: "Starter Pack",
+  description: "500 API credits",
+  credits: 500,
+  price: 1000, // $10.00
+  currency: "USD",
+  creditSystem: "api-credits", // Must match a credit system slug
+});
+
+const proPack = creditPack("pro-pack", {
+  name: "Pro Pack",
+  description: "2500 API credits",
+  credits: 2500,
+  price: 3500, // $35.00
+  currency: "USD",
+  creditSystem: "api-credits",
+});
+
+export const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  catalog: [
+    apiCredits,
+    starterPack,
+    proPack,
+    // ... your plans
+  ],
+});
+```
+
+### Parameters
+
+| Parameter             | Type                      | Required | Description                                        |
+| --------------------- | ------------------------- | -------- | -------------------------------------------------- |
+| `slug`                | `string`                  | Yes      | Unique credit pack identifier                      |
+| `config.name`         | `string`                  | Yes      | Human-readable pack name                           |
+| `config.description`  | `string`                  | No       | Pack description shown to customers                |
+| `config.credits`      | `number`                  | Yes      | Number of credits in the pack                      |
+| `config.price`        | `number`                  | Yes      | Price in minor currency units (e.g. 1000 = $10.00) |
+| `config.currency`     | `Currency`                | Yes      | Currency code (`"NGN"`, `"USD"`, etc.)             |
+| `config.creditSystem` | `string`                  | Yes      | Slug of the credit system this pack is tied to     |
+| `config.provider`     | `string`                  | No       | Override the default payment provider              |
+| `config.metadata`     | `Record<string, unknown>` | No       | Custom metadata                                    |
+
+### Methods
+
+Credit packs don't have methods like features do. Instead, they're purchased using the [`addon()`](/sdk/addon) method:
+
+```ts
+// Customer buys a credit pack
+const result = await owo.addon({
+  customer: "user_123",
+  pack: "starter-pack",
+});
+
+if (result.requiresCheckout) {
+  // Redirect to payment
+  res.redirect(result.checkoutUrl!);
+} else {
+  console.log(`Added ${result.credits} credits`);
+  console.log(`New balance: ${result.balance}`);
+}
+```
+
+---
+
 ## `plan(slug, config)`
 
 Create a plan definition for the catalog.
@@ -334,6 +413,7 @@ plan("pro", {
 | `config.description` | `string`                  | No       | Plan description                                             |
 | `config.planGroup`   | `string`                  | No       | Group for upgrade/downgrade logic                            |
 | `config.trialDays`   | `number`                  | No       | Trial period in days                                         |
+| `config.autoEnable`  | `boolean`                 | No       | Auto-assign this plan to new customers (default: `false`)    |
 | `config.metadata`    | `Record<string, unknown>` | No       | Custom metadata                                              |
 
 ---
@@ -379,7 +459,14 @@ npx owo sync [options]
 
 ```ts
 // owo.config.ts
-import { Owostack, metered, boolean, entity, creditSystem, plan } from "owostack";
+import {
+  Owostack,
+  metered,
+  boolean,
+  entity,
+  creditSystem,
+  plan,
+} from "owostack";
 
 const apiCalls = metered("api-calls");
 const aiCredits = creditSystem("ai-credits", {

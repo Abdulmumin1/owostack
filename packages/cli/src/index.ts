@@ -8,6 +8,10 @@ import { runInit } from "./commands/init.js";
 import { runValidate } from "./commands/validate.js";
 import { runConnect } from "./commands/connect.js";
 import { printBrand } from "./lib/brand.js";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const pkg = require("../package.json");
 
 const program = new Command();
 
@@ -15,16 +19,17 @@ printBrand();
 program
   .name("owostack")
   .description("CLI for Owostack billing infrastructure")
-  .version("0.1.0");
+  .version(pkg.version)
+  .option("--prod", "Execute in production environment (default: sandbox)");
 
 program
   .command("sync")
   .description("Push catalog to the API")
   .option("--config <path>", "Path to config file")
   .option("--key <api-key>", "API secret key")
-  .option("--prod", "Execute in both test and live environments")
   .option("--dry-run", "Show what would change without applying")
-  .action(runSync);
+  .option("--yes", "Auto-approve changes without interactive prompt")
+  .action((options) => runSync({ ...options, ...program.opts() }));
 
 program
   .command("pull")
@@ -32,17 +37,15 @@ program
   .option("--config <path>", "Path to config file")
   .option("--key <api-key>", "API secret key")
   .option("--force", "Overwrite existing config file", false)
-  .option("--prod", "Execute in both test and live environments")
   .option("--dry-run", "Show what would change without applying")
-  .action(runPull);
+  .action((options) => runPull({ ...options, ...program.opts() }));
 
 program
   .command("diff")
   .description("Compare local config to dashboard plans")
   .option("--config <path>", "Path to config file")
   .option("--key <api-key>", "API secret key")
-  .option("--prod", "Execute in both test and live environments")
-  .action(runDiff);
+  .action((options) => runDiff({ ...options, ...program.opts() }));
 
 program
   .command("init")
@@ -56,8 +59,7 @@ program
   .command("validate")
   .description("Validate local config without syncing")
   .option("--config <path>", "Path to config file")
-  .option("--prod", "Execute in both test and live environments")
-  .action(runValidate);
+  .action((options) => runValidate({ ...options, ...program.opts() }));
 
 program
   .command("connect")

@@ -6,9 +6,12 @@ import {
   loadOwostackFromConfig,
   resolveConfigPath,
 } from "../lib/loader.js";
-import { fetchPlans } from "../lib/api.js";
+import {
+  fetchPlans,
+  fetchCreditSystems,
+  fetchCreditPacks,
+} from "../lib/api.js";
 import { diffPlans, printDiff } from "../lib/diff.js";
-import { printBrand } from "../lib/brand.js";
 
 interface DiffOptions {
   config?: string;
@@ -28,15 +31,15 @@ export async function runDiff(options: DiffOptions) {
 
   const apiKey = getApiKey(options.key);
   const configSettings = await loadConfigSettings(options.config);
-  const baseUrl = getApiUrl(configSettings.apiUrl);
+  const testUrl = getTestApiUrl(configSettings.environments?.test);
+  const liveUrl = getApiUrl(configSettings.environments?.live);
 
   const s = p.spinner();
 
+  // Default to sandbox environment, prod only with --prod flag
   if (options.prod) {
-    p.log.step(pc.magenta("Production Mode: Comparing both environments"));
-
-    const testUrl = getTestApiUrl(configSettings.environments?.test);
-    const liveUrl = getApiUrl(configSettings.environments?.live);
+    p.log.step(pc.magenta("Production Mode: Comparing with PROD environment"));
+    const apiUrl = `${liveUrl}/api/v1`;
 
     s.start("Loading local configuration...");
     let owo: any;
@@ -52,6 +55,12 @@ export async function runDiff(options: DiffOptions) {
       );
       process.exit(1);
     }
+    if (!owo || !owo._config) {
+      s.stop(pc.red("Invalid configuration"));
+      p.log.error("Config file must export an Owostack instance.");
+      process.exit(1);
+    }
+
     s.stop("Configuration loaded");
 
     const { buildSyncPayload } = (await import("owostack").catch(() => ({
@@ -59,14 +68,26 @@ export async function runDiff(options: DiffOptions) {
     }))) as any;
     const localPayload = buildSyncPayload(owo._config.catalog);
 
-    p.log.step(pc.cyan(`Comparing with TEST: ${testUrl}`));
-    const testPlans = await fetchPlans({ apiKey, apiUrl: `${testUrl}/api/v1` });
-    printDiff(diffPlans(localPayload?.plans ?? [], testPlans));
+    s.start(`Fetching remote catalog from ${pc.dim("prod")}...`);
+    const livePlans = await fetchPlans({ apiKey, apiUrl: apiUrl });
+    const liveCreditSystems = await fetchCreditSystems(apiKey, apiUrl);
+    const liveCreditPacks = await fetchCreditPacks(apiKey, apiUrl);
+    s.stop("Remote catalog fetched");
 
-    p.log.step(pc.cyan(`Comparing with LIVE: ${liveUrl}`));
-    const livePlans = await fetchPlans({ apiKey, apiUrl: `${liveUrl}/api/v1` });
-    printDiff(diffPlans(localPayload?.plans ?? [], livePlans));
+    printDiff(
+      diffPlans(
+        localPayload?.plans ?? [],
+        livePlans,
+        localPayload?.creditSystems ?? [],
+        liveCreditSystems,
+        localPayload?.creditPacks ?? [],
+        liveCreditPacks,
+      ),
+    );
   } else {
+    p.log.step(pc.cyan("Sandbox Mode: Comparing with SANDBOX environment"));
+    const apiUrl = `${testUrl}/api/v1`;
+
     s.start("Loading local configuration...");
     let owo: any;
     try {
@@ -81,6 +102,12 @@ export async function runDiff(options: DiffOptions) {
       );
       process.exit(1);
     }
+    if (!owo || !owo._config) {
+      s.stop(pc.red("Invalid configuration"));
+      p.log.error("Config file must export an Owostack instance.");
+      process.exit(1);
+    }
+
     s.stop("Configuration loaded");
 
     const { buildSyncPayload } = (await import("owostack").catch(() => ({
@@ -88,14 +115,25 @@ export async function runDiff(options: DiffOptions) {
     }))) as any;
     const localPayload = buildSyncPayload(owo._config.catalog);
 
-    s.start(`Fetching remote plans from ${pc.dim(baseUrl)}...`);
+    s.start(`Fetching remote catalog from ${pc.dim("sandbox")}...`);
     const remotePlans = await fetchPlans({
       apiKey,
-      apiUrl: `${baseUrl}/api/v1`,
+      apiUrl: apiUrl,
     });
-    s.stop("Remote plans fetched");
+    const remoteCreditSystems = await fetchCreditSystems(apiKey, apiUrl);
+    const remoteCreditPacks = await fetchCreditPacks(apiKey, apiUrl);
+    s.stop("Remote catalog fetched");
 
-    printDiff(diffPlans(localPayload?.plans ?? [], remotePlans));
+    printDiff(
+      diffPlans(
+        localPayload?.plans ?? [],
+        remotePlans,
+        localPayload?.creditSystems ?? [],
+        remoteCreditSystems,
+        localPayload?.creditPacks ?? [],
+        remoteCreditPacks,
+      ),
+    );
   }
 
   p.outro(pc.green("Diff complete ✨"));

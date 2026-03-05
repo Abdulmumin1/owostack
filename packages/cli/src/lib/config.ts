@@ -13,7 +13,7 @@ export interface GlobalConfig {
 
 export function getApiUrl(configUrl?: string): string {
   return (
-    process.env.OWOSTACK_API_URL || configUrl || "https://api.owostack.com"
+    process.env.OWOSTACK_API_URL || configUrl || "https://sandbox.owostack.com"
   );
 }
 

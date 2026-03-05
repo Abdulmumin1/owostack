@@ -83,11 +83,9 @@ export async function runInit(options: InitOptions) {
   s.start("Generating project configuration...");
 
   try {
-    const plans = await fetchPlans({ apiKey, apiUrl: `${getApiUrl()}/api/v1` });
-    const creditSystems = await fetchCreditSystems(
-      apiKey,
-      `${getApiUrl()}/api/v1`,
-    );
+    const apiUrl = `${getApiUrl()}/api/v1`;
+    const plans = await fetchPlans({ apiKey, apiUrl: apiUrl });
+    const creditSystems = await fetchCreditSystems(apiKey, apiUrl);
 
     // Determine format
     const ext = extname(fullPath);
