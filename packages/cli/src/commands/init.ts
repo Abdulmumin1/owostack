@@ -105,6 +105,7 @@ export async function runInit(options: InitOptions) {
     const configContent = generateConfig(
       plans,
       creditSystems,
+      [],
       undefined,
       format,
     );

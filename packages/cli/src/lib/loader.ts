@@ -63,7 +63,7 @@ export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
     if (isTs) {
       console.error(`  Example owo.config.ts:\n`);
       console.error(
-        `    import { Owostack, metered, boolean, plan } from "owostack";`,
+        `    import { Owostack, metered, boolean, entity, creditSystem, creditPack, plan } from "owostack";`,
       );
       console.error(
         `    export default new Owostack({ secretKey: "...", catalog: [...] });\n`,
@@ -71,7 +71,7 @@ export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
     } else {
       console.error(`  Example owo.config.js:\n`);
       console.error(
-        `    const { Owostack, metered, boolean, plan } = require("owostack");`,
+        `    const { Owostack, metered, boolean, entity, creditSystem, creditPack, plan } = require("owostack");`,
       );
       console.error(
         `    module.exports = new Owostack({ secretKey: "...", catalog: [...] });\n`,

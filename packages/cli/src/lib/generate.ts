@@ -76,9 +76,6 @@ export function generateConfig(
 
   // Build a map of credit systems by slug
   const creditSystemSlugs = new Set(creditSystems.map((cs) => cs.slug));
-  const creditSystemBySlug = new Map(creditSystems.map((cs) => [cs.slug, cs]));
-
-  // ... (rest of logic mostly same, but need to adjust imports and exports)
 
   // Collect all features, excluding credit system pseudo-features
   const featuresBySlug = new Map<
@@ -113,7 +110,16 @@ export function generateConfig(
     }
   }
 
-  const usedNames = new Set<string>();
+  const usedNames = new Set<string>([
+    "Owostack",
+    "metered",
+    "boolean",
+    "entity",
+    "creditSystem",
+    "creditPack",
+    "plan",
+    "owo",
+  ]);
   const featureVars = new Map<string, string>();
 
   const featureLines: string[] = [];
@@ -131,7 +137,6 @@ export function generateConfig(
 
     if (isCjs) {
       featureLines.push(`const ${varName} = ${decl};`);
-      featureLines.push(`exports.${varName} = ${varName};`);
     } else {
       featureLines.push(`export const ${varName} = ${decl};`);
     }
@@ -145,27 +150,21 @@ export function generateConfig(
     const varName = slugToIdentifier(cs.slug, usedNames);
     creditSystemVars.set(cs.slug, varName);
 
-    const nameArg = cs.name ? `name: ${JSON.stringify(cs.name)}` : "";
-    const descArg = cs.description
-      ? `description: ${JSON.stringify(cs.description)}`
-      : "";
+    const configLines: string[] = [];
+    if (cs.name) configLines.push(`name: ${JSON.stringify(cs.name)}`);
+    if (cs.description)
+      configLines.push(`description: ${JSON.stringify(cs.description)}`);
 
     const featureEntries = (cs.features || []).map((f: any) => {
       const childVar = featureVars.get(f.feature) || f.feature;
       return `${childVar}(${f.creditCost})`;
     });
+    configLines.push(`features: [${featureEntries.join(", ")}]`);
 
-    const optsParts = [
-      nameArg,
-      descArg,
-      `features: [${featureEntries.join(", ")}]`,
-    ].filter(Boolean);
-
-    const decl = `creditSystem(${JSON.stringify(cs.slug)}, { ${optsParts.join(", ")} })`;
+    const decl = `creditSystem(${JSON.stringify(cs.slug)}, {\n  ${configLines.join(",\n  ")}\n})`;
 
     if (isCjs) {
       creditSystemLines.push(`const ${varName} = ${decl};`);
-      creditSystemLines.push(`exports.${varName} = ${varName};`);
     } else {
       creditSystemLines.push(`export const ${varName} = ${decl};`);
     }
@@ -312,10 +311,36 @@ export function generateConfig(
   const tsCheck = !isTs ? `// @ts-check` : "";
   const jsDoc = !isTs ? `/** @type {import('owostack').Owostack} */` : "";
 
-  const owoDecl = isCjs ? "exports.owo =" : "export const owo =";
+  const owoDecl = isCjs ? "const owo =" : "export const owo =";
   const secretKey = isTs
     ? "process.env.OWOSTACK_SECRET_KEY!"
     : "process.env.OWOSTACK_SECRET_KEY";
+
+  const catalogEntries = [...planLines, ...creditPackLines];
+
+  const footer = isCjs
+    ? `module.exports = { owo, ${Array.from(usedNames)
+        .filter(
+          (n) =>
+            ![
+              "Owostack",
+              "metered",
+              "boolean",
+              "entity",
+              "creditSystem",
+              "creditPack",
+              "plan",
+              "owo",
+            ].includes(n),
+        )
+        .join(", ")} };`.replace(",  };", " };")
+    : "";
+
+  // Clean up footer if no extra exports
+  const finalFooter =
+    isCjs && footer.includes("{ owo,  }")
+      ? "module.exports = { owo };"
+      : footer;
 
   return [
     tsCheck,
@@ -323,18 +348,17 @@ export function generateConfig(
     ``,
     ...featureLines,
     ...(hasCreditSystems ? ["", ...creditSystemLines] : []),
-    ...(hasCreditPacks ? ["", ...creditPackLines] : []),
     ``,
     jsDoc,
     `${owoDecl} new Owostack({`,
     `  secretKey: ${secretKey},`,
     providerLine,
     `  catalog: [`,
-    `    ${planLines.join(",\n    ")}${hasCreditPacks ? "," : ""}`,
-    ...(hasCreditPacks ? [`    ${creditPackLines.join(",\n    ")}`] : []),
+    `    ${catalogEntries.join(",\n    ")}`,
     `  ],`,
     `});`,
     ``,
+    finalFooter,
   ]
     .filter(Boolean)
     .join("\n");
