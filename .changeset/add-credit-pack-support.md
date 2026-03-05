@@ -2,7 +2,6 @@
 "owostack": minor
 "owosk": minor
 "@owostack/types": minor
-"@owostack/db": patch
 ---
 
 Added comprehensive support for managing Credit Packs via SDK and CLI.
