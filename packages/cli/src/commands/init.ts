@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join, resolve, isAbsolute, extname } from "node:path";
 import { getApiKey, getApiUrl, getDashboardUrl } from "../lib/config.js";
@@ -18,12 +18,7 @@ interface InitOptions {
 function getProjectInfo() {
   const cwd = process.cwd();
   const isTs = existsSync(join(cwd, "tsconfig.json"));
-  let isEsm = false;
-  try {
-    const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
-    isEsm = pkg.type === "module";
-  } catch {}
-  return { isTs, isEsm };
+  return { isTs };
 }
 
 export async function runInit(options: InitOptions) {
@@ -89,7 +84,6 @@ export async function runInit(options: InitOptions) {
 
     // Determine format
     const ext = extname(fullPath);
-    const { isEsm } = getProjectInfo();
     let format: ConfigFormat = "ts";
 
     if (ext === ".ts" || ext === ".mts" || ext === ".cts") {
@@ -97,9 +91,11 @@ export async function runInit(options: InitOptions) {
     } else if (ext === ".mjs") {
       format = "esm";
     } else if (ext === ".cjs") {
-      format = "cjs";
+      throw new Error(
+        "CommonJS config files are not supported. Use owo.config.js or owo.config.ts.",
+      );
     } else if (ext === ".js") {
-      format = isEsm ? "esm" : "cjs";
+      format = "esm";
     }
 
     const configContent = generateConfig(
@@ -119,9 +115,7 @@ export async function runInit(options: InitOptions) {
     );
 
     p.outro(
-      pc.cyan(
-        `Next step: Run ${pc.bold("owosk sync")} to apply your catalog.`,
-      ),
+      pc.cyan(`Next step: Run ${pc.bold("owosk sync")} to apply your catalog.`),
     );
   } catch (e: any) {
     s.stop(pc.red("Initialization failed"));

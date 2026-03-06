@@ -62,7 +62,7 @@ function slugToIdentifier(slug: string, used: Set<string>): string {
   return candidate;
 }
 
-export type ConfigFormat = "ts" | "esm" | "cjs";
+export type ConfigFormat = "ts" | "esm";
 
 export function generateConfig(
   plans: any[],
@@ -72,7 +72,6 @@ export function generateConfig(
   format: ConfigFormat = "ts",
 ): string {
   const isTs = format === "ts";
-  const isCjs = format === "cjs";
 
   // Build a map of credit systems by slug
   const creditSystemSlugs = new Set(creditSystems.map((cs) => cs.slug));
@@ -135,11 +134,7 @@ export function generateConfig(
       feature.type === "boolean" ? "boolean" : isEntity ? "entity" : "metered";
     const decl = `${builder}(${JSON.stringify(feature.slug)}${nameArg})`;
 
-    if (isCjs) {
-      featureLines.push(`const ${varName} = ${decl};`);
-    } else {
-      featureLines.push(`export const ${varName} = ${decl};`);
-    }
+    featureLines.push(`export const ${varName} = ${decl};`);
   }
 
   // Generate credit system definitions
@@ -163,11 +158,7 @@ export function generateConfig(
 
     const decl = `creditSystem(${JSON.stringify(cs.slug)}, {\n  ${configLines.join(",\n  ")}\n})`;
 
-    if (isCjs) {
-      creditSystemLines.push(`const ${varName} = ${decl};`);
-    } else {
-      creditSystemLines.push(`export const ${varName} = ${decl};`);
-    }
+    creditSystemLines.push(`export const ${varName} = ${decl};`);
   }
 
   const planLines: string[] = [];
@@ -304,43 +295,17 @@ export function generateConfig(
   if (hasEntities) importParts.push("entity");
   importParts.push("creditSystem", "creditPack", "plan");
 
-  const imports = isCjs
-    ? `const { ${importParts.join(", ")} } = require("owostack");`
-    : `import { ${importParts.join(", ")} } from "owostack";`;
+  const imports = `import { ${importParts.join(", ")} } from "owostack";`;
 
   const tsCheck = !isTs ? `// @ts-check` : "";
   const jsDoc = !isTs ? `/** @type {import('owostack').Owostack} */` : "";
 
-  const owoDecl = isCjs ? "const owo =" : "export const owo =";
+  const owoDecl = "export const owo =";
   const secretKey = isTs
     ? "process.env.OWOSTACK_SECRET_KEY!"
     : "process.env.OWOSTACK_SECRET_KEY";
 
   const catalogEntries = [...planLines, ...creditPackLines];
-
-  const footer = isCjs
-    ? `module.exports = { owo, ${Array.from(usedNames)
-        .filter(
-          (n) =>
-            ![
-              "Owostack",
-              "metered",
-              "boolean",
-              "entity",
-              "creditSystem",
-              "creditPack",
-              "plan",
-              "owo",
-            ].includes(n),
-        )
-        .join(", ")} };`.replace(",  };", " };")
-    : "";
-
-  // Clean up footer if no extra exports
-  const finalFooter =
-    isCjs && footer.includes("{ owo,  }")
-      ? "module.exports = { owo };"
-      : footer;
 
   return [
     tsCheck,
@@ -357,8 +322,6 @@ export function generateConfig(
     `    ${catalogEntries.join(",\n    ")}`,
     `  ],`,
     `});`,
-    ``,
-    finalFooter,
   ]
     .filter(Boolean)
     .join("\n");
