@@ -1,5 +1,16 @@
 # owosk
 
+## 0.2.2
+
+### Patch Changes
+
+- [#50](https://github.com/Abdulmumin1/owostack/pull/50) [`93796bb`](https://github.com/Abdulmumin1/owostack/commit/93796bb6d7710fed803ff89ff8b8bde56f4d183b) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Fix JavaScript config generation and loading in the CLI.
+  - Generate `owo.config.js` as ESM with `import` and `export` syntax.
+  - Stop emitting CommonJS `require()` and `module.exports` in generated JavaScript configs.
+  - Reject `.cjs` config targets and keep `.js`/`.ts` as the supported defaults.
+  - Improve config loading so CLI commands can resolve `owostack` consistently in local workspace usage.
+  - Update CLI docs and loader examples to match the ESM `owo.config.js` format.
+
 ## 0.2.1
 
 ### Patch Changes
