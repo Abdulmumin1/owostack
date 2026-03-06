@@ -1,6 +1,6 @@
 {
   "name": "owosk",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "CLI for Owostack - sync catalog, manage billing infrastructure",
   "license": "Apache-2.0",
   "repository": {
