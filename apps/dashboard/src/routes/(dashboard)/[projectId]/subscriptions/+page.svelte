@@ -117,6 +117,23 @@
     return formatCurrency(amount, currency);
   }
 
+  function getHealthMessage(sub: any): string {
+    const reasons = Array.isArray(sub?.health?.reasons) ? sub.health.reasons : [];
+    if (
+      reasons.includes("period_end_stale") &&
+      reasons.includes("provider_link_missing")
+    ) {
+      return "Billing period is stale and provider linkage is missing.";
+    }
+    if (reasons.includes("period_end_stale")) {
+      return "Billing period ended and has not reconciled yet.";
+    }
+    if (reasons.includes("provider_link_missing")) {
+      return "Provider linkage is missing for an active paid subscription.";
+    }
+    return "Subscription needs billing review.";
+  }
+
   // Generate page numbers to display
   function getPageNumbers(current: number, total: number): (number | string)[] {
     if (total <= 7) {
@@ -342,13 +359,24 @@
                 <ProviderBadge providerId={sub.providerId} />
               </td>
               <td class="px-6 py-4">
-                <span
-                  class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border {getStatusColor(
-                    sub.status,
-                  )}"
-                >
-                  {sub.status}
-                </span>
+                <div class="flex items-center gap-2">
+                  <span
+                    class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border {getStatusColor(
+                      sub.status,
+                    )}"
+                  >
+                    {sub.status}
+                  </span>
+                  {#if sub.health?.requiresAction}
+                    <span
+                      class="inline-flex items-center gap-1 text-[9px] uppercase tracking-wider font-bold text-warning"
+                      title={getHealthMessage(sub)}
+                    >
+                      <WarningCircle size={11} weight="fill" />
+                      review
+                    </span>
+                  {/if}
+                </div>
               </td>
               <td class="px-6 py-4">
                 <div class="flex items-center gap-2 text-xs text-text-dim">

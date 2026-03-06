@@ -7,12 +7,14 @@ const DEFAULT_TTL = 60; // seconds
 const FEATURE_TTL = 300; // 5 min — rarely changes, invalidated on dashboard edits
 const PLAN_FEATURE_TTL = 300; // 5 min — rarely changes, invalidated on plan edits
 const SUBSCRIPTION_TTL = 120; // 2 min — more dynamic, invalidated on mutations
+const MANUAL_ENTITLEMENT_TTL = 30; // 30s — short to minimize stale override windows
 
 type CacheKey =
   | `org:${string}:customer:${string}`
   | `org:${string}:feature:${string}`
   | `org:${string}:subscriptions:${string}`
-  | `org:${string}:planFeatures:${string}`;
+  | `org:${string}:planFeatures:${string}`
+  | `org:${string}:manualEntitlement:${string}`;
 
 export class EntitlementCache {
   constructor(private kv: KVNamespace) {}
@@ -142,6 +144,45 @@ export class EntitlementCache {
   // ==========================================================================
   // Dashboard Cache
   // ==========================================================================
+
+  async getManualEntitlement<T>(
+    orgId: string,
+    customerId: string,
+    featureId: string,
+  ): Promise<T | null | undefined> {
+    const cacheKey = `${customerId}:${featureId}`;
+    const cached = await this.kv.get(
+      this.key("manualEntitlement", orgId, cacheKey),
+      "json",
+    );
+    if (!cached) return undefined;
+    const payload = cached as { value: T | null };
+    return payload.value;
+  }
+
+  async setManualEntitlement<T>(
+    orgId: string,
+    customerId: string,
+    featureId: string,
+    data: T | null,
+    ttl = MANUAL_ENTITLEMENT_TTL,
+  ): Promise<void> {
+    const cacheKey = `${customerId}:${featureId}`;
+    await this.kv.put(
+      this.key("manualEntitlement", orgId, cacheKey),
+      JSON.stringify({ value: data }),
+      { expirationTtl: ttl },
+    );
+  }
+
+  async invalidateManualEntitlement(
+    orgId: string,
+    customerId: string,
+    featureId: string,
+  ): Promise<void> {
+    const cacheKey = `${customerId}:${featureId}`;
+    await this.kv.delete(this.key("manualEntitlement", orgId, cacheKey));
+  }
 
   async invalidateDashboardCustomer(customerId: string): Promise<void> {
     await this.kv.delete(`dashboard:customer:${customerId}`);

@@ -20,6 +20,7 @@ import {
   getOrgOverageSettings,
   getUnbilledOverageAmount,
 } from "../../lib/overage-guards";
+import { isPaidActivePastGracePeriod } from "../../lib/subscription-health";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -205,7 +206,10 @@ app.use("*", async (c, next) => {
   const apiKey = authHeader.split(" ")[1];
   const authDb = c.get("authDb");
 
-  const keyRecord = await verifyApiKey(authDb, apiKey);
+  const keyRecord = await verifyApiKey(authDb, apiKey, {
+    cache: c.env.CACHE_SHARED ?? c.env.CACHE,
+    waitUntil: (promise) => c.executionCtx.waitUntil(promise),
+  });
   if (!keyRecord) {
     return c.json({ success: false, error: "Invalid API Key" }, 401);
   }
@@ -300,6 +304,8 @@ async function resolveCreditSystem(
   featureId: string,
   planIds: string[],
   subscriptions: any[],
+  customerId: string,
+  now: number,
 ): Promise<CreditSystemMapping | null> {
   if (planIds.length === 0) return null;
 
@@ -319,24 +325,83 @@ async function resolveCreditSystem(
 
   if (mappedSystems.length === 0) return null;
 
-  // 2. For each credit system, check if the plan has a plan_feature for its feature
+  const creditSystemIds = [
+    ...new Set(
+      mappedSystems.map((ms: { creditSystemId: string }) => ms.creditSystemId),
+    ),
+  ];
+  const subscriptionByPlanId = new Map(
+    subscriptions.map((sub: { planId: string }) => [sub.planId, sub]),
+  );
+
+  // 2. Fetch all manual overrides for mapped credit systems in one query
+  const manualEntitlements = await db.query.entitlements.findMany({
+    where: and(
+      eq(schema.entitlements.customerId, customerId),
+      eq(schema.entitlements.source, "manual"),
+      inArray(schema.entitlements.featureId, creditSystemIds),
+      or(
+        sql`${schema.entitlements.expiresAt} IS NULL`,
+        sql`${schema.entitlements.expiresAt} > ${now}`,
+      ),
+    ),
+  });
+  const manualByCreditSystemId = new Map(
+    manualEntitlements.map((row: { featureId: string }) => [row.featureId, row]),
+  );
+
+  // 3. Fetch all plan_features for mapped credit systems in one query
+  const csPlanFeatures = await db.query.planFeatures.findMany({
+    where: and(
+      inArray(schema.planFeatures.planId, planIds),
+      inArray(schema.planFeatures.featureId, creditSystemIds),
+    ),
+  });
+  const planFeaturesByCreditSystemId = new Map<string, any[]>();
+  for (const pf of csPlanFeatures) {
+    const featurePlanFeatures = planFeaturesByCreditSystemId.get(pf.featureId);
+    if (featurePlanFeatures) {
+      featurePlanFeatures.push(pf);
+      continue;
+    }
+    planFeaturesByCreditSystemId.set(pf.featureId, [pf]);
+  }
+
+  // 4. Preserve deterministic order from mapped systems
   for (const ms of mappedSystems) {
     const csFeatureId = ms.creditSystemId; // credit system ID = feature ID (same row)
 
-    const csPlanFeatures = await db.query.planFeatures.findMany({
-      where: and(
-        sql`${schema.planFeatures.planId} IN (${sql.join(
-          planIds.map((id: string) => sql`${id}`),
-          sql`, `,
-        )})`,
-        eq(schema.planFeatures.featureId, csFeatureId),
-      ),
-    });
+    // Check for manual override on the credit system feature FIRST
+    const manualEntitlement = manualByCreditSystemId.get(csFeatureId);
 
-    for (const pf of csPlanFeatures) {
-      const sub = subscriptions.find(
-        (s: { planId: string }) => s.planId === pf.planId,
-      );
+    if (manualEntitlement) {
+      // Found a manual override on the credit system!
+      const sub = subscriptions[0] || {
+        id: "manual",
+        status: "active",
+        currentPeriodStart: now - 30 * 24 * 60 * 60 * 1000,
+        currentPeriodEnd: now + 30 * 24 * 60 * 60 * 1000,
+        plan: { name: "Manual Override" },
+      };
+      return {
+        creditSystemId: csFeatureId,
+        creditSystemSlug: ms.creditSystemSlug,
+        costPerUnit: ms.cost,
+        planFeature: {
+          ...manualEntitlement,
+          planId: (sub as any).planId || "manual",
+          usageModel: "included",
+        },
+        subscription: sub,
+      };
+    }
+
+    // No manual override, check plan features
+    const featurePlanFeatures =
+      planFeaturesByCreditSystemId.get(csFeatureId) ?? [];
+
+    for (const pf of featurePlanFeatures) {
+      const sub = subscriptionByPlanId.get(pf.planId);
       if (sub) {
         return {
           creditSystemId: csFeatureId,
@@ -350,6 +415,53 @@ async function resolveCreditSystem(
   }
 
   return null;
+}
+
+async function getManualEntitlementForFeature(
+  c: any,
+  db: any,
+  cache: EntitlementCache | null,
+  organizationId: string,
+  customerId: string,
+  featureId: string,
+  now: number,
+) {
+  if (cache) {
+    const cached = await cache.getManualEntitlement<
+      typeof schema.entitlements.$inferSelect
+    >(organizationId, customerId, featureId);
+    if (cached !== undefined) {
+      return cached;
+    }
+  }
+
+  const manualEntitlement =
+    (await db.query.entitlements.findFirst({
+      where: and(
+        eq(schema.entitlements.customerId, customerId),
+        eq(schema.entitlements.featureId, featureId),
+        eq(schema.entitlements.source, "manual"),
+        or(
+          sql`${schema.entitlements.expiresAt} IS NULL`,
+          sql`${schema.entitlements.expiresAt} > ${now}`,
+        ),
+      ),
+    })) ?? null;
+
+  if (cache) {
+    scheduleCacheOp(
+      c,
+      cache.setManualEntitlement(
+        organizationId,
+        customerId,
+        featureId,
+        manualEntitlement,
+      ),
+      "setManualEntitlement(/check)",
+    );
+  }
+
+  return manualEntitlement;
 }
 
 // Check Access
@@ -411,9 +523,19 @@ app.post("/check", async (c) => {
           })) ?? null;
 
         if (f && cache) {
+          const featureCacheKeys = [
+            featureId,
+            f.id,
+            f.slug,
+          ].filter((key): key is string => !!key && key.length > 0);
+          const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
           scheduleCacheOp(
             c,
-            cache.setFeature(organizationId, featureId, f),
+            Promise.all(
+              uniqueFeatureCacheKeys.map((key) =>
+                cache.setFeature(organizationId, key, f),
+              ),
+            ),
             "setFeature(/check)",
           );
         }
@@ -452,57 +574,73 @@ app.post("/check", async (c) => {
     });
   }
 
-  // 3 & 4. Validate Entity and fetch Subscriptions in parallel
+  // ---------------------------------------------------------------------------
+  // 3 & 4. Check for Manual Overrides FIRST, then fetch Subscriptions
+  // ---------------------------------------------------------------------------
+  // Overrides take precedence over plan features - check them first
+  const now = Date.now();
   const subsCacheKey = customer.id;
-  const [entityValid, subscriptionsResult] = await Promise.all([
-    // 3. Validate Entity (if provided, must exist)
-    entity
-      ? db.query.entities.findFirst({
-          where: and(
-            eq(schema.entities.customerId, customer.id),
-            eq(schema.entities.featureId, feature.id),
-            eq(schema.entities.entityId, entity),
-            or(
-              eq(schema.entities.status, "active"),
-              eq(schema.entities.status, "pending_removal"),
+
+  const [entityValid, subscriptionsResult, manualEntitlement] =
+    await Promise.all([
+      // Validate Entity (if provided, must exist)
+      entity
+        ? db.query.entities.findFirst({
+            where: and(
+              eq(schema.entities.customerId, customer.id),
+              eq(schema.entities.featureId, feature.id),
+              eq(schema.entities.entityId, entity),
+              or(
+                eq(schema.entities.status, "active"),
+                eq(schema.entities.status, "pending_removal"),
+              ),
             ),
-          ),
-        })
-      : true,
-    // 4. Check Subscription & Plans (cache-first, then DB)
-    (async () => {
-      let subs = cache
-        ? await cache.getSubscriptions<
-            Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
-          >(organizationId, subsCacheKey)
-        : null;
+          })
+        : true,
+      // Check Subscription & Plans (cache-first, then DB)
+      (async () => {
+        let subs = cache
+          ? await cache.getSubscriptions<
+              Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
+            >(organizationId, subsCacheKey)
+          : null;
 
-      if (!subs) {
-        subs = await db.query.subscriptions.findMany({
-          where: and(
-            eq(schema.subscriptions.customerId, customer.id),
-            inArray(schema.subscriptions.status, [
-              "active",
-              "trialing",
-              "pending_cancel",
-            ]),
-          ),
-          with: {
-            plan: true,
-          },
-        });
+        if (!subs) {
+          subs = await db.query.subscriptions.findMany({
+            where: and(
+              eq(schema.subscriptions.customerId, customer.id),
+              inArray(schema.subscriptions.status, [
+                "active",
+                "trialing",
+                "pending_cancel",
+              ]),
+            ),
+            with: {
+              plan: true,
+            },
+          });
 
-        if (subs.length > 0 && cache) {
-          scheduleCacheOp(
-            c,
-            cache.setSubscriptions(organizationId, subsCacheKey, subs),
-            "setSubscriptions(/check)",
-          );
+          if (cache) {
+            scheduleCacheOp(
+              c,
+              cache.setSubscriptions(organizationId, subsCacheKey, subs),
+              "setSubscriptions(/check)",
+            );
+          }
         }
-      }
-      return subs;
-    })(),
-  ]);
+        return subs;
+      })(),
+      // Check for manual entitlement override (runs in parallel)
+      getManualEntitlementForFeature(
+        c,
+        db,
+        cache,
+        organizationId,
+        customer.id,
+        feature.id,
+        now,
+      ),
+    ]);
 
   if (entity && !entityValid) {
     return c.json({
@@ -522,9 +660,9 @@ app.post("/check", async (c) => {
   let subscriptions = subscriptionsResult;
 
   // Filter out expired trialing subscriptions and scheduled cancellations past their effective date
-  const now = Date.now();
   const expiredTrialIds: string[] = [];
   const expiredCancelIds: string[] = [];
+  const stalePaidPeriodIds: string[] = [];
   subscriptions = subscriptions.filter((s: any) => {
     if (s.status === "trialing") {
       const trialEnd = s.currentPeriodEnd;
@@ -540,6 +678,19 @@ app.post("/check", async (c) => {
     // Scheduled cancellation past effective date — customer should lose access
     if (s.cancelAt && s.cancelAt < now && !s.canceledAt) {
       expiredCancelIds.push(s.id);
+      return false;
+    }
+    if (
+      isPaidActivePastGracePeriod(
+        {
+          status: s.status,
+          currentPeriodEnd: s.currentPeriodEnd,
+          planType: s.plan?.type,
+        },
+        now,
+      )
+    ) {
+      stalePaidPeriodIds.push(s.id);
       return false;
     }
     return true;
@@ -562,7 +713,20 @@ app.post("/check", async (c) => {
         .where(inArray(schema.subscriptions.id, expiredCancelIds)),
     );
   }
-  if (expiredTrialIds.length > 0 || expiredCancelIds.length > 0) {
+  if (stalePaidPeriodIds.length > 0) {
+    // Fire-and-forget: force stale paid subscriptions out of the active set
+    c.executionCtx.waitUntil(
+      db
+        .update(schema.subscriptions)
+        .set({ status: "past_due", updatedAt: now })
+        .where(inArray(schema.subscriptions.id, stalePaidPeriodIds)),
+    );
+  }
+  if (
+    expiredTrialIds.length > 0 ||
+    expiredCancelIds.length > 0 ||
+    stalePaidPeriodIds.length > 0
+  ) {
     // Invalidate cache so next request gets fresh data
     if (cache) {
       scheduleCacheOp(
@@ -600,15 +764,12 @@ app.post("/check", async (c) => {
   if (!planFeatures) {
     planFeatures = await db.query.planFeatures.findMany({
       where: and(
-        sql`${schema.planFeatures.planId} IN (${sql.join(
-          planIds.map((id: string) => sql`${id}`),
-          sql`, `,
-        )})`,
+        inArray(schema.planFeatures.planId, planIds),
         eq(schema.planFeatures.featureId, feature.id),
       ),
     });
 
-    if (planFeatures.length > 0 && cache) {
+    if (cache) {
       scheduleCacheOp(
         c,
         cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures),
@@ -619,31 +780,51 @@ app.post("/check", async (c) => {
 
   // Find the first subscription that has a matching planFeature
   let accessGrantingSubscription: (typeof subscriptions)[number] | null = null;
-  let accessGrantingPlanFeature: (typeof planFeatures)[number] | null = null;
+  let accessGrantingPlanFeature: any = null;
   let creditMapping: CreditSystemMapping | null = null;
 
-  for (const pf of planFeatures) {
-    const sub = subscriptions.find(
-      (s: { planId: string }) => s.planId === pf.planId,
-    );
-    if (sub) {
-      accessGrantingSubscription = sub;
-      accessGrantingPlanFeature = pf;
-      break;
+  // Check for manual override FIRST - it takes precedence over plan features
+  if (manualEntitlement) {
+    // Found a manual override! Use it instead of plan feature
+    accessGrantingSubscription = subscriptions[0] || {
+      id: "manual",
+      status: "active",
+      currentPeriodStart: now - 30 * 24 * 60 * 60 * 1000,
+      currentPeriodEnd: now + 30 * 24 * 60 * 60 * 1000,
+      plan: { name: "Manual Override" },
+    };
+    accessGrantingPlanFeature = {
+      ...manualEntitlement,
+      planId: (accessGrantingSubscription as any).planId || "manual",
+      usageModel: "included",
+    };
+  } else {
+    // No manual override, check plan features
+    for (const pf of planFeatures) {
+      const sub = subscriptions.find(
+        (s: { planId: string }) => s.planId === pf.planId,
+      );
+      if (sub) {
+        accessGrantingSubscription = sub;
+        accessGrantingPlanFeature = pf;
+        break;
+      }
     }
-  }
 
-  // Credit system fallback: feature may belong to a credit system pool
-  if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
-    creditMapping = await resolveCreditSystem(
-      db,
-      feature.id,
-      planIds,
-      subscriptions,
-    );
-    if (creditMapping) {
-      accessGrantingSubscription = creditMapping.subscription;
-      accessGrantingPlanFeature = creditMapping.planFeature;
+    // Credit system fallback: feature may belong to a credit system pool
+    if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
+      creditMapping = await resolveCreditSystem(
+        db,
+        feature.id,
+        planIds,
+        subscriptions,
+        customer.id,
+        now,
+      );
+      if (creditMapping) {
+        accessGrantingSubscription = creditMapping.subscription;
+        accessGrantingPlanFeature = creditMapping.planFeature;
+      }
     }
   }
 
@@ -1398,6 +1579,7 @@ app.post("/track", async (c) => {
   const db = c.get("db");
   const organizationId = c.get("organizationId");
   const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
+  const now = Date.now();
 
   if (!organizationId) {
     return c.json(
@@ -1437,9 +1619,19 @@ app.post("/track", async (c) => {
           })) ?? null;
 
         if (f && cache) {
+          const featureCacheKeys = [
+            featureId,
+            f.id,
+            f.slug,
+          ].filter((key): key is string => !!key && key.length > 0);
+          const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
           scheduleCacheOp(
             c,
-            cache.setFeature(organizationId, featureId, f),
+            Promise.all(
+              uniqueFeatureCacheKeys.map((key) =>
+                cache.setFeature(organizationId, key, f),
+              ),
+            ),
             "setFeature(/track)",
           );
         }
@@ -1523,7 +1715,7 @@ app.post("/track", async (c) => {
           },
         });
 
-        if (subs.length > 0 && cache) {
+        if (cache) {
           scheduleCacheOp(
             c,
             cache.setSubscriptions(organizationId, subsCacheKey, subs),
@@ -1560,6 +1752,7 @@ app.post("/track", async (c) => {
   const trackNow = Date.now();
   const trackExpiredTrialIds: string[] = [];
   const trackExpiredCancelIds: string[] = [];
+  const trackStalePaidPeriodIds: string[] = [];
   subscriptions = subscriptions.filter((s: any) => {
     if (s.status === "trialing") {
       const trialEnd = s.currentPeriodEnd;
@@ -1574,6 +1767,19 @@ app.post("/track", async (c) => {
     }
     if (s.cancelAt && s.cancelAt < trackNow && !s.canceledAt) {
       trackExpiredCancelIds.push(s.id);
+      return false;
+    }
+    if (
+      isPaidActivePastGracePeriod(
+        {
+          status: s.status,
+          currentPeriodEnd: s.currentPeriodEnd,
+          planType: s.plan?.type,
+        },
+        trackNow,
+      )
+    ) {
+      trackStalePaidPeriodIds.push(s.id);
       return false;
     }
     return true;
@@ -1594,7 +1800,19 @@ app.post("/track", async (c) => {
         .where(inArray(schema.subscriptions.id, trackExpiredCancelIds)),
     );
   }
-  if (trackExpiredTrialIds.length > 0 || trackExpiredCancelIds.length > 0) {
+  if (trackStalePaidPeriodIds.length > 0) {
+    c.executionCtx.waitUntil(
+      db
+        .update(schema.subscriptions)
+        .set({ status: "past_due", updatedAt: trackNow })
+        .where(inArray(schema.subscriptions.id, trackStalePaidPeriodIds)),
+    );
+  }
+  if (
+    trackExpiredTrialIds.length > 0 ||
+    trackExpiredCancelIds.length > 0 ||
+    trackStalePaidPeriodIds.length > 0
+  ) {
     if (cache) {
       scheduleCacheOp(
         c,
@@ -1636,15 +1854,12 @@ app.post("/track", async (c) => {
   if (!planFeatures) {
     planFeatures = await db.query.planFeatures.findMany({
       where: and(
-        sql`${schema.planFeatures.planId} IN (${sql.join(
-          planIds.map((id: string) => sql`${id}`),
-          sql`, `,
-        )})`,
+        inArray(schema.planFeatures.planId, planIds),
         eq(schema.planFeatures.featureId, feature.id),
       ),
     });
 
-    if (planFeatures.length > 0 && cache) {
+    if (cache) {
       scheduleCacheOp(
         c,
         cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures),
@@ -1675,6 +1890,8 @@ app.post("/track", async (c) => {
       feature.id,
       planIds,
       subscriptions,
+      customer.id,
+      now,
     );
     if (trackCreditMapping) {
       accessGrantingSubscription = trackCreditMapping.subscription;
@@ -1750,8 +1967,15 @@ app.post("/track", async (c) => {
     // ===========================================================================
     // Use Durable Object for atomic real-time tracking (if available)
     // ===========================================================================
-    let doResult: { allowed: boolean; balance: number; code: string } | null =
-      null;
+    let doResult: {
+      allowed: boolean;
+      balance: number;
+      usage: number;
+      limit: number | null;
+      code: string;
+      rolloverBalance: number;
+    } | null = null;
+    let trackedAsOverage = false;
 
     // When credit system resolved, use credit system slug for DO key
     // When entity is provided, scope DO feature key and DB queries by entity
@@ -1910,6 +2134,15 @@ app.post("/track", async (c) => {
 
         // If overage is "charge", check guards before allowing
         if (overageSetting === "charge") {
+          const includedBalanceBeforeOverage = Math.max(
+            0,
+            Math.min(trackEffectiveValue, Number(doResult.balance || 0)),
+          );
+          const requestedOverageUnits = Math.max(
+            0,
+            trackEffectiveValue - includedBalanceBeforeOverage,
+          );
+
           const overageGuard = await checkOverageAllowed(
             db,
             customer.id,
@@ -1918,7 +2151,7 @@ app.post("/track", async (c) => {
             periodEnd,
             planFeature.limitValue,
             planFeature.maxOverageUnits,
-            trackEffectiveValue,
+            requestedOverageUnits,
           );
 
           if (!overageGuard.allowed) {
@@ -1937,11 +2170,58 @@ app.post("/track", async (c) => {
                 : {}),
               details: buildTrackDetails(
                 overageGuard.reason ||
-                  `Overage not allowed. ${doResult.balance} remaining.`,
+                  `Overage not allowed. ${requestedOverageUnits} overage units requested.`,
               ),
             });
           }
-          // Guard passed — continue to persist overage usage record below
+
+          trackedAsOverage = true;
+
+          // Guard passed: consume any remaining included/rollover balance first.
+          if (includedBalanceBeforeOverage > 0) {
+            const consumeIncludedResult = await usageMeter.track(
+              trackFeatureKey,
+              includedBalanceBeforeOverage,
+              currentConfig,
+            );
+
+            if (consumeIncludedResult.allowed) {
+              doResult = consumeIncludedResult;
+            } else {
+              // If balance changed concurrently, re-check guard for full request as overage.
+              const raceOverageGuard = await checkOverageAllowed(
+                db,
+                customer.id,
+                trackEffectiveFeatureId,
+                periodStart,
+                periodEnd,
+                planFeature.limitValue,
+                planFeature.maxOverageUnits,
+                trackEffectiveValue,
+              );
+
+              if (!raceOverageGuard.allowed) {
+                return c.json({
+                  success: false,
+                  allowed: false,
+                  code: "limit_exceeded",
+                  usage: doResult.usage ?? null,
+                  limit: planFeature.limitValue,
+                  balance: doResult.balance,
+                  resetsAt: new Date(periodEnd).toISOString(),
+                  resetInterval: planFeature.resetInterval,
+                  ...(doResult.rolloverBalance > 0
+                    ? { rolloverBalance: doResult.rolloverBalance }
+                    : {}),
+                  details: buildTrackDetails(
+                    raceOverageGuard.reason ||
+                      `Overage not allowed. ${trackEffectiveValue} overage units requested.`,
+                  ),
+                });
+              }
+            }
+          }
+          // Continue to persist full usage record below.
         } else {
           // overage is "block" and addon credits insufficient — block
           const blockUsage = doResult.usage ?? null;
@@ -2017,7 +2297,8 @@ app.post("/track", async (c) => {
 
     // Determine if this was an overage usage
     const isOverage =
-      doResult && !doResult.allowed && planFeature.overage === "charge";
+      trackedAsOverage ||
+      !!(doResult && !doResult.allowed && planFeature.overage === "charge");
 
     // Threshold trigger: if this was overage, check if unbilled amount crosses org threshold
     if (isOverage && organizationId) {

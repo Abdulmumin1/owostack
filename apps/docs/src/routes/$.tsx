@@ -23,6 +23,19 @@ export const Route = createFileRoute("/$")({
     await clientLoader.preload(data.path);
     return data;
   },
+  head: ({ loaderData }) => ({
+    meta: [
+      {
+        title: loaderData?.title 
+          ? `${loaderData.title} - Owostack` 
+          : "Owostack - Billing infrastructure for AI SaaS",
+      },
+      loaderData?.description && {
+        name: "description",
+        content: loaderData.description,
+      },
+    ].filter(Boolean),
+  }),
 });
 
 const serverLoader = createServerFn({
@@ -35,6 +48,8 @@ const serverLoader = createServerFn({
 
     return {
       path: page.path,
+      title: page.data.title,
+      description: page.data.description,
       pageTree: await source.serializePageTree(source.getPageTree()),
     };
   });

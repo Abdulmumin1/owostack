@@ -58,7 +58,7 @@
   let { children } = $props();
 
   const session = useSession();
-  
+
   // Auth is now handled server-side in hooks.server.ts
   // No client-side redirect needed here
 
@@ -647,7 +647,7 @@
       <!-- Settings Button -->
 
       <a
-        href={import.meta.env.VITE_DOCS_URL}
+        href="https://docs.owostack.com"
         target="_blank"
         class="w-full flex items-center gap-3 px-3 mb-3 rounded-lg transition-all duration-200 text-text-secondary"
       >

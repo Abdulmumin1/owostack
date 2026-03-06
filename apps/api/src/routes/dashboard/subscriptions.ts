@@ -18,8 +18,35 @@ import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 import { sendCheckoutEmail } from "../../lib/email";
+import { getSubscriptionHealthState } from "../../lib/subscription-health";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+function buildSubscriptionHealth(sub: {
+  status?: string | null;
+  currentPeriodEnd?: number | null;
+  providerId?: string | null;
+  providerSubscriptionCode?: string | null;
+  paystackSubscriptionCode?: string | null;
+  plan?: { type?: string | null };
+}) {
+  const state = getSubscriptionHealthState({
+    status: sub.status,
+    currentPeriodEnd: sub.currentPeriodEnd,
+    providerId: sub.providerId,
+    providerSubscriptionCode: sub.providerSubscriptionCode,
+    paystackSubscriptionCode: sub.paystackSubscriptionCode,
+    planType: sub.plan?.type,
+  });
+
+  return {
+    ...state,
+    reasons: [
+      ...(state.pastGracePeriodEnd ? ["period_end_stale"] : []),
+      ...(state.providerLinkMissing ? ["provider_link_missing"] : []),
+    ],
+  };
+}
 
 function zodErrorToResponse(zodError: {
   flatten: () => {
@@ -155,6 +182,7 @@ app.get("/", async (c) => {
       })
       .map((sub: any) => ({
         ...sub,
+        health: buildSubscriptionHealth(sub),
         customer: {
           id: cust.id,
           email: cust.email,
@@ -322,6 +350,7 @@ app.get("/:id", async (c) => {
           canceledAt: subscription.canceledAt,
           paystackSubscriptionCode: subscription.paystackSubscriptionCode,
           providerSubscriptionCode: subscription.providerSubscriptionCode,
+          health: buildSubscriptionHealth(subscription),
           metadata: subscription.metadata,
           createdAt: subscription.createdAt,
           updatedAt: subscription.updatedAt,
@@ -476,7 +505,6 @@ app.post("/cancel", async (c) => {
   // Use resolved organization ID from context (middleware resolves slug to UUID)
   const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
   const db = c.get("db");
-  const authDb = c.get("authDb");
   const now = Date.now();
 
   const sub = await db.query.subscriptions.findFirst({
