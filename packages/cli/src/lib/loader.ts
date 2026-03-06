@@ -2,13 +2,16 @@ import { resolve, isAbsolute, extname } from "node:path";
 import { existsSync } from "node:fs";
 import { createJiti } from "jiti";
 
-const jiti = createJiti(import.meta.url);
+const jiti = createJiti(import.meta.url, {
+  alias: {
+    owostack: import.meta.resolve("owostack"),
+  },
+});
 
 export const DEFAULT_CONFIG_NAMES = [
   "owo.config.ts",
   "owo.config.js",
   "owo.config.mjs",
-  "owo.config.cjs",
   "owo.config.mts",
   "owo.config.cts",
 ];
@@ -36,16 +39,12 @@ export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
   try {
     const configModule: any = await jiti.import(fullPath);
 
-    // Handle ESM default export or named export 'owo'
-    // Also handle CJS module.exports or exports.owo
-    // Try to extract the actual instance, giving priority to explicit export names
+    // Handle named or default ESM exports, giving priority to explicit names.
     const instance = configModule.owo || configModule.default || configModule;
 
     if (instance && typeof instance.sync === "function") {
       return instance;
     }
-
-    // If the module itself is the instance (common in CJS)
     if (typeof configModule.sync === "function") {
       return configModule;
     }
@@ -66,15 +65,15 @@ export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
         `    import { Owostack, metered, boolean, entity, creditSystem, creditPack, plan } from "owostack";`,
       );
       console.error(
-        `    export default new Owostack({ secretKey: "...", catalog: [...] });\n`,
+        `    export const owo = new Owostack({ secretKey: "...", catalog: [...] });\n`,
       );
     } else {
       console.error(`  Example owo.config.js:\n`);
       console.error(
-        `    const { Owostack, metered, boolean, entity, creditSystem, creditPack, plan } = require("owostack");`,
+        `    import { Owostack, metered, boolean, entity, creditSystem, creditPack, plan } from "owostack";`,
       );
       console.error(
-        `    module.exports = new Owostack({ secretKey: "...", catalog: [...] });\n`,
+        `    export const owo = new Owostack({ secretKey: "...", catalog: [...] });\n`,
       );
     }
     process.exit(1);

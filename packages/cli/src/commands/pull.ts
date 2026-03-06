@@ -1,8 +1,8 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { join, resolve, extname, isAbsolute } from "node:path";
+import { resolve, extname, isAbsolute } from "node:path";
 import { getApiKey, getApiUrl, getTestApiUrl } from "../lib/config.js";
 import { loadConfigSettings, resolveConfigPath } from "../lib/loader.js";
 import {
@@ -20,24 +20,17 @@ interface PullOptions {
   dryRun?: boolean;
 }
 
-function getProjectInfo() {
-  const cwd = process.cwd();
-  let isEsm = false;
-  try {
-    const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
-    isEsm = pkg.type === "module";
-  } catch {}
-  return { isEsm };
-}
-
 function determineFormat(fullPath: string): ConfigFormat {
   const ext = extname(fullPath);
-  const { isEsm } = getProjectInfo();
 
   if (ext === ".ts" || ext === ".mts" || ext === ".cts") return "ts";
   if (ext === ".mjs") return "esm";
-  if (ext === ".cjs") return "cjs";
-  if (ext === ".js") return isEsm ? "esm" : "cjs";
+  if (ext === ".cjs") {
+    throw new Error(
+      "CommonJS config files are not supported. Use owo.config.js or owo.config.ts.",
+    );
+  }
+  if (ext === ".js") return "esm";
   return "ts"; // default
 }
 
@@ -67,7 +60,13 @@ export async function runPull(options: PullOptions) {
   const liveUrl = getApiUrl(configSettings.environments?.live);
   const filters = configSettings.filters || {};
 
-  const format = determineFormat(fullPath);
+  let format: ConfigFormat;
+  try {
+    format = determineFormat(fullPath);
+  } catch (e: any) {
+    p.log.error(pc.red(e.message));
+    process.exit(1);
+  }
 
   const s = p.spinner();
 
