@@ -372,8 +372,7 @@
     isSwitching = true;
     try {
       await setActiveEnvironment("live");
-      activeEnvironment = "live";
-      closeDeployModal();
+      window.location.reload();
     } catch (e) {
       console.error("Failed to switch to production", e);
     } finally {
@@ -474,7 +473,7 @@
     isSwitching = true;
     try {
       await setActiveEnvironment(env);
-      activeEnvironment = env;
+      window.location.reload();
     } catch (e) {
       console.error("Failed to switch environment", e);
     } finally {
