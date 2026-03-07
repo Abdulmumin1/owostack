@@ -150,28 +150,59 @@
     }
   }
 
+  async function fetchDashboardForEnv(
+    env: "test" | "live",
+    path: string,
+    options: RequestInit = {},
+  ) {
+    const res = await fetch(`${getApiUrlForEnv(env)}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+      credentials: "include",
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data?.success) {
+      throw new Error(data?.error || "Request failed");
+    }
+
+    return data;
+  }
+
   async function openDeployModal() {
     showDeployModal = true;
     deployError = null;
     try {
-      const res = await apiFetch(
-        `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-      );
-      if (res.data?.data) {
-        const accounts = res.data.data as any[];
-        testProviderIds = [
-          ...new Set(
-            accounts
-              .filter((a) => a.environment === "test")
-              .map((a) => a.providerId),
-          ),
-        ];
-        liveProviderIds = new Set(
-          accounts
-            .filter((a) => a.environment === "live")
+      const [testAccountsRes, liveAccountsRes] = await Promise.all([
+        fetchDashboardForEnv(
+          "test",
+          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+        ),
+        fetchDashboardForEnv(
+          "live",
+          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+        ),
+      ]);
+
+      const testAccounts = testAccountsRes.data as any[];
+      const liveAccounts = liveAccountsRes.data as any[];
+
+      testProviderIds = [
+        ...new Set(
+          testAccounts
+            .filter((a) => a.environment === "test")
             .map((a) => a.providerId),
-        );
-      }
+        ),
+      ];
+      liveProviderIds = new Set(
+        liveAccounts
+          .filter((a) => a.environment === "live")
+          .map((a) => a.providerId),
+      );
     } catch (e) {
       console.error("Failed to load provider accounts", e);
     }
@@ -202,7 +233,7 @@
         throw new Error("Enter at least one credential");
       }
 
-      const res = await apiFetch("/api/dashboard/providers/accounts", {
+      await fetchDashboardForEnv("live", "/api/dashboard/providers/accounts", {
         method: "POST",
         body: JSON.stringify({
           organizationId: projectId,
@@ -211,7 +242,6 @@
           credentials,
         }),
       });
-      if (res.error) throw new Error(res.error.message);
 
       // Update per-provider status
       liveProviderIds = new Set([...liveProviderIds, providerId]);
@@ -373,20 +403,30 @@
 
   async function loadEnvironmentStatus() {
     try {
-      const [accountsRes, env, currencyRes] = await Promise.all([
-        apiFetch(
-          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-        ),
-        loadActiveEnvironment(),
-        apiFetch(
-          `/api/dashboard/config/default-currency?organizationId=${projectId}`,
-        ),
-      ]);
+      const [testAccountsRes, liveAccountsRes, env, currencyRes] =
+        await Promise.all([
+          fetchDashboardForEnv(
+            "test",
+            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+          ),
+          fetchDashboardForEnv(
+            "live",
+            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+          ),
+          loadActiveEnvironment(),
+          apiFetch(
+            `/api/dashboard/config/default-currency?organizationId=${projectId}`,
+          ),
+        ]);
 
-      if (accountsRes.data?.data) {
-        const accounts = accountsRes.data.data as any[];
-        testConnected = accounts.some((a: any) => a.environment === "test");
-        liveConnected = accounts.some((a: any) => a.environment === "live");
+      if (testAccountsRes.data) {
+        const testAccounts = testAccountsRes.data as any[];
+        testConnected = testAccounts.some((a: any) => a.environment === "test");
+      }
+
+      if (liveAccountsRes.data) {
+        const liveAccounts = liveAccountsRes.data as any[];
+        liveConnected = liveAccounts.some((a: any) => a.environment === "live");
       }
 
       if (currencyRes.data?.data?.defaultCurrency) {
