@@ -6,6 +6,7 @@
     Eye,
     EyeSlash,
     FloppyDisk,
+    Globe,
     Lock,
   } from "phosphor-svelte";
   import { apiFetch } from "$lib/auth-client";
@@ -200,36 +201,56 @@
 
         {#if selectedProviderConfig}
           {#each selectedProviderConfig.fields as field (field.key)}
+            {@const isWebhookSecret = field.key === "webhookSecret"}
             <div>
               <label
                 for={field.key}
                 class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3"
                 >{field.label}</label
               >
-              <div class="relative input-icon-wrapper">
-                <Lock size={12} class="input-icon-left text-text-dim" />
-                <input
-                  type={field.secret && !showSecretFields[field.key]
-                    ? "password"
-                    : "text"}
-                  id={field.key}
-                  bind:value={formCredentials[field.key]}
-                  placeholder={field.placeholder}
-                  class="input input-has-icon-left w-full pr-10 font-mono text-xs"
-                />
-                <button
-                  type="button"
-                  class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary"
-                  onclick={() =>
-                    (showSecretFields[field.key] =
-                      !showSecretFields[field.key])}
-                >
-                  {#if showSecretFields[field.key]}
-                    <EyeSlash size={14} />
-                  {:else}
-                    <Eye size={14} />
-                  {/if}
-                </button>
+              <div class="space-y-2">
+                <div class="relative input-icon-wrapper">
+                  <Lock size={12} class="input-icon-left text-text-dim" />
+                  <input
+                    type={field.secret && !showSecretFields[field.key]
+                      ? "password"
+                      : "text"}
+                    id={field.key}
+                    bind:value={formCredentials[field.key]}
+                    placeholder={field.placeholder}
+                    class="input input-has-icon-left w-full pr-10 font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary"
+                    onclick={() =>
+                      (showSecretFields[field.key] =
+                        !showSecretFields[field.key])}
+                  >
+                    {#if showSecretFields[field.key]}
+                      <EyeSlash size={14} />
+                    {:else}
+                      <Eye size={14} />
+                    {/if}
+                  </button>
+                </div>
+                {#if isWebhookSecret}
+                  {@const webhookUrl = `${apiBase}/webhooks/${projectId}/${formProviderId}`}
+                  <div class="bg-info-bg border border-info p-2 flex items-start gap-2">
+                    <div class="flex-1 min-w-0">
+                      <p class="text-[10px] font-bold text-info uppercase tracking-widest mb-1">Webhook URL</p>
+                      <code class="font-mono text-[10px] text-info break-all">{webhookUrl}</code>
+                    </div>
+                    <button
+                      type="button"
+                      class="text-info hover:text-info/80 transition-colors shrink-0 mt-0.5"
+                      onclick={() => copyUrl(webhookUrl)}
+                      title="Copy webhook URL"
+                    >
+                      <Copy size={12} weight="fill" />
+                    </button>
+                  </div>
+                {/if}
               </div>
             </div>
           {/each}
