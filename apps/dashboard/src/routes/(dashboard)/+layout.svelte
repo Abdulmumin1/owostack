@@ -72,12 +72,15 @@
   let showSettingsModal = $state(false);
   let showCreateOrgModal = $state(false);
   let settingsActiveTab = $state("general");
+  const initialActiveEnvironment =
+    (page.data.activeEnvironment as "test" | "live" | undefined) ?? "test";
+  const initialProjectIdentifier = page.params.projectId;
 
   const pageActiveEnvironment = $derived(
     (page.data.activeEnvironment as "test" | "live" | undefined) ?? "test",
   );
 
-  let activeEnvironment = $state<"test" | "live">(pageActiveEnvironment);
+  let activeEnvironment = $state<"test" | "live">(initialActiveEnvironment);
   let testConnected = $state(false);
   let liveConnected = $state(false);
   let isSwitching = $state(false);
@@ -391,6 +394,10 @@
   let projectId = $derived(
     currentProject?.slug || currentProject?.id || projectIdentifier,
   );
+
+  if (initialProjectIdentifier) {
+    hydrateEnvironment(initialActiveEnvironment, initialProjectIdentifier);
+  }
 
   async function handleLogout() {
     await authClient.signOut();
