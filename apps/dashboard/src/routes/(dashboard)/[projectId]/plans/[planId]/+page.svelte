@@ -25,6 +25,7 @@
     UserPlusIcon,
     PackageIcon,
     UsersIcon,
+    Storefront,
   } from "phosphor-svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";

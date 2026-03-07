@@ -7,6 +7,7 @@
   import EditFeatureModal from "$lib/components/features/EditFeatureModal.svelte";
   import CreateCreditSystemModal from "$lib/components/features/CreateCreditSystemModal.svelte";
   import EditCreditSystemModal from "$lib/components/features/EditCreditSystemModal.svelte";
+  import CopyToProdModal from "$lib/components/catalog/CopyToProdModal.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import {
     ArrowRight,
@@ -23,7 +24,10 @@
     Plus,
     ToggleLeft,
     Trash,
+    Storefront,
   } from "phosphor-svelte";
+  import { getActiveEnvironment } from "$lib/env";
+  import { copyItemToProd } from "$lib/utils/catalog";
 
   let features = $state<any[]>([]);
   let creditSystems = $state<any[]>([]);
@@ -38,7 +42,25 @@
   let openFeatureMenuId = $state<string | null>(null);
   let openCreditSystemMenuId = $state<string | null>(null);
 
-  const organizationId = $derived(page.params.projectId);
+  // Copy to prod state
+  let showCopyModal = $state(false);
+  let itemToCopy = $state<{ id: string; name: string; type: "feature" | "creditSystem" } | null>(null);
+
+  const isTestEnvironment = $derived(getActiveEnvironment() === "test");
+
+  const organizationId = $derived(page.params.projectId as string);
+
+  function openCopyFeature(feature: any) {
+    itemToCopy = { id: feature.id, name: feature.name, type: "feature" };
+    showCopyModal = true;
+    openFeatureMenuId = null;
+  }
+
+  function openCopyCreditSystem(system: any) {
+    itemToCopy = { id: system.id, name: system.name, type: "creditSystem" };
+    showCopyModal = true;
+    openCreditSystemMenuId = null;
+  }
 
   async function loadData() {
     isLoading = true;
@@ -279,6 +301,18 @@
                         >
                           <Copy size={12} weight="fill" /> Copy Slug
                         </button>
+                        {#if isTestEnvironment}
+                          <button
+                            class="w-full text-left px-4 py-2 text-[11px] text-info hover:bg-info-bg flex items-center gap-2"
+                            onclick={(e) => {
+                              e.preventDefault();
+                              openCopyFeature(feature);
+                            }}
+                          >
+                            <Storefront size={12} weight="duotone" />
+                            Copy to Prod
+                          </button>
+                        {/if}
                         <button
                           class="w-full text-left px-4 py-2 text-[11px] text-error hover:bg-error-bg flex items-center gap-2"
                           onclick={() => deleteFeature(feature.id)}
@@ -427,6 +461,18 @@
                         >
                           <Copy size={12} weight="fill" /> Copy Slug
                         </button>
+                        {#if isTestEnvironment}
+                          <button
+                            class="w-full text-left px-4 py-2 text-[11px] text-info hover:bg-info-bg flex items-center gap-2"
+                            onclick={(e) => {
+                              e.preventDefault();
+                              openCopyCreditSystem(system);
+                            }}
+                          >
+                            <Storefront size={12} weight="duotone" />
+                            Copy to Prod
+                          </button>
+                        {/if}
                         <button
                           class="w-full text-left px-4 py-2 text-[11px] text-error hover:bg-error-bg flex items-center gap-2"
                           onclick={() => deleteCreditSystem(system.id)}
@@ -483,3 +529,13 @@ onsuccess={handleFeatureCreated}
   }}
   onsuccess={handleFeatureCreated}
 />
+
+{#if itemToCopy}
+<CopyToProdModal
+  bind:open={showCopyModal}
+  {organizationId}
+  itemType={itemToCopy.type}
+  itemId={itemToCopy.id}
+  itemName={itemToCopy.name}
+/>
+{/if}

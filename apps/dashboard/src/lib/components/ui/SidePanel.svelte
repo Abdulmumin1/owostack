@@ -23,7 +23,7 @@
 {#if open}
   <!-- Backdrop -->
   <button
-    class="fixed inset-0 bg-bg-primary/80 backdrop-blur-sm z-40 cursor-default"
+    class="fixed inset-0 bg-bg-primary/30 backdrop-blur-sm z-40 cursor-default"
     transition:fade={{ duration: 150 }}
     onclick={onclose}
     aria-label="Close panel"

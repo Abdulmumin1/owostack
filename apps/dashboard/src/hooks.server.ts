@@ -116,7 +116,14 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
 
   // Continue to resolve the request
-  const response = await resolve(event);
+  const response = await resolve(event, {
+    transformPageChunk: ({ html }) => {
+      const theme = event.cookies.get("theme") || "dark";
+      return html
+        .replace("%theme_class%", theme)
+        .replace("%theme_data%", theme);
+    },
+  });
   return response;
 };
 

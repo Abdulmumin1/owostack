@@ -4,7 +4,7 @@
   import type { Snippet } from "svelte";
 
   let {
-    open = false,
+    open = $bindable(false),
     title = "",
     onclose,
     children,
@@ -26,7 +26,7 @@
 {#if open}
   <!-- svelte-ignore a11y_consider_explicit_label -->
   <button
-    class="fixed inset-0 bg-bg-primary/80 backdrop-blur-sm z-40 cursor-default"
+    class="fixed inset-0 bg-bg-primary/30 backdrop-blur-sm z-40 cursor-default"
     transition:fade={{ duration: 150 }}
     onclick={close}
   ></button>
