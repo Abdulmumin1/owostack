@@ -50,6 +50,37 @@ interface PaystackPlanResponse {
   plan_code: string;
 }
 
+function asRecord(value: unknown): Record<string, any> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : undefined;
+}
+
+function getPaystackSubscriptionSnapshot(data: Record<string, any>) {
+  const invoiceSub = asRecord(data.subscription);
+  const invoicePlan = asRecord(invoiceSub?.plan);
+  const topLevelPlan = asRecord(data.plan);
+
+  return {
+    providerCode: invoiceSub?.subscription_code || data.subscription_code || "",
+    startDate:
+      invoiceSub?.current_period_start ||
+      invoiceSub?.createdAt ||
+      data.current_period_start ||
+      data.createdAt,
+    nextPaymentDate:
+      invoiceSub?.next_payment_date ||
+      invoiceSub?.current_period_end ||
+      data.next_payment_date ||
+      data.current_period_end,
+    planCode:
+      invoicePlan?.plan_code ||
+      topLevelPlan?.plan_code ||
+      invoiceSub?.plan_code ||
+      undefined,
+  };
+}
+
 class PaystackClient {
   private baseUrl: string;
   private timeout: number;
@@ -487,7 +518,8 @@ export const paystackAdapter: ProviderAdapter = {
     };
 
     switch (event) {
-      case "charge.success":
+      case "charge.success": {
+        const subscription = getPaystackSubscriptionSnapshot(data);
         return Result.ok({
           ...base,
           type: "charge.success",
@@ -507,18 +539,22 @@ export const paystackAdapter: ProviderAdapter = {
                 expYear: authorization.exp_year,
               }
             : undefined,
-          subscription: data.subscription_code
+          subscription: subscription.providerCode
             ? {
-                providerCode: data.subscription_code,
+                providerCode: subscription.providerCode,
                 status: "active",
+                startDate: subscription.startDate,
+                nextPaymentDate: subscription.nextPaymentDate,
               }
             : undefined,
-          plan: plan.plan_code
-            ? { providerPlanCode: plan.plan_code }
+          plan: subscription.planCode
+            ? { providerPlanCode: subscription.planCode }
             : undefined,
         });
+      }
 
-      case "charge.failed":
+      case "charge.failed": {
+        const subscription = getPaystackSubscriptionSnapshot(data);
         return Result.ok({
           ...base,
           type: "charge.failed",
@@ -527,13 +563,14 @@ export const paystackAdapter: ProviderAdapter = {
             currency: data.currency || "NGN",
             reference: data.reference || "",
           },
-          subscription: data.subscription_code
+          subscription: subscription.providerCode
             ? {
-                providerCode: data.subscription_code,
+                providerCode: subscription.providerCode,
                 status: "past_due",
               }
             : undefined,
         });
+      }
 
       case "subscription.create":
         return Result.ok({
@@ -582,20 +619,18 @@ export const paystackAdapter: ProviderAdapter = {
         });
 
       case "invoice.payment_failed": {
-        // Invoice events nest subscription under data.subscription object
-        const invoiceSub = data.subscription as Record<string, any> | undefined;
-        const invoiceSubCode = invoiceSub?.subscription_code || data.subscription_code;
+        const subscription = getPaystackSubscriptionSnapshot(data);
         return Result.ok({
           ...base,
           type: "charge.failed",
           payment: {
-            amount: data.amount || invoiceSub?.amount || 0,
+            amount: data.amount || asRecord(data.subscription)?.amount || 0,
             currency: data.currency || "NGN",
             reference: data.reference || data.invoice_code || "",
           },
-          subscription: invoiceSubCode
+          subscription: subscription.providerCode
             ? {
-                providerCode: invoiceSubCode,
+                providerCode: subscription.providerCode,
                 status: "past_due",
               }
             : undefined,

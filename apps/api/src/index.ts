@@ -53,12 +53,14 @@ export { UsageMeterDO, UsageLedgerDO };
 import { TrialEndWorkflow } from "./lib/workflows/trial-end";
 import { DowngradeWorkflow } from "./lib/workflows/downgrade";
 import { PlanUpgradeWorkflow } from "./lib/workflows/plan-upgrade";
+import { RenewalSetupRetryWorkflow } from "./lib/workflows/renewal-setup-retry";
 import { OverageBillingWorkflow } from "./lib/workflows/overage-billing";
 import { CancelDowngradeWorkflow } from "./lib/workflows/cancel-downgrade";
 export {
   TrialEndWorkflow,
   DowngradeWorkflow,
   PlanUpgradeWorkflow,
+  RenewalSetupRetryWorkflow,
   OverageBillingWorkflow,
   CancelDowngradeWorkflow,
 };
@@ -78,6 +80,7 @@ export type Env = {
   TRIAL_END_WORKFLOW: Workflow;
   DOWNGRADE_WORKFLOW: Workflow;
   PLAN_UPGRADE_WORKFLOW: Workflow;
+  RENEWAL_SETUP_WORKFLOW: Workflow;
   CANCEL_DOWNGRADE_WORKFLOW: Workflow;
   OVERAGE_BILLING_WORKFLOW: Workflow;
   OVERAGE_BILLING_QUEUE: Queue;
@@ -286,8 +289,16 @@ dashboardRoutes.use("*", async (c, next) => {
     const db = c.get("db");
     const authDb = c.get("authDb");
 
-    // Resolve organization identifier (could be ID or slug)
-    const resolvedId = await resolveOrganizationId(db, organizationId);
+    // Resolve from auth DB first because it is the canonical source for
+    // organizations across test/live workers. Falling back to the business DB
+    // preserves compatibility for local/dev states where auth data may lag.
+    const authOrg = await authDb.query.organizations.findFirst({
+      where: or(
+        eq(schema.organizations.id, organizationId),
+        eq(schema.organizations.slug, organizationId),
+      ),
+    });
+    const resolvedId = authOrg?.id ?? (await resolveOrganizationId(db, organizationId));
     const finalOrgId = resolvedId || organizationId;
 
     // Store resolved ID in context for downstream handlers
@@ -298,9 +309,11 @@ dashboardRoutes.use("*", async (c, next) => {
       columns: { id: true },
     });
     if (!existing) {
-      const org = await authDb.query.organizations.findFirst({
-        where: eq(schema.organizations.id, finalOrgId),
-      });
+      const org =
+        authOrg ??
+        (await authDb.query.organizations.findFirst({
+          where: eq(schema.organizations.id, finalOrgId),
+        }));
       if (org) {
         await db.insert(schema.organizations).values(org).onConflictDoNothing();
       }

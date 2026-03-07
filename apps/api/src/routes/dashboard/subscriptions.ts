@@ -18,7 +18,15 @@ import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 import { sendCheckoutEmail } from "../../lib/email";
-import { getSubscriptionHealthState } from "../../lib/subscription-health";
+import {
+  getSubscriptionHealthState,
+  isPlaceholderSubscriptionCode,
+} from "../../lib/subscription-health";
+import {
+  hasRenewalSetupIssue,
+  readRenewalSetupMetadata,
+  writeRenewalSetupMetadata,
+} from "../../lib/renewal-setup";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -29,6 +37,7 @@ function buildSubscriptionHealth(sub: {
   providerSubscriptionCode?: string | null;
   paystackSubscriptionCode?: string | null;
   plan?: { type?: string | null };
+  metadata?: unknown;
 }) {
   const state = getSubscriptionHealthState({
     status: sub.status,
@@ -38,12 +47,17 @@ function buildSubscriptionHealth(sub: {
     paystackSubscriptionCode: sub.paystackSubscriptionCode,
     planType: sub.plan?.type,
   });
+  const renewalSetup = readRenewalSetupMetadata(sub.metadata);
+  const renewalSetupIssue = hasRenewalSetupIssue(sub.metadata);
 
   return {
     ...state,
+    requiresAction: state.requiresAction || renewalSetupIssue,
+    renewalSetup,
     reasons: [
       ...(state.pastGracePeriodEnd ? ["period_end_stale"] : []),
       ...(state.providerLinkMissing ? ["provider_link_missing"] : []),
+      ...(renewalSetupIssue ? ["renewal_setup_failed"] : []),
     ],
   };
 }
@@ -744,6 +758,104 @@ app.post("/cancel", async (c) => {
       freeSubscriptionId: freeSubId,
     },
   });
+});
+
+app.post("/:id/retry-renewal-setup", async (c) => {
+  const subscriptionId = c.req.param("id");
+  const db = c.get("db");
+
+  try {
+    const subscription = await db.query.subscriptions.findFirst({
+      where: eq(schema.subscriptions.id, subscriptionId),
+      with: {
+        plan: true,
+        customer: true,
+      },
+    });
+
+    if (!subscription) {
+      return c.json({ success: false, error: "Subscription not found" }, 404);
+    }
+
+    const currentCode =
+      subscription.providerSubscriptionCode || subscription.paystackSubscriptionCode;
+    const hasRealProviderCode =
+      !!currentCode && !isPlaceholderSubscriptionCode(currentCode);
+
+    if (
+      subscription.status !== "active" ||
+      subscription.plan.type === "free" ||
+      subscription.plan.billingType !== "recurring"
+    ) {
+      return c.json(
+        {
+          success: false,
+          error: "Subscription is not eligible for renewal setup retry",
+        },
+        400,
+      );
+    }
+    if (!subscription.providerId) {
+      return c.json(
+        {
+          success: false,
+          error: "Subscription provider is missing",
+        },
+        400,
+      );
+    }
+
+    if (hasRealProviderCode && !hasRenewalSetupIssue(subscription.metadata)) {
+      return c.json(
+        {
+          success: false,
+          error: "Subscription already has active provider renewal setup",
+        },
+        400,
+      );
+    }
+
+    const now = Date.now();
+    const renewalSetup = readRenewalSetupMetadata(subscription.metadata);
+    const nextMetadata = writeRenewalSetupMetadata(subscription.metadata, {
+      renewal_setup_status: "scheduled",
+      renewal_setup_retry_count: renewalSetup.renewal_setup_retry_count || 0,
+      renewal_setup_last_error: renewalSetup.renewal_setup_last_error,
+      renewal_setup_last_attempt_at: renewalSetup.renewal_setup_last_attempt_at,
+      renewal_setup_next_attempt_at: now,
+      renewal_setup_updated_at: now,
+      renewal_setup_last_source: "dashboard_manual",
+    });
+
+    await db
+      .update(schema.subscriptions)
+      .set({
+        metadata: nextMetadata,
+        updatedAt: now,
+      })
+      .where(eq(schema.subscriptions.id, subscription.id));
+
+    const workflow = await c.env.RENEWAL_SETUP_WORKFLOW.create({
+      params: {
+        subscriptionId: subscription.id,
+        customerId: subscription.customerId,
+        organizationId: subscription.plan.organizationId,
+        providerId: subscription.providerId,
+        source: "dashboard_manual",
+        immediate: true,
+      },
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        workflowId: workflow.id,
+        status: "scheduled",
+      },
+    });
+  } catch (e: any) {
+    return c.json({ success: false, error: e.message }, 500);
+  }
 });
 // =============================================================================
 // Generate checkout link for a pending subscription

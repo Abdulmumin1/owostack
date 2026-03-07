@@ -12,6 +12,10 @@ import {
   invalidateSubscriptionCache,
 } from "./utils";
 import type { ProviderAccount } from "@owostack/adapters";
+import {
+  RENEWAL_SETUP_RETRY_DELAYS_MS,
+  writeRenewalSetupMetadata,
+} from "../renewal-setup";
 
 // Serializable snapshot of the fields we need from ProviderAccount
 interface ResolvedAccount {
@@ -135,22 +139,35 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
     // Step 3: Re-fetch latest auth from payment_methods table.
     // The customer may have updated their card since the trial started.
     const latestAuth = await step.do("fetch-latest-auth", async () => {
-      const pm = await this.env.DB.prepare(
-        "SELECT token, provider_id FROM payment_methods WHERE customer_id = ? AND is_valid = 1 AND is_default = 1 LIMIT 1",
+      const providerDefaultPm = await this.env.DB.prepare(
+        "SELECT token, provider_id FROM payment_methods WHERE customer_id = ? AND provider_id = ? AND is_valid = 1 AND is_default = 1 LIMIT 1",
       )
-        .bind(customerId)
+        .bind(customerId, providerId)
         .first<{ token: string; provider_id: string }>();
 
+      const providerPm =
+        providerDefaultPm ||
+        (await this.env.DB.prepare(
+          "SELECT token, provider_id FROM payment_methods WHERE customer_id = ? AND provider_id = ? AND is_valid = 1 LIMIT 1",
+        )
+          .bind(customerId, providerId)
+          .first<{ token: string; provider_id: string }>());
+
       const customer = await this.env.DB.prepare(
-        "SELECT email, provider_customer_id FROM customers WHERE id = ? LIMIT 1",
+        "SELECT email, provider_customer_id, paystack_customer_id FROM customers WHERE id = ? LIMIT 1",
       )
         .bind(customerId)
-        .first<{ email: string | null; provider_customer_id: string | null }>();
+        .first<{
+          email: string | null;
+          provider_customer_id: string | null;
+          paystack_customer_id: string | null;
+        }>();
 
       return {
-        authCode: pm?.token || authorizationCode || null,
+        authCode: providerPm?.token || authorizationCode || null,
         email: customer?.email || email || null,
-        providerCustomerId: customer?.provider_customer_id || null,
+        providerCustomerId:
+          customer?.provider_customer_id || customer?.paystack_customer_id || null,
       };
     });
 
@@ -363,6 +380,9 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
       const providerPlanCode = plan?.provider_plan_id || plan?.paystack_plan_id;
       const customerCode =
         customer?.provider_customer_id || customer?.paystack_customer_id;
+      const subscriptionPeriodEnd = plan
+        ? Date.now() + intervalToMs(plan.interval)
+        : Date.now() + 30 * 24 * 60 * 60 * 1000;
 
       // Step 6b: For recurring plans with provider plan codes, create a
       // subscription on the provider so it handles future billing cycles.
@@ -376,25 +396,33 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
       // checkout session requiring user interaction.
       const trialAdapter = getAdapter(providerId);
       const skipProviderSub = trialAdapter?.supportsNativeTrials === true;
+      const requiresProviderSubscription = isRecurring && !skipProviderSub;
+      const missingRenewalInputs: string[] = [];
+      if (requiresProviderSubscription && !providerPlanCode) {
+        missingRenewalInputs.push("provider_plan_code");
+      }
+      if (requiresProviderSubscription && !customerCode) {
+        missingRenewalInputs.push("provider_customer_id");
+      }
+      if (requiresProviderSubscription && !resolvedAuthCode) {
+        missingRenewalInputs.push("authorization_code");
+      }
+      let renewalSetupFailureReason: string | null =
+        missingRenewalInputs.length > 0
+          ? `missing_${missingRenewalInputs.join("_")}`
+          : null;
 
-      if (
-        isRecurring &&
-        providerPlanCode &&
-        customerCode &&
-        resolvedAuthCode &&
-        !skipProviderSub
-      ) {
+      if (requiresProviderSubscription && !renewalSetupFailureReason) {
         try {
           const subResult = await step.do(
             "create-provider-subscription",
+            { retries: { limit: 2, delay: "5 seconds", backoff: "exponential" } },
             async () => {
               const adapter = getAdapter(providerId);
               if (!adapter)
                 throw new Error(`No adapter for provider: ${providerId}`);
 
-              const startDate = new Date(
-                Date.now() + intervalToMs(plan!.interval),
-              );
+              const startDate = new Date(subscriptionPeriodEnd);
 
               const result = await adapter.createSubscription({
                 customer: {
@@ -426,22 +454,29 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
           );
           providerSubCode = subResult;
         } catch (subErr) {
+          renewalSetupFailureReason =
+            subErr instanceof Error ? subErr.message : String(subErr);
           // Non-fatal — subscription is active locally, just no auto-renewal
           console.error(
             `[TrialEndWorkflow] Failed to create provider subscription: subscription=${subscriptionId}`,
             subErr,
           );
         }
+      } else if (renewalSetupFailureReason) {
+        console.error(
+          `[TrialEndWorkflow] Missing recurring renewal inputs for subscription=${subscriptionId}: ${renewalSetupFailureReason}`,
+        );
       }
 
       // Step 6c: Activate subscription in DB (+ update provider sub code if created)
       await step.do("activate-subscription", async () => {
         const now = Date.now();
-        const periodEnd = plan
-          ? now + intervalToMs(plan.interval)
-          : now + 30 * 24 * 60 * 60 * 1000;
         const paystackSubCode =
           providerId === "paystack" ? providerSubCode : null;
+        const cancelAt =
+          requiresProviderSubscription && !providerSubCode
+            ? subscriptionPeriodEnd
+            : null;
 
         await this.env.DB.prepare(
           `UPDATE subscriptions
@@ -451,6 +486,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
                paystack_subscription_code = COALESCE(?, paystack_subscription_code),
                current_period_start = ?,
                current_period_end = ?,
+               cancel_at = ?,
                updated_at = ?
            WHERE id = ? AND status = 'trialing'`,
         )
@@ -459,17 +495,80 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
             providerSubCode,
             paystackSubCode,
             now,
-            periodEnd,
+            subscriptionPeriodEnd,
+            cancelAt,
             now,
             subscriptionId,
           )
           .run();
 
-        console.log(
-          `[TrialEndWorkflow] Activated: subscription=${subscriptionId}, providerSub=${providerSubCode || "none"}`,
-        );
+        if (cancelAt) {
+          console.warn(
+            `[TrialEndWorkflow] Activated without recurring renewal: subscription=${subscriptionId}, cancelAt=${new Date(cancelAt).toISOString()}, reason=${renewalSetupFailureReason || "provider_subscription_missing"}`,
+          );
+        } else {
+          console.log(
+            `[TrialEndWorkflow] Activated: subscription=${subscriptionId}, providerSub=${providerSubCode || "none"}`,
+          );
+        }
         await invalidateSubscriptionCache(this.env, organizationId, customerId);
       });
+
+      if (requiresProviderSubscription && !providerSubCode) {
+        let retryScheduled = false;
+
+        if (this.env.RENEWAL_SETUP_WORKFLOW) {
+          try {
+            const workflow = await this.env.RENEWAL_SETUP_WORKFLOW.create({
+              params: {
+                subscriptionId,
+                customerId,
+                organizationId,
+                providerId,
+                source: "trial_end",
+                immediate: false,
+              },
+            });
+            retryScheduled = true;
+            console.log(
+              `[TrialEndWorkflow] Scheduled renewal setup retry workflow ${workflow.id} for subscription=${subscriptionId}`,
+            );
+          } catch (retryErr) {
+            console.error(
+              `[TrialEndWorkflow] Failed to schedule renewal setup retry for subscription=${subscriptionId}`,
+              retryErr,
+            );
+          }
+        }
+
+        await step.do("record-renewal-setup-state", async () => {
+          const row = await this.env.DB.prepare(
+            "SELECT metadata FROM subscriptions WHERE id = ? LIMIT 1",
+          )
+            .bind(subscriptionId)
+            .first<{ metadata: unknown }>();
+          const now = Date.now();
+          const nextAttemptAt = retryScheduled
+            ? now + RENEWAL_SETUP_RETRY_DELAYS_MS[0]
+            : null;
+          const nextMetadata = writeRenewalSetupMetadata(row?.metadata, {
+            renewal_setup_status: retryScheduled ? "scheduled" : "failed",
+            renewal_setup_retry_count: 0,
+            renewal_setup_last_error:
+              renewalSetupFailureReason || "provider_subscription_missing",
+            renewal_setup_last_attempt_at: now,
+            renewal_setup_next_attempt_at: nextAttemptAt,
+            renewal_setup_updated_at: now,
+            renewal_setup_last_source: "trial_end",
+          });
+
+          await this.env.DB.prepare(
+            "UPDATE subscriptions SET metadata = ?, updated_at = ? WHERE id = ?",
+          )
+            .bind(JSON.stringify(nextMetadata), now, subscriptionId)
+            .run();
+        });
+      }
 
       // Step 6d: Re-provision entitlements (idempotent — ensures features are current)
       await step.do("provision-entitlements", async () => {

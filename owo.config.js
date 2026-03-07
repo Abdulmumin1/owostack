@@ -1,10 +1,10 @@
-import { Owostack, metered, boolean, creditSystem, creditPack, plan } from "owostack";
-export const sendEmail = metered("send-email", { name: "send email" });
-export const apiRequest = metered("api-request", { name: "api-request" });
-export const owo = new Owostack({
-  secretKey: process.env.OWOSTACK_SECRET_KEY!,
-  provider: "paystack",
-
+// @ts-check
+const { Owostack, metered, boolean, creditSystem, creditPack, plan } = require("owostack");
+const sendEmail = metered("send-email", { name: "send email" });
+const apiRequest = metered("api-request", { name: "api-request" });
+/** @type {import('owostack').Owostack} */
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
   catalog: [
     plan("test3", {
       name: "test3",
@@ -34,3 +34,4 @@ export const owo = new Owostack({
     })
   ],
 });
+module.exports = { owo, sendEmail, apiRequest };

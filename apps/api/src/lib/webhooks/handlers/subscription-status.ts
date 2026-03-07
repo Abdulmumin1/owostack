@@ -4,6 +4,7 @@ import { provisionEntitlements } from "../../plan-switch";
 import { upsertPaymentMethod } from "../../payment-methods";
 import type { WebhookContext } from "../types";
 import { handleSubscriptionCreated } from "./subscription-created";
+import { safeParseDate } from "../types";
 
 // Note: We no longer enforce a maximum trial duration here.
 // Trial dates are validated at creation time in charge-success.ts.
@@ -91,6 +92,17 @@ export function handleSubscriptionStatus(status: string) {
       providerId: event.provider,
       updatedAt: now,
     };
+
+    // Provider renewal events are authoritative for billing dates.
+    if (status === "active") {
+      const nextPaymentMs = safeParseDate(event.subscription?.nextPaymentDate);
+      if (nextPaymentMs) {
+        const providerStartMs = safeParseDate(event.subscription?.startDate);
+        updates.currentPeriodStart =
+          providerStartMs || safeParseDate(event.payment?.paidAt) || now;
+        updates.currentPeriodEnd = nextPaymentMs;
+      }
+    }
 
     if (status === "canceled") {
       updates.canceledAt = now;
