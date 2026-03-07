@@ -33,6 +33,16 @@ export function getActiveEnvironment(): AppEnvironment {
   return _activeEnvironment;
 }
 
+export function hydrateEnvironment(
+  env: AppEnvironment,
+  projectId?: string | null,
+) {
+  _activeEnvironment = env;
+  if (projectId !== undefined) {
+    _projectId = projectId;
+  }
+}
+
 /** Bind the current project so API calls know which org to target. */
 export function setProjectId(id: string) {
   _projectId = id;
