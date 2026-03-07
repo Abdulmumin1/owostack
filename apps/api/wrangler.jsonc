@@ -85,6 +85,11 @@
       "class_name": "PlanUpgradeWorkflow",
     },
     {
+      "name": "renewal-setup-workflow",
+      "binding": "RENEWAL_SETUP_WORKFLOW",
+      "class_name": "RenewalSetupRetryWorkflow",
+    },
+    {
       "name": "overage-billing-workflow",
       "binding": "OVERAGE_BILLING_WORKFLOW",
       "class_name": "OverageBillingWorkflow",
@@ -222,6 +227,11 @@
           "class_name": "PlanUpgradeWorkflow",
         },
         {
+          "name": "renewal-setup-workflow",
+          "binding": "RENEWAL_SETUP_WORKFLOW",
+          "class_name": "RenewalSetupRetryWorkflow",
+        },
+        {
           "name": "overage-billing-workflow",
           "binding": "OVERAGE_BILLING_WORKFLOW",
           "class_name": "OverageBillingWorkflow",
@@ -321,6 +331,11 @@
           "name": "plan-upgrade-workflow",
           "binding": "PLAN_UPGRADE_WORKFLOW",
           "class_name": "PlanUpgradeWorkflow",
+        },
+        {
+          "name": "renewal-setup-workflow",
+          "binding": "RENEWAL_SETUP_WORKFLOW",
+          "class_name": "RenewalSetupRetryWorkflow",
         },
         {
           "name": "overage-billing-workflow",

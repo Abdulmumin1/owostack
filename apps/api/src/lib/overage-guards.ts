@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { UsageLedgerDO } from "./usage-ledger-do";
 import { sumUnbilledByFeature, sumUsageAmount } from "./usage-ledger";
 
@@ -224,9 +224,10 @@ export async function getOrgOverageSettings(
   gracePeriodHours: number;
 } | null> {
   try {
+    if (!organizationId) return null;
+
     const settings = await db.query.overageSettings.findFirst({
-      where: (schema: any) =>
-        schema.overageSettings.organizationId.equals(organizationId),
+      where: eq(schema.overageSettings.organizationId, organizationId),
     });
 
     if (!settings) return null;

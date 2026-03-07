@@ -64,6 +64,13 @@
 
   function getHealthMessage(sub: any) {
     const reasons = Array.isArray(sub?.health?.reasons) ? sub.health.reasons : [];
+    const renewalStatus = sub?.health?.renewalSetup?.renewal_setup_status;
+    if (reasons.includes("renewal_setup_failed")) {
+      if (renewalStatus === "scheduled" || renewalStatus === "retrying") {
+        return "Renewal setup failed after trial conversion. Automatic retry is scheduled.";
+      }
+      return "Renewal setup failed after trial conversion. Access will stop at period end unless renewal setup succeeds.";
+    }
     if (
       reasons.includes("period_end_stale") &&
       reasons.includes("provider_link_missing")
@@ -77,6 +84,17 @@
       return "Provider linkage is missing.";
     }
     return "Needs review.";
+  }
+
+  function getHealthLabel(sub: any) {
+    const reasons = Array.isArray(sub?.health?.reasons) ? sub.health.reasons : [];
+    const renewalStatus = sub?.health?.renewalSetup?.renewal_setup_status;
+    if (reasons.includes("renewal_setup_failed")) {
+      return renewalStatus === "scheduled" || renewalStatus === "retrying"
+        ? "retrying"
+        : "renewal setup";
+    }
+    return "billing review";
   }
 
   function statusColor(status: string) {
@@ -245,7 +263,7 @@
                   title={getHealthMessage(sub)}
                 >
                   <WarningCircle size={10} weight="fill" />
-                  billing review
+                  {getHealthLabel(sub)}
                 </div>
               {/if}
             </div>

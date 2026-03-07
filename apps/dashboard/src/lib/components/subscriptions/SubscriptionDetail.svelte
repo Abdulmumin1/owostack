@@ -222,6 +222,33 @@
     }
   }
 
+  async function retryRenewalSetup() {
+    if (
+      !confirm(
+        "Retry provider renewal setup for this subscription? This will attempt to create the missing recurring provider subscription.",
+      )
+    )
+      return;
+
+    actionLoading = "retry-renewal";
+    try {
+      const res = await apiFetch(
+        `/api/dashboard/subscriptions/${subscriptionId}/retry-renewal-setup`,
+        {
+          method: "POST",
+        },
+      );
+      if (res.data?.success) {
+        await loadDetail(subscriptionId);
+        onupdate?.();
+      }
+    } catch (e) {
+      console.error("Renewal setup retry failed:", e);
+    } finally {
+      actionLoading = null;
+    }
+  }
+
   function formatRelativeTime(ts: number) {
     const diff = Date.now() - ts;
     if (diff < 60000) return "Just now";
@@ -284,6 +311,36 @@
         .replace(/\b\w/g, (c: string) => c.toUpperCase())
     );
   }
+
+  function getHealthMessage(sub: any) {
+    const reasons = Array.isArray(sub?.health?.reasons) ? sub.health.reasons : [];
+    const renewalStatus = sub?.health?.renewalSetup?.renewal_setup_status;
+    if (reasons.includes("renewal_setup_failed")) {
+      if (renewalStatus === "scheduled" || renewalStatus === "retrying") {
+        return "Renewal setup failed after trial conversion. Automatic retry is scheduled.";
+      }
+      return "Renewal setup failed after trial conversion. The subscription is active only for the current paid period until renewal setup succeeds.";
+    }
+    if (
+      reasons.includes("period_end_stale") &&
+      reasons.includes("provider_link_missing")
+    ) {
+      return "Billing period is stale and provider linkage is missing.";
+    }
+    if (reasons.includes("period_end_stale")) {
+      return "Billing period ended and has not reconciled yet.";
+    }
+    if (reasons.includes("provider_link_missing")) {
+      return "Provider linkage is missing for an active paid subscription.";
+    }
+    return "Subscription needs billing review.";
+  }
+
+  const renewalSetup = $derived(data?.subscription?.health?.renewalSetup || null);
+  const hasRenewalSetupIssue = $derived(
+    Array.isArray(data?.subscription?.health?.reasons) &&
+      data.subscription.health.reasons.includes("renewal_setup_failed"),
+  );
 
   const isActive = $derived(
     data?.subscription?.status === "active" ||
@@ -450,6 +507,34 @@
         </div>
       </div>
     {/if}
+    {#if hasRenewalSetupIssue}
+      <div
+        class="bg-warning-bg border border-warning rounded p-3 flex items-start gap-2"
+      >
+        <Warning size={14} class="text-warning mt-0.5 shrink-0" weight="fill" />
+        <div class="min-w-0">
+          <p class="text-xs font-semibold text-warning">
+            {renewalSetup?.renewal_setup_status === "scheduled" ||
+            renewalSetup?.renewal_setup_status === "retrying"
+              ? "Renewal setup retry scheduled"
+              : "Renewal setup failed"}
+          </p>
+          <p class="text-[10px] text-text-dim mt-0.5">
+            {getHealthMessage(data.subscription)}
+          </p>
+          {#if renewalSetup?.renewal_setup_last_error}
+            <p class="text-[10px] text-text-dim mt-1 font-mono break-all">
+              {renewalSetup.renewal_setup_last_error}
+            </p>
+          {/if}
+          {#if renewalSetup?.renewal_setup_next_attempt_at}
+            <p class="text-[10px] text-text-dim mt-1">
+              Next attempt {formatDate(renewalSetup.renewal_setup_next_attempt_at)}
+            </p>
+          {/if}
+        </div>
+      </div>
+    {/if}
 
     <!-- Quick Stats -->
     <div class="grid grid-cols-3 gap-3">
@@ -522,6 +607,24 @@
                   <Clock size={11} weight="duotone" />
                 {/if}
                 Cancel at Period End
+              </button>
+            {/if}
+            {#if hasRenewalSetupIssue}
+              <button
+                class="btn btn-secondary gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5"
+                disabled={actionLoading !== null}
+                onclick={retryRenewalSetup}
+              >
+                {#if actionLoading === "retry-renewal"}
+                  <CircleNotch
+                    size={11}
+                    class="animate-spin"
+                    weight="duotone"
+                  />
+                {:else}
+                  <ArrowsClockwise size={11} weight="duotone" />
+                {/if}
+                Retry Renewal Setup
               </button>
             {/if}
           {/if}

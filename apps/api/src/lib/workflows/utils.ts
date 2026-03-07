@@ -16,6 +16,7 @@ export interface WorkflowEnv {
   DB_AUTH: D1Database;
   CACHE?: KVNamespace; // Optional cache for invalidation
   USAGE_LEDGER?: DurableObjectNamespace<UsageLedgerDO>;
+  RENEWAL_SETUP_WORKFLOW?: Workflow;
   ENCRYPTION_KEY: string;
   ENVIRONMENT?: string; // "test" | "live" | "development" — set per worker deployment
 }
@@ -158,7 +159,12 @@ export async function invalidateSubscriptionCache(
 
   try {
     const cache = new EntitlementCache(env.CACHE);
-    await cache.invalidateSubscriptions(organizationId, customerId);
+    await Promise.all([
+      cache.invalidateSubscriptions(organizationId, customerId),
+      typeof (cache as any).invalidateDashboardCustomer === "function"
+        ? (cache as any).invalidateDashboardCustomer(customerId)
+        : Promise.resolve(),
+    ]);
     console.log(
       `[workflow-utils] Invalidated subscription cache for customer ${customerId}`,
     );
