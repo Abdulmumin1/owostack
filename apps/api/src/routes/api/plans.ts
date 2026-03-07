@@ -96,9 +96,7 @@ app.get("/", async (c) => {
         name: pf.feature?.name ?? pf.featureId,
         type: featureType,
         meterType: pf.feature?.meterType || "consumable",
-        enabled: isBoolean
-          ? pf.limitValue !== 0
-          : pf.limitValue !== 0 && pf.limitValue !== null,
+        enabled: isBoolean ? pf.limitValue !== 0 : true,
         // For boolean features, limit is always null. For metered, use the actual value.
         limit: isBoolean ? null : (pf.limitValue ?? null),
         resetInterval: isBoolean ? null : pf.resetInterval || null,
@@ -155,9 +153,16 @@ app.get("/:slug", async (c) => {
       name: pf.feature?.name ?? pf.featureId,
       type: pf.feature?.type ?? "metered",
       meterType: pf.feature?.meterType || "consumable",
-      enabled: pf.limitValue !== 0,
-      limit: pf.limitValue ?? null,
-      resetInterval: pf.resetInterval || null,
+      enabled: (pf.feature?.type ?? "metered") === "boolean"
+        ? pf.limitValue !== 0
+        : true,
+      limit: (pf.feature?.type ?? "metered") === "boolean"
+        ? null
+        : (pf.limitValue ?? null),
+      resetInterval:
+        (pf.feature?.type ?? "metered") === "boolean"
+          ? null
+          : pf.resetInterval || null,
       unit: pf.feature?.unit || null,
       overage: pf.overage !== "block" ? pf.overage : undefined,
       overagePrice: pf.overagePrice ?? undefined,
