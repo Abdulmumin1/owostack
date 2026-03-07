@@ -96,6 +96,15 @@ export const load: LayoutServerLoad = async ({
     }
 
     // Return organization data to client
+    const metadata =
+      organization.metadata &&
+      typeof organization.metadata === "object" &&
+      !Array.isArray(organization.metadata)
+        ? organization.metadata
+        : {};
+    const activeEnvironment =
+      metadata.activeEnvironment === "live" ? "live" : "test";
+
     return {
       organization: {
         id: organization.id,
@@ -104,6 +113,7 @@ export const load: LayoutServerLoad = async ({
         logo: organization.logo,
         metadata: organization.metadata,
       },
+      activeEnvironment,
       user: locals.user,
     };
   } catch (err: any) {

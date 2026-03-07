@@ -43,8 +43,8 @@
     apiFetch,
   } from "$lib/auth-client";
   import {
+    hydrateEnvironment,
     setActiveEnvironment,
-    setProjectId,
     loadActiveEnvironment,
     getApiUrlForEnv,
   } from "$lib/env";
@@ -73,7 +73,11 @@
   let showCreateOrgModal = $state(false);
   let settingsActiveTab = $state("general");
 
-  let activeEnvironment = $state<"test" | "live">("test");
+  const pageActiveEnvironment = $derived(
+    (page.data.activeEnvironment as "test" | "live" | undefined) ?? "test",
+  );
+
+  let activeEnvironment = $state<"test" | "live">(pageActiveEnvironment);
   let testConnected = $state(false);
   let liveConnected = $state(false);
   let isSwitching = $state(false);
@@ -396,7 +400,8 @@
   // Load environment status when project changes
   $effect(() => {
     if (projectId) {
-      setProjectId(projectId);
+      hydrateEnvironment(pageActiveEnvironment, projectId);
+      activeEnvironment = pageActiveEnvironment;
       loadEnvironmentStatus();
     }
   });

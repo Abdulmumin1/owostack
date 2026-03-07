@@ -1,5 +1,13 @@
 # owosk
 
+## 0.2.3
+
+### Patch Changes
+
+- [#58](https://github.com/Abdulmumin1/owostack/pull/58) [`39135e1`](https://github.com/Abdulmumin1/owostack/commit/39135e16a148e2ad9877dba8a61f3e743b8af3fe) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Fix `--prod` CLI commands to resolve the live API URL correctly.
+
+  Production commands now prefer `OWOSTACK_API_LIVE_URL`, then `environments.live`, and otherwise default to `https://api.owostack.com` instead of falling back to sandbox. `sync --prod` also no longer reuses the generic `apiUrl` config field.
+
 ## 0.2.2
 
 ### Patch Changes
