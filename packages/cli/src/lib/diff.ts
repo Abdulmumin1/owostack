@@ -1,20 +1,57 @@
 import pc from "picocolors";
 import * as p from "@clack/prompts";
 
-function normalizeFeature(pf: any) {
+function normalizeReset(reset: string | null | undefined): string {
+  switch (reset) {
+    case "hour":
+      return "hourly";
+    case "day":
+      return "daily";
+    case "week":
+      return "weekly";
+    case "month":
+      return "monthly";
+    case "quarter":
+      return "quarterly";
+    case "year":
+    case "annually":
+      return "yearly";
+    default:
+      return reset || "monthly";
+  }
+}
+
+function normalizeOverage(
+  usageModel: string | null | undefined,
+  overage: string | null | undefined,
+): "block" | "charge" {
+  if (usageModel === "usage_based") return "charge";
+  return overage === "charge" ? "charge" : "block";
+}
+
+function normalizeFeature(pf: any, creditSystemSlugs: Set<string>) {
+  const usageModel = pf.usageModel || "included";
+  const isCreditSystemFeature = creditSystemSlugs.has(pf.slug);
   return {
     slug: pf.slug,
     enabled: pf.enabled,
     limit: pf.limit ?? null,
     // Handle both SDK 'reset' and API 'resetInterval'
-    reset: pf.reset || pf.resetInterval || "monthly",
+    reset: normalizeReset(pf.reset || pf.resetInterval),
+    usageModel: isCreditSystemFeature ? "included" : usageModel,
+    pricePerUnit: isCreditSystemFeature ? null : (pf.pricePerUnit ?? null),
+    billingUnits: isCreditSystemFeature ? 1 : (pf.billingUnits ?? 1),
+    ratingModel: isCreditSystemFeature ? "package" : (pf.ratingModel || "package"),
+    tiers: isCreditSystemFeature ? null : (pf.tiers ?? null),
     // Handle both SDK 'overage' and API 'overage' (same name)
-    overage: pf.overage || "block",
-    overagePrice: pf.overagePrice ?? null,
+    overage: normalizeOverage(usageModel, pf.overage),
+    overagePrice: isCreditSystemFeature ? null : (pf.overagePrice ?? null),
+    maxOverageUnits: isCreditSystemFeature ? null : (pf.maxOverageUnits ?? null),
+    creditCost: isCreditSystemFeature ? 0 : (pf.creditCost ?? 0),
   };
 }
 
-function normalizePlan(plan: any) {
+function normalizePlan(plan: any, creditSystemSlugs: Set<string>) {
   return {
     slug: plan.slug,
     name: plan.name ?? null,
@@ -27,8 +64,22 @@ function normalizePlan(plan: any) {
     isAddon: plan.isAddon ?? false,
     autoEnable: plan.autoEnable ?? false,
     features: (plan.features || [])
-      .map(normalizeFeature)
+      .map((feature: any) => normalizeFeature(feature, creditSystemSlugs))
       .sort((a: any, b: any) => a.slug.localeCompare(b.slug)),
+  };
+}
+
+function normalizeCreditSystem(cs: any) {
+  return {
+    slug: cs.slug,
+    name: cs.name ?? null,
+    description: cs.description ?? null,
+    features: (cs.features || [])
+      .map((feature: any) => ({
+        feature: feature.feature,
+        creditCost: feature.creditCost ?? 0,
+      }))
+      .sort((a: any, b: any) => a.feature.localeCompare(b.feature)),
   };
 }
 
@@ -69,11 +120,19 @@ export function diffPlans(
   localCreditPacks: any[] = [],
   remoteCreditPacks: any[] = [],
 ): DiffResult {
+  const creditSystemSlugs = new Set<string>([
+    ...localCreditSystems.map((cs) => cs.slug),
+    ...remoteCreditSystems.map((cs) => cs.slug),
+  ]);
   const localMap = new Map<string, any>();
   const remoteMap = new Map<string, any>();
 
-  for (const p of localPlans) localMap.set(p.slug, normalizePlan(p));
-  for (const p of remotePlans) remoteMap.set(p.slug, normalizePlan(p));
+  for (const p of localPlans) {
+    localMap.set(p.slug, normalizePlan(p, creditSystemSlugs));
+  }
+  for (const p of remotePlans) {
+    remoteMap.set(p.slug, normalizePlan(p, creditSystemSlugs));
+  }
 
   const onlyLocal: string[] = [];
   const onlyRemote: string[] = [];
@@ -133,8 +192,15 @@ export function diffPlans(
           "enabled",
           "limit",
           "reset",
+          "usageModel",
+          "pricePerUnit",
+          "billingUnits",
+          "ratingModel",
+          "tiers",
           "overage",
           "overagePrice",
+          "maxOverageUnits",
+          "creditCost",
         ];
         for (const ff of featureFields) {
           if (JSON.stringify(lf[ff]) !== JSON.stringify(rf[ff])) {
@@ -162,8 +228,12 @@ export function diffPlans(
   const localCsMap = new Map<string, any>();
   const remoteCsMap = new Map<string, any>();
 
-  for (const cs of localCreditSystems) localCsMap.set(cs.slug, cs);
-  for (const cs of remoteCreditSystems) remoteCsMap.set(cs.slug, cs);
+  for (const cs of localCreditSystems) {
+    localCsMap.set(cs.slug, normalizeCreditSystem(cs));
+  }
+  for (const cs of remoteCreditSystems) {
+    remoteCsMap.set(cs.slug, normalizeCreditSystem(cs));
+  }
 
   const csOnlyLocal: string[] = [];
   const csOnlyRemote: string[] = [];

@@ -32,6 +32,13 @@ export interface MarkInvoicedQuery {
   invoiceId: string;
 }
 
+export interface UnbilledUsagePeriodRow {
+  featureId: string;
+  periodStart: number;
+  periodEnd: number;
+  totalUsage: number;
+}
+
 export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
   async alarm(): Promise<void> {
     // PAUSED: Pruning disabled until after prod launch
@@ -321,6 +328,38 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
     }));
   }
 
+  async sumUnbilledByFeaturePeriod(
+    customerId: string,
+  ): Promise<UnbilledUsagePeriodRow[]> {
+    this.ensureSchema();
+
+    const rows = this.ctx.storage.sql
+      .exec<{
+        feature_id: string;
+        period_start: number;
+        period_end: number;
+        total_usage: number;
+      }>(
+        `SELECT feature_id,
+                period_start,
+                period_end,
+                COALESCE(SUM(amount), 0) AS total_usage
+         FROM usage_records
+         WHERE customer_id = ?
+           AND invoice_id IS NULL
+         GROUP BY feature_id, period_start, period_end`,
+        customerId,
+      )
+      .toArray();
+
+    return rows.map((row) => ({
+      featureId: row.feature_id,
+      periodStart: Number(row.period_start || 0),
+      periodEnd: Number(row.period_end || 0),
+      totalUsage: Number(row.total_usage || 0),
+    }));
+  }
+
   async listRecentUsageForCustomer(
     customerId: string,
     limit: number = 20,
@@ -502,7 +541,10 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
       FROM usage_records
       WHERE created_at >= ? AND created_at <= ?
     `;
-    const bindings: Array<string | number | null> = [createdAtFrom, createdAtTo];
+    const bindings: Array<string | number | null> = [
+      createdAtFrom,
+      createdAtTo,
+    ];
 
     if (featureId) {
       sqlText += " AND feature_id = ?";
@@ -516,10 +558,11 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
     sqlText += " GROUP BY day, feature_id ORDER BY day ASC";
 
     const rows = this.ctx.storage.sql
-      .exec<{ day: string; feature_id: string; total_usage: number }>(
-        sqlText,
-        ...bindings,
-      )
+      .exec<{
+        day: string;
+        feature_id: string;
+        total_usage: number;
+      }>(sqlText, ...bindings)
       .toArray();
 
     return rows.map((row) => ({

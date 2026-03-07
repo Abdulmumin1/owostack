@@ -2,11 +2,13 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { join, resolve, isAbsolute, extname } from "node:path";
-import { getApiKey, getApiUrl, getDashboardUrl } from "../lib/config.js";
-import { resolveConfigPath } from "../lib/loader.js";
-import { fetchPlans, fetchCreditSystems } from "../lib/api.js";
-import { generateConfig, ConfigFormat } from "../lib/generate.js";
+import { join, resolve, isAbsolute } from "node:path";
+import { getApiKey, getDashboardUrl, getTestApiUrl } from "../lib/config.js";
+import { loadConfigSettings, resolveConfigPath } from "../lib/loader.js";
+import {
+  buildRemoteCatalogSnapshot,
+  determineConfigFormat,
+} from "../lib/catalog-import.js";
 import { executeConnectFlow } from "../lib/connect.js";
 
 interface InitOptions {
@@ -40,6 +42,11 @@ export async function runInit(options: InitOptions) {
   const fullPath = isAbsolute(targetPath)
     ? targetPath
     : resolve(process.cwd(), targetPath);
+  const configSettings = await loadConfigSettings(options.config);
+  const testUrl = getTestApiUrl(
+    configSettings.environments?.test || configSettings.apiUrl,
+  );
+  const filters = configSettings.filters || {};
 
   let apiKey = getApiKey(options.key);
 
@@ -50,10 +57,10 @@ export async function runInit(options: InitOptions) {
 
     apiKey =
       (await executeConnectFlow({
-        apiUrl: getApiUrl(),
-        dashboardUrl: getDashboardUrl(),
+        apiUrl: testUrl,
+        dashboardUrl: getDashboardUrl(configSettings.connect?.dashboardUrl),
         noBrowser: false,
-        timeout: 300,
+        timeout: configSettings.connect?.timeout || 300,
       })) || "";
 
     if (!apiKey) {
@@ -78,39 +85,20 @@ export async function runInit(options: InitOptions) {
   s.start("Generating project configuration...");
 
   try {
-    const apiUrl = `${getApiUrl()}/api/v1`;
-    const plans = await fetchPlans({ apiKey, apiUrl: apiUrl });
-    const creditSystems = await fetchCreditSystems(apiKey, apiUrl);
-
-    // Determine format
-    const ext = extname(fullPath);
-    let format: ConfigFormat = "ts";
-
-    if (ext === ".ts" || ext === ".mts" || ext === ".cts") {
-      format = "ts";
-    } else if (ext === ".mjs") {
-      format = "esm";
-    } else if (ext === ".cjs") {
-      throw new Error(
-        "CommonJS config files are not supported. Use owo.config.js or owo.config.ts.",
-      );
-    } else if (ext === ".js") {
-      format = "esm";
-    }
-
-    const configContent = generateConfig(
-      plans,
-      creditSystems,
-      [],
-      undefined,
+    const format = determineConfigFormat(fullPath);
+    const snapshot = await buildRemoteCatalogSnapshot({
+      apiKey,
+      apiUrl: `${testUrl}/api/v1`,
       format,
-    );
-    await writeFile(fullPath, configContent, "utf8");
+      filters,
+    });
+
+    await writeFile(fullPath, snapshot.configContent, "utf8");
 
     s.stop(pc.green("Configuration created"));
 
     p.note(
-      `${pc.dim("File:")} ${fullPath}\n${pc.dim("Format:")} ${format.toUpperCase()}\n${pc.dim("Plans:")} ${plans.length} imported\n${pc.dim("Credit Systems:")} ${creditSystems.length}`,
+      `${pc.dim("File:")} ${fullPath}\n${pc.dim("Format:")} ${format.toUpperCase()}\n${pc.dim("Plans:")} ${snapshot.plans.length} imported\n${pc.dim("Credit Systems:")} ${snapshot.creditSystems.length}\n${pc.dim("Credit Packs:")} ${snapshot.creditPacks.length}`,
       "✨ Project Initialized",
     );
 

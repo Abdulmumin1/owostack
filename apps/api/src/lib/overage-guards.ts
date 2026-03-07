@@ -1,6 +1,9 @@
 import { eq, sql } from "drizzle-orm";
+import { schema } from "@owostack/db";
+import type { PricingTier } from "@owostack/types";
 import type { UsageLedgerDO } from "./usage-ledger-do";
 import { sumUnbilledByFeature, sumUsageAmount } from "./usage-ledger";
+import { rateUsage } from "./usage-rating";
 
 /**
  * Overage guard checks — called before allowing overage usage.
@@ -14,6 +17,20 @@ export interface OverageGuardResult {
   currentOverageAmount?: number;
   /** Customer's spending cap (minor units), if set */
   customerCap?: number | null;
+}
+
+function parsePricingTiers(raw: unknown): PricingTier[] | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw as PricingTier[];
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as PricingTier[]) : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -104,12 +121,14 @@ export async function getUnbilledOverageAmount(
                  pf.overage_price,
                  pf.billing_units,
                  pf.limit_value,
-                 pf.usage_model
+                 pf.usage_model,
+                 pf.rating_model,
+                 pf.tiers
           FROM subscriptions s
           JOIN plan_features pf ON pf.plan_id = s.plan_id
           WHERE s.customer_id = ${customerId}
             AND s.status IN ('active', 'canceled', 'pending_cancel')
-            AND pf.overage = 'charge'`,
+            AND (pf.usage_model = 'usage_based' OR pf.overage = 'charge')`,
     );
 
     const featureConfig = new Map<
@@ -120,6 +139,8 @@ export async function getUnbilledOverageAmount(
         billingUnits: number;
         limitValue: number;
         usageModel: string;
+        ratingModel: string;
+        tiers: PricingTier[] | null;
       }
     >();
 
@@ -131,6 +152,8 @@ export async function getUnbilledOverageAmount(
         billingUnits: Number(row.billing_units || 1),
         limitValue: Number(row.limit_value || 0),
         usageModel: String(row.usage_model || "included"),
+        ratingModel: String(row.rating_model || "package"),
+        tiers: parsePricingTiers(row.tiers),
       });
     }
 
@@ -140,16 +163,16 @@ export async function getUnbilledOverageAmount(
       if (!cfg) continue;
 
       const usage = Number(entry.totalUsage || 0);
-      const billable =
-        cfg.usageModel === "included"
-          ? Math.max(0, usage - cfg.limitValue)
-          : usage;
-      if (billable <= 0) continue;
-
-      const unitPrice = cfg.pricePerUnit || cfg.overagePrice || 0;
-      const billingUnits = cfg.billingUnits || 1;
-      const packages = Math.ceil(billable / billingUnits);
-      totalAmount += packages * unitPrice;
+      totalAmount += rateUsage({
+        usageModel: cfg.usageModel,
+        ratingModel: cfg.ratingModel,
+        usage,
+        included: cfg.limitValue,
+        pricePerUnit: cfg.pricePerUnit,
+        billingUnits: cfg.billingUnits,
+        overagePrice: cfg.overagePrice,
+        tiers: cfg.tiers,
+      }).amount;
     }
 
     return totalAmount;
@@ -163,28 +186,30 @@ export async function getUnbilledOverageAmount(
                pf.overage_price,
                pf.billing_units,
                pf.limit_value,
-               pf.usage_model
+               pf.usage_model,
+               pf.rating_model,
+               pf.tiers
         FROM usage_records ur
         JOIN subscriptions s ON s.customer_id = ur.customer_id AND s.status IN ('active', 'canceled', 'pending_cancel')
         JOIN plan_features pf ON pf.plan_id = s.plan_id AND pf.feature_id = ur.feature_id
         WHERE ur.customer_id = ${customerId}
           AND ur.invoice_id IS NULL
-          AND pf.overage = 'charge'
+          AND (pf.usage_model = 'usage_based' OR pf.overage = 'charge')
         GROUP BY pf.feature_id`,
   );
 
   let totalAmount = 0;
   for (const row of result?.results || []) {
-    const usage = Number(row.total_usage || 0);
-    const included = Number(row.limit_value || 0);
-    const billable =
-      row.usage_model === "included" ? Math.max(0, usage - included) : usage;
-    if (billable === 0) continue;
-
-    const pricePerUnit = Number(row.price_per_unit || row.overage_price || 0);
-    const billingUnits = Number(row.billing_units || 1);
-    const packages = Math.ceil(billable / billingUnits);
-    totalAmount += packages * pricePerUnit;
+    totalAmount += rateUsage({
+      usageModel: String(row.usage_model || "included"),
+      ratingModel: String(row.rating_model || "package"),
+      usage: Number(row.total_usage || 0),
+      included: Number(row.limit_value || 0),
+      pricePerUnit: Number(row.price_per_unit || 0),
+      billingUnits: Number(row.billing_units || 1),
+      overagePrice: Number(row.overage_price || 0),
+      tiers: parsePricingTiers(row.tiers),
+    }).amount;
   }
 
   return totalAmount;

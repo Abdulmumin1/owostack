@@ -21,10 +21,99 @@ import {
   getUnbilledOverageAmount,
 } from "../../lib/overage-guards";
 import { isPaidActivePastGracePeriod } from "../../lib/subscription-health";
+import {
+  getCurrentPricingTier,
+  normalizeRatingModel,
+} from "../../lib/usage-rating";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
+
+function getUsageModel(
+  planFeature: any,
+): "included" | "usage_based" | "prepaid" {
+  if (planFeature?.usageModel === "usage_based") return "usage_based";
+  if (planFeature?.usageModel === "prepaid") return "prepaid";
+  return "included";
+}
+
+function getGuardIncluded(planFeature: any): number | null {
+  return getUsageModel(planFeature) === "usage_based"
+    ? 0
+    : planFeature.limitValue;
+}
+
+function buildPricingDetails(
+  planFeature: any,
+  usage?: number | null,
+):
+  | {
+      usageModel: "included" | "usage_based" | "prepaid";
+      ratingModel: "package" | "graduated" | "volume";
+      pricePerUnit?: number | null;
+      billingUnits?: number | null;
+      currentTier?: {
+        index: number;
+        startsAt: number;
+        endsAt: number | null;
+        unitPrice: number;
+        flatFee?: number;
+      };
+    }
+  | undefined {
+  if (!planFeature) return undefined;
+
+  const usageModel = getUsageModel(planFeature);
+  const ratingModel = normalizeRatingModel(planFeature.ratingModel);
+  const pricing: {
+    usageModel: "included" | "usage_based" | "prepaid";
+    ratingModel: "package" | "graduated" | "volume";
+    pricePerUnit?: number | null;
+    billingUnits?: number | null;
+    currentTier?: {
+      index: number;
+      startsAt: number;
+      endsAt: number | null;
+      unitPrice: number;
+      flatFee?: number;
+    };
+  } = {
+    usageModel,
+    ratingModel,
+  };
+
+  if (ratingModel === "package") {
+    const pricePerUnit =
+      usageModel === "included"
+        ? (planFeature.overagePrice ?? planFeature.pricePerUnit ?? null)
+        : (planFeature.pricePerUnit ?? planFeature.overagePrice ?? null);
+    if (pricePerUnit !== null && pricePerUnit !== undefined) {
+      pricing.pricePerUnit = pricePerUnit;
+    }
+    if (
+      planFeature.billingUnits !== null &&
+      planFeature.billingUnits !== undefined
+    ) {
+      pricing.billingUnits = planFeature.billingUnits;
+    }
+  }
+
+  if (usage !== null && usage !== undefined) {
+    const currentTier = getCurrentPricingTier({
+      usage,
+      included: getGuardIncluded(planFeature),
+      usageModel,
+      ratingModel,
+      tiers: planFeature.tiers,
+    });
+    if (currentTier) {
+      pricing.currentTier = currentTier;
+    }
+  }
+
+  return pricing;
+}
 
 function scheduleCacheOp(c: any, op: Promise<unknown>, label: string) {
   c.executionCtx.waitUntil(
@@ -347,7 +436,10 @@ async function resolveCreditSystem(
     ),
   });
   const manualByCreditSystemId = new Map(
-    manualEntitlements.map((row: { featureId: string }) => [row.featureId, row]),
+    manualEntitlements.map((row: { featureId: string }) => [
+      row.featureId,
+      row,
+    ]),
   );
 
   // 3. Fetch all plan_features for mapped credit systems in one query
@@ -523,11 +615,9 @@ app.post("/check", async (c) => {
           })) ?? null;
 
         if (f && cache) {
-          const featureCacheKeys = [
-            featureId,
-            f.id,
-            f.slug,
-          ].filter((key): key is string => !!key && key.length > 0);
+          const featureCacheKeys = [featureId, f.id, f.slug].filter(
+            (key): key is string => !!key && key.length > 0,
+          );
           const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
           scheduleCacheOp(
             c,
@@ -870,7 +960,12 @@ app.post("/check", async (c) => {
   const planName = (subscription as any).plan?.name || "current plan";
 
   // Helper to build the details object — only includes truthy optional fields
-  function buildDetails(message: string, extra?: Record<string, unknown>) {
+  function buildDetails(
+    message: string,
+    extra?: Record<string, unknown>,
+    usageForPricing?: number | null,
+  ) {
+    const pricing = buildPricingDetails(planFeature, usageForPricing);
     return {
       message,
       planName,
@@ -881,6 +976,7 @@ app.post("/check", async (c) => {
             creditCostPerUnit: creditMapping.costPerUnit,
           }
         : {}),
+      ...(pricing ? { pricing } : {}),
       ...extra,
     };
   }
@@ -928,6 +1024,7 @@ app.post("/check", async (c) => {
         `${organizationId}:${customer.id}`,
       );
       const usageMeter = c.env.USAGE_METER.get(doId);
+      const usageModel = getUsageModel(planFeature);
 
       // Pass current config inline — single RPC call, no extra round-trip
       const currentConfig = {
@@ -1012,6 +1109,40 @@ app.post("/check", async (c) => {
         doResult = await usageMeter.check(featureKey, effectiveValue);
       }
 
+      if (usageModel === "usage_based") {
+        const usageBasedGuard = await checkOverageAllowed(
+          db,
+          customer.id,
+          effectiveFeatureId,
+          resetPeriod.periodStart,
+          resetPeriod.periodEnd,
+          0,
+          planFeature.maxOverageUnits,
+          effectiveValue,
+          {
+            usageLedger: c.env.USAGE_LEDGER,
+            organizationId: organizationId || null,
+          },
+        );
+
+        if (!usageBasedGuard.allowed) {
+          return c.json({
+            allowed: false,
+            code: "limit_exceeded",
+            usage: doResult.usage,
+            limit: null,
+            balance: null,
+            resetsAt,
+            resetInterval: planFeature.resetInterval,
+            details: buildDetails(
+              usageBasedGuard.reason || "Usage-based billing is not allowed.",
+              undefined,
+              doResult.usage,
+            ),
+          });
+        }
+      }
+
       if (!doResult.allowed) {
         // During trials, always block at limit — no overage billing for free trials
         const overageSetting = isTrial
@@ -1072,6 +1203,7 @@ app.post("/check", async (c) => {
                   addonCreditsUsed: effectiveValue,
                   addonCreditsRemaining: remaining,
                 },
+                doResult.usage,
               ),
             });
           }
@@ -1088,6 +1220,10 @@ app.post("/check", async (c) => {
             planFeature.limitValue,
             planFeature.maxOverageUnits,
             effectiveValue,
+            {
+              usageLedger: c.env.USAGE_LEDGER,
+              organizationId: organizationId || null,
+            },
           );
 
           if (overageGuard.allowed) {
@@ -1113,6 +1249,7 @@ app.post("/check", async (c) => {
                     billingUnits: planFeature.billingUnits,
                   },
                 },
+                doResult.usage,
               ),
             });
           }
@@ -1137,6 +1274,8 @@ app.post("/check", async (c) => {
             : {}),
           details: buildDetails(
             `Usage limit reached (${doResult.usage}/${doResult.limit}). Resets at ${resetsAt}.`,
+            undefined,
+            doResult.usage,
           ),
         });
       }
@@ -1200,6 +1339,7 @@ app.post("/check", async (c) => {
                     addonCreditsUsed: effectiveValue,
                     addonCreditsRemaining: deductResult.remaining,
                   },
+                  doResult.usage,
                 ),
               });
             }
@@ -1222,6 +1362,8 @@ app.post("/check", async (c) => {
             resetInterval: planFeature.resetInterval,
             details: buildDetails(
               `Usage tracking denied — insufficient balance (${trackResult.balance} remaining). Resets at ${resetsAt}.`,
+              undefined,
+              doResult.usage,
             ),
           });
         }
@@ -1289,29 +1431,16 @@ app.post("/check", async (c) => {
             }
           : {}),
         details: buildDetails(
-          doResult.limit === null
-            ? `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`
-            : `Access granted — used ${doResult.usage} of ${doResult.limit}.`,
+          usageModel === "usage_based"
+            ? `Usage-based access granted for '${feature.slug || feature.id}'. Usage will be billed.`
+            : doResult.limit === null
+              ? `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`
+              : `Access granted — used ${doResult.usage} of ${doResult.limit}.`,
+          undefined,
+          doResult.usage,
         ),
       });
     }
-    // Check Usage Limit
-    // If limitValue is null, it's unlimited
-    if (planFeature.limitValue === null) {
-      return c.json({
-        allowed: true,
-        code: "access_granted",
-        usage: null,
-        limit: null,
-        balance: null,
-        resetsAt,
-        resetInterval: planFeature.resetInterval,
-        details: buildDetails(
-          `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`,
-        ),
-      });
-    }
-
     // Calculate current usage for this period using the feature's reset interval
     const { periodStart: currentPeriodStart, periodEnd: currentPeriodEnd } =
       getResetPeriod(
@@ -1372,6 +1501,75 @@ app.post("/check", async (c) => {
     }
 
     const currentUsage = ledgerUsage ?? 0;
+    const usageModel = getUsageModel(planFeature);
+
+    if (usageModel === "usage_based") {
+      const usageBasedGuard = await checkOverageAllowed(
+        db,
+        customer.id,
+        effectiveFeatureId,
+        currentPeriodStart,
+        currentPeriodEnd,
+        0,
+        planFeature.maxOverageUnits,
+        effectiveValue,
+        {
+          usageLedger: c.env.USAGE_LEDGER,
+          organizationId: organizationId || null,
+        },
+      );
+
+      if (!usageBasedGuard.allowed) {
+        return c.json({
+          allowed: false,
+          code: "limit_exceeded",
+          usage: currentUsage,
+          limit: null,
+          balance: null,
+          resetsAt,
+          resetInterval: planFeature.resetInterval,
+          details: buildDetails(
+            usageBasedGuard.reason || "Usage-based billing is not allowed.",
+            undefined,
+            currentUsage,
+          ),
+        });
+      }
+
+      return c.json({
+        allowed: true,
+        code: "access_granted",
+        usage: currentUsage,
+        limit: null,
+        balance: null,
+        resetsAt,
+        resetInterval: planFeature.resetInterval,
+        details: buildDetails(
+          `Usage-based access granted for '${feature.slug || feature.id}'. Usage will be billed.`,
+          undefined,
+          currentUsage,
+        ),
+      });
+    }
+
+    // Check Usage Limit
+    // If limitValue is null, it's unlimited
+    if (planFeature.limitValue === null) {
+      return c.json({
+        allowed: true,
+        code: "access_granted",
+        usage: currentUsage,
+        limit: null,
+        balance: null,
+        resetsAt,
+        resetInterval: planFeature.resetInterval,
+        details: buildDetails(
+          `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`,
+          undefined,
+          currentUsage,
+        ),
+      });
+    }
 
     if (currentUsage + effectiveValue > planFeature.limitValue) {
       // During trials, always block at limit — no overage billing for free trials
@@ -1405,6 +1603,7 @@ app.post("/check", async (c) => {
                 addonCreditsUsed: effectiveValue,
                 addonCreditsRemaining: addonBalance,
               },
+              currentUsage,
             ),
           });
         }
@@ -1421,6 +1620,10 @@ app.post("/check", async (c) => {
           planFeature.limitValue,
           planFeature.maxOverageUnits,
           effectiveValue,
+          {
+            usageLedger: c.env.USAGE_LEDGER,
+            organizationId: organizationId || null,
+          },
         );
 
         if (overageGuard.allowed) {
@@ -1443,6 +1646,7 @@ app.post("/check", async (c) => {
                   billingUnits: planFeature.billingUnits,
                 },
               },
+              currentUsage,
             ),
           });
         }
@@ -1466,6 +1670,8 @@ app.post("/check", async (c) => {
           : {}),
         details: buildDetails(
           `Usage limit exceeded (${currentUsage}/${planFeature.limitValue}). Resets at ${resetsAt}.`,
+          undefined,
+          currentUsage,
         ),
       });
     }
@@ -1495,6 +1701,8 @@ app.post("/check", async (c) => {
           resetInterval: planFeature.resetInterval,
           details: buildDetails(
             `Insufficient credits — balance: ${creditBalance}, required: ${cost}.`,
+            undefined,
+            currentUsage,
           ),
         });
       }
@@ -1544,6 +1752,8 @@ app.post("/check", async (c) => {
       resetInterval: planFeature.resetInterval,
       details: buildDetails(
         `Access granted — used ${currentUsage} of ${planFeature.limitValue}.`,
+        undefined,
+        currentUsage,
       ),
     });
   }
@@ -1619,11 +1829,9 @@ app.post("/track", async (c) => {
           })) ?? null;
 
         if (f && cache) {
-          const featureCacheKeys = [
-            featureId,
-            f.id,
-            f.slug,
-          ].filter((key): key is string => !!key && key.length > 0);
+          const featureCacheKeys = [featureId, f.id, f.slug].filter(
+            (key): key is string => !!key && key.length > 0,
+          );
           const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
           scheduleCacheOp(
             c,
@@ -1941,7 +2149,12 @@ app.post("/track", async (c) => {
 
   const trackPlanName = (subscription as any).plan?.name || "current plan";
 
-  function buildTrackDetails(message: string, extra?: Record<string, unknown>) {
+  function buildTrackDetails(
+    message: string,
+    extra?: Record<string, unknown>,
+    usageForPricing?: number | null,
+  ) {
+    const pricing = buildPricingDetails(planFeature, usageForPricing);
     return {
       message,
       planName: trackPlanName,
@@ -1952,6 +2165,7 @@ app.post("/track", async (c) => {
             creditCostPerUnit: trackCreditMapping.costPerUnit,
           }
         : {}),
+      ...(pricing ? { pricing } : {}),
       ...extra,
     };
   }
@@ -1962,6 +2176,7 @@ app.post("/track", async (c) => {
     subscription.currentPeriodStart,
     subscription.currentPeriodEnd,
   );
+  const usageModel = getUsageModel(planFeature);
 
   try {
     // ===========================================================================
@@ -2001,6 +2216,39 @@ app.post("/track", async (c) => {
         usageModel: planFeature.usageModel || "included",
         creditCost: planFeature.creditCost || 0,
       };
+
+      if (usageModel === "usage_based") {
+        const usageBasedGuard = await checkOverageAllowed(
+          db,
+          customer.id,
+          trackEffectiveFeatureId,
+          periodStart,
+          periodEnd,
+          0,
+          planFeature.maxOverageUnits,
+          trackEffectiveValue,
+          {
+            usageLedger: c.env.USAGE_LEDGER,
+            organizationId: organizationId || null,
+          },
+        );
+
+        if (!usageBasedGuard.allowed) {
+          return c.json({
+            success: false,
+            allowed: false,
+            code: "limit_exceeded",
+            usage: null,
+            limit: null,
+            balance: null,
+            resetsAt: new Date(periodEnd).toISOString(),
+            resetInterval: planFeature.resetInterval,
+            details: buildTrackDetails(
+              usageBasedGuard.reason || "Usage-based billing is not allowed.",
+            ),
+          });
+        }
+      }
 
       // Track usage atomically via RPC (config synced inline)
       doResult = await usageMeter.track(
@@ -2127,6 +2375,7 @@ app.post("/track", async (c) => {
                   addonCreditsUsed: trackEffectiveValue,
                   addonCreditsRemaining: deductResult.remaining,
                 },
+                addonDoUsage,
               ),
             });
           }
@@ -2152,6 +2401,10 @@ app.post("/track", async (c) => {
             planFeature.limitValue,
             planFeature.maxOverageUnits,
             requestedOverageUnits,
+            {
+              usageLedger: c.env.USAGE_LEDGER,
+              organizationId: organizationId || null,
+            },
           );
 
           if (!overageGuard.allowed) {
@@ -2171,6 +2424,8 @@ app.post("/track", async (c) => {
               details: buildTrackDetails(
                 overageGuard.reason ||
                   `Overage not allowed. ${requestedOverageUnits} overage units requested.`,
+                undefined,
+                guardUsage,
               ),
             });
           }
@@ -2198,6 +2453,10 @@ app.post("/track", async (c) => {
                 planFeature.limitValue,
                 planFeature.maxOverageUnits,
                 trackEffectiveValue,
+                {
+                  usageLedger: c.env.USAGE_LEDGER,
+                  organizationId: organizationId || null,
+                },
               );
 
               if (!raceOverageGuard.allowed) {
@@ -2216,6 +2475,8 @@ app.post("/track", async (c) => {
                   details: buildTrackDetails(
                     raceOverageGuard.reason ||
                       `Overage not allowed. ${trackEffectiveValue} overage units requested.`,
+                    undefined,
+                    doResult.usage ?? null,
                   ),
                 });
               }
@@ -2249,9 +2510,44 @@ app.post("/track", async (c) => {
               : {}),
             details: buildTrackDetails(
               `Usage tracking denied — limit reached (${doResult.balance} remaining). Resets at ${new Date(periodEnd).toISOString()}.`,
+              undefined,
+              blockUsage,
             ),
           });
         }
+      }
+    }
+
+    if (usageModel === "usage_based" && !doResult) {
+      const usageBasedGuard = await checkOverageAllowed(
+        db,
+        customer.id,
+        trackEffectiveFeatureId,
+        periodStart,
+        periodEnd,
+        0,
+        planFeature.maxOverageUnits,
+        trackEffectiveValue,
+        {
+          usageLedger: c.env.USAGE_LEDGER,
+          organizationId: organizationId || null,
+        },
+      );
+
+      if (!usageBasedGuard.allowed) {
+        return c.json({
+          success: false,
+          allowed: false,
+          code: "limit_exceeded",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: new Date(periodEnd).toISOString(),
+          resetInterval: planFeature.resetInterval,
+          details: buildTrackDetails(
+            usageBasedGuard.reason || "Usage-based billing is not allowed.",
+          ),
+        });
       }
     }
 
@@ -2300,8 +2596,10 @@ app.post("/track", async (c) => {
       trackedAsOverage ||
       !!(doResult && !doResult.allowed && planFeature.overage === "charge");
 
-    // Threshold trigger: if this was overage, check if unbilled amount crosses org threshold
-    if (isOverage && organizationId) {
+    const isChargeableUsage = isOverage || usageModel === "usage_based";
+
+    // Threshold trigger: if this usage is chargeable, check if unbilled amount crosses org threshold
+    if (isChargeableUsage && organizationId) {
       c.executionCtx.waitUntil(
         (async () => {
           try {
@@ -2313,6 +2611,10 @@ app.post("/track", async (c) => {
               const unbilledAmount = await getUnbilledOverageAmount(
                 db,
                 customer.id,
+                {
+                  usageLedger: c.env.USAGE_LEDGER,
+                  organizationId: organizationId || null,
+                },
               );
               if (unbilledAmount >= orgSettings.thresholdAmount) {
                 const hourBucket = Math.floor(Date.now() / (3600 * 1000));
@@ -2348,12 +2650,24 @@ app.post("/track", async (c) => {
         ? { rolloverBalance: doResult.rolloverBalance }
         : {}),
       details: isOverage
-        ? buildTrackDetails(`Usage tracked as overage (will be billed).`, {
-            overage: { type: planFeature.overage, willBeBilled: true },
-          })
-        : buildTrackDetails(
-            `Usage tracked successfully (${doResult?.balance ?? "n/a"} remaining).`,
-          ),
+        ? buildTrackDetails(
+            `Usage tracked as overage (will be billed).`,
+            {
+              overage: { type: planFeature.overage, willBeBilled: true },
+            },
+            successUsage,
+          )
+        : usageModel === "usage_based"
+          ? buildTrackDetails(
+              `Usage tracked successfully. This usage is billable.`,
+              undefined,
+              successUsage,
+            )
+          : buildTrackDetails(
+              `Usage tracked successfully (${doResult?.balance ?? "n/a"} remaining).`,
+              undefined,
+              successUsage,
+            ),
     });
   } catch (e: any) {
     console.error("Track failed:", e);

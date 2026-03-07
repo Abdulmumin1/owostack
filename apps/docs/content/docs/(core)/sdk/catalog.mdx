@@ -41,15 +41,19 @@ apiCalls.limit(50000, {
 });
 ```
 
-| Parameter                | Type                  | Default     | Description                             |
-| ------------------------ | --------------------- | ----------- | --------------------------------------- |
-| `value`                  | `number`              | —           | Usage limit per period                  |
-| `config.reset`           | `ResetInterval`       | `"monthly"` | Reset schedule                          |
-| `config.overage`         | `"block" \| "charge"` | `"block"`   | What happens when limit is exceeded     |
-| `config.overagePrice`    | `number`              | —           | Price per overage unit (minor currency) |
-| `config.maxOverageUnits` | `number`              | —           | Hard cap on overage units per period    |
-| `config.billingUnits`    | `number`              | `1`         | Package size for billing                |
-| `config.creditCost`      | `number`              | —           | Cost in credits per unit                |
+| Parameter                | Type                                       | Default      | Description                                      |
+| ------------------------ | ------------------------------------------ | ------------ | ------------------------------------------------ |
+| `value`                  | `number`                                   | —            | Usage limit per period                           |
+| `config.reset`           | `ResetInterval`                            | `"monthly"`  | Reset schedule                                   |
+| `config.usageModel`      | `"included" \| "usage_based" \| "prepaid"` | `"included"` | Entitlement model for the feature                |
+| `config.pricePerUnit`    | `number`                                   | —            | Package or per-unit price (minor currency)       |
+| `config.ratingModel`     | `"package" \| "graduated" \| "volume"`     | `"package"`  | How billable usage is priced                     |
+| `config.tiers`           | `PricingTier[]`                            | —            | Tier definitions for graduated or volume pricing |
+| `config.overage`         | `"block" \| "charge"`                      | `"block"`    | What happens when limit is exceeded              |
+| `config.overagePrice`    | `number`                                   | —            | Price per overage unit (minor currency)          |
+| `config.maxOverageUnits` | `number`                                   | —            | Hard cap on overage units per period             |
+| `config.billingUnits`    | `number`                                   | `1`          | Package size for billing                         |
+| `config.creditCost`      | `number`                                   | —            | Cost in credits per unit                         |
 
 #### `.unlimited()`
 
@@ -58,6 +62,107 @@ Create a plan feature entry with no limit.
 ```ts
 apiCalls.unlimited();
 ```
+
+#### `.perUnit(unitPrice, config?)`
+
+Create a usage-based feature that bills from the first tracked unit.
+
+```ts
+apiCalls.perUnit(2); // $0.02 per unit
+apiCalls.perUnit(500, { reset: "monthly" }); // $5.00 per unit
+```
+
+`perUnit()` is a convenience wrapper for `usageModel: "usage_based"` with
+`ratingModel: "package"` and `billingUnits: 1`.
+
+#### `.graduated(tiers, config?)`
+
+Create stacked tier pricing where each tier rates only the units inside that
+tier.
+
+```ts
+apiCalls.graduated([
+  { upTo: 1000, unitPrice: 0 },
+  { upTo: 10000, unitPrice: 10 },
+  { upTo: null, unitPrice: 5 },
+]);
+```
+
+For 1,500 units, the first 1,000 units use tier 1 and the next 500 units use
+tier 2.
+
+If a tier includes `flatFee`, that fee is added once when usage enters that
+tier. Graduated pricing is cumulative across tiers used.
+
+Example with billable usage of `31`:
+
+```ts
+apiCalls.graduated([
+  { upTo: 30, flatFee: 1000 },
+  { upTo: 100, flatFee: 5000 },
+]);
+```
+
+Result:
+
+- units `1-30` enter tier 1, so tier 1 adds `1000`
+- unit `31` enters tier 2, so tier 2 adds `5000`
+- total = `6000`
+
+#### `.volume(tiers, config?)`
+
+Create all-units pricing where the reached tier applies to all billable usage.
+
+```ts
+apiCalls.volume([
+  { upTo: 1000, unitPrice: 100 },
+  { upTo: 10000, unitPrice: 80 },
+  { upTo: null, unitPrice: 50 },
+]);
+```
+
+For 1,500 units, all 1,500 units are billed at tier 2's `unitPrice`.
+
+If a tier includes `flatFee`, only the reached tier's `flatFee` is applied.
+Volume pricing is not cumulative across multiple tiers.
+
+Example with billable usage of `31`:
+
+```ts
+apiCalls.volume([
+  { upTo: 30, flatFee: 1000 },
+  { upTo: 100, flatFee: 5000 },
+]);
+```
+
+Result:
+
+- usage reaches tier 2
+- only tier 2 applies
+- total = `5000`
+
+### Graduated vs volume
+
+Both models use tiers, but they answer different pricing questions:
+
+- `graduated`: "what price applies to each chunk of usage?"
+- `volume`: "what price applies to the total after I know the final band?"
+
+For the same `31` billable units:
+
+```ts
+const tiers = [
+  { upTo: 30, unitPrice: 100 },
+  { upTo: 100, unitPrice: 50 },
+];
+```
+
+- `graduated` = `30 * 100 + 1 * 50 = 3050`
+- `volume` = `31 * 50 = 1550`
+
+Use `graduated` when pricing should accumulate step by step. Use `volume` when
+crossing into a lower band should reprice all billable usage at that band's
+rate.
 
 #### `.config(opts)`
 
@@ -68,7 +173,11 @@ apiCalls.config({
   limit: 50000,
   reset: "monthly",
   overage: "charge",
-  overagePrice: 100,
+  ratingModel: "graduated",
+  tiers: [
+    { upTo: 10000, unitPrice: 10 },
+    { upTo: null, unitPrice: 5 },
+  ],
 });
 ```
 
@@ -445,7 +554,7 @@ interface SyncResult {
 Push a catalog from the command line.
 
 ```bash
-npx owo sync [options]
+npx owosk sync [options]
 ```
 
 | Option            | Description                                           |

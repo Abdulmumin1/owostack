@@ -1,67 +1,505 @@
-import { describe, expect, it } from "vitest";
-import {
-  deriveReconciledPeriodStart,
-  rollPeriodForward,
-} from "./overage-billing";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Result } from "better-result";
 
-describe("rollPeriodForward", () => {
-  it("moves to the immediate next period", () => {
-    const currentPeriodEnd = 1_000;
-    const dayMs = 24 * 60 * 60 * 1000;
+const {
+  mockGetUnbilledUsage,
+  mockChargeAuthorization,
+  mockResolveProviderAccount,
+  mockMarkUsageInvoiced,
+  mockCreateDb,
+} = vi.hoisted(() => ({
+  mockGetUnbilledUsage: vi.fn(),
+  mockChargeAuthorization: vi.fn(),
+  mockResolveProviderAccount: vi.fn(),
+  mockMarkUsageInvoiced: vi.fn(),
+  mockCreateDb: vi.fn(() => ({})),
+}));
 
-    const next = rollPeriodForward(currentPeriodEnd, "daily", currentPeriodEnd);
+vi.mock("cloudflare:workers", () => ({
+  WorkflowEntrypoint: class {},
+}));
 
-    expect(next.nextPeriodStart).toBe(currentPeriodEnd);
-    expect(next.nextPeriodEnd).toBe(currentPeriodEnd + dayMs);
+vi.mock("@owostack/db", () => ({
+  createDb: mockCreateDb,
+}));
+
+vi.mock("../billing", () => ({
+  BillingService: class {
+    getUnbilledUsage = mockGetUnbilledUsage;
+  },
+}));
+
+vi.mock("../usage-ledger", () => ({
+  markUsageInvoiced: mockMarkUsageInvoiced,
+}));
+
+vi.mock("./utils", () => ({
+  getAdapter: vi.fn(() => ({
+    chargeAuthorization: mockChargeAuthorization,
+  })),
+  resolveProviderAccount: mockResolveProviderAccount,
+  invalidateSubscriptionCache: vi.fn(async () => undefined),
+  intervalToMs: vi.fn((interval: string) => {
+    switch (interval) {
+      case "monthly":
+        return 30 * 24 * 60 * 60 * 1000;
+      default:
+        return 30 * 24 * 60 * 60 * 1000;
+    }
+  }),
+}));
+
+import { OverageBillingWorkflow } from "./overage-billing";
+
+function createStepMock() {
+  return {
+    sleep: vi.fn(async () => undefined),
+    do: vi.fn(async (...args: any[]) => {
+      const fn = typeof args[1] === "function" ? args[1] : args[2];
+      return fn();
+    }),
+  };
+}
+
+type DbOptions = {
+  overageSettings?: {
+    billing_interval: string;
+    threshold_amount: number | null;
+    auto_collect: number;
+    grace_period_hours: number;
+  } | null;
+  paymentMethodForMinimumCheck?: { provider_id: string } | null;
+  defaultPaymentMethod?: { token: string; provider_id: string } | null;
+  customerEmail?: string | null;
+  existingInvoice?: {
+    id: string;
+    number: string;
+    total: number;
+    currency: string;
+    status: string;
+  } | null;
+  invoiceCount?: number;
+};
+
+function createDbMock(options: DbOptions = {}) {
+  const state = {
+    invoices: [] as Array<{
+      id: string;
+      number: string;
+      total: number;
+      currency: string;
+      status: string;
+      amountPaid: number;
+      amountDue: number;
+    }>,
+    invoiceItems: [] as Array<{
+      invoiceId: string;
+      featureId: string;
+      amount: number;
+      unitPrice: number;
+      metadata: Record<string, unknown> | null;
+    }>,
+    paymentAttempts: [] as Array<{
+      invoiceId: string;
+      amount: number;
+      currency: string;
+      status: string;
+      provider: string;
+      providerReference: string | null;
+      attemptNumber: number;
+      lastError: string | null;
+    }>,
+  };
+
+  const invoiceStatusById = new Map<string, string>();
+  if (options.existingInvoice) {
+    invoiceStatusById.set(
+      options.existingInvoice.id,
+      options.existingInvoice.status,
+    );
+  }
+
+  return {
+    state,
+    DB: {
+      prepare(sql: string) {
+        return {
+          bind(...params: any[]) {
+            return {
+              async first() {
+                if (
+                  sql.includes(
+                    "SELECT * FROM overage_settings WHERE organization_id",
+                  )
+                ) {
+                  return (
+                    options.overageSettings || {
+                      billing_interval: "end_of_period",
+                      threshold_amount: null,
+                      auto_collect: 1,
+                      grace_period_hours: 0,
+                    }
+                  );
+                }
+
+                if (
+                  sql.includes(
+                    "SELECT provider_id FROM payment_methods WHERE customer_id",
+                  )
+                ) {
+                  return options.paymentMethodForMinimumCheck ?? null;
+                }
+
+                if (
+                  sql.includes(
+                    "SELECT id, number, total, currency FROM invoices",
+                  )
+                ) {
+                  return options.existingInvoice ?? null;
+                }
+
+                if (sql.includes("SELECT COUNT(*) as count FROM invoices")) {
+                  return { count: options.invoiceCount ?? 0 };
+                }
+
+                if (
+                  sql.includes(
+                    "SELECT id FROM invoice_items WHERE invoice_id = ? AND feature_id = ?",
+                  )
+                ) {
+                  return null;
+                }
+
+                if (
+                  sql.includes(
+                    "SELECT token, provider_id FROM payment_methods WHERE customer_id",
+                  )
+                ) {
+                  return options.defaultPaymentMethod ?? null;
+                }
+
+                if (sql.includes("SELECT email FROM customers WHERE id = ?")) {
+                  return { email: options.customerEmail ?? null };
+                }
+
+                if (sql.includes("SELECT status FROM invoices WHERE id = ?")) {
+                  const invoiceId = params[0];
+                  const status = invoiceStatusById.get(invoiceId);
+                  return status ? { status } : null;
+                }
+
+                return null;
+              },
+              async run() {
+                if (sql.includes("INSERT INTO invoices")) {
+                  const invoice = {
+                    id: params[0],
+                    number: params[3],
+                    currency: params[4],
+                    total: params[6],
+                    status: "open",
+                    amountPaid: 0,
+                    amountDue: params[7],
+                  };
+                  state.invoices.push(invoice);
+                  invoiceStatusById.set(invoice.id, "open");
+                }
+
+                if (sql.includes("INSERT INTO invoice_items")) {
+                  state.invoiceItems.push({
+                    invoiceId: params[1],
+                    featureId: params[2],
+                    amount: params[6],
+                    unitPrice: params[5],
+                    metadata: params[9] ? JSON.parse(params[9]) : null,
+                  });
+                }
+
+                if (sql.includes("INSERT INTO payment_attempts")) {
+                  if (params.length === 6) {
+                    state.paymentAttempts.push({
+                      invoiceId: params[1],
+                      amount: params[2],
+                      currency: params[3],
+                      status: "failed",
+                      provider: params[4],
+                      providerReference: null,
+                      attemptNumber: 1,
+                      lastError: sql.includes("No provider account configured")
+                        ? "No provider account configured"
+                        : "No payment method on file",
+                    });
+                  } else {
+                    state.paymentAttempts.push({
+                      invoiceId: params[1],
+                      amount: params[2],
+                      currency: params[3],
+                      status: params[4],
+                      provider: params[5],
+                      providerReference: params[6] ?? null,
+                      attemptNumber: params[7],
+                      lastError: params[8] ?? null,
+                    });
+                  }
+                }
+
+                if (sql.includes("UPDATE invoices SET status = 'paid'")) {
+                  const invoiceId = params[2];
+                  const invoice = state.invoices.find(
+                    (item) => item.id === invoiceId,
+                  );
+                  if (invoice) {
+                    invoice.status = "paid";
+                    invoice.amountPaid = params[0];
+                    invoice.amountDue = 0;
+                  }
+                  invoiceStatusById.set(invoiceId, "paid");
+                }
+
+                return { meta: { changes: 1 } };
+              },
+            };
+          },
+        };
+      },
+    },
+  };
+}
+
+function createUnbilledUsage(totalEstimated = 25000) {
+  return {
+    customerId: "cust_1",
+    totalEstimated,
+    currency: "USD",
+    features: [
+      {
+        featureId: "feature_1",
+        featureSlug: "agent-runs",
+        featureName: "Agent Runs",
+        usageModel: "usage_based",
+        usage: 1200,
+        included: null,
+        billableQuantity: 1200,
+        pricePerUnit: 0,
+        billingUnits: 1,
+        ratingModel: "volume" as const,
+        tierBreakdown: [
+          {
+            tier: 1,
+            units: 1200,
+            unitPrice: 0,
+            flatFee: 25000,
+            amount: totalEstimated,
+          },
+        ],
+        estimatedAmount: totalEstimated,
+        periodStart: 1_000,
+        periodEnd: 2_000,
+      },
+    ],
+  };
+}
+
+describe("OverageBillingWorkflow", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetUnbilledUsage.mockResolvedValue(Result.ok(createUnbilledUsage()));
+    mockChargeAuthorization.mockResolvedValue(
+      Result.ok({ reference: "ch_123" }),
+    );
+    mockResolveProviderAccount.mockResolvedValue({
+      id: "acct_1",
+      organizationId: "org_1",
+      providerId: "paystack",
+      environment: "test",
+      credentials: { secretKey: "sk_test" },
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    mockMarkUsageInvoiced.mockResolvedValue(true);
   });
 
-  it("catches up across multiple elapsed periods", () => {
-    const monthMs = 30 * 24 * 60 * 60 * 1000;
-    const currentPeriodEnd = 0;
-    const now = monthMs * 3 + 100;
+  it("creates an invoice, preserves flat-fee tier metadata, and auto-collects successfully", async () => {
+    const db = createDbMock({
+      paymentMethodForMinimumCheck: { provider_id: "paystack" },
+      defaultPaymentMethod: { token: "AUTH_123", provider_id: "paystack" },
+      customerEmail: "customer@example.com",
+    });
 
-    const next = rollPeriodForward(currentPeriodEnd, "monthly", now);
-
-    expect(next.nextPeriodStart).toBe(monthMs * 3);
-    expect(next.nextPeriodEnd).toBe(monthMs * 4);
-  });
-
-  it("falls back to monthly duration for unknown intervals", () => {
-    const currentPeriodEnd = 5_000;
-    const monthMs = 30 * 24 * 60 * 60 * 1000;
-
-    const next = rollPeriodForward(
-      currentPeriodEnd,
-      "unknown_interval",
-      currentPeriodEnd,
+    await OverageBillingWorkflow.prototype.run.call(
+      { env: { DB: db.DB, ENCRYPTION_KEY: "key" } },
+      {
+        payload: {
+          organizationId: "org_1",
+          customerId: "cust_1",
+          trigger: "threshold",
+        },
+      },
+      createStepMock(),
     );
 
-    expect(next.nextPeriodStart).toBe(currentPeriodEnd);
-    expect(next.nextPeriodEnd).toBe(currentPeriodEnd + monthMs);
-  });
-});
-
-describe("deriveReconciledPeriodStart", () => {
-  it("uses provider start date when it is within the reconciled period", () => {
-    const start = deriveReconciledPeriodStart(
-      1_000,
-      2_000,
-      "1970-01-01T00:00:01.500Z",
+    expect(mockChargeAuthorization).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authorizationCode: "AUTH_123",
+        amount: 25000,
+        metadata: expect.objectContaining({
+          type: "overage_billing",
+          organization_id: "org_1",
+          customer_id: "cust_1",
+        }),
+      }),
     );
-    expect(start).toBe(1_500);
+    expect(db.state.invoices).toHaveLength(1);
+    expect(db.state.invoices[0]).toEqual(
+      expect.objectContaining({
+        status: "paid",
+        amountPaid: 25000,
+        amountDue: 0,
+      }),
+    );
+    expect(db.state.invoiceItems).toEqual([
+      expect.objectContaining({
+        amount: 25000,
+        unitPrice: 0,
+        metadata: {
+          ratingModel: "volume",
+          tierBreakdown: [
+            {
+              tier: 1,
+              units: 1200,
+              unitPrice: 0,
+              flatFee: 25000,
+              amount: 25000,
+            },
+          ],
+        },
+      }),
+    ]);
+    expect(db.state.paymentAttempts).toEqual([
+      expect.objectContaining({
+        status: "succeeded",
+        provider: "paystack",
+        providerReference: "ch_123",
+        lastError: null,
+      }),
+    ]);
   });
 
-  it("falls back to current period end for missing or invalid provider start", () => {
-    expect(deriveReconciledPeriodStart(1_000, 2_000, null)).toBe(1_000);
-    expect(deriveReconciledPeriodStart(1_000, 2_000, "not-a-date")).toBe(1_000);
+  it("records a failed attempt when no payment method is on file", async () => {
+    const db = createDbMock({
+      paymentMethodForMinimumCheck: null,
+      defaultPaymentMethod: null,
+      customerEmail: "customer@example.com",
+    });
+
+    await OverageBillingWorkflow.prototype.run.call(
+      { env: { DB: db.DB, ENCRYPTION_KEY: "key" } },
+      {
+        payload: {
+          organizationId: "org_1",
+          customerId: "cust_1",
+          trigger: "threshold",
+        },
+      },
+      createStepMock(),
+    );
+
+    expect(mockChargeAuthorization).not.toHaveBeenCalled();
+    expect(db.state.invoices[0]).toEqual(
+      expect.objectContaining({
+        status: "open",
+        amountPaid: 0,
+        amountDue: 25000,
+      }),
+    );
+    expect(db.state.paymentAttempts).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        provider: "unknown",
+        attemptNumber: 1,
+        lastError: "No payment method on file",
+      }),
+    ]);
   });
 
-  it("falls back when provider start is outside of the new period boundaries", () => {
-    expect(
-      deriveReconciledPeriodStart(1_000, 2_000, "1970-01-01T00:00:00.500Z"),
-    ).toBe(1_000);
-    expect(
-      deriveReconciledPeriodStart(1_000, 2_000, "1970-01-01T00:00:02.000Z"),
-    ).toBe(1_000);
+  it("records a failed attempt when the provider account is missing", async () => {
+    mockResolveProviderAccount.mockResolvedValueOnce(null);
+    const db = createDbMock({
+      paymentMethodForMinimumCheck: { provider_id: "paystack" },
+      defaultPaymentMethod: { token: "AUTH_123", provider_id: "paystack" },
+      customerEmail: "customer@example.com",
+    });
+
+    await OverageBillingWorkflow.prototype.run.call(
+      { env: { DB: db.DB, ENCRYPTION_KEY: "key" } },
+      {
+        payload: {
+          organizationId: "org_1",
+          customerId: "cust_1",
+          trigger: "threshold",
+        },
+      },
+      createStepMock(),
+    );
+
+    expect(mockChargeAuthorization).not.toHaveBeenCalled();
+    expect(db.state.invoices[0]).toEqual(
+      expect.objectContaining({
+        status: "open",
+      }),
+    );
+    expect(db.state.paymentAttempts).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        provider: "paystack",
+        attemptNumber: 1,
+        lastError: "No provider account configured",
+      }),
+    ]);
+  });
+
+  it("keeps the provider error on failed charge attempts", async () => {
+    mockChargeAuthorization.mockResolvedValueOnce(
+      Result.err({
+        code: "invalid_request",
+        message: "authorization expired",
+        providerId: "paystack",
+      }),
+    );
+    const step = createStepMock();
+    const db = createDbMock({
+      paymentMethodForMinimumCheck: { provider_id: "paystack" },
+      defaultPaymentMethod: { token: "AUTH_123", provider_id: "paystack" },
+      customerEmail: "customer@example.com",
+    });
+
+    await OverageBillingWorkflow.prototype.run.call(
+      { env: { DB: db.DB, ENCRYPTION_KEY: "key" } },
+      {
+        payload: {
+          organizationId: "org_1",
+          customerId: "cust_1",
+          trigger: "threshold",
+        },
+      },
+      step,
+    );
+
+    expect(step.sleep).not.toHaveBeenCalled();
+    expect(db.state.invoices[0]).toEqual(
+      expect.objectContaining({
+        status: "open",
+        amountPaid: 0,
+        amountDue: 25000,
+      }),
+    );
+    expect(db.state.paymentAttempts).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        provider: "paystack",
+        attemptNumber: 1,
+        lastError: "authorization expired",
+      }),
+    ]);
   });
 });

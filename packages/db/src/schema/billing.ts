@@ -154,6 +154,14 @@ export const planFeatures = sqliteTable(
     usageModel: text("usage_model").default("included"), // included, usage_based, prepaid
     pricePerUnit: integer("price_per_unit"), // In cents per billing unit
     billingUnits: integer("billing_units").default(1), // Package size (e.g., $5 per 1000 = billingUnits: 1000)
+    ratingModel: text("rating_model").default("package"), // package, graduated, volume
+    tiers: text("tiers", { mode: "json" }).$type<
+      Array<{
+        upTo: number | null;
+        unitPrice?: number;
+        flatFee?: number;
+      }>
+    >(),
     maxPurchaseLimit: integer("max_purchase_limit"), // Cap on purchasable quantity
 
     // Credit system
@@ -734,7 +742,7 @@ export const invoiceItems = sqliteTable(
     description: text("description").notNull(),
     quantity: integer("quantity").notNull().default(1),
     unitPrice: integer("unit_price").notNull().default(0), // In smallest unit
-    amount: integer("amount").notNull().default(0), // quantity * unitPrice
+    amount: integer("amount").notNull().default(0), // Full line total; tiered lines may include flat charges
 
     // For usage-based: period this line item covers
     periodStart: integer("period_start"),

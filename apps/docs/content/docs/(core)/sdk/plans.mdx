@@ -115,7 +115,19 @@ interface PublicPlanFeature {
   limit: number | null; // null = unlimited
   resetInterval: string | null;
   unit: string | null; // "call", "message", "GB", etc.
+  usageModel?: "included" | "usage_based" | "prepaid";
+  pricePerUnit?: number | null;
+  billingUnits?: number | null;
+  ratingModel?: "package" | "graduated" | "volume";
+  tiers?: Array<{
+    upTo: number | null;
+    unitPrice: number;
+    flatFee?: number;
+  }> | null;
   overage?: "block" | "charge";
   overagePrice?: number | null;
 }
 ```
+
+`usageModel`, `ratingModel`, and `tiers` let you render richer pricing pages
+from your live catalog without hardcoding volumetric pricing rules in the app.

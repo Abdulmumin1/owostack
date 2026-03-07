@@ -1,0 +1,289 @@
+---
+title: Pricing models
+description: Included quotas, usage-based billing, graduated tiers, volume pricing, seats, and credits
+icon: Scale
+---
+
+# Pricing models
+
+Owostack separates two concerns:
+
+- **Entitlement model**: what access a customer gets before billing rules apply
+- **Rating model**: how billable usage turns into money
+
+That separation is what lets you support included quotas, usage-based billing,
+credits, seat pricing, and volumetric pricing without inventing a different
+system for each product.
+
+## The two layers
+
+### Entitlement model
+
+This decides **when usage becomes billable**.
+
+- `included`
+  - A customer gets a free allowance each reset window
+  - Example: `50,000` emails per month included
+- `usage_based`
+  - Billing starts from the first tracked unit
+  - Example: every API call is billable immediately
+- `prepaid`
+  - Usage consumes credits from a balance
+  - Example: AI runs consume credits bought in advance
+
+### Rating model
+
+This decides **how billable usage is priced**.
+
+- `package`
+  - Charge a fixed amount per `billingUnits`
+  - Example: `₦5` per `1,000` API calls
+- `graduated`
+  - Each tier prices only the usage inside that tier
+- `volume`
+  - The reached tier prices all billable usage
+
+You can combine these layers.
+
+Examples:
+
+- `included + package`
+- `included + graduated`
+- `included + volume`
+- `usage_based + package`
+- `usage_based + graduated`
+- `usage_based + volume`
+
+## Included pricing
+
+Use `included` when a customer should get a quota before charges begin.
+
+Example:
+
+- grant: `10,000` events per month
+- after limit: `charge`
+- rating: `package`
+
+If the customer uses `12,000`, only the extra `2,000` becomes billable.
+
+Important rule:
+
+- tiers apply to **billable overage**, not total usage
+
+So if a plan includes `100` units and the customer uses `220`, the rating model
+sees `120` billable units.
+
+## Usage-based pricing
+
+Use `usage_based` when billing should start from the first tracked unit.
+
+Example:
+
+- every image generation is billable
+- there is no included monthly allowance
+- pricing still uses `package`, `graduated`, or `volume`
+
+This is common for pay-as-you-go APIs.
+
+## Package pricing
+
+Package pricing is the simplest rating model.
+
+You set:
+
+- `pricePerUnit`
+- `billingUnits`
+
+Example:
+
+- `pricePerUnit = 500`
+- `billingUnits = 1000`
+
+That means `₦5.00` per `1,000` units.
+
+If billable usage is `1,500`, Owostack bills `2` packages.
+
+## Graduated pricing
+
+Graduated pricing is **cumulative**.
+
+Each tier prices only the usage inside that range.
+
+Example:
+
+```ts
+[
+  { upTo: 30, unitPrice: 100 },
+  { upTo: 100, unitPrice: 50 },
+]
+```
+
+If billable usage is `31`:
+
+- first `30` units use tier 1
+- next `1` unit uses tier 2
+- total = `30 * 100 + 1 * 50 = 3050`
+
+Mental model:
+
+- graduated = staircase accumulation
+
+## Volume pricing
+
+Volume pricing is **reached-band pricing**.
+
+The final tier reached prices all billable usage.
+
+Example:
+
+```ts
+[
+  { upTo: 30, unitPrice: 100 },
+  { upTo: 100, unitPrice: 50 },
+]
+```
+
+If billable usage is `31`:
+
+- usage reaches tier 2
+- all `31` units use tier 2 pricing
+- total = `31 * 50 = 1550`
+
+Mental model:
+
+- volume = single band repricing
+
+## Graduated vs volume
+
+These two models are the easiest to confuse.
+
+For the same `31` billable units:
+
+- `graduated` asks: "what price applies to each chunk of usage?"
+- `volume` asks: "what price applies to the total after I know the final band?"
+
+With these tiers:
+
+```ts
+const tiers = [
+  { upTo: 30, unitPrice: 100 },
+  { upTo: 100, unitPrice: 50 },
+];
+```
+
+- `graduated` = `3050`
+- `volume` = `1550`
+
+Choose `graduated` when pricing should accumulate step by step.
+
+Choose `volume` when crossing into a better band should reprice all billable
+usage at that band's rate.
+
+## Flat-priced tiers
+
+Owostack also supports `flatFee` inside volumetric tiers.
+
+A tier may define:
+
+- `unitPrice`
+- `flatFee`
+- or both
+
+### In graduated pricing
+
+`flatFee` is cumulative across entered tiers.
+
+Example:
+
+```ts
+[
+  { upTo: 30, flatFee: 1000 },
+  { upTo: 100, flatFee: 5000 },
+]
+```
+
+If billable usage is `31`:
+
+- tier 1 is entered, so it adds `1000`
+- tier 2 is entered, so it adds `5000`
+- total = `6000`
+
+### In volume pricing
+
+Only the reached tier's `flatFee` applies.
+
+Example:
+
+```ts
+[
+  { upTo: 30, flatFee: 1000 },
+  { upTo: 100, flatFee: 5000 },
+]
+```
+
+If billable usage is `31`:
+
+- usage reaches tier 2
+- only tier 2 applies
+- total = `5000`
+
+## Seats and entity pricing
+
+Not every billable thing is a metered counter.
+
+Use `entity()` for persistent capacity like:
+
+- seats
+- projects
+- workspaces
+
+Use `metered()` for consumable counters like:
+
+- API calls
+- emails sent
+- tokens
+- AI runs
+
+Rule of thumb:
+
+- if you `track()` it, it is usually `metered`
+- if you `add()` and `remove()` it, it is usually `entity`
+
+See [Organizations & Entities](/docs/core/pricing/seat-pricing) for seat-based
+setups.
+
+## Credits and add-ons
+
+Credits are a prepaid balance shared across one or more metered features.
+
+This is useful when:
+
+- different features should consume from the same pool
+- you want top-up packs
+- you want a fallback after an included short-window quota is exhausted
+
+Example patterns:
+
+- monthly plan includes `5,000` credits
+- customer can buy extra credit packs
+- requests first consume included allowance, then credit balance, then deny
+
+See [Addon Packs](/docs/core/pricing/credits) for credit-system setup.
+
+## Which model should I use?
+
+- Use `included + package` for classic SaaS quotas with straightforward overage.
+- Use `usage_based + package` for simple pay-as-you-go billing.
+- Use `included + graduated` when overage should accumulate tier by tier.
+- Use `included + volume` when crossing a threshold should reprice all paid usage.
+- Use `entity` for seats and other persistent resources.
+- Use `prepaid` and credit packs when customers should buy spend in advance.
+
+## Related guides
+
+- [Entitlements & features](/docs/core/pricing/features)
+- [Plans & products](/docs/core/pricing/plans)
+- [Addon Packs](/docs/core/pricing/credits)
+- [Organizations & Entities](/docs/core/pricing/seat-pricing)
+- [Create plans & features](/docs/core/sdk/catalog)
+- [billing](/docs/core/sdk/billing)

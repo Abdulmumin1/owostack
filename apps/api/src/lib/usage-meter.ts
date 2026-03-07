@@ -99,13 +99,16 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
         oldConfig?.limit !== config.limit ||
         oldConfig?.rolloverEnabled !== config.rolloverEnabled ||
         oldConfig?.rolloverMaxBalance !== config.rolloverMaxBalance ||
+        oldConfig?.usageModel !== config.usageModel ||
         oldConfig?.creditCost !== config.creditCost;
 
       if (!configChanged) {
         return { success: true };
       }
 
-      console.log(`[UsageMeter] Config changed for ${featureId}: interval ${oldConfig?.resetInterval} -> ${config.resetInterval}, limit ${oldConfig?.limit} -> ${config.limit}`);
+      console.log(
+        `[UsageMeter] Config changed for ${featureId}: interval ${oldConfig?.resetInterval} -> ${config.resetInterval}, limit ${oldConfig?.limit} -> ${config.limit}`,
+      );
       this.featureConfigs.set(featureId, config);
       existingState.limit = config.limit;
       if (config.limit !== null) {
@@ -162,23 +165,33 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
     if (!state || !config || config.resetInterval === "none") return;
 
     const intervalMs = this.getIntervalMs(config.resetInterval);
-    console.log(`[UsageMeter] maybeReset(${featureId}): interval=${config.resetInterval}, intervalMs=${intervalMs}, lastReset=${new Date(state.lastReset).toISOString()}, nextReset=${new Date(state.lastReset + intervalMs).toISOString()}, now=${new Date().toISOString()}, usage=${state.usage}, balance=${state.balance}`);
-    
+    console.log(
+      `[UsageMeter] maybeReset(${featureId}): interval=${config.resetInterval}, intervalMs=${intervalMs}, lastReset=${new Date(state.lastReset).toISOString()}, nextReset=${new Date(state.lastReset + intervalMs).toISOString()}, now=${new Date().toISOString()}, usage=${state.usage}, balance=${state.balance}`,
+    );
+
     if (intervalMs === 0) return;
 
-        const currentAlarm = await this.ctx.storage.getAlarm();
+    const currentAlarm = await this.ctx.storage.getAlarm();
 
-if (currentAlarm !== null) {
-  console.log("current alarm (s)", Math.round((currentAlarm - Date.now()) / 1000), 's');
-}
+    if (currentAlarm !== null) {
+      console.log(
+        "current alarm (s)",
+        Math.round((currentAlarm - Date.now()) / 1000),
+        "s",
+      );
+    }
 
     const nextReset = state.lastReset + intervalMs;
     if (Date.now() >= nextReset) {
-      console.log(`[UsageMeter] Period elapsed for ${featureId}, resetting now...`);
+      console.log(
+        `[UsageMeter] Period elapsed for ${featureId}, resetting now...`,
+      );
       await this.resetFeature(featureId);
       await this.scheduleResetAlarm();
     } else {
-      console.log(`[UsageMeter] Period NOT elapsed for ${featureId}, ${Math.round((nextReset - Date.now()) / 1000)}s remaining`);
+      console.log(
+        `[UsageMeter] Period NOT elapsed for ${featureId}, ${Math.round((nextReset - Date.now()) / 1000)}s remaining`,
+      );
     }
   }
 
@@ -248,7 +261,11 @@ if (currentAlarm !== null) {
    * Track usage (consume credits/units)
    * This is an RPC method - call directly on the stub
    */
-  async track(featureId: string, delta: number = 1, currentConfig?: FeatureConfig): Promise<TrackResult> {
+  async track(
+    featureId: string,
+    delta: number = 1,
+    currentConfig?: FeatureConfig,
+  ): Promise<TrackResult> {
     await this.init();
 
     // Inline config sync (avoids separate RPC call)
@@ -347,11 +364,15 @@ if (currentAlarm !== null) {
     const config = this.featureConfigs.get(featureId);
 
     if (!state || !config) {
-      console.log(`[UsageMeter] resetFeature(${featureId}): no state or config found`);
+      console.log(
+        `[UsageMeter] resetFeature(${featureId}): no state or config found`,
+      );
       return { success: false };
     }
 
-    console.log(`[UsageMeter] resetFeature(${featureId}): usage ${state.usage} -> 0, balance -> ${config.limit ?? 'Infinity'}`);
+    console.log(
+      `[UsageMeter] resetFeature(${featureId}): usage ${state.usage} -> 0, balance -> ${config.limit ?? "Infinity"}`,
+    );
 
     // Handle rollovers
     if (config.rolloverEnabled) {
@@ -385,9 +406,8 @@ if (currentAlarm !== null) {
   private async scheduleResetAlarm(): Promise<void> {
     // Find the soonest reset time across all features
 
-    console.log('SOMEONE WANTS TO SCHEDULE')
+    console.log("SOMEONE WANTS TO SCHEDULE");
     let soonestReset = Infinity;
-
 
     for (const [featureId, config] of this.featureConfigs) {
       if (config.resetInterval === "none") continue;
@@ -405,22 +425,39 @@ if (currentAlarm !== null) {
 
     if (soonestReset === Infinity) return;
 
-console.log("soonest (s)", Math.round((soonestReset - Date.now()) / 1000), 's');
+    console.log(
+      "soonest (s)",
+      Math.round((soonestReset - Date.now()) / 1000),
+      "s",
+    );
 
     // If the reset time is in the past, schedule immediately so the alarm
     // fires ASAP instead of silently dropping it (fixes missed alarm chain)
-    const alarmTime = soonestReset > Date.now() ? soonestReset : Date.now() + 1000;
+    const alarmTime =
+      soonestReset > Date.now() ? soonestReset : Date.now() + 1000;
 
     const currentAlarm = await this.ctx.storage.getAlarm();
 
-console.log("current alarm (s)", Math.round((alarmTime - Date.now()) / 1000), 's');
-if (currentAlarm !== null) {
-  console.log("current alarm time (s)", Math.round((currentAlarm - Date.now()) / 1000), 's');
-}
-// console.log(currentAlarm)
+    console.log(
+      "current alarm (s)",
+      Math.round((alarmTime - Date.now()) / 1000),
+      "s",
+    );
+    if (currentAlarm !== null) {
+      console.log(
+        "current alarm time (s)",
+        Math.round((currentAlarm - Date.now()) / 1000),
+        "s",
+      );
+    }
+    // console.log(currentAlarm)
 
     // Set alarm if: no alarm exists, this one is sooner, or the existing alarm is stale (past)
-    if (!currentAlarm || alarmTime < currentAlarm || currentAlarm <= Date.now()) {
+    if (
+      !currentAlarm ||
+      alarmTime < currentAlarm ||
+      currentAlarm <= Date.now()
+    ) {
       await this.ctx.storage.setAlarm(alarmTime);
     }
   }
@@ -430,7 +467,7 @@ if (currentAlarm !== null) {
    * Called by Cloudflare when the scheduled alarm fires
    */
   async alarm(): Promise<void> {
-    await this.init()
+    await this.init();
     console.log(`[UsageMeter] ⏰ Alarm fired at ${new Date().toISOString()}`);
 
     const now = Date.now();
@@ -438,7 +475,7 @@ if (currentAlarm !== null) {
     // Check all features for reset
     for (const [featureId, state] of this.featureUsage) {
       const config = this.featureConfigs.get(featureId);
-      console.log({config})
+      console.log({ config });
       if (config && config.resetInterval !== "none") {
         const intervalMs = this.getIntervalMs(config.resetInterval);
         const nextReset = state.lastReset + intervalMs;
