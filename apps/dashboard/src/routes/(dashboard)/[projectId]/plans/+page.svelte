@@ -12,22 +12,38 @@
     ListDashes,
     Package,
     CreditCardIcon,
+    Storefront,
   } from "phosphor-svelte";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import { fade, fly } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
   import { formatCurrency } from "$lib/utils/currency";
+  import { getActiveEnvironment } from "$lib/env";
+  import { copyItemToProd } from "$lib/utils/catalog";
   import CreatePlanModal from "$lib/components/plans/CreatePlanModal.svelte";
+  import CopyToProdModal from "$lib/components/catalog/CopyToProdModal.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   // URL param is the organization ID from Better Auth
-  const organizationId = $derived(page.params.projectId);
+  const organizationId = $derived(page.params.projectId as string);
   let plans = $state<any[]>([]);
   let showCreateModal = $state(false);
   let isLoading = $state(true);
   let openMenuId = $state<string | null>(null);
   let viewMode = $state<"grid" | "list">("list");
+  
+  // Copy to Prod state
+  let showCopyModal = $state(false);
+  let itemToCopy = $state<{ id: string; name: string } | null>(null);
+  
+  const isTestEnvironment = $derived(getActiveEnvironment() === "test");
+
+  function openCopyModal(plan: any) {
+    itemToCopy = { id: plan.id, name: plan.name };
+    showCopyModal = true;
+    openMenuId = null;
+  }
 
   async function loadPlans() {
     isLoading = true;
@@ -238,6 +254,18 @@
                   <Copy size={14} weight="fill" />
                   Copy Slug
                 </button>
+                {#if isTestEnvironment}
+                  <button
+                    class="w-full text-left px-4 py-2 text-xs text-info hover:bg-info-bg flex items-center gap-2"
+                    onclick={(e) => {
+                      e.preventDefault();
+                      openCopyModal(plan);
+                    }}
+                  >
+                    <Storefront size={14} weight="duotone" />
+                    Copy to Prod
+                  </button>
+                {/if}
                 <button
                   class="w-full text-left px-4 py-2 text-xs text-error hover:bg-error-bg flex items-center gap-2"
                   onclick={(e) => {
@@ -370,7 +398,7 @@
           >
             Subscriptions
           </div>
-          <div class="table-container">
+          <div class="table-container !overflow-visible">
             <table>
               <thead>
                 <tr>
@@ -441,6 +469,18 @@
                             >
                               <Copy size={14} weight="fill" /> Copy Slug
                             </button>
+                            {#if isTestEnvironment}
+                              <button
+                                class="w-full text-left px-4 py-2 text-xs text-info hover:bg-info-bg flex items-center gap-2"
+                                onclick={(e) => {
+                                  e.preventDefault();
+                                  openCopyModal(plan);
+                                }}
+                              >
+                                <Storefront size={14} weight="duotone" />
+                                Copy to Prod
+                              </button>
+                            {/if}
                             <button
                               class="w-full text-left px-4 py-2 text-xs text-error hover:bg-error-bg flex items-center gap-2"
                               onclick={(e) => {
@@ -469,7 +509,7 @@
           One-off purchases
         </div>
         {#if oneOffs.length > 0}
-          <div class="table-container">
+          <div class="table-container !overflow-visible">
             <table>
               <thead>
                 <tr>
@@ -535,6 +575,18 @@
                             >
                               <Copy size={14} weight="fill" /> Copy Slug
                             </button>
+                            {#if isTestEnvironment}
+                              <button
+                                class="w-full text-left px-4 py-2 text-xs text-info hover:bg-info-bg flex items-center gap-2"
+                                onclick={(e) => {
+                                  e.preventDefault();
+                                  openCopyModal(plan);
+                                }}
+                              >
+                                <Storefront size={14} weight="duotone" />
+                                Copy to Prod
+                              </button>
+                            {/if}
                             <button
                               class="w-full text-left px-4 py-2 text-xs text-error hover:bg-error-bg flex items-center gap-2"
                               onclick={(e) => {
@@ -570,3 +622,13 @@
   bind:isOpen={showCreateModal}
   onsuccess={handlePlanCreated}
 />
+
+{#if itemToCopy}
+<CopyToProdModal
+  bind:open={showCopyModal}
+  {organizationId}
+  itemType="plan"
+  itemId={itemToCopy.id}
+  itemName={itemToCopy.name}
+/>
+{/if}

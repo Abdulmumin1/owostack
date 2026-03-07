@@ -168,7 +168,7 @@
   </div>
 
   {#if isLoading && events.length === 0}
-    <div class="table-container">
+    <div class="table-container !overflow-visible">
       <table class="w-full text-left border-collapse">
         <thead>
           <tr class="bg-bg-secondary border-b border-border">
@@ -213,7 +213,7 @@
     </div>
   {:else}
     <!-- Events Table -->
-    <div class="table-container">
+    <div class="table-container !overflow-visible">
       <table class="w-full text-left border-collapse">
         <thead>
           <tr class="bg-bg-secondary border-b border-border">

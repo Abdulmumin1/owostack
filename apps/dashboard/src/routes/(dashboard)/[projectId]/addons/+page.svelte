@@ -4,16 +4,25 @@
   import { fade } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
-  import { Coins, Copy, DotsThree, FloppyDisk, Package, Pencil, Plus, Trash } from "phosphor-svelte";
+  import { Coins, Copy, DotsThree, FloppyDisk, Package, Pencil, Plus, Trash, Storefront, CircleNotch } from "phosphor-svelte";
   import CreateCreditPackModal from "$lib/components/addons/CreateCreditPackModal.svelte";
   import EditCreditPackModal from "$lib/components/addons/EditCreditPackModal.svelte";
+  import CopyToProdModal from "$lib/components/catalog/CopyToProdModal.svelte";
   import { defaultCurrency } from "$lib/stores/currency";
   import { formatCurrency, COMMON_CURRENCIES } from "$lib/utils/currency";
+  import { getActiveEnvironment } from "$lib/env";
+  import { copyItemToProd } from "$lib/utils/catalog";
 
   let packs = $state<any[]>([]);
   let isLoading = $state(true);
   let error = $state("");
   let openMenuId = $state<string | null>(null);
+
+  // Copy to prod state
+  let showCopyModal = $state(false);
+  let itemToCopy = $state<{ id: string; name: string } | null>(null);
+
+  const isTestEnvironment = $derived(getActiveEnvironment() === "test");
 
   // Create panel
   let showCreatePanel = $state(false);
@@ -22,7 +31,7 @@
   let showEditPanel = $state(false);
   let selectedPack = $state<any>(null);
 
-  const organizationId = $derived(page.params.projectId ?? "");
+  const organizationId = $derived(page.params.projectId as string);
 
   async function loadPacks() {
     isLoading = true;
@@ -82,6 +91,12 @@
 
   function copyText(text: string) {
     navigator.clipboard.writeText(text);
+    openMenuId = null;
+  }
+
+  function openCopyModal(pack: any) {
+    itemToCopy = { id: pack.id, name: pack.name };
+    showCopyModal = true;
     openMenuId = null;
   }
 
@@ -242,6 +257,18 @@
                       >
                         <Copy size={12} weight="fill" /> Copy Slug
                       </button>
+                      {#if isTestEnvironment}
+                        <button
+                          class="w-full text-left px-4 py-2 text-[11px] text-info hover:bg-info-bg flex items-center gap-2"
+                          onclick={(e) => {
+                            e.preventDefault();
+                            openCopyModal(pack);
+                          }}
+                        >
+                          <Storefront size={12} weight="duotone" />
+                          Copy to Prod
+                        </button>
+                      {/if}
                       <button
                         class="w-full text-left px-4 py-2 text-[11px] text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
                         onclick={() => toggleActive(pack)}
@@ -293,3 +320,13 @@ const result = await owostack.addon(&#123;
   onclose={() => (showEditPanel = false)}
   onsuccess={onPackUpdated}
 />
+
+{#if itemToCopy}
+<CopyToProdModal
+  bind:open={showCopyModal}
+  {organizationId}
+  itemType="creditPack"
+  itemId={itemToCopy.id}
+  itemName={itemToCopy.name}
+/>
+{/if}

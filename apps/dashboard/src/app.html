@@ -1,13 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="%theme_class%" data-theme="%theme_data%">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0a0a0a" />
     <meta
       name="description"
       content="Owostack - Billing infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
     />
+    <script>
+      (function () {
+        try {
+          const theme =
+            document.cookie.match(/theme=([^;]+)/)?.[1] ||
+            localStorage.getItem("theme");
+          if (theme) {
+            document.documentElement.classList.remove("light", "dark");
+            document.documentElement.classList.add(theme);
+            document.documentElement.setAttribute("data-theme", theme);
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="icon" href="%sveltekit.assets%/logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

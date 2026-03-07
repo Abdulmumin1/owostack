@@ -122,9 +122,7 @@
         <div>
           <div class="flex items-center gap-2 mb-1">
             <h3 class="text-sm font-bold text-text-primary">{key.name}</h3>
-            <span class="text-[10px] px-1.5 py-0.5 border {getActiveEnvironment() === 'live' ? 'border-success/20 text-success' : 'border-warning/20 text-warning'} uppercase tracking-wider font-bold rounded-sm">
-              {getActiveEnvironment()}
-            </span>
+           
           </div>
           <div class="text-xs font-mono text-text-dim">
             {key.prefix}•••••••• • Created {formatDate(key.createdAt)}
@@ -141,7 +139,6 @@
         </div>
 
         <div class="flex items-center gap-3">
-            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-success-bg text-success border border-success/20">Active</span>
             <button 
               class="p-2 text-text-dim hover:text-error hover:bg-error-bg transition-all rounded"
               onclick={(e) => {

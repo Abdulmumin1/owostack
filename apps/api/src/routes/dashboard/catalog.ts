@@ -211,15 +211,18 @@ app.post("/import", async (c) => {
         creditSystemIdMap.set(cs.id, existing.id);
         result.creditSystems.skipped++;
       } else {
-        const newId = crypto.randomUUID();
+        // A Credit System shares its ID with its underlying Feature representation.
+        // We look it up in the feature map to maintain this invariant.
+        const targetCsId = featureIdMap.get(cs.id) || crypto.randomUUID();
+
         await db.insert(schema.creditSystems).values({
-          id: newId,
+          id: targetCsId,
           organizationId,
           name: cs.name,
           slug: cs.slug,
           description: cs.description || null,
         });
-        creditSystemIdMap.set(cs.id, newId);
+        creditSystemIdMap.set(cs.id, targetCsId);
         result.creditSystems.created++;
       }
 
@@ -273,7 +276,9 @@ app.post("/import", async (c) => {
         );
 
         for (const pf of p.planFeatures || []) {
-          const mappedFeatureId = featureIdMap.get(pf.featureId);
+          const mappedFeatureId =
+            featureIdMap.get(pf.featureId) ||
+            creditSystemIdMap.get(pf.featureId);
           if (!mappedFeatureId) continue;
 
           if (existingPfByFeature.has(mappedFeatureId)) {
@@ -330,7 +335,9 @@ app.post("/import", async (c) => {
 
         // Create plan_features for new plan
         for (const pf of p.planFeatures || []) {
-          const mappedFeatureId = featureIdMap.get(pf.featureId);
+          const mappedFeatureId =
+            featureIdMap.get(pf.featureId) ||
+            creditSystemIdMap.get(pf.featureId);
           if (!mappedFeatureId) continue;
 
           await db.insert(schema.planFeatures).values({
