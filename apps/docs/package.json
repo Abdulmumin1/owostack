@@ -6,7 +6,7 @@
   "sideEffects": false,
   "scripts": {
     "dev": "vite dev",
-    "build": "node scripts/build.mjs",
+    "build": "vite build",
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
     "types:check": "fumadocs-mdx && tsc --noEmit",
