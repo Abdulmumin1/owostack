@@ -1,6 +1,10 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { getApiKey, getApiUrl, getTestApiUrl } from "../lib/config.js";
+import {
+  getApiKey,
+  getLiveApiUrl,
+  getTestApiUrl,
+} from "../lib/config.js";
 import {
   loadConfigSettings,
   loadOwostackFromConfig,
@@ -32,7 +36,7 @@ export async function runDiff(options: DiffOptions) {
   const apiKey = getApiKey(options.key);
   const configSettings = await loadConfigSettings(options.config);
   const testUrl = getTestApiUrl(configSettings.environments?.test);
-  const liveUrl = getApiUrl(configSettings.environments?.live);
+  const liveUrl = getLiveApiUrl(configSettings.environments?.live);
 
   const s = p.spinner();
 

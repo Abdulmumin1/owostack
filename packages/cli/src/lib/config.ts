@@ -17,6 +17,15 @@ export function getApiUrl(configUrl?: string): string {
   );
 }
 
+export function getLiveApiUrl(configUrl?: string): string {
+  return (
+    process.env.OWOSTACK_API_LIVE_URL ||
+    process.env.OWOSTACK_API_URL ||
+    configUrl ||
+    "https://api.owostack.com"
+  );
+}
+
 export function getTestApiUrl(configUrl?: string): string {
   return (
     process.env.OWOSTACK_API_TEST_URL ||

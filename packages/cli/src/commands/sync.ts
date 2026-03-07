@@ -1,6 +1,10 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { getApiKey, getApiUrl, getTestApiUrl } from "../lib/config.js";
+import {
+  getApiKey,
+  getLiveApiUrl,
+  getTestApiUrl,
+} from "../lib/config.js";
 import {
   loadConfigSettings,
   loadOwostackFromConfig,
@@ -271,7 +275,7 @@ export async function runSync(options: SyncOptions) {
 
   const configSettings = await loadConfigSettings(options.config);
   const testUrl = getTestApiUrl(configSettings.environments?.test);
-  const liveUrl = getApiUrl(configSettings.environments?.live);
+  const liveUrl = getLiveApiUrl(configSettings.environments?.live);
 
   // Default to sandbox environment, prod only with --prod flag
   if (options.prod) {
@@ -282,7 +286,7 @@ export async function runSync(options: SyncOptions) {
       dryRun: !!options.dryRun,
       autoApprove: !!options.yes,
       apiKey: options.key || "",
-      apiUrl: configSettings.apiUrl || liveUrl,
+      apiUrl: liveUrl,
       environment: "prod",
     });
   } else {
