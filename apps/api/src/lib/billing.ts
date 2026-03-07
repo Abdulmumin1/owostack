@@ -3,10 +3,16 @@ import type { createDb } from "@owostack/db";
 import { schema } from "@owostack/db";
 import { eq, and, gte, lte, sql, desc, inArray } from "drizzle-orm";
 import { DatabaseError, NotFoundError } from "./errors";
-import { getResetPeriod } from "./reset-period";
 import { getMinimumChargeAmount } from "./provider-minimums";
 import type { UsageLedgerDO } from "./usage-ledger-do";
-import { markUsageInvoiced, sumUsageAmount } from "./usage-ledger";
+import { markUsageInvoiced, sumUnbilledByFeaturePeriod } from "./usage-ledger";
+import { rateUsage } from "./usage-rating";
+import { buildMeteredInvoiceLineData } from "./invoice-line-items";
+import type {
+  BillingTierBreakdown,
+  PricingTier,
+  RatingModel,
+} from "@owostack/types";
 
 type DB = ReturnType<typeof createDb>;
 
@@ -15,10 +21,12 @@ export interface InvoiceLineItem {
   featureSlug: string;
   description: string;
   quantity: number;
-  unitPrice: number; // in smallest unit (kobo)
+  unitPrice: number; // in smallest unit (kobo); tiered lines rely on tierBreakdown for full pricing detail
   amount: number;
   periodStart: number;
   periodEnd: number;
+  ratingModel?: RatingModel;
+  tierBreakdown?: BillingTierBreakdown[];
 }
 
 export interface GenerateInvoiceResult {
@@ -43,8 +51,10 @@ export interface UnbilledUsageResult {
     usage: number;
     included: number | null;
     billableQuantity: number;
-    pricePerUnit: number;
-    billingUnits: number;
+    pricePerUnit: number | null;
+    billingUnits: number | null;
+    ratingModel?: RatingModel;
+    tierBreakdown?: BillingTierBreakdown[];
     estimatedAmount: number;
     periodStart: number;
     periodEnd: number;
@@ -110,79 +120,99 @@ export class BillingService {
           };
         }
 
+        type BillablePlanFeature = {
+          featureId: string;
+          usageModel: string | null;
+          overage: string | null;
+          limitValue: number | null;
+          pricePerUnit: number | null;
+          billingUnits: number | null;
+          overagePrice: number | null;
+          ratingModel: string | null;
+          tiers: PricingTier[] | null;
+          feature: {
+            slug: string;
+            name: string;
+          };
+        };
+
+        const planFeatures = subscription.plan
+          .planFeatures as BillablePlanFeature[];
+        const planFeatureById = new Map<string, BillablePlanFeature>(
+          planFeatures
+            .filter(
+              (pf) =>
+                pf.usageModel === "usage_based" || pf.overage === "charge",
+            )
+            .map((pf) => [pf.featureId, pf]),
+        );
+
+        const unbilledUsageRows = await sumUnbilledByFeaturePeriod(
+          {
+            usageLedger: this.opts?.usageLedger,
+            organizationId,
+          },
+          customerId,
+        );
+
+        // CRITICAL: Do NOT fall back to D1 usageRecords - it has stale data
+        // If UsageLedgerDO is unavailable, skip billing to prevent under-billing.
+        if (unbilledUsageRows === null) {
+          console.warn(
+            `[billing] UsageLedgerDO unavailable for customer=${customerId}. ` +
+              `Skipping billing to prevent under-billing. Please investigate DO health.`,
+          );
+          return {
+            customerId,
+            features: [],
+            totalEstimated: 0,
+            currency: subscription.plan.currency || "USD",
+          };
+        }
+
         const features: UnbilledUsageResult["features"] = [];
         let totalEstimated = 0;
 
-        for (const pf of subscription.plan.planFeatures) {
-          if (pf.usageModel !== "usage_based" && pf.overage !== "charge") {
-            continue;
-          }
+        for (const row of unbilledUsageRows) {
+          const pf = planFeatureById.get(row.featureId);
+          if (!pf) continue;
 
-          const { periodStart, periodEnd } = getResetPeriod(
-            pf.resetInterval,
-            subscription.currentPeriodStart,
-            subscription.currentPeriodEnd,
-          );
-
-          const ledgerUsage = await sumUsageAmount(
-            {
-              usageLedger: this.opts?.usageLedger,
-              organizationId,
-            },
-            {
-              customerId,
-              featureId: pf.featureId,
-              periodStart,
-              periodEnd,
-              unbilledOnly: true,
-            },
-          );
-
-          // CRITICAL: Do NOT fall back to D1 usageRecords - it has stale data
-          // If UsageLedgerDO is unavailable, skip billing for this feature
-          // This prevents under-billing and forces us to fix the DO issue
-          if (ledgerUsage === null) {
-            console.warn(
-              `[billing] UsageLedgerDO unavailable for customer=${customerId}, feature=${pf.featureId}. ` +
-                `Skipping billing to prevent under-billing. Please investigate DO health.`,
-            );
-            continue;
-          }
-
-          const usage = ledgerUsage;
+          const usage = Number(row.totalUsage || 0);
           if (usage === 0) continue;
 
-          let billableQuantity = usage;
-          const included = pf.limitValue;
+          const rated = rateUsage({
+            usageModel: pf.usageModel || "included",
+            ratingModel: pf.ratingModel || "package",
+            usage,
+            included: pf.limitValue,
+            pricePerUnit: pf.pricePerUnit,
+            billingUnits: pf.billingUnits,
+            overagePrice: pf.overagePrice,
+            tiers: pf.tiers,
+          });
 
-          if (pf.usageModel === "included" && pf.overage === "charge") {
-            billableQuantity = Math.max(0, usage - (included || 0));
-          }
-
-          if (billableQuantity === 0) continue;
-
-          const pricePerUnit = pf.pricePerUnit || pf.overagePrice || 0;
-          const billingUnits = pf.billingUnits || 1;
-
-          const packages = Math.ceil(billableQuantity / billingUnits);
-          const amount = packages * pricePerUnit;
+          if (rated.billableQuantity === 0) continue;
 
           features.push({
             featureId: pf.featureId,
             featureSlug: pf.feature.slug,
             featureName: pf.feature.name,
-            usageModel: pf.usageModel || "included",
+            usageModel: rated.usageModel,
             usage,
-            included,
-            billableQuantity,
-            pricePerUnit,
-            billingUnits,
-            estimatedAmount: amount,
-            periodStart,
-            periodEnd,
+            included: pf.limitValue,
+            billableQuantity: rated.billableQuantity,
+            pricePerUnit: rated.pricePerUnit,
+            billingUnits: rated.billingUnits,
+            ratingModel: rated.ratingModel,
+            ...(rated.tierBreakdown
+              ? { tierBreakdown: rated.tierBreakdown }
+              : {}),
+            estimatedAmount: rated.amount,
+            periodStart: row.periodStart,
+            periodEnd: row.periodEnd,
           });
 
-          totalEstimated += amount;
+          totalEstimated += rated.amount;
         }
 
         return {
@@ -312,30 +342,40 @@ export class BillingService {
 
           for (const f of unbilled.features) {
             const itemId = crypto.randomUUID();
-            const description = `${f.featureName}: ${f.billableQuantity} ${f.billingUnits > 1 ? `units (${f.billingUnits} per package)` : "units"}`;
+            const line = buildMeteredInvoiceLineData({
+              featureName: f.featureName,
+              billableQuantity: f.billableQuantity,
+              pricePerUnit: f.pricePerUnit,
+              billingUnits: f.billingUnits,
+              ratingModel: f.ratingModel,
+              tierBreakdown: f.tierBreakdown,
+            });
 
             await executor.insert(schema.invoiceItems).values({
               id: itemId,
               invoiceId,
               featureId: f.featureId,
-              description,
+              description: line.description,
               quantity: f.billableQuantity,
-              unitPrice: Math.round(f.pricePerUnit / f.billingUnits),
+              unitPrice: line.unitPrice,
               amount: f.estimatedAmount,
               periodStart: f.periodStart,
               periodEnd: f.periodEnd,
+              metadata: line.metadata ?? null,
               createdAt: now,
             });
 
             items.push({
               featureId: f.featureId,
               featureSlug: f.featureSlug,
-              description,
+              description: line.description,
               quantity: f.billableQuantity,
-              unitPrice: Math.round(f.pricePerUnit / f.billingUnits),
+              unitPrice: line.unitPrice,
               amount: f.estimatedAmount,
               periodStart: f.periodStart,
               periodEnd: f.periodEnd,
+              ratingModel: f.ratingModel,
+              ...(f.tierBreakdown ? { tierBreakdown: f.tierBreakdown } : {}),
             });
 
             const ledgerMarked = await markUsageInvoiced(

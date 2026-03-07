@@ -334,66 +334,72 @@
       {/if}
 
       <!-- Plan Type -->
-      <div>
-        <div class="text-xs font-medium text-text-dim mb-2">
+      <div class="space-y-3">
+        <div class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1">
           Select Plan Type
         </div>
         <div class="grid grid-cols-2 gap-3">
           <button
-            class="relative border rounded-lg p-4 text-left transition-all {planType ===
+            class="relative group text-left flex flex-col p-4 rounded-lg transition-all duration-200 {planType ===
             'free'
-              ? 'border-accent bg-accent/5'
-              : 'border-border bg-bg-secondary hover:border-text-dim'}"
+              ? 'bg-accent-light/20 border-accent'
+              : 'bg-bg-card border-border hover:border-border-strong hover:bg-bg-card-hover'}"
+            style="border-width: 1px;"
             onclick={() => {
               planType = "free";
               hasTrial = false;
             }}
           >
             <div
-              class="mb-3 w-8 h-8 rounded-full bg-bg-card border border-border flex items-center justify-center"
+              class="mb-3 w-8 h-8 rounded-md bg-bg-primary border border-border flex items-center justify-center transition-colors {planType === 'free' ? 'border-accent/30' : 'group-hover:border-border-strong'}"
             >
               <Cube
                 size={16}
-                class={planType === "free" ? "text-accent" : "text-text-dim"}
-                weight="duotone"
+                class={planType === "free" ? "text-accent" : "text-text-muted"}
+                weight={planType === "free" ? "fill" : "duotone"}
               />
             </div>
             <div class="font-bold text-text-primary mb-0.5">Free</div>
-            <div class="text-[10px] text-text-dim leading-relaxed">
+            <div class="text-[10px] text-text-muted leading-relaxed">
               A plan without pricing that customers can use for free
             </div>
             {#if planType === "free"}
-              <div
-                class="absolute top-3 right-3 w-2 h-2 rounded-full bg-accent"
-              ></div>
+              <div class="absolute top-3 right-3" transition:fade={{ duration: 150 }}>
+                <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast shadow-sm">
+                  <Check size={10} weight="bold" />
+                </div>
+              </div>
             {/if}
           </button>
 
           <button
-            class="relative border rounded-lg p-4 text-left transition-all {planType ===
+            class="relative group text-left flex flex-col p-4 rounded-lg transition-all duration-200 {planType ===
             'paid'
-              ? 'border-accent bg-accent/5'
-              : 'border-border bg-bg-secondary hover:border-text-dim'}"
+              ? 'bg-accent-light/20 border-accent'
+              : 'bg-bg-card border-border hover:border-border-strong hover:bg-bg-card-hover'}"
+            style="border-width: 1px;"
             onclick={() => (planType = "paid")}
           >
             <div
-              class="mb-3 w-8 h-8 rounded-full bg-bg-card border border-border flex items-center justify-center"
+              class="mb-3 w-8 h-8 rounded-md bg-bg-primary border border-border flex items-center justify-center transition-colors {planType === 'paid' ? 'border-accent/30' : 'group-hover:border-border-strong'}"
             >
               <CreditCard
                 size={16}
-                class={planType === "paid" ? "text-accent" : "text-text-dim"}
-                weight="duotone"
+                class={planType === "paid" ? "text-accent" : "text-text-muted"}
+                weight={planType === "paid" ? "fill" : "duotone"}
               />
             </div>
             <div class="font-bold text-text-primary mb-0.5">Paid</div>
-            <div class="text-[10px] text-text-dim leading-relaxed">
+            <div class="text-[10px] text-text-muted leading-relaxed">
               A plan with fixed or usage-based pricing that customers may
               purchase
             </div>
             {#if planType === "paid"}
-              <div
-                class="absolute top-3 right-3 w-2 h-2 rounded-full bg-accent"
-              ></div>
+              <div class="absolute top-3 right-3" transition:fade={{ duration: 150 }}>
+                <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast shadow-sm">
+                  <Check size={10} weight="bold" />
+                </div>
+              </div>
             {/if}
           </button>
         </div>
@@ -430,19 +436,19 @@
       {#if planType === "paid"}
         <div class="space-y-4 pt-2" transition:fly={{ y: -10, duration: 200 }}>
           <div>
-            <div class="text-xs font-medium text-text-dim mb-2">Plan Price</div>
+            <div class="text-[11px] font-bold text-text-dim uppercase tracking-wider mb-3 px-1">Plan Price</div>
 
             <!-- Billing Model -->
-            <div class="flex flex-col gap-2 mb-4">
-              <label class="flex items-center gap-2 cursor-pointer group">
+            <div class="flex flex-col gap-2 mb-5">
+              <label class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-200 {billingModel === 'base' ? 'bg-accent-light/20 border-accent' : 'bg-bg-card border-border hover:border-border-strong'}">
                 <div
-                  class="w-4 h-4 rounded-full border flex items-center justify-center {billingModel ===
+                  class="w-4 h-4 rounded-full border flex items-center justify-center transition-colors {billingModel ===
                   'base'
                     ? 'border-accent'
-                    : 'border-border group-hover:border-text-dim'}"
+                    : 'border-border'}"
                 >
                   {#if billingModel === "base"}
-                    <div class="w-2 h-2 rounded-full bg-accent" />
+                    <div class="w-2 h-2 rounded-full bg-accent" transition:fade={{ duration: 150 }} />
                   {/if}
                 </div>
                 <input
@@ -451,12 +457,10 @@
                   bind:group={billingModel}
                   class="hidden"
                 />
-                <div>
-                  <span class="text-xs text-text-primary block">Base price</span
-                  >
-                  <span class="text-[10px] text-text-dim block"
-                    >This plan has a fixed price. You can add per-unit prices
-                    later.</span
+                <div class="min-w-0">
+                  <span class="text-xs font-bold text-text-primary block">Fixed base price</span>
+                  <span class="text-[10px] text-text-muted block mt-0.5 leading-tight"
+                    >Set a fixed recurring or one-time price. Metered pricing can be added to individual features later.</span
                   >
                 </div>
               </label>
@@ -464,26 +468,28 @@
 
             <!-- Recurring vs One-off segment -->
             <div
-              class="flex p-1 bg-bg-secondary rounded-lg border border-border mb-4"
+              class="flex p-1 bg-bg-card border border-border rounded-lg mb-5"
             >
               <button
-                class="flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 {billingType ===
+                type="button"
+                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 {billingType ===
                 'recurring'
-                  ? 'bg-bg-card text-text-primary shadow-sm border border-border'
-                  : 'text-text-dim hover:text-text-secondary'}"
+                  ? 'bg-accent text-accent-contrast'
+                  : 'text-text-muted hover:text-text-primary'}"
                 onclick={() => (billingType = "recurring")}
               >
-                <Clock size={12} weight="duotone" />
+                <Clock size={12} weight="fill" />
                 Recurring
               </button>
               <button
-                class="flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 {billingType ===
+                type="button"
+                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 {billingType ===
                 'one_time'
-                  ? 'bg-bg-card text-text-primary shadow-sm border border-border'
-                  : 'text-text-dim hover:text-text-secondary'}"
+                  ? 'bg-accent text-accent-contrast'
+                  : 'text-text-muted hover:text-text-primary'}"
                 onclick={() => (billingType = "one_time")}
               >
-                <Check size={12} weight="fill" />
+                <Check size={12} weight="bold" />
                 One-off
               </button>
             </div>

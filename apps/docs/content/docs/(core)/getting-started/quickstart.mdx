@@ -81,7 +81,7 @@ export const owo = new Owostack({
 Now, push this configuration to your Owostack account:
 
 ```bash
-npx owo sync --config ./owo.config.mjs
+npx owosk sync --config ./owo.config.mjs
 ```
 
 You should see output confirming that your features and plans were created.
@@ -198,7 +198,7 @@ Run it. The SDK returns `allowed: false` and `code: "limit_exceeded"`. This is t
 
 You now have a working billing flow:
 
-1. **Define** your plans and features in code, syncing them with `npx owo sync`.
+1. **Define** your plans and features in code, syncing them with `npx owosk sync`.
 2. **attach()** creates a checkout or returns an existing subscription.
 3. **check()** tells you whether a customer can use a feature right now.
 4. **track()** records usage and enforces limits.

@@ -14,6 +14,7 @@ import type {
   AddEntityResult,
   RemoveEntityResult,
   ListEntitiesResult,
+  PricingTier,
 } from "@owostack/types";
 
 /**
@@ -118,9 +119,121 @@ export interface MeteredHandle {
 
   unlimited(config?: Omit<MeteredFeatureConfig, "limit">): PlanFeatureEntry;
 
+  perUnit(
+    unitPrice: number,
+    config?: { reset?: ResetInterval },
+  ): PlanFeatureEntry;
+
+  graduated(
+    tiers: PricingTier[],
+    config?: { reset?: ResetInterval },
+  ): PlanFeatureEntry;
+
+  volume(
+    tiers: PricingTier[],
+    config?: { reset?: ResetInterval },
+  ): PlanFeatureEntry;
+
   config(opts: MeteredFeatureConfig): PlanFeatureEntry;
 
   (creditCost: number): { feature: string; creditCost: number };
+}
+
+function validateUnitPrice(unitPrice: number, methodName: string): void {
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+    throw new Error(`${methodName}() requires a non-negative unit price.`);
+  }
+}
+
+function validatePricingTiers(
+  tiers: PricingTier[],
+  methodName: "graduated" | "volume",
+): void {
+  if (!Array.isArray(tiers) || tiers.length === 0) {
+    throw new Error(`${methodName}() requires at least one pricing tier.`);
+  }
+
+  let previousUpTo = 0;
+  for (let index = 0; index < tiers.length; index += 1) {
+    const tier = tiers[index];
+    const hasUnitPrice = tier.unitPrice !== undefined;
+    const hasFlatFee = tier.flatFee !== undefined;
+
+    if (!hasUnitPrice && !hasFlatFee) {
+      throw new Error(
+        `${methodName}() tier ${index + 1} must define unitPrice, flatFee, or both.`,
+      );
+    }
+
+    if (
+      hasUnitPrice &&
+      (!Number.isFinite(tier.unitPrice) || (tier.unitPrice as number) < 0)
+    ) {
+      throw new Error(
+        `${methodName}() tier ${index + 1} must have a non-negative unitPrice.`,
+      );
+    }
+    if (
+      tier.flatFee !== undefined &&
+      (!Number.isFinite(tier.flatFee) || tier.flatFee < 0)
+    ) {
+      throw new Error(
+        `${methodName}() tier ${index + 1} must have a non-negative flatFee.`,
+      );
+    }
+    if (tier.upTo === null) {
+      if (index !== tiers.length - 1) {
+        throw new Error(
+          `${methodName}() only allows the last tier to use upTo: null.`,
+        );
+      }
+      continue;
+    }
+    if (!Number.isFinite(tier.upTo) || tier.upTo <= previousUpTo) {
+      throw new Error(
+        `${methodName}() tiers must be in ascending order by upTo.`,
+      );
+    }
+    previousUpTo = tier.upTo;
+  }
+}
+
+function validateMeteredFeaturePricing(
+  config: MeteredFeatureConfig | undefined,
+  featureSlug: string,
+): void {
+  if (!config) return;
+
+  if (config.pricePerUnit !== undefined) {
+    validateUnitPrice(config.pricePerUnit, `${featureSlug} pricePerUnit`);
+  }
+
+  const ratingModel = config.ratingModel || "package";
+  if (ratingModel === "graduated" || ratingModel === "volume") {
+    validatePricingTiers(config.tiers || [], ratingModel);
+  } else if (config.tiers && config.tiers.length > 0) {
+    throw new Error(
+      `Feature '${featureSlug}' cannot define tiers with ratingModel "package".`,
+    );
+  }
+
+  if (
+    config.usageModel === "usage_based" &&
+    ratingModel === "package" &&
+    config.pricePerUnit === undefined
+  ) {
+    throw new Error(
+      `Feature '${featureSlug}' must define pricePerUnit for usage-based package pricing.`,
+    );
+  }
+}
+
+function normalizeUsageBasedOverage(
+  usageModel: MeteredFeatureConfig["usageModel"] | undefined,
+  overage: MeteredFeatureConfig["overage"] | undefined,
+): "block" | "charge" | undefined {
+  if (usageModel === "usage_based") return "charge";
+  return overage;
 }
 
 /**
@@ -189,6 +302,73 @@ export function metered(slug: string, opts?: { name?: string }): MeteredHandle {
         name: opts?.name,
         enabled: true,
         config: { limit: null, reset: "monthly", overage: "block", ...config },
+      };
+    },
+
+    perUnit(
+      unitPrice: number,
+      config?: { reset?: ResetInterval },
+    ): PlanFeatureEntry {
+      validateUnitPrice(unitPrice, "perUnit");
+      return {
+        _type: "plan_feature",
+        slug,
+        featureType: "metered",
+        name: opts?.name,
+        enabled: true,
+        config: {
+          limit: null,
+          reset: config?.reset || "monthly",
+          usageModel: "usage_based",
+          ratingModel: "package",
+          pricePerUnit: unitPrice,
+          billingUnits: 1,
+          overage: "charge",
+        },
+      };
+    },
+
+    graduated(
+      tiers: PricingTier[],
+      config?: { reset?: ResetInterval },
+    ): PlanFeatureEntry {
+      validatePricingTiers(tiers, "graduated");
+      return {
+        _type: "plan_feature",
+        slug,
+        featureType: "metered",
+        name: opts?.name,
+        enabled: true,
+        config: {
+          limit: null,
+          reset: config?.reset || "monthly",
+          usageModel: "usage_based",
+          ratingModel: "graduated",
+          tiers: tiers.map((tier) => ({ ...tier })),
+          overage: "charge",
+        },
+      };
+    },
+
+    volume(
+      tiers: PricingTier[],
+      config?: { reset?: ResetInterval },
+    ): PlanFeatureEntry {
+      validatePricingTiers(tiers, "volume");
+      return {
+        _type: "plan_feature",
+        slug,
+        featureType: "metered",
+        name: opts?.name,
+        enabled: true,
+        config: {
+          limit: null,
+          reset: config?.reset || "monthly",
+          usageModel: "usage_based",
+          ratingModel: "volume",
+          tiers: tiers.map((tier) => ({ ...tier })),
+          overage: "charge",
+        },
       };
     },
 
@@ -551,29 +731,49 @@ export function buildSyncPayload(
       metadata: p.metadata ?? undefined,
       autoEnable: p.autoEnable ?? undefined,
       isAddon: p.isAddon ?? undefined,
-      features: p.features.map((f: PlanFeatureEntry) => ({
-        slug: f.slug,
-        enabled: f.enabled,
-        // Boolean features have no limit concept (null), metered features use limit from config
-        limit: f.featureType === "boolean" ? null : (f.config?.limit ?? null),
-        // Boolean features have no reset interval
-        ...(f.featureType !== "boolean" && {
-          reset: f.config?.reset || "monthly",
-        }),
-        ...(f.config?.overage && { overage: f.config.overage }),
-        ...(f.config?.overagePrice !== undefined && {
-          overagePrice: f.config.overagePrice,
-        }),
-        ...(f.config?.maxOverageUnits !== undefined && {
-          maxOverageUnits: f.config.maxOverageUnits,
-        }),
-        ...(f.config?.billingUnits !== undefined && {
-          billingUnits: f.config.billingUnits,
-        }),
-        ...(f.config?.creditCost !== undefined && {
-          creditCost: f.config.creditCost,
-        }),
-      })),
+      features: p.features.map((f: PlanFeatureEntry) => {
+        if (f.featureType !== "boolean") {
+          validateMeteredFeaturePricing(f.config, f.slug);
+        }
+
+        return {
+          slug: f.slug,
+          enabled: f.enabled,
+          // Boolean features have no limit concept (null), metered features use limit from config
+          limit: f.featureType === "boolean" ? null : (f.config?.limit ?? null),
+          // Boolean features have no reset interval
+          ...(f.featureType !== "boolean" && {
+            reset: f.config?.reset || "monthly",
+          }),
+          ...(f.config?.usageModel && { usageModel: f.config.usageModel }),
+          ...(f.config?.pricePerUnit !== undefined && {
+            pricePerUnit: f.config.pricePerUnit,
+          }),
+          ...(f.config?.ratingModel && { ratingModel: f.config.ratingModel }),
+          ...(f.config?.tiers && { tiers: f.config.tiers }),
+          ...(normalizeUsageBasedOverage(
+            f.config?.usageModel,
+            f.config?.overage,
+          ) && {
+            overage: normalizeUsageBasedOverage(
+              f.config?.usageModel,
+              f.config?.overage,
+            ),
+          }),
+          ...(f.config?.overagePrice !== undefined && {
+            overagePrice: f.config.overagePrice,
+          }),
+          ...(f.config?.maxOverageUnits !== undefined && {
+            maxOverageUnits: f.config.maxOverageUnits,
+          }),
+          ...(f.config?.billingUnits !== undefined && {
+            billingUnits: f.config.billingUnits,
+          }),
+          ...(f.config?.creditCost !== undefined && {
+            creditCost: f.config.creditCost,
+          }),
+        };
+      }),
     }));
 
   const creditPacks = catalog

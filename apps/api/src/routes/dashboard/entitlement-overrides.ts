@@ -16,10 +16,11 @@ function zodErrorToResponse(zodError: z.ZodError) {
     const errorEntry = fieldErrors[0];
     if (errorEntry) {
       const [field, messages] = errorEntry;
+      const firstMessage = Array.isArray(messages) ? messages[0] : undefined;
       return errorToResponse(
         new ValidationError({
           field,
-          details: messages?.[0] || "Invalid value",
+          details: firstMessage || "Invalid value",
         }),
       );
     }
@@ -209,7 +210,10 @@ app.delete("/:id", async (c) => {
       const cache = new EntitlementCache(c.env.CACHE);
       c.executionCtx.waitUntil(
         Promise.all([
-          cache.invalidateSubscriptions(organizationId!, entitlement.customerId),
+          cache.invalidateSubscriptions(
+            organizationId!,
+            entitlement.customerId,
+          ),
           cache.invalidateCustomer(organizationId!, entitlement.customerId),
           cache.invalidateManualEntitlement(
             organizationId!,

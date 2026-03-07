@@ -10,11 +10,67 @@ import {
   loadProviderRules,
 } from "../../lib/providers";
 import { schema } from "@owostack/db";
+import {
+  normalizePlanFeaturePricingConfig,
+  normalizePlanFeatureOverage,
+  normalizePlanFeatureResetInterval,
+  type PlanFeaturePricingConfigInput,
+  validatePlanFeaturePricingConfig,
+} from "../../lib/plan-feature-normalization";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 import { getMinimumChargeAmount } from "../../lib/provider-minimums";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+function normalizePlanFeaturePayload(
+  data: PlanFeaturePricingConfigInput,
+  usageModel: string,
+): PlanFeaturePricingConfigInput {
+  return normalizePlanFeaturePricingConfig({
+    ...data,
+    usageModel,
+    resetInterval:
+      "resetInterval" in data
+        ? (normalizePlanFeatureResetInterval(
+            (data.resetInterval as string | null | undefined) ?? null,
+          ) ?? "monthly")
+        : undefined,
+    overage:
+      "overage" in data || usageModel === "usage_based"
+        ? normalizePlanFeatureOverage(
+            usageModel,
+            (data.overage as string | null | undefined) ?? null,
+          )
+        : undefined,
+  });
+}
+
+function buildPlanFeatureConfigSnapshot(
+  data: Partial<PlanFeaturePricingConfigInput>,
+  usageModel: string,
+): PlanFeaturePricingConfigInput {
+  return normalizePlanFeaturePayload(
+    {
+      limitValue: data.limitValue ?? null,
+      resetInterval: data.resetInterval ?? "monthly",
+      resetOnEnable: data.resetOnEnable ?? true,
+      rolloverEnabled: data.rolloverEnabled ?? false,
+      rolloverMaxBalance: data.rolloverMaxBalance ?? null,
+      usageModel,
+      pricePerUnit: data.pricePerUnit ?? null,
+      billingUnits: data.billingUnits ?? 1,
+      ratingModel: data.ratingModel ?? "package",
+      tiers: data.tiers ?? null,
+      maxPurchaseLimit: data.maxPurchaseLimit ?? null,
+      creditCost: data.creditCost ?? 0,
+      overage: data.overage ?? normalizePlanFeatureOverage(usageModel, null),
+      overagePrice: data.overagePrice ?? null,
+      maxOverageUnits: data.maxOverageUnits ?? null,
+    },
+    usageModel,
+  );
+}
 
 function zodErrorToResponse(zodError: {
   flatten: () => {
@@ -485,9 +541,54 @@ app.patch("/features/:planFeatureId", async (c) => {
   const db = c.get("db");
 
   try {
+    const existing = await db.query.planFeatures.findFirst({
+      where: eq(schema.planFeatures.id, planFeatureId),
+    });
+
+    if (!existing) {
+      return c.json({ success: false, error: "Plan feature not found" }, 404);
+    }
+
+    const usageModel =
+      parsed.data.usageModel ?? existing.usageModel ?? "included";
+    const normalizedData = buildPlanFeatureConfigSnapshot(
+      {
+        limitValue: existing.limitValue,
+        resetInterval: existing.resetInterval,
+        resetOnEnable: existing.resetOnEnable,
+        rolloverEnabled: existing.rolloverEnabled,
+        rolloverMaxBalance: existing.rolloverMaxBalance,
+        usageModel: existing.usageModel,
+        pricePerUnit: existing.pricePerUnit,
+        billingUnits: existing.billingUnits,
+        ratingModel: existing.ratingModel,
+        tiers: existing.tiers,
+        maxPurchaseLimit: existing.maxPurchaseLimit,
+        creditCost: existing.creditCost,
+        overage: existing.overage,
+        overagePrice: existing.overagePrice,
+        maxOverageUnits: existing.maxOverageUnits,
+        ...parsed.data,
+      },
+      usageModel,
+    );
+    const pricingValidationError =
+      validatePlanFeaturePricingConfig(normalizedData);
+    if (pricingValidationError) {
+      return c.json(
+        errorToResponse(
+          new ValidationError({
+            field: "pricing",
+            details: pricingValidationError,
+          }),
+        ),
+        400,
+      );
+    }
+
     const [updated] = await db
       .update(schema.planFeatures)
-      .set(parsed.data)
+      .set(normalizedData)
       .where(eq(schema.planFeatures.id, planFeatureId))
       .returning();
 
@@ -545,9 +646,29 @@ const addFeatureSchema = z.object({
   rolloverMaxBalance: z.number().optional().nullable(),
 
   // Priced feature config
-  usageModel: z.enum(["included", "usage_based"]).default("included"),
+  usageModel: z
+    .enum(["included", "usage_based", "prepaid"])
+    .default("included"),
   pricePerUnit: z.number().optional().nullable(),
   billingUnits: z.number().default(1),
+  ratingModel: z.enum(["package", "graduated", "volume"]).default("package"),
+  tiers: z
+    .array(
+      z
+        .object({
+          upTo: z.number().nullable(),
+          unitPrice: z.number().optional(),
+          flatFee: z.number().optional(),
+        })
+        .refine(
+          (tier) => tier.unitPrice !== undefined || tier.flatFee !== undefined,
+          {
+            message: "Each tier must define unitPrice, flatFee, or both",
+          },
+        ),
+    )
+    .optional()
+    .nullable(),
   maxPurchaseLimit: z.number().optional().nullable(),
 
   // Credit system
@@ -578,6 +699,8 @@ app.post("/:planId/features", async (c) => {
     usageModel,
     pricePerUnit,
     billingUnits,
+    ratingModel,
+    tiers,
     maxPurchaseLimit,
     creditCost,
     overage,
@@ -587,12 +710,8 @@ app.post("/:planId/features", async (c) => {
   const db = c.get("db");
 
   try {
-    const [planFeature] = await db
-      .insert(schema.planFeatures)
-      .values({
-        id: crypto.randomUUID(),
-        planId,
-        featureId,
+    const normalizedValues = buildPlanFeatureConfigSnapshot(
+      {
         limitValue,
         resetInterval,
         resetOnEnable,
@@ -601,11 +720,37 @@ app.post("/:planId/features", async (c) => {
         usageModel,
         pricePerUnit,
         billingUnits,
+        ratingModel,
+        tiers,
         maxPurchaseLimit,
         creditCost,
         overage,
         overagePrice,
         maxOverageUnits,
+      },
+      usageModel,
+    );
+    const pricingValidationError =
+      validatePlanFeaturePricingConfig(normalizedValues);
+    if (pricingValidationError) {
+      return c.json(
+        errorToResponse(
+          new ValidationError({
+            field: "pricing",
+            details: pricingValidationError,
+          }),
+        ),
+        400,
+      );
+    }
+
+    const [planFeature] = await db
+      .insert(schema.planFeatures)
+      .values({
+        id: crypto.randomUUID(),
+        planId,
+        featureId,
+        ...normalizedValues,
       })
       .returning();
 

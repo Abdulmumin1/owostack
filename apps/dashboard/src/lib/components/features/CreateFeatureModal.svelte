@@ -95,7 +95,7 @@
         <div>
           <label
             for="name"
-            class="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2"
+            class="block text-[11px] font-bold text-text-dim uppercase tracking-wider mb-2.5 px-1"
           >
             Name
           </label>
@@ -104,21 +104,21 @@
               type="text"
               id="name"
               bind:value={name}
-              class="input"
+              class="input !h-10"
               placeholder="e.g. API Requests"
             />
           </div>
         </div>
 
         <!-- Type -->
-        <div>
+        <div class="space-y-2.5">
           <label
             for="type"
-            class="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2"
+            class="block text-[11px] font-bold text-text-dim uppercase tracking-wider px-1"
           >
             Type
           </label>
-          <div class="flex p-1 bg-bg-secondary rounded-lg border border-border">
+          <div class="flex p-1 bg-bg-card border border-border rounded-lg">
             {#each [
               { value: 'metered', label: 'Metered' },
               { value: 'boolean', label: 'Boolean' },
@@ -126,16 +126,16 @@
             ] as opt}
               <button
                 type="button"
-                class="flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 {type === opt.value
-                  ? 'bg-bg-card text-text-primary shadow-sm border border-border'
-                  : 'text-text-dim hover:text-text-secondary'}"
+                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 {type === opt.value
+                  ? 'bg-accent text-accent-contrast'
+                  : 'text-text-muted hover:text-text-primary'}"
                 onclick={() => (type = opt.value as typeof type)}
               >
                 {opt.label}
               </button>
             {/each}
           </div>
-          <p class="mt-2 text-[10px] text-text-dim uppercase tracking-tight">
+          <p class="mt-2 text-[10px] text-text-dim uppercase tracking-tight px-1 leading-relaxed">
             {#if type === "metered"}
               Counted usage (e.g. API calls, Seats).
             {:else if type === "boolean"}
@@ -148,30 +148,30 @@
 
         {#if type === "metered"}
           <!-- Meter Type -->
-          <div>
+          <div class="space-y-2.5">
             <label
               for="meterType"
-              class="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2"
+              class="block text-[11px] font-bold text-text-dim uppercase tracking-wider px-1"
             >
               Meter Type
             </label>
-          <div class="flex p-1 bg-bg-secondary rounded-lg border border-border">
+          <div class="flex p-1 bg-bg-card border border-border rounded-lg">
             {#each [
               { value: 'consumable', label: 'Consumable' },
               { value: 'non_consumable', label: 'Non-Consumable' }
             ] as opt}
               <button
                 type="button"
-                class="flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 {meterType === opt.value
-                  ? 'bg-bg-card text-text-primary shadow-sm border border-border'
-                  : 'text-text-dim hover:text-text-secondary'}"
+                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 {meterType === opt.value
+                  ? 'bg-accent text-accent-contrast'
+                  : 'text-text-muted hover:text-text-primary'}"
                 onclick={() => (meterType = opt.value as typeof meterType)}
               >
                 {opt.label}
               </button>
             {/each}
           </div>
-            <p class="mt-2 text-[10px] text-text-dim uppercase tracking-tight">
+            <p class="mt-2 text-[10px] text-text-dim uppercase tracking-tight px-1 leading-relaxed">
               {#if meterType === "consumable"}
                 Usage resets or accumulates (e.g. Credits).
               {:else}
@@ -184,7 +184,7 @@
           <div>
             <label
               for="unit"
-              class="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2"
+              class="block text-[11px] font-bold text-text-dim uppercase tracking-wider mb-2.5 px-1"
             >
               Unit Name
             </label>
@@ -193,7 +193,7 @@
                 type="text"
                 id="unit"
                 bind:value={unit}
-                class="input"
+                class="input !h-10"
                 placeholder="e.g. request, user, gb"
               />
             </div>

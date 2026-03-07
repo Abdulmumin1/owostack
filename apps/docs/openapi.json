@@ -22,7 +22,10 @@
   "security": [{ "bearerAuth": [] }],
   "tags": [
     { "name": "Subscriptions", "description": "Subscribe customers to plans" },
-    { "name": "Entitlements", "description": "Check and track feature entitlements" },
+    {
+      "name": "Entitlements",
+      "description": "Check and track feature entitlements"
+    },
     { "name": "Add-ons", "description": "Purchase credit pack add-ons" },
     { "name": "Wallet", "description": "Manage saved payment methods" },
     { "name": "Billing", "description": "Overage billing and invoicing" },
@@ -48,14 +51,42 @@
                 "type": "object",
                 "required": ["customer", "product"],
                 "properties": {
-                  "customer": { "type": "string", "description": "Email or customer ID" },
-                  "product": { "type": "string", "description": "Plan slug or ID" },
-                  "provider": { "type": "string", "description": "Provider override (e.g. \"paystack\", \"dodopayments\")" },
-                  "region": { "type": "string", "description": "Region for provider routing" },
-                  "currency": { "type": "string", "minLength": 3, "description": "Currency override (ISO 4217)" },
-                  "channels": { "type": "array", "items": { "type": "string" }, "description": "Payment channels (e.g. [\"card\", \"bank\"])" },
-                  "metadata": { "type": "object", "additionalProperties": true, "description": "Custom metadata" },
-                  "callbackUrl": { "type": "string", "format": "uri", "description": "Redirect URL after payment" }
+                  "customer": {
+                    "type": "string",
+                    "description": "Email or customer ID"
+                  },
+                  "product": {
+                    "type": "string",
+                    "description": "Plan slug or ID"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "Provider override (e.g. \"paystack\", \"dodopayments\")"
+                  },
+                  "region": {
+                    "type": "string",
+                    "description": "Region for provider routing"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "description": "Currency override (ISO 4217)"
+                  },
+                  "channels": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Payment channels (e.g. [\"card\", \"bank\"])"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "description": "Custom metadata"
+                  },
+                  "callbackUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Redirect URL after payment"
+                  }
                 }
               },
               "example": {
@@ -77,7 +108,10 @@
                     "success": { "type": "boolean" },
                     "requiresCheckout": { "type": "boolean" },
                     "checkoutUrl": { "type": "string", "format": "uri" },
-                    "type": { "type": "string", "enum": ["new", "upgrade", "downgrade", "lateral"] },
+                    "type": {
+                      "type": "string",
+                      "enum": ["new", "upgrade", "downgrade", "lateral"]
+                    },
                     "message": { "type": "string" },
                     "subscriptionId": { "type": "string" },
                     "customer_id": { "type": "string" }
@@ -121,7 +155,11 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "callbackUrl": { "type": "string", "format": "uri", "description": "Redirect URL after successful payment setup" }
+                  "callbackUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Redirect URL after successful payment setup"
+                  }
                 }
               }
             }
@@ -139,7 +177,10 @@
                     "checkoutUrl": { "type": "string", "format": "uri" },
                     "reference": { "type": "string" },
                     "accessCode": { "type": "string" },
-                    "activatedDirectly": { "type": "boolean", "description": "True if the plan was free and was activated immediately without checkout." }
+                    "activatedDirectly": {
+                      "type": "boolean",
+                      "description": "True if the plan was free and was activated immediately without checkout."
+                    }
                   }
                 }
               }
@@ -194,12 +235,32 @@
                 "type": "object",
                 "required": ["customer", "feature"],
                 "properties": {
-                  "customer": { "type": "string", "description": "Customer ID or email" },
-                  "feature": { "type": "string", "description": "Feature key (slug)" },
-                  "value": { "type": "number", "minimum": 0, "default": 1, "description": "Amount to check against limit" },
-                  "customerData": { "$ref": "#/components/schemas/CustomerData" },
-                  "sendEvent": { "type": "boolean", "default": false, "description": "Atomically track usage if allowed" },
-                  "entity": { "type": "string", "description": "Scope usage to an entity (seat/org)" }
+                  "customer": {
+                    "type": "string",
+                    "description": "Customer ID or email"
+                  },
+                  "feature": {
+                    "type": "string",
+                    "description": "Feature key (slug)"
+                  },
+                  "value": {
+                    "type": "number",
+                    "minimum": 0,
+                    "default": 1,
+                    "description": "Amount to check against limit"
+                  },
+                  "customerData": {
+                    "$ref": "#/components/schemas/CustomerData"
+                  },
+                  "sendEvent": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Atomically track usage if allowed"
+                  },
+                  "entity": {
+                    "type": "string",
+                    "description": "Scope usage to an entity (seat/org)"
+                  }
                 }
               },
               "example": {
@@ -225,7 +286,9 @@
                   "balance": 9500,
                   "resetsAt": "2024-06-01T00:00:00Z",
                   "resetInterval": "monthly",
-                  "details": { "message": "Access granted — used 500 of 10000." }
+                  "details": {
+                    "message": "Access granted — used 500 of 10000."
+                  }
                 }
               }
             }
@@ -248,11 +311,27 @@
                 "type": "object",
                 "required": ["customer", "feature"],
                 "properties": {
-                  "customer": { "type": "string", "description": "Customer ID or email" },
-                  "feature": { "type": "string", "description": "Feature key (slug)" },
-                  "value": { "type": "number", "minimum": 0, "default": 1, "description": "Usage amount" },
-                  "customerData": { "$ref": "#/components/schemas/CustomerData" },
-                  "entity": { "type": "string", "description": "Scope usage to an entity" },
+                  "customer": {
+                    "type": "string",
+                    "description": "Customer ID or email"
+                  },
+                  "feature": {
+                    "type": "string",
+                    "description": "Feature key (slug)"
+                  },
+                  "value": {
+                    "type": "number",
+                    "minimum": 0,
+                    "default": 1,
+                    "description": "Usage amount"
+                  },
+                  "customerData": {
+                    "$ref": "#/components/schemas/CustomerData"
+                  },
+                  "entity": {
+                    "type": "string",
+                    "description": "Scope usage to an entity"
+                  },
                   "metadata": { "type": "object", "additionalProperties": true }
                 }
               },
@@ -289,7 +368,9 @@
                   "balance": 9499,
                   "resetsAt": "2024-06-01T00:00:00Z",
                   "resetInterval": "monthly",
-                  "details": { "message": "Usage tracked successfully (9499 remaining)." }
+                  "details": {
+                    "message": "Usage tracked successfully (9499 remaining)."
+                  }
                 }
               }
             }
@@ -312,13 +393,22 @@
                 "type": "object",
                 "required": ["customer", "pack"],
                 "properties": {
-                  "customer": { "type": "string", "description": "Email or customer ID" },
-                  "pack": { "type": "string", "description": "Credit pack slug or ID" },
+                  "customer": {
+                    "type": "string",
+                    "description": "Email or customer ID"
+                  },
+                  "pack": {
+                    "type": "string",
+                    "description": "Credit pack slug or ID"
+                  },
                   "quantity": { "type": "integer", "minimum": 1, "default": 1 },
                   "provider": { "type": "string" },
                   "region": { "type": "string" },
                   "currency": { "type": "string", "minLength": 3 },
-                  "metadata": { "type": "object", "additionalProperties": true },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
                   "callbackUrl": { "type": "string", "format": "uri" }
                 }
               },
@@ -398,9 +488,28 @@
                 },
                 "example": {
                   "hasCard": true,
-                  "card": { "id": "pm_abc", "last4": "4242", "brand": "visa", "exp": "12/2027", "provider": "paystack" },
+                  "card": {
+                    "id": "pm_abc",
+                    "last4": "4242",
+                    "brand": "visa",
+                    "exp": "12/2027",
+                    "provider": "paystack"
+                  },
                   "methods": [
-                    { "id": "pm_abc", "type": "card", "provider": "paystack", "isDefault": true, "isValid": true, "card": { "id": "pm_abc", "last4": "4242", "brand": "visa", "exp": "12/2027", "provider": "paystack" } }
+                    {
+                      "id": "pm_abc",
+                      "type": "card",
+                      "provider": "paystack",
+                      "isDefault": true,
+                      "isValid": true,
+                      "card": {
+                        "id": "pm_abc",
+                        "last4": "4242",
+                        "brand": "visa",
+                        "exp": "12/2027",
+                        "provider": "paystack"
+                      }
+                    }
                   ]
                 }
               }
@@ -502,8 +611,8 @@
       "get": {
         "operationId": "getBillingUsage",
         "tags": ["Billing"],
-        "summary": "Get unbilled overage usage",
-        "description": "Get unbilled overage usage for a customer with estimated costs per feature.",
+        "summary": "Get unbilled billable usage",
+        "description": "Get unbilled billable usage for a customer with estimated costs per feature, including package, graduated, and volume pricing.",
         "parameters": [
           {
             "name": "customer",
@@ -530,11 +639,32 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "featureId": { "type": "string" },
                           "featureSlug": { "type": "string" },
                           "featureName": { "type": "string" },
-                          "overageUnits": { "type": "number" },
-                          "overagePrice": { "type": "number" },
-                          "estimatedCost": { "type": "number" }
+                          "usage": { "type": "number" },
+                          "included": { "type": "number", "nullable": true },
+                          "billableQuantity": { "type": "number" },
+                          "estimatedAmount": { "type": "number" },
+                          "usageModel": { "type": "string" },
+                          "ratingModel": {
+                            "type": "string",
+                            "enum": ["package", "graduated", "volume"]
+                          },
+                          "pricePerUnit": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "billingUnits": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "tierBreakdown": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/BillingTierBreakdown"
+                            }
+                          }
                         }
                       }
                     }
@@ -700,7 +830,10 @@
                       "required": ["slug", "type", "name"],
                       "properties": {
                         "slug": { "type": "string" },
-                        "type": { "type": "string", "enum": ["metered", "boolean"] },
+                        "type": {
+                          "type": "string",
+                          "enum": ["metered", "boolean"]
+                        },
                         "name": { "type": "string" }
                       }
                     }
@@ -736,7 +869,11 @@
               },
               "example": {
                 "features": [
-                  { "slug": "api-calls", "name": "API Calls", "type": "metered" }
+                  {
+                    "slug": "api-calls",
+                    "name": "API Calls",
+                    "type": "metered"
+                  }
                 ],
                 "plans": [
                   {
@@ -746,7 +883,12 @@
                     "currency": "USD",
                     "interval": "monthly",
                     "features": [
-                      { "slug": "api-calls", "enabled": true, "limit": 10000, "reset": "monthly" }
+                      {
+                        "slug": "api-calls",
+                        "enabled": true,
+                        "limit": 10000,
+                        "reset": "monthly"
+                      }
                     ]
                   }
                 ]
@@ -764,9 +906,14 @@
                   "properties": {
                     "success": { "type": "boolean" },
                     "features": { "$ref": "#/components/schemas/SyncSummary" },
-                    "creditSystems": { "$ref": "#/components/schemas/SyncSummary" },
+                    "creditSystems": {
+                      "$ref": "#/components/schemas/SyncSummary"
+                    },
                     "plans": { "$ref": "#/components/schemas/SyncSummary" },
-                    "warnings": { "type": "array", "items": { "type": "string" } }
+                    "warnings": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
                   }
                 }
               }
@@ -784,10 +931,30 @@
         "summary": "List all plans",
         "description": "List all plans for the organization with optional filters.",
         "parameters": [
-          { "name": "group", "in": "query", "schema": { "type": "string" }, "description": "Filter by plan group" },
-          { "name": "interval", "in": "query", "schema": { "type": "string" }, "description": "Filter by billing interval" },
-          { "name": "currency", "in": "query", "schema": { "type": "string" }, "description": "Filter by currency (case-insensitive)" },
-          { "name": "includeInactive", "in": "query", "schema": { "type": "boolean" }, "description": "Include inactive plans" }
+          {
+            "name": "group",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by plan group"
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by billing interval"
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by currency (case-insensitive)"
+          },
+          {
+            "name": "includeInactive",
+            "in": "query",
+            "schema": { "type": "boolean" },
+            "description": "Include inactive plans"
+          }
         ],
         "responses": {
           "200": {
@@ -818,7 +985,12 @@
         "summary": "Get a plan by slug",
         "description": "Retrieve a single plan with all its features.",
         "parameters": [
-          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
         ],
         "responses": {
           "200": {
@@ -854,7 +1026,10 @@
                 "type": "object",
                 "required": ["email"],
                 "properties": {
-                  "id": { "type": "string", "description": "Optional custom ID" },
+                  "id": {
+                    "type": "string",
+                    "description": "Optional custom ID"
+                  },
                   "email": { "type": "string", "format": "email" },
                   "name": { "type": "string" },
                   "metadata": { "type": "object", "additionalProperties": true }
@@ -888,7 +1063,12 @@
         "tags": ["Customers"],
         "summary": "Get a customer by ID",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
         ],
         "responses": {
           "200": {
@@ -919,8 +1099,14 @@
                 "required": ["customer", "feature", "entity"],
                 "properties": {
                   "customer": { "type": "string" },
-                  "feature": { "type": "string", "description": "Feature slug" },
-                  "entity": { "type": "string", "description": "Entity ID (e.g. seat ID)" },
+                  "feature": {
+                    "type": "string",
+                    "description": "Feature slug"
+                  },
+                  "entity": {
+                    "type": "string",
+                    "description": "Entity ID (e.g. seat ID)"
+                  },
                   "name": { "type": "string" },
                   "email": { "type": "string", "format": "email" },
                   "metadata": { "type": "object", "additionalProperties": true }
@@ -966,8 +1152,18 @@
         "summary": "List entities",
         "description": "List entities for a customer, optionally filtered by feature.",
         "parameters": [
-          { "name": "customer", "in": "query", "required": true, "schema": { "type": "string" } },
-          { "name": "feature", "in": "query", "schema": { "type": "string" }, "description": "Filter by feature slug" }
+          {
+            "name": "customer",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "feature",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by feature slug"
+          }
         ],
         "responses": {
           "200": {
@@ -988,8 +1184,14 @@
                           "name": { "type": "string" },
                           "email": { "type": "string" },
                           "metadata": { "type": "object" },
-                          "status": { "type": "string", "enum": ["active", "pending_removal"] },
-                          "createdAt": { "type": "string", "format": "date-time" }
+                          "status": {
+                            "type": "string",
+                            "enum": ["active", "pending_removal"]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
                         }
                       }
                     },
@@ -1023,7 +1225,11 @@
                   "entity": { "type": "string" }
                 }
               },
-              "example": { "customer": "user_123", "feature": "seats", "entity": "seat_456" }
+              "example": {
+                "customer": "user_123",
+                "feature": "seats",
+                "entity": "seat_456"
+              }
             }
           }
         },
@@ -1101,8 +1307,19 @@
         "description": "Endpoint for receiving webhooks from payment providers. Configure this URL in your provider's dashboard.",
         "security": [],
         "parameters": [
-          { "name": "organizationId", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "provider", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Provider ID (e.g. paystack, dodopayments, polar)" }
+          {
+            "name": "organizationId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Provider ID (e.g. paystack, dodopayments, polar)"
+          }
         ],
         "requestBody": {
           "content": {
@@ -1152,14 +1369,77 @@
         "type": "object",
         "properties": {
           "allowed": { "type": "boolean" },
-          "code": { "type": "string", "enum": ["access_granted", "access_denied", "no_subscription", "tracked", "tracked_overage", "limit_exceeded", "addon_credits_used"] },
+          "code": {
+            "type": "string",
+            "enum": [
+              "access_granted",
+              "access_denied",
+              "no_subscription",
+              "tracked",
+              "tracked_overage",
+              "limit_exceeded",
+              "addon_credits_used"
+            ]
+          },
           "usage": { "type": "number", "nullable": true },
           "limit": { "type": "number", "nullable": true },
           "balance": { "type": "number", "nullable": true },
           "resetsAt": { "type": "string", "format": "date-time" },
-          "resetInterval": { "type": "string", "enum": ["daily", "weekly", "monthly", "yearly"] },
+          "resetInterval": {
+            "type": "string",
+            "enum": ["daily", "weekly", "monthly", "yearly"]
+          },
           "addonCredits": { "type": "number" },
-          "details": { "type": "object", "additionalProperties": true }
+          "details": {
+            "type": "object",
+            "properties": {
+              "message": { "type": "string" },
+              "pricing": { "$ref": "#/components/schemas/PricingDetails" }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "PricingTier": {
+        "type": "object",
+        "properties": {
+          "upTo": { "type": "number", "nullable": true },
+          "unitPrice": { "type": "number" },
+          "flatFee": { "type": "number" }
+        }
+      },
+      "BillingTierBreakdown": {
+        "type": "object",
+        "properties": {
+          "tier": { "type": "number" },
+          "units": { "type": "number" },
+          "unitPrice": { "type": "number" },
+          "flatFee": { "type": "number" },
+          "amount": { "type": "number" }
+        }
+      },
+      "PricingDetails": {
+        "type": "object",
+        "properties": {
+          "usageModel": {
+            "type": "string",
+            "enum": ["included", "usage_based", "prepaid"]
+          },
+          "ratingModel": {
+            "type": "string",
+            "enum": ["package", "graduated", "volume"]
+          },
+          "pricePerUnit": { "type": "number", "nullable": true },
+          "billingUnits": { "type": "number", "nullable": true },
+          "currentTier": {
+            "type": "object",
+            "properties": {
+              "index": { "type": "number" },
+              "startsAt": { "type": "number" },
+              "endsAt": { "type": "number", "nullable": true },
+              "unitPrice": { "type": "number" }
+            }
+          }
         }
       },
       "PaymentMethod": {
@@ -1245,6 +1525,20 @@
                 "limit": { "type": "number", "nullable": true },
                 "resetInterval": { "type": "string", "nullable": true },
                 "unit": { "type": "string", "nullable": true },
+                "usageModel": {
+                  "type": "string",
+                  "enum": ["included", "usage_based", "prepaid"]
+                },
+                "pricePerUnit": { "type": "number", "nullable": true },
+                "billingUnits": { "type": "number", "nullable": true },
+                "ratingModel": {
+                  "type": "string",
+                  "enum": ["package", "graduated", "volume"]
+                },
+                "tiers": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/PricingTier" }
+                },
                 "overage": { "type": "string", "enum": ["charge"] },
                 "overagePrice": { "type": "number" }
               }
@@ -1254,7 +1548,14 @@
       },
       "SyncPlan": {
         "type": "object",
-        "required": ["slug", "name", "price", "currency", "interval", "features"],
+        "required": [
+          "slug",
+          "name",
+          "price",
+          "currency",
+          "interval",
+          "features"
+        ],
         "properties": {
           "slug": { "type": "string" },
           "name": { "type": "string" },
@@ -1276,6 +1577,19 @@
                 "enabled": { "type": "boolean" },
                 "limit": { "type": "number", "nullable": true },
                 "reset": { "type": "string" },
+                "usageModel": {
+                  "type": "string",
+                  "enum": ["included", "usage_based", "prepaid"]
+                },
+                "pricePerUnit": { "type": "number" },
+                "ratingModel": {
+                  "type": "string",
+                  "enum": ["package", "graduated", "volume"]
+                },
+                "tiers": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/PricingTier" }
+                },
                 "overage": { "type": "string", "enum": ["block", "charge"] },
                 "overagePrice": { "type": "number" },
                 "maxOverageUnits": { "type": "number" },

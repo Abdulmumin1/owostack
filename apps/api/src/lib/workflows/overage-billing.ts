@@ -14,6 +14,7 @@ import type { ProviderAccount } from "@owostack/adapters";
 import { createDb } from "@owostack/db";
 import { getMinimumChargeAmount } from "../provider-minimums";
 import { BillingService } from "../billing";
+import { buildMeteredInvoiceLineData } from "../invoice-line-items";
 import { markUsageInvoiced } from "../usage-ledger";
 import {
   PAID_SUBSCRIPTION_PERIOD_GRACE_MS,
@@ -675,22 +676,30 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
 
           if (!existingItem) {
             const itemId = crypto.randomUUID();
-            const description = `${f.featureName}: ${f.billableQuantity} ${f.billingUnits > 1 ? `units (${f.billingUnits} per package)` : "units"}`;
+            const line = buildMeteredInvoiceLineData({
+              featureName: f.featureName,
+              billableQuantity: f.billableQuantity,
+              pricePerUnit: f.pricePerUnit,
+              billingUnits: f.billingUnits,
+              ratingModel: f.ratingModel,
+              tierBreakdown: f.tierBreakdown,
+            });
 
             await this.env.DB.prepare(
-              `INSERT INTO invoice_items (id, invoice_id, feature_id, description, quantity, unit_price, amount, period_start, period_end, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO invoice_items (id, invoice_id, feature_id, description, quantity, unit_price, amount, period_start, period_end, metadata, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
               .bind(
                 itemId,
                 invoiceId,
                 f.featureId,
-                description,
+                line.description,
                 f.billableQuantity,
-                Math.round(f.pricePerUnit / f.billingUnits),
+                line.unitPrice,
                 f.estimatedAmount,
                 f.periodStart,
                 f.periodEnd,
+                line.metadata ? JSON.stringify(line.metadata) : null,
                 now,
               )
               .run();
@@ -824,6 +833,21 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
         console.log(
           `[OverageBilling] No provider account for org=${organizationId}. Invoice stays open.`,
         );
+        await step.do("record-no-provider-account-attempt", async () => {
+          await this.env.DB.prepare(
+            `INSERT INTO payment_attempts (id, invoice_id, amount, currency, status, provider, attempt_number, last_error, created_at)
+           VALUES (?, ?, ?, ?, 'failed', ?, 1, 'No provider account configured', ?)`,
+          )
+            .bind(
+              crypto.randomUUID(),
+              invoice.invoiceId,
+              invoice.total,
+              invoice.currency,
+              providerId,
+              Date.now(),
+            )
+            .run();
+        });
         return;
       }
 
@@ -968,7 +992,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             providerId,
             chargeRef,
             attemptsMade,
-            chargeSucceeded ? null : "Charge failed after retries",
+            chargeSucceeded ? null : lastError || "Charge failed after retries",
             now,
           )
           .run();

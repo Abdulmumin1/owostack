@@ -270,6 +270,68 @@ describe("Entitlements Engine (Check & Track)", () => {
     expect(body.balance).toBe(100);
   });
 
+  it("checks usage-based pricing through billing guardrails", async () => {
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: featureIdMetered,
+      organizationId: "org_test",
+      slug: "api-calls",
+      type: "metered",
+    });
+    mockDb.query.planFeatures.findMany.mockResolvedValueOnce([
+      {
+        planId: "plan_test",
+        featureId: featureIdMetered,
+        limitValue: null,
+        usageModel: "usage_based",
+        ratingModel: "package",
+        pricePerUnit: 25,
+        billingUnits: 1,
+        overage: "charge",
+        creditCost: null,
+        resetInterval: "monthly",
+      },
+    ]);
+
+    const res = await app.request(
+      "/check",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: featureIdMetered,
+          value: 3,
+        }),
+      },
+      mockEnv,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.allowed).toBe(true);
+    expect(body.limit).toBeNull();
+    expect(body.details.pricing).toEqual(
+      expect.objectContaining({
+        usageModel: "usage_based",
+        ratingModel: "package",
+        pricePerUnit: 25,
+        billingUnits: 1,
+      }),
+    );
+    expect(checkOverageAllowed).toHaveBeenCalledWith(
+      mockDb,
+      customerId,
+      featureIdMetered,
+      expect.any(Number),
+      expect.any(Number),
+      0,
+      undefined,
+      3,
+      expect.any(Object),
+    );
+  });
+
   it("should track usage", async () => {
     mockDb.query.features.findFirst
       .mockResolvedValueOnce({
@@ -345,6 +407,59 @@ describe("Entitlements Engine (Check & Track)", () => {
     expect(body.allowed).toBe(true);
     // Without DO/ledger, balance = limitValue (usage not yet visible)
     expect(body.balance).toBe(100);
+  });
+
+  it("blocks usage-based tracking when billing guardrails fail", async () => {
+    vi.mocked(checkOverageAllowed).mockResolvedValueOnce({
+      allowed: false,
+      reason: "No payment method on file.",
+    });
+
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: featureIdMetered,
+      organizationId: "org_test",
+      slug: "api-calls",
+      type: "metered",
+    });
+    mockDb.query.planFeatures.findMany.mockResolvedValueOnce([
+      {
+        planId: "plan_test",
+        featureId: featureIdMetered,
+        limitValue: null,
+        usageModel: "usage_based",
+        ratingModel: "package",
+        pricePerUnit: 25,
+        billingUnits: 1,
+        overage: "charge",
+        creditCost: null,
+        resetInterval: "monthly",
+      },
+    ]);
+
+    const res = await app.request(
+      "/track",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: featureIdMetered,
+          value: 2,
+        }),
+      },
+      mockEnv,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as TrackResponse & {
+      details: { pricing?: { usageModel?: string } };
+    };
+    expect(body.success).toBe(false);
+    expect(body.allowed).toBe(false);
+    expect(body.code).toBe("limit_exceeded");
+    expect(body.details.pricing?.usageModel).toBe("usage_based");
+    expect(mockDb.values).not.toHaveBeenCalled();
   });
 
   it("track persists usage record via waitUntil and scopes by entity when provided", async () => {
@@ -824,6 +939,7 @@ describe("Entitlements Engine (Check & Track)", () => {
       100,
       200,
       10,
+      expect.any(Object),
     );
 
     expect(usageMeter.track).toHaveBeenNthCalledWith(

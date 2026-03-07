@@ -15,6 +15,13 @@
       "when": 1772729966748,
       "tag": "0001_aromatic_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1772888922832,
+      "tag": "0002_lazy_dragon_lord",
+      "breakpoints": true
     }
   ]
 }

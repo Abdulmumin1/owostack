@@ -42,7 +42,6 @@ app.get("/", async (c) => {
   const days = Number(c.req.query("days")) || 0;
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
   const fromTs =
     days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : monthStart;

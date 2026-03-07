@@ -1,6 +1,13 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { schema } from "@owostack/db";
+import {
+  normalizePlanFeatureLimitValue,
+  normalizePlanFeaturePricingConfig,
+  normalizePlanFeatureOverage,
+  normalizePlanFeatureResetInterval,
+  validatePlanFeaturePricingConfig,
+} from "../../lib/plan-feature-normalization";
 import type { Env, Variables } from "../../index";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -76,22 +83,32 @@ app.get("/export", async (c) => {
         version: p.version,
         source: p.source,
         metadata: p.metadata,
-        planFeatures: (p.planFeatures || []).map((pf: any) => ({
-          featureId: pf.featureId,
-          limitValue: pf.limitValue,
-          resetInterval: pf.resetInterval,
-          resetOnEnable: pf.resetOnEnable,
-          rolloverEnabled: pf.rolloverEnabled,
-          rolloverMaxBalance: pf.rolloverMaxBalance,
-          usageModel: pf.usageModel,
-          pricePerUnit: pf.pricePerUnit,
-          billingUnits: pf.billingUnits,
-          maxPurchaseLimit: pf.maxPurchaseLimit,
-          creditCost: pf.creditCost,
-          overage: pf.overage,
-          overagePrice: pf.overagePrice,
-          maxOverageUnits: pf.maxOverageUnits,
-        })),
+        planFeatures: (p.planFeatures || []).map((pf: any) => {
+          const usageModel = pf.usageModel || "included";
+
+          return {
+            featureId: pf.featureId,
+            limitValue:
+              normalizePlanFeatureLimitValue(
+                usageModel,
+                pf.limitValue ?? null,
+              ) ?? null,
+            resetInterval: normalizePlanFeatureResetInterval(pf.resetInterval),
+            resetOnEnable: pf.resetOnEnable,
+            rolloverEnabled: pf.rolloverEnabled,
+            rolloverMaxBalance: pf.rolloverMaxBalance,
+            usageModel,
+            pricePerUnit: pf.pricePerUnit,
+            billingUnits: pf.billingUnits,
+            ratingModel: pf.ratingModel,
+            tiers: pf.tiers,
+            maxPurchaseLimit: pf.maxPurchaseLimit,
+            creditCost: pf.creditCost,
+            overage: normalizePlanFeatureOverage(usageModel, pf.overage),
+            overagePrice: pf.overagePrice,
+            maxOverageUnits: pf.maxOverageUnits,
+          };
+        }),
       })),
       creditSystems: creditSystemRows.map((cs: any) => ({
         id: cs.id,
@@ -156,6 +173,48 @@ app.post("/import", async (c) => {
   };
 
   try {
+    for (const plan of catalog.plans || []) {
+      for (const planFeature of plan.planFeatures || []) {
+        const usageModel = planFeature.usageModel || "included";
+        const normalizedPlanFeature = normalizePlanFeaturePricingConfig({
+          limitValue: normalizePlanFeatureLimitValue(
+            usageModel,
+            planFeature.limitValue ?? null,
+          ),
+          resetInterval:
+            normalizePlanFeatureResetInterval(
+              planFeature.resetInterval || "monthly",
+            ) ?? "monthly",
+          resetOnEnable: planFeature.resetOnEnable ?? true,
+          rolloverEnabled: planFeature.rolloverEnabled ?? false,
+          rolloverMaxBalance: planFeature.rolloverMaxBalance ?? null,
+          usageModel,
+          pricePerUnit: planFeature.pricePerUnit ?? null,
+          billingUnits: planFeature.billingUnits ?? 1,
+          ratingModel: planFeature.ratingModel || "package",
+          tiers: planFeature.tiers ?? null,
+          maxPurchaseLimit: planFeature.maxPurchaseLimit ?? null,
+          creditCost: planFeature.creditCost ?? 0,
+          overage: normalizePlanFeatureOverage(usageModel, planFeature.overage),
+          overagePrice: planFeature.overagePrice ?? null,
+          maxOverageUnits: planFeature.maxOverageUnits ?? null,
+        });
+        const pricingValidationError = validatePlanFeaturePricingConfig(
+          normalizedPlanFeature,
+        );
+
+        if (pricingValidationError) {
+          return c.json(
+            {
+              success: false,
+              error: `Invalid pricing config for imported plan '${plan.slug}' feature '${planFeature.featureId}': ${pricingValidationError}`,
+            },
+            400,
+          );
+        }
+      }
+    }
+
     // ID mappings: source (test) ID → target (live) ID
     const featureIdMap = new Map<string, string>();
     const planIdMap = new Map<string, string>();
@@ -284,23 +343,48 @@ app.post("/import", async (c) => {
           if (existingPfByFeature.has(mappedFeatureId)) {
             result.planFeatures.skipped++;
           } else {
+            const usageModel = pf.usageModel || "included";
+            const normalizedPlanFeature = normalizePlanFeaturePricingConfig({
+              limitValue: normalizePlanFeatureLimitValue(
+                usageModel,
+                pf.limitValue ?? null,
+              ),
+              resetInterval:
+                normalizePlanFeatureResetInterval(
+                  pf.resetInterval || "monthly",
+                ) ?? "monthly",
+              resetOnEnable: pf.resetOnEnable ?? true,
+              rolloverEnabled: pf.rolloverEnabled ?? false,
+              rolloverMaxBalance: pf.rolloverMaxBalance ?? null,
+              usageModel,
+              pricePerUnit: pf.pricePerUnit ?? null,
+              billingUnits: pf.billingUnits ?? 1,
+              ratingModel: pf.ratingModel || "package",
+              tiers: pf.tiers ?? null,
+              maxPurchaseLimit: pf.maxPurchaseLimit ?? null,
+              creditCost: pf.creditCost ?? 0,
+              overage: normalizePlanFeatureOverage(usageModel, pf.overage),
+              overagePrice: pf.overagePrice ?? null,
+              maxOverageUnits: pf.maxOverageUnits ?? null,
+            });
+            const pricingValidationError = validatePlanFeaturePricingConfig(
+              normalizedPlanFeature,
+            );
+            if (pricingValidationError) {
+              return c.json(
+                {
+                  success: false,
+                  error: `Invalid pricing config for imported plan '${p.slug}' feature '${pf.featureId}': ${pricingValidationError}`,
+                },
+                400,
+              );
+            }
+
             await db.insert(schema.planFeatures).values({
               id: crypto.randomUUID(),
               planId: existing.id,
               featureId: mappedFeatureId,
-              limitValue: pf.limitValue,
-              resetInterval: pf.resetInterval || "monthly",
-              resetOnEnable: pf.resetOnEnable ?? true,
-              rolloverEnabled: pf.rolloverEnabled ?? false,
-              rolloverMaxBalance: pf.rolloverMaxBalance,
-              usageModel: pf.usageModel || "included",
-              pricePerUnit: pf.pricePerUnit,
-              billingUnits: pf.billingUnits,
-              maxPurchaseLimit: pf.maxPurchaseLimit,
-              creditCost: pf.creditCost,
-              overage: pf.overage || "block",
-              overagePrice: pf.overagePrice,
-              maxOverageUnits: pf.maxOverageUnits,
+              ...normalizedPlanFeature,
             });
             result.planFeatures.created++;
           }
@@ -340,23 +424,48 @@ app.post("/import", async (c) => {
             creditSystemIdMap.get(pf.featureId);
           if (!mappedFeatureId) continue;
 
+          const usageModel = pf.usageModel || "included";
+          const normalizedPlanFeature = normalizePlanFeaturePricingConfig({
+            limitValue: normalizePlanFeatureLimitValue(
+              usageModel,
+              pf.limitValue ?? null,
+            ),
+            resetInterval:
+              normalizePlanFeatureResetInterval(
+                pf.resetInterval || "monthly",
+              ) ?? "monthly",
+            resetOnEnable: pf.resetOnEnable ?? true,
+            rolloverEnabled: pf.rolloverEnabled ?? false,
+            rolloverMaxBalance: pf.rolloverMaxBalance ?? null,
+            usageModel,
+            pricePerUnit: pf.pricePerUnit ?? null,
+            billingUnits: pf.billingUnits ?? 1,
+            ratingModel: pf.ratingModel || "package",
+            tiers: pf.tiers ?? null,
+            maxPurchaseLimit: pf.maxPurchaseLimit ?? null,
+            creditCost: pf.creditCost ?? 0,
+            overage: normalizePlanFeatureOverage(usageModel, pf.overage),
+            overagePrice: pf.overagePrice ?? null,
+            maxOverageUnits: pf.maxOverageUnits ?? null,
+          });
+          const pricingValidationError = validatePlanFeaturePricingConfig(
+            normalizedPlanFeature,
+          );
+          if (pricingValidationError) {
+            return c.json(
+              {
+                success: false,
+                error: `Invalid pricing config for imported plan '${p.slug}' feature '${pf.featureId}': ${pricingValidationError}`,
+              },
+              400,
+            );
+          }
+
           await db.insert(schema.planFeatures).values({
             id: crypto.randomUUID(),
             planId: newPlanId,
             featureId: mappedFeatureId,
-            limitValue: pf.limitValue,
-            resetInterval: pf.resetInterval || "monthly",
-            resetOnEnable: pf.resetOnEnable ?? true,
-            rolloverEnabled: pf.rolloverEnabled ?? false,
-            rolloverMaxBalance: pf.rolloverMaxBalance,
-            usageModel: pf.usageModel || "included",
-            pricePerUnit: pf.pricePerUnit,
-            billingUnits: pf.billingUnits,
-            maxPurchaseLimit: pf.maxPurchaseLimit,
-            creditCost: pf.creditCost,
-            overage: pf.overage || "block",
-            overagePrice: pf.overagePrice,
-            maxOverageUnits: pf.maxOverageUnits,
+            ...normalizedPlanFeature,
           });
           result.planFeatures.created++;
         }

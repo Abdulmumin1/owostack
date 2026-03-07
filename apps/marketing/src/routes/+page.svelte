@@ -8,9 +8,12 @@
     Lock,
     Users,
     Plug,
+    DiscordLogo,
+    Calendar,
   } from "phosphor-svelte";
   import Logo from "$lib/components/ui/Logo.svelte";
   import InteractiveDemo from "$lib/components/marketing/InteractiveDemo.svelte";
+  import PricingTemplatesSection from "$lib/components/marketing/PricingTemplatesSection.svelte";
   import { onMount } from "svelte";
 
   const phrases: { text: string; icons: (typeof CreditCard)[] }[] = [
@@ -200,11 +203,25 @@
           >Docs</a
         >
         <a
+          href="/pricing-templates"
+          class="hidden sm:inline hover:text-text-primary transition-colors"
+          >Templates</a
+        >
+        <a
           href={import.meta.env.VITE_GITHUB_URL}
           class="hidden sm:flex items-center gap-1.5 hover:text-text-primary transition-colors"
         >
           <GithubLogo size={13} weight="duotone" />
           GitHub
+        </a>
+        <a
+          href="https://discord.gg/jQ3TyEn6WR"
+          class="hidden sm:flex items-center gap-1.5 hover:text-text-primary transition-colors"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <DiscordLogo size={13} weight="duotone" />
+          Discord
         </a>
         <a href="https://app.owostack.com" class="btn btn-primary"
           >Dashboard</a
@@ -339,6 +356,8 @@
     </div>
   </section>
 
+  <PricingTemplatesSection />
+
   <!-- Provider Agnostic -->
   <section
     class="px-6 py-20 md:py-32 relative overflow-hidden bg-bg-primary border-t border-border/30"
@@ -443,6 +462,38 @@
     </div>
   </section>
 
+  <!-- Community Section -->
+  <section class="px-6 py-20 md:py-28 border-t border-border/30 bg-bg-secondary/30">
+    <div class="max-w-4xl mx-auto text-center">
+      <h2 class="text-2xl md:text-3xl font-bold tracking-tight text-text-primary mb-4">
+        Building something ambitious?
+      </h2>
+      <p class="text-text-secondary max-w-lg mx-auto text-sm mb-10">
+        Join our community of builders or book a call to discuss your billing architecture.
+      </p>
+      <div class="flex flex-wrap justify-center gap-3">
+        <a
+          href="https://discord.gg/jQ3TyEn6WR"
+          class="btn btn-secondary gap-2"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <DiscordLogo size={16} weight="duotone" />
+          Join Discord
+        </a>
+        <a
+          href="https://cal.com/yaqeen/30min"
+          class="btn btn-primary gap-2"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Calendar size={16} weight="duotone" />
+          Talk to Founder
+        </a>
+      </div>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer class="px-6 py-8 border-t border-border/30">
     <div
@@ -453,6 +504,10 @@
       >
       <div class="flex items-center gap-6 text-xs text-text-secondary">
         <a
+          href="/pricing-templates"
+          class="hover:text-text-primary transition-colors">Templates</a
+        >
+        <a
           href={import.meta.env.DOCS_URL}
           class="hover:text-text-primary transition-colors">Docs</a
         >
@@ -460,6 +515,22 @@
           href={import.meta.env.GITHUB_URL}
           class="hover:text-text-primary transition-colors">GitHub</a
         >
+        <a
+          href="https://discord.gg/jQ3TyEn6WR"
+          class="hover:text-text-primary transition-colors"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Discord
+        </a>
+        <a
+          href="/blog"
+          class="hover:text-text-primary transition-colors"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Blog
+        </a>
       </div>
     </div>
   </footer>

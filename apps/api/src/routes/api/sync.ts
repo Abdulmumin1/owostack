@@ -4,6 +4,13 @@ import { schema } from "@owostack/db";
 import { eq, and, or } from "drizzle-orm";
 import { verifyApiKey } from "../../lib/api-keys";
 import {
+  normalizePlanFeatureLimitValue,
+  normalizePlanFeaturePricingConfig,
+  normalizePlanFeatureOverage,
+  normalizePlanFeatureResetInterval,
+  validatePlanFeaturePricingConfig,
+} from "../../lib/plan-feature-normalization";
+import {
   getProviderRegistry,
   deriveProviderEnvironment,
   loadProviderAccounts,
@@ -46,6 +53,25 @@ const syncPlanFeatureSchema = z.object({
   enabled: z.boolean(),
   limit: z.number().nullable().optional(),
   reset: z.string().optional(),
+  usageModel: z.enum(["included", "usage_based", "prepaid"]).optional(),
+  pricePerUnit: z.number().optional(),
+  ratingModel: z.enum(["package", "graduated", "volume"]).optional(),
+  tiers: z
+    .array(
+      z
+        .object({
+          upTo: z.number().nullable(),
+          unitPrice: z.number().optional(),
+          flatFee: z.number().optional(),
+        })
+        .refine(
+          (tier) => tier.unitPrice !== undefined || tier.flatFee !== undefined,
+          {
+            message: "Each tier must define unitPrice, flatFee, or both",
+          },
+        ),
+    )
+    .optional(),
   overage: z.enum(["block", "charge"]).optional(),
   overagePrice: z.number().optional(),
   maxOverageUnits: z.number().optional(),
@@ -121,8 +147,49 @@ app.post("/", async (c) => {
     plans: planDefs,
     defaultProvider,
   } = parsed.data;
-  const organizationId = c.get("organizationId");
+  const organizationId = c.get("organizationId")!;
   const db = c.get("db");
+  const featureTypeBySlug = new Map(
+    featureDefs.map((featureDef) => [featureDef.slug, featureDef.type]),
+  );
+
+  for (const planDef of planDefs) {
+    for (const featureDef of planDef.features) {
+      if (featureTypeBySlug.get(featureDef.slug) === "boolean") continue;
+
+      const normalizedFeatureConfig = normalizePlanFeaturePricingConfig({
+        limitValue: featureDef.limit ?? null,
+        resetInterval:
+          normalizePlanFeatureResetInterval(featureDef.reset ?? "monthly") ??
+          "monthly",
+        usageModel: featureDef.usageModel ?? "included",
+        pricePerUnit: featureDef.pricePerUnit ?? null,
+        billingUnits: featureDef.billingUnits ?? 1,
+        ratingModel: featureDef.ratingModel ?? "package",
+        tiers: featureDef.tiers ?? null,
+        overage: normalizePlanFeatureOverage(
+          featureDef.usageModel ?? "included",
+          featureDef.overage,
+        ),
+        overagePrice: featureDef.overagePrice ?? null,
+        maxOverageUnits: featureDef.maxOverageUnits ?? null,
+        creditCost: featureDef.creditCost ?? 0,
+      });
+      const pricingValidationError = validatePlanFeaturePricingConfig(
+        normalizedFeatureConfig,
+      );
+
+      if (pricingValidationError) {
+        return c.json(
+          {
+            success: false,
+            error: `Invalid pricing config for plan '${planDef.slug}' feature '${featureDef.slug}': ${pricingValidationError}`,
+          },
+          400,
+        );
+      }
+    }
+  }
 
   const result = {
     success: true,
@@ -601,27 +668,49 @@ async function reconcilePlanFeatures(
 
     const existing = existingByFeatureId.get(feature.id);
     const isBoolean = feature.type === "boolean";
-    const limitValue = isBoolean
-      ? null
-      : fd.limit !== undefined
-        ? fd.limit
-        : null;
-    const resetInterval = isBoolean ? "never" : (fd.reset ?? "monthly");
-
-    const values = {
-      limitValue,
-      resetInterval,
-      overage: fd.overage ?? "block",
-      overagePrice: fd.overagePrice ?? null,
-      maxOverageUnits: fd.maxOverageUnits ?? null,
-      billingUnits: fd.billingUnits ?? 1,
-      creditCost: fd.creditCost ?? 0,
-    };
+    const usageModel = isBoolean ? "included" : (fd.usageModel ?? "included");
+    const values = isBoolean
+      ? {
+          limitValue: null,
+          resetInterval: "never",
+          usageModel,
+          pricePerUnit: null,
+          ratingModel: "package" as const,
+          tiers: null,
+          overage: "block" as const,
+          overagePrice: null,
+          maxOverageUnits: null,
+          billingUnits: 1,
+          creditCost: fd.creditCost ?? 0,
+        }
+      : normalizePlanFeaturePricingConfig({
+          limitValue: normalizePlanFeatureLimitValue(
+            usageModel,
+            fd.limit ?? null,
+          ),
+          resetInterval:
+            normalizePlanFeatureResetInterval(fd.reset ?? "monthly") ??
+            "monthly",
+          usageModel,
+          pricePerUnit: fd.pricePerUnit ?? null,
+          ratingModel: fd.ratingModel ?? "package",
+          tiers: fd.tiers ?? null,
+          overage: normalizePlanFeatureOverage(usageModel, fd.overage),
+          overagePrice: fd.overagePrice ?? null,
+          maxOverageUnits: fd.maxOverageUnits ?? null,
+          billingUnits: fd.billingUnits ?? 1,
+          creditCost: fd.creditCost ?? 0,
+        });
 
     if (existing) {
       const isChanged =
         existing.limitValue !== values.limitValue ||
         existing.resetInterval !== values.resetInterval ||
+        existing.usageModel !== values.usageModel ||
+        existing.pricePerUnit !== values.pricePerUnit ||
+        existing.ratingModel !== values.ratingModel ||
+        JSON.stringify(existing.tiers ?? null) !==
+          JSON.stringify(values.tiers ?? null) ||
         existing.overage !== values.overage ||
         existing.overagePrice !== values.overagePrice ||
         existing.maxOverageUnits !== values.maxOverageUnits ||

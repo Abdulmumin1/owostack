@@ -13,7 +13,7 @@ npm install -g owosk
 Or use it directly with npx:
 
 ```bash
-npx owo --help
+npx owosk --help
 ```
 
 ## Commands
@@ -23,7 +23,7 @@ npx owo --help
 Initialize a new Owostack project with a default configuration file (`owo.config.ts` or `owo.config.js`). JavaScript configs use ESM `import`/`export` syntax.
 
 ```bash
-npx owo init
+npx owosk init
 ```
 
 ### `sync`
@@ -31,7 +31,7 @@ npx owo init
 Push your local catalog configuration to the Owostack cloud.
 
 ```bash
-npx owo sync
+npx owosk sync
 ```
 
 ### `pull`
@@ -39,7 +39,7 @@ npx owo sync
 Pull existing plans and features from the cloud into your local configuration.
 
 ```bash
-npx owo pull
+npx owosk pull
 ```
 
 ### `diff`
@@ -47,7 +47,7 @@ npx owo pull
 Preview changes by comparing your local configuration with the cloud.
 
 ```bash
-npx owo diff
+npx owosk diff
 ```
 
 ### `validate`
@@ -55,7 +55,7 @@ npx owo diff
 Check your local configuration for errors without applying changes.
 
 ```bash
-npx owo validate
+npx owosk validate
 ```
 
 ### `connect`
@@ -63,7 +63,7 @@ npx owo validate
 Authenticate and connect your local environment to an organization.
 
 ```bash
-npx owo connect
+npx owosk connect
 ```
 
 ## Features

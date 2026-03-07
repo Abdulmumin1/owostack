@@ -2,6 +2,11 @@ import { Hono } from "hono";
 import { eq, and, desc } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
+import {
+  normalizePlanFeatureLimitValue,
+  normalizePlanFeatureOverage,
+  normalizePlanFeatureResetInterval,
+} from "../../lib/plan-feature-normalization";
 import type { Env, Variables } from "../../index";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -90,6 +95,10 @@ app.get("/", async (c) => {
     features: (p.planFeatures || []).map((pf: any) => {
       const featureType = pf.feature?.type ?? "metered";
       const isBoolean = featureType === "boolean";
+      const usageModel = isBoolean ? undefined : pf.usageModel || "included";
+      const overage = isBoolean
+        ? undefined
+        : normalizePlanFeatureOverage(usageModel, pf.overage);
 
       return {
         slug: pf.feature?.slug ?? pf.featureId,
@@ -98,10 +107,22 @@ app.get("/", async (c) => {
         meterType: pf.feature?.meterType || "consumable",
         enabled: isBoolean ? pf.limitValue !== 0 : true,
         // For boolean features, limit is always null. For metered, use the actual value.
-        limit: isBoolean ? null : (pf.limitValue ?? null),
-        resetInterval: isBoolean ? null : pf.resetInterval || null,
+        limit: isBoolean
+          ? null
+          : (normalizePlanFeatureLimitValue(
+              usageModel,
+              pf.limitValue ?? null,
+            ) ?? null),
+        resetInterval: isBoolean
+          ? null
+          : normalizePlanFeatureResetInterval(pf.resetInterval || null),
         unit: pf.feature?.unit || null,
-        overage: pf.overage !== "block" ? pf.overage : undefined,
+        usageModel,
+        pricePerUnit: pf.pricePerUnit ?? undefined,
+        billingUnits: pf.billingUnits ?? undefined,
+        ratingModel: pf.ratingModel ?? undefined,
+        tiers: pf.tiers ?? undefined,
+        overage: overage !== "block" ? overage : undefined,
         overagePrice: pf.overagePrice ?? undefined,
       };
     }),
@@ -148,25 +169,39 @@ app.get("/:slug", async (c) => {
     isAddon: p.isAddon ?? false,
     planGroup: p.planGroup || null,
     trialDays: p.trialDays ?? 0,
-    features: (p.planFeatures || []).map((pf: any) => ({
-      slug: pf.feature?.slug ?? pf.featureId,
-      name: pf.feature?.name ?? pf.featureId,
-      type: pf.feature?.type ?? "metered",
-      meterType: pf.feature?.meterType || "consumable",
-      enabled: (pf.feature?.type ?? "metered") === "boolean"
-        ? pf.limitValue !== 0
-        : true,
-      limit: (pf.feature?.type ?? "metered") === "boolean"
-        ? null
-        : (pf.limitValue ?? null),
-      resetInterval:
-        (pf.feature?.type ?? "metered") === "boolean"
+    features: (p.planFeatures || []).map((pf: any) => {
+      const featureType = pf.feature?.type ?? "metered";
+      const isBoolean = featureType === "boolean";
+      const usageModel = isBoolean ? undefined : pf.usageModel || "included";
+      const overage = isBoolean
+        ? undefined
+        : normalizePlanFeatureOverage(usageModel, pf.overage);
+
+      return {
+        slug: pf.feature?.slug ?? pf.featureId,
+        name: pf.feature?.name ?? pf.featureId,
+        type: featureType,
+        meterType: pf.feature?.meterType || "consumable",
+        enabled: isBoolean ? pf.limitValue !== 0 : true,
+        limit: isBoolean
           ? null
-          : pf.resetInterval || null,
-      unit: pf.feature?.unit || null,
-      overage: pf.overage !== "block" ? pf.overage : undefined,
-      overagePrice: pf.overagePrice ?? undefined,
-    })),
+          : (normalizePlanFeatureLimitValue(
+              usageModel,
+              pf.limitValue ?? null,
+            ) ?? null),
+        resetInterval: isBoolean
+          ? null
+          : normalizePlanFeatureResetInterval(pf.resetInterval || null),
+        unit: pf.feature?.unit || null,
+        usageModel,
+        pricePerUnit: pf.pricePerUnit ?? undefined,
+        billingUnits: pf.billingUnits ?? undefined,
+        ratingModel: pf.ratingModel ?? undefined,
+        tiers: pf.tiers ?? undefined,
+        overage: overage !== "block" ? overage : undefined,
+        overagePrice: pf.overagePrice ?? undefined,
+      };
+    }),
   };
 
   return c.json({ success: true, plan: publicPlan });

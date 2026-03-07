@@ -64,6 +64,31 @@ function slugToIdentifier(slug: string, used: Set<string>): string {
 
 export type ConfigFormat = "ts" | "esm";
 
+function normalizeResetForCodegen(
+  reset: string | null | undefined,
+): string | undefined {
+  switch (reset) {
+    case undefined:
+    case null:
+      return undefined;
+    case "hour":
+      return "hourly";
+    case "day":
+      return "daily";
+    case "week":
+      return "weekly";
+    case "month":
+      return "monthly";
+    case "quarter":
+      return "quarterly";
+    case "year":
+    case "annually":
+      return "yearly";
+    default:
+      return reset;
+  }
+}
+
 export function generateConfig(
   plans: any[],
   creditSystems: any[] = [],
@@ -186,8 +211,12 @@ export function generateConfig(
         const csVar = creditSystemVars.get(pf.slug);
         if (csVar && pf.enabled) {
           const opts: string[] = [];
-          if (pf.resetInterval || pf.reset)
-            opts.push(`reset: "${pf.resetInterval || pf.reset || "monthly"}"`);
+          const creditReset = normalizeResetForCodegen(
+            pf.resetInterval || pf.reset,
+          );
+          if (creditReset !== undefined) {
+            opts.push(`reset: "${creditReset}"`);
+          }
           if (pf.overage) opts.push(`overage: "${pf.overage}"`);
 
           if (opts.length > 0) {
@@ -216,11 +245,23 @@ export function generateConfig(
         // Preserve config for disabled metered features
         const config: Record<string, unknown> = { enabled: false };
         if (pf.limit !== undefined) config.limit = pf.limit;
-        if (pf.resetInterval || pf.reset)
-          config.reset = pf.resetInterval || pf.reset;
+        const disabledReset = normalizeResetForCodegen(
+          pf.resetInterval || pf.reset,
+        );
+        if (disabledReset !== undefined) config.reset = disabledReset;
+        if (pf.usageModel) config.usageModel = pf.usageModel;
+        if (pf.pricePerUnit !== undefined)
+          config.pricePerUnit = pf.pricePerUnit;
+        if (pf.ratingModel) config.ratingModel = pf.ratingModel;
+        if (pf.tiers !== undefined) config.tiers = pf.tiers;
+        if (pf.billingUnits !== undefined)
+          config.billingUnits = pf.billingUnits;
         if (pf.overage) config.overage = pf.overage;
         if (pf.overagePrice !== undefined)
           config.overagePrice = pf.overagePrice;
+        if (pf.maxOverageUnits !== undefined)
+          config.maxOverageUnits = pf.maxOverageUnits;
+        if (pf.creditCost !== undefined) config.creditCost = pf.creditCost;
 
         featureEntries.push(`${varName}.config(${JSON.stringify(config)})`);
         continue;
@@ -231,11 +272,21 @@ export function generateConfig(
       if (pf.limit !== undefined) config.limit = pf.limit;
       // Entity features default to reset: "never", so omit reset for them
       if (!isEntityFeature) {
-        const reset = pf.resetInterval || pf.reset || "monthly";
-        if (reset !== "none") config.reset = reset;
+        const reset = normalizeResetForCodegen(
+          pf.resetInterval || pf.reset || "monthly",
+        );
+        if (reset !== undefined) config.reset = reset;
       }
+      if (pf.usageModel) config.usageModel = pf.usageModel;
+      if (pf.pricePerUnit !== undefined) config.pricePerUnit = pf.pricePerUnit;
+      if (pf.ratingModel) config.ratingModel = pf.ratingModel;
+      if (pf.tiers !== undefined) config.tiers = pf.tiers;
+      if (pf.billingUnits !== undefined) config.billingUnits = pf.billingUnits;
       if (pf.overage) config.overage = pf.overage;
       if (pf.overagePrice !== undefined) config.overagePrice = pf.overagePrice;
+      if (pf.maxOverageUnits !== undefined)
+        config.maxOverageUnits = pf.maxOverageUnits;
+      if (pf.creditCost !== undefined) config.creditCost = pf.creditCost;
 
       const configKeys = Object.keys(config);
       const hasExtras = configKeys.some((k) => k !== "limit");

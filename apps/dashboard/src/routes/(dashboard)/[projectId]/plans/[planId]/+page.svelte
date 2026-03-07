@@ -25,7 +25,7 @@
     UserPlusIcon,
     PackageIcon,
     UsersIcon,
-    Storefront,
+    Check,
   } from "phosphor-svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
@@ -65,17 +65,195 @@
   let selectedFeature = $state<any>(null);
   let editingPlanFeature = $state<any>(null);
 
+  type RatingModel = "package" | "graduated" | "volume";
+  type TierFormRow = {
+    id: string;
+    upTo: string;
+    unitPrice: string;
+    flatFee: string;
+  };
+  type ParsedPricingTier = {
+    upTo: number | null;
+    unitPrice?: number;
+    flatFee?: number;
+  };
+
   let configLimitValue = $state<string>("");
   let configResetInterval = $state<string>("monthly");
   let configUsageModel = $state<"included" | "usage_based">("included");
+  let configRatingModel = $state<RatingModel>("package");
   let configPricePerUnit = $state<string>("");
   let configBillingUnits = $state<string>("1");
+  let configTiers = $state<TierFormRow[]>([]);
   let configOverage = $state<"block" | "charge">("block");
   let configMaxOverageUnits = $state<string>("");
   let configRolloverEnabled = $state<boolean>(false);
   let configRolloverMaxBalance = $state<string>("");
 
   let featureSearchQuery = $state<string>("");
+
+  function createTierRow(
+    tier?: Partial<{ upTo: number | null; unitPrice?: number; flatFee?: number }>,
+  ): TierFormRow {
+    return {
+      id: Math.random().toString(36).slice(2, 10),
+      upTo:
+        tier?.upTo === null || tier?.upTo === undefined ? "" : String(tier.upTo),
+      unitPrice:
+        tier?.unitPrice === undefined ? "" : String(tier.unitPrice / 100),
+      flatFee:
+        tier?.flatFee === undefined ? "" : String(tier.flatFee / 100),
+    };
+  }
+
+  function addPricingTier() {
+    configTiers = [...configTiers, createTierRow()];
+  }
+
+  function removePricingTier(id: string) {
+    configTiers = configTiers.filter((tier) => tier.id !== id);
+  }
+
+  function parsePricingTiers():
+    | { ok: true; tiers: ParsedPricingTier[] }
+    | { ok: false; error: string } {
+    const parsed: ParsedPricingTier[] = [];
+    let previousUpTo = 0;
+
+    for (let index = 0; index < configTiers.length; index += 1) {
+      const tier = configTiers[index];
+      const upToText = String(tier.upTo).trim();
+      const unitPriceText = String(tier.unitPrice).trim();
+      const flatFeeText = String(tier.flatFee).trim();
+
+      if (unitPriceText === "" && flatFeeText === "") {
+        return {
+          ok: false,
+          error: `Tier ${index + 1} must define a unit price, flat price, or both.`,
+        };
+      }
+
+      let upTo: number | null = null;
+      if (upToText === "") {
+        if (index !== configTiers.length - 1) {
+          return {
+            ok: false,
+            error: `Only the last tier can be open-ended.`,
+          };
+        }
+      } else {
+        const parsedUpTo = Number(upToText);
+        if (!Number.isFinite(parsedUpTo) || parsedUpTo <= previousUpTo) {
+          return {
+            ok: false,
+            error: `Tier ${index + 1} must end above tier ${index}.`,
+          };
+        }
+        upTo = parsedUpTo;
+        previousUpTo = parsedUpTo;
+      }
+
+      let unitPrice: number | undefined;
+      if (unitPriceText !== "") {
+        const parsedUnitPrice = Number(unitPriceText);
+        if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice < 0) {
+          return {
+            ok: false,
+            error: `Tier ${index + 1} has an invalid unit price.`,
+          };
+        }
+        unitPrice = Math.round(parsedUnitPrice * 100);
+      }
+
+      let flatFee: number | undefined;
+      if (flatFeeText !== "") {
+        const parsedFlatFee = Number(flatFeeText);
+        if (!Number.isFinite(parsedFlatFee) || parsedFlatFee < 0) {
+          return {
+            ok: false,
+            error: `Tier ${index + 1} has an invalid flat price.`,
+          };
+        }
+        flatFee = Math.round(parsedFlatFee * 100);
+      }
+
+      parsed.push({
+        upTo,
+        ...(unitPrice !== undefined ? { unitPrice } : {}),
+        ...(flatFee !== undefined ? { flatFee } : {}),
+      });
+    }
+
+    return { ok: true, tiers: parsed };
+  }
+
+  function usesTieredPricing() {
+    return configRatingModel === "graduated" || configRatingModel === "volume";
+  }
+
+  function hasUsagePricingConfig() {
+    return configUsageModel === "usage_based";
+  }
+
+  function hasOveragePricingConfig() {
+    return configUsageModel === "included" && configOverage === "charge";
+  }
+
+  function requiresPricingConfig() {
+    return hasUsagePricingConfig() || hasOveragePricingConfig();
+  }
+
+  function selectRatingModel(model: RatingModel) {
+    configRatingModel = model;
+    if (
+      (configRatingModel === "graduated" || configRatingModel === "volume") &&
+      configTiers.length === 0
+    ) {
+      configTiers = [createTierRow()];
+    }
+  }
+
+  function getAttachableFeatures() {
+    if (!plan?.planFeatures) return features;
+
+    const query = featureSearchQuery.toLowerCase();
+    return features.filter((feature: any) => {
+      const alreadyAttached = plan.planFeatures.some(
+        (planFeature: any) => planFeature.featureId === feature.id,
+      );
+      const matchesQuery =
+        feature.name.toLowerCase().includes(query) ||
+        feature.slug.toLowerCase().includes(query);
+
+      return !alreadyAttached && matchesQuery;
+    });
+  }
+
+  function describeFeaturePricing(pf: any) {
+    const currencyCode = plan?.currency || $defaultCurrency;
+    const ratingModel: RatingModel = pf.ratingModel || "package";
+    const billingUnits = pf.billingUnits || 1;
+    const unitPrice =
+      pf.usageModel === "usage_based"
+        ? pf.pricePerUnit
+        : (pf.overagePrice ?? pf.pricePerUnit);
+
+    if (pf.usageModel === "usage_based") {
+      if (ratingModel === "package" && unitPrice != null) {
+        return `Priced · ${formatMoney(unitPrice, currencyCode)} / ${billingUnits} ${pf.feature.unit || "units"}`;
+      }
+      return `Priced · ${ratingModel}`;
+    }
+
+    if (pf.overage === "charge") {
+      if (ratingModel === "package" && unitPrice != null) {
+        return `Inc: ${pf.limitValue ?? "Unlimited"} · Overage ${formatMoney(unitPrice, currencyCode)} / ${billingUnits} ${pf.feature.unit || "units"}`;
+      }
+      return `Inc: ${pf.limitValue ?? "Unlimited"} · ${ratingModel} overage`;
+    }
+
+    return pf.limitValue === null ? "Unlimited" : `Inc: ${pf.limitValue}`;
+  }
 
   $effect(() => {
     if (showConfigModal && editingPlanFeature) {
@@ -86,18 +264,42 @@
           : String(editingPlanFeature.limitValue);
       const rawInterval = editingPlanFeature.resetInterval || "monthly";
       const intervalAliases: Record<string, string> = {
+        hour: "hourly",
         month: "monthly",
         week: "weekly",
         day: "daily",
+        quarter: "quarterly",
         year: "yearly",
       };
       configResetInterval = intervalAliases[rawInterval] || rawInterval;
       configUsageModel = editingPlanFeature.usageModel || "included";
-      configPricePerUnit = editingPlanFeature.pricePerUnit
-        ? String(editingPlanFeature.pricePerUnit / 100)
+      configRatingModel = editingPlanFeature.ratingModel || "package";
+      const storedPrice =
+        editingPlanFeature.usageModel === "usage_based"
+          ? editingPlanFeature.pricePerUnit
+          : (editingPlanFeature.overagePrice ?? editingPlanFeature.pricePerUnit);
+      configPricePerUnit = storedPrice
+        ? String(storedPrice / 100)
         : "";
       configBillingUnits = String(editingPlanFeature.billingUnits || 1);
-      configOverage = editingPlanFeature.overage || "block";
+      const initialTiers =
+        editingPlanFeature.tiers && editingPlanFeature.tiers.length > 0
+          ? editingPlanFeature.tiers.map((tier: any) => createTierRow(tier))
+          : [];
+
+      if (
+        (editingPlanFeature.ratingModel === "graduated" ||
+          editingPlanFeature.ratingModel === "volume") &&
+        initialTiers.length === 0
+      ) {
+        configTiers = [createTierRow()];
+      } else {
+        configTiers = initialTiers;
+      }
+      configOverage =
+        editingPlanFeature.usageModel === "usage_based"
+          ? "charge"
+          : (editingPlanFeature.overage || "block");
       configMaxOverageUnits = editingPlanFeature.maxOverageUnits
         ? String(editingPlanFeature.maxOverageUnits)
         : "";
@@ -228,6 +430,10 @@
 
   async function searchCustomersForAttach() {
     if (!attachCustomerSearch.trim()) {
+      attachCustomerResults = [];
+      return;
+    }
+    if (!projectId) {
       attachCustomerResults = [];
       return;
     }
@@ -696,10 +902,9 @@
                         class="text-xs text-text-muted capitalize mt-0.5"
                       >
                         {pf.feature.type}
-                        {#if pf.feature.type === "metered"}&middot; {pf.limitValue ===
-                          null
-                            ? "Unlimited"
-                            : `Inc: ${pf.limitValue}`}{/if}
+                        {#if pf.feature.type === "metered"}&middot; {describeFeaturePricing(
+                            pf,
+                          )}{/if}
                       </span>
                     </div>
                   </div>
@@ -850,11 +1055,7 @@
         </div>
 
         <div class="space-y-2 mt-2">
-          {#each features.filter((f) => !plan.planFeatures.some((pf: any) => pf.featureId === f.id) && (f.name
-                .toLowerCase()
-                .includes(featureSearchQuery.toLowerCase()) || f.slug
-                  .toLowerCase()
-                  .includes(featureSearchQuery.toLowerCase()))) as feature}
+          {#each getAttachableFeatures() as feature}
             <button
               class="w-full p-4 flex items-center gap-4 bg-bg-card border border-border hover:border-border-light rounded transition-all text-left group"
               onclick={() => handleAttachFeature(feature.id)}
@@ -913,19 +1114,61 @@
       class="flex flex-col justify-between h-full"
       onsubmit={(e) => {
         e.preventDefault();
+        const normalizedPrice =
+          String(configPricePerUnit).trim() === ""
+            ? null
+            : Math.round(Number(configPricePerUnit) * 100);
+        const parsedBillingUnits = Number(configBillingUnits);
+        const normalizedBillingUnits =
+          Number.isFinite(parsedBillingUnits) && parsedBillingUnits > 0
+            ? parsedBillingUnits
+            : null;
+        let tiers: ParsedPricingTier[] | null = null;
+
+        if (requiresPricingConfig()) {
+          if (usesTieredPricing()) {
+            const parsedTiers = parsePricingTiers();
+            if (!parsedTiers.ok) {
+              alert(parsedTiers.error);
+              return;
+            }
+            tiers = parsedTiers.tiers;
+
+            if (tiers.length === 0) {
+              alert("Add at least one pricing tier before saving.");
+              return;
+            }
+          } else if (normalizedPrice === null) {
+            alert("Set a price before saving this pricing configuration.");
+            return;
+          } else if (normalizedBillingUnits === null) {
+            alert("Set a valid billing unit size before saving.");
+            return;
+          }
+        }
+
         const data = {
           usageModel: configUsageModel,
           limitValue:
+            configUsageModel === "usage_based" ||
             String(configLimitValue).trim() === ""
               ? null
               : Number(configLimitValue),
           resetInterval: configResetInterval,
           pricePerUnit:
-            String(configPricePerUnit).trim() === ""
-              ? null
-              : Math.round(Number(configPricePerUnit) * 100),
-          billingUnits: Number(configBillingUnits) || 1,
+            configUsageModel === "usage_based" && configRatingModel === "package"
+              ? normalizedPrice
+              : null,
+          billingUnits: configRatingModel === "package" ? normalizedBillingUnits || 1 : 1,
+          ratingModel: requiresPricingConfig() ? configRatingModel : "package",
+          tiers: usesTieredPricing() ? tiers : null,
           overage: configOverage,
+          overagePrice:
+            configUsageModel === "included" &&
+            configOverage === "charge" &&
+            configRatingModel === "package"
+              ? normalizedPrice
+              : null,
           maxOverageUnits:
             String(configMaxOverageUnits).trim() === ""
               ? null
@@ -941,19 +1184,20 @@
     >
       <div class="p-6 space-y-8">
         <!-- Feature Type -->
-        <div class="space-y-4">
-          <label class="label">Feature Type</label>
-          <div class="space-y-3">
+        <div class="space-y-3">
+          <div class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1">Feature Type</div>
+          <div class="grid grid-cols-2 gap-3">
             <button
               type="button"
-              class="relative w-full p-4 text-left flex gap-4 rounded-lg transition-all {configUsageModel ===
+              class="relative group text-left flex gap-3 p-4 rounded-lg transition-all duration-200 {configUsageModel ===
               'included'
-                ? 'bg-accent-light border border-accent shadow-sm'
-                : 'bg-bg-card border border-border hover:border-border-light'}"
+                ? 'bg-accent-light/20 border-accent'
+                : 'bg-bg-card border-border hover:border-border-strong hover:bg-bg-card-hover'}"
+              style="border-width: 1px;"
               onclick={() => (configUsageModel = "included")}
             >
               <div
-                class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0 rounded-md"
+                class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0 rounded-md transition-colors {configUsageModel === 'included' ? 'border-accent/30' : 'group-hover:border-border-strong'}"
               >
                 <Calendar
                   size={20}
@@ -963,18 +1207,18 @@
                   weight={configUsageModel === "included" ? "fill" : "duotone"}
                 />
               </div>
-              <div>
-                <div class="text-sm font-semibold text-text-primary mb-0.5">
+              <div class="min-w-0">
+                <div class="text-sm font-bold text-text-primary mb-0.5">
                   Included
                 </div>
-                <p class="text-xs text-text-muted">
+                <p class="text-[11px] text-text-muted leading-tight font-medium">
                   Included usage limit.
                 </p>
               </div>
               {#if configUsageModel === "included"}
-                <div class="absolute top-4 right-4">
-                  <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-white">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <div class="absolute top-2.5 right-2.5" transition:fade={{ duration: 150 }}>
+                  <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast shadow-sm">
+                    <Check size={10} weight="bold" />
                   </div>
                 </div>
               {/if}
@@ -982,14 +1226,18 @@
 
             <button
               type="button"
-              class="relative w-full p-4 text-left flex gap-4 rounded-lg transition-all {configUsageModel ===
+              class="relative group text-left flex gap-3 p-4 rounded-lg transition-all duration-200 {configUsageModel ===
               'usage_based'
-                ? 'bg-accent-light border border-accent shadow-sm'
-                : 'bg-bg-card border border-border hover:border-border-light'}"
-              onclick={() => (configUsageModel = "usage_based")}
+                ? 'bg-accent-light/20 border-accent'
+                : 'bg-bg-card border-border hover:border-border-strong hover:bg-bg-card-hover'}"
+              style="border-width: 1px;"
+              onclick={() => {
+                configUsageModel = "usage_based";
+                configOverage = "charge";
+              }}
             >
               <div
-                class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0 rounded-md"
+                class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0 rounded-md transition-colors {configUsageModel === 'usage_based' ? 'border-accent/30' : 'group-hover:border-border-strong'}"
               >
                 <Sliders
                   size={20}
@@ -999,18 +1247,18 @@
                   weight={configUsageModel === "usage_based" ? "fill" : "duotone"}
                 />
               </div>
-              <div>
-                <div class="text-sm font-semibold text-text-primary mb-0.5">
+              <div class="min-w-0">
+                <div class="text-sm font-bold text-text-primary mb-0.5">
                   Priced
                 </div>
-                <p class="text-xs text-text-muted">
+                <p class="text-[11px] text-text-muted leading-tight font-medium">
                   Charge for usage.
                 </p>
               </div>
               {#if configUsageModel === "usage_based"}
-                <div class="absolute top-4 right-4">
-                  <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-white">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <div class="absolute top-2.5 right-2.5" transition:fade={{ duration: 150 }}>
+                  <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast shadow-sm">
+                    <Check size={10} weight="bold" />
                   </div>
                 </div>
               {/if}
@@ -1018,140 +1266,58 @@
           </div>
         </div>
 
-        <!-- Pricing Config (shown when Priced is selected) -->
-        {#if configUsageModel === "usage_based"}
+        <!-- Usage Pricing -->
+        {#if hasUsagePricingConfig()}
           <div
             class="space-y-4 p-5 bg-bg-secondary border border-border rounded-lg"
           >
-            <div class="text-sm font-semibold text-text-primary">
-              Pricing Configuration
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <div class="space-y-2">
-                <label for="pricePerUnit" class="label">Price per Unit</label>
-                <div class="input-icon-wrapper">
-                  <input
-                    id="pricePerUnit"
-                    type="number"
-                    step="0.01"
-                    placeholder="5.00"
-                    class="input !pl-8"
-                    bind:value={configPricePerUnit}
-                  />
-                  <div class="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted font-medium pointer-events-none">
-                    {COMMON_CURRENCIES.find(
-                      (c) => c.code === (plan?.currency || $defaultCurrency),
-                    )?.symbol ||
-                      plan?.currency ||
-                      "₦"}
-                  </div>
+            <div class="flex flex-col justify-between gap-4">
+              <div>
+                <div class="text-sm font-semibold text-text-primary">
+                  Usage Pricing
                 </div>
+                <p class="mt-1 text-[11px] text-text-muted">
+                  Billing starts from the first tracked unit.
+                </p>
               </div>
-
-              <div class="space-y-2">
-                <label for="billingUnits" class="label">Per X Units</label>
-                <input
-                  id="billingUnits"
-                  type="number"
-                  placeholder="1000"
-                  class="input"
-                  bind:value={configBillingUnits}
-                />
+              <div class="flex w-fit bg-bg-card border border-border p-1 rounded-md">
+                {#each [
+                  { value: "package", label: "Package" },
+                  { value: "graduated", label: "Graduated" },
+                  { value: "volume", label: "Volume" },
+                ] as model}
+                  <button
+                    type="button"
+                    class="px-4 py-1.5 text-xs font-bold transition-all rounded-sm {configRatingModel ===
+                    model.value
+                      ? 'bg-accent text-accent-contrast shadow-sm'
+                      : 'text-text-muted hover:text-text-primary'}"
+                    onclick={() => selectRatingModel(model.value as RatingModel)}
+                  >
+                    {model.label}
+                  </button>
+                {/each}
               </div>
             </div>
 
-            <p class="text-xs text-text-muted">
-              {#if configPricePerUnit && configBillingUnits}
-                Charging <strong>{COMMON_CURRENCIES.find(
-                  (c) => c.code === (plan?.currency || $defaultCurrency),
-                )?.symbol ||
-                  plan?.currency ||
-                  "₦"}{configPricePerUnit}</strong> per <strong>{configBillingUnits}
-                {editingPlanFeature.feature.unit || "units"}</strong>
-              {:else}
-                Set price and units to configure billing
-              {/if}
-            </p>
-          </div>
-        {/if}
-
-        <!-- Grant Amount (Included limit for both models) -->
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <label for="limitValueConfig" class="label !mb-0">
-              {configUsageModel === "usage_based"
-                ? "Included Free"
-                : "Grant Amount"}
-            </label>
-            <button
-              type="button"
-              class="text-xs font-medium text-accent hover:text-accent-hover transition-colors"
-              onclick={() => (configLimitValue = "")}
-            >
-              {configUsageModel === "usage_based" ? "Set 0 Free" : "Set Unlimited"}
-            </button>
-          </div>
-
-          <div class="input-icon-wrapper">
-            <input
-              id="limitValueConfig"
-              name="limitValue"
-              type="number"
-              placeholder={configUsageModel === "usage_based" ? "0" : "e.g. 100"}
-              class="input !pr-16"
-              bind:value={configLimitValue}
-            />
-            <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-muted pointer-events-none capitalize">
-              {editingPlanFeature.feature.unit || "units"}
-            </div>
-          </div>
-
-          {#if configUsageModel === "usage_based" && configLimitValue}
-            <p class="text-xs text-text-muted">
-              First {configLimitValue}
-              {editingPlanFeature.feature.unit || "units"} are free, then billing
-              starts.
-            </p>
-          {/if}
-        </div>
-
-        <!-- Overage Behavior (shown when Included is selected) -->
-        {#if configUsageModel === "included"}
-          <div class="space-y-4">
-            <div class="label">When Limit Exceeded</div>
-            <div class="grid grid-cols-2 gap-3">
-              {#each [{ value: "block", label: "Block" }, { value: "charge", label: "Charge" }] as opt}
-                <button
-                  type="button"
-                  class="py-2.5 text-sm font-medium border rounded-md transition-all {configOverage ===
-                  opt.value
-                    ? 'bg-accent text-accent-contrast border-accent'
-                    : 'bg-bg-card text-text-secondary border-border hover:border-border-strong'}"
-                  onclick={() =>
-                    (configOverage = opt.value as typeof configOverage)}
-                >
-                  {opt.label}
-                </button>
-              {/each}
-            </div>
-
-            {#if configOverage === "charge"}
-              <div
-                class="grid grid-cols-2 gap-4 p-5 bg-bg-secondary border border-border rounded-lg"
-              >
-                <div class="space-y-2">
-                  <label for="overagePricePerUnit" class="label">Overage Price</label>
+            {#if configRatingModel === "package"}
+              <div class="grid grid-cols-2 gap-4 pt-1">
+                <div class="space-y-1.5">
+                  <label for="pricePerUnit" class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1">
+                    {configUsageModel === "usage_based"
+                      ? "Price per Unit"
+                      : "Overage Price"}
+                  </label>
                   <div class="input-icon-wrapper">
                     <input
-                      id="overagePricePerUnit"
+                      id="pricePerUnit"
                       type="number"
                       step="0.01"
                       placeholder="5.00"
-                      class="input !pl-8"
+                      class="input h-9 !text-xs !pl-8"
                       bind:value={configPricePerUnit}
                     />
-                    <div class="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted font-medium pointer-events-none">
+                    <div class="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
                       {COMMON_CURRENCIES.find(
                         (c) => c.code === (plan?.currency || $defaultCurrency),
                       )?.symbol ||
@@ -1161,56 +1327,378 @@
                   </div>
                 </div>
 
-                <div class="space-y-2">
-                  <label for="overageBillingUnits" class="label">Per X Units</label>
+                <div class="space-y-1.5">
+                  <label for="billingUnits" class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1">Per X Units</label>
                   <input
-                    id="overageBillingUnits"
+                    id="billingUnits"
                     type="number"
                     placeholder="1000"
-                    class="input"
+                    class="input h-9 !text-xs"
                     bind:value={configBillingUnits}
                   />
                 </div>
-                <div class="space-y-2 col-span-2">
-                  <label for="maxOverageUnits" class="label">Max Overage Units</label>
+              </div>
+
+              <p class="text-[11px] text-text-muted">
+                {#if configPricePerUnit && configBillingUnits}
+                  Charging <strong>{COMMON_CURRENCIES.find(
+                    (c) => c.code === (plan?.currency || $defaultCurrency),
+                  )?.symbol ||
+                    plan?.currency ||
+                    "₦"}{configPricePerUnit}</strong> per
+                  <strong>{configBillingUnits}
+                    {editingPlanFeature.feature.unit || "units"}</strong>
+                {:else}
+                  Set price and units to configure billing.
+                {/if}
+              </p>
+            {:else}
+              <div class="space-y-4 pt-2">
+                <div class="flex items-center justify-between">
+                  <div class="text-sm font-semibold text-text-primary">
+                    Pricing Tiers
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm h-7 px-3 gap-1"
+                    onclick={addPricingTier}
+                  >
+                    <Plus size={12} weight="bold" /> Add Tier
+                  </button>
+                </div>
+
+                <div class="">
+                  <!-- Header Labels -->
+                  <div class="grid grid-cols-[1fr_1fr_1fr_18px] gap-3 px-1">
+                    <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">Up To</div>
+                    <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">Unit Price</div>
+                    <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">Flat Price</div>
+                  </div>
+
+                  {#each configTiers as tier, index (tier.id)}
+                    <div class="grid grid-cols-[1fr_1fr_1fr_18px] gap-1 items-center group">
+                      <div class="relative">
+                        <input
+                          type="number"
+                          placeholder={index === configTiers.length - 1 ? "Infinity" : "1000"}
+                          class="input h-9 !text-xs"
+                          bind:value={tier.upTo}
+                        />
+                      </div>
+                      <div class="input-icon-wrapper">
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.50"
+                          class="input h-9 !text-xs !pl-7"
+                          bind:value={tier.unitPrice}
+                        />
+                        <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                          {COMMON_CURRENCIES.find(
+                            (c) => c.code === (plan?.currency || $defaultCurrency),
+                          )?.symbol || plan?.currency || "₦"}
+                        </div>
+                      </div>
+                      <div class="input-icon-wrapper">
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Optional"
+                          class="input h-9 !text-xs !pl-7"
+                          bind:value={tier.flatFee}
+                        />
+                        <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                          {COMMON_CURRENCIES.find(
+                            (c) => c.code === (plan?.currency || $defaultCurrency),
+                          )?.symbol || plan?.currency || "₦"}
+                        </div>
+                      </div>
+                      <div class="flex justify-end">
+                        {#if configTiers.length > 1}
+                          <button
+                            type="button"
+                            class="p-1.5 text-text-dim hover:text-error hover:bg-error-bg/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                            onclick={() => removePricingTier(tier.id)}
+                          >
+                            <Trash size={14} weight="bold" />
+                          </button>
+                        {/if}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+
+                <p class="text-[10px] text-text-muted px-1">
+                  Each tier can charge by unit, by flat price, or both.
+                </p>
+                <p class="text-[10px] text-text-muted italic px-1">
+                  * {configRatingModel === 'graduated'
+                    ? 'Each tier prices only the billable units inside it. Flat price is added once when usage enters that tier.'
+                    : 'All billable units use the reached tier. Flat price can be used on its own for fixed-price bands.'}
+                </p>
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        {#if configUsageModel === "included"}
+          <!-- Grant Amount -->
+          <div class="space-y-2.5">
+            <div class="flex items-center justify-between px-1">
+              <label for="limitValueConfig" class="text-[11px] font-bold text-text-dim uppercase tracking-wider">
+                Grant Amount
+              </label>
+              <button
+                type="button"
+                class="text-[11px] font-bold text-accent hover:text-accent-hover transition-colors uppercase tracking-wider"
+                onclick={() => (configLimitValue = "")}
+              >
+                Set Unlimited
+              </button>
+            </div>
+
+            <div class="input-icon-wrapper">
+              <input
+                id="limitValueConfig"
+                name="limitValue"
+                type="number"
+                placeholder="e.g. 100"
+                class="input !h-10 !text-sm !pr-16"
+                bind:value={configLimitValue}
+              />
+              <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-dim pointer-events-none capitalize">
+                {editingPlanFeature.feature.unit || "units"}
+              </div>
+            </div>
+          </div>
+        {:else}
+          <div class="rounded-lg border border-border bg-bg-card p-4 shadow-[2px_2px_0_0_var(--color-border-muted)]">
+            <div class="text-sm font-semibold text-text-primary">
+              Usage-based billing
+            </div>
+            <p class="mt-1 text-xs text-text-muted leading-relaxed">
+              Billing starts from the first tracked unit. If you want included units
+              before charging, switch to <strong>Included</strong> and set overage to
+              <strong>Charge</strong>.
+            </p>
+          </div>
+        {/if}
+
+        <!-- Overage Behavior (shown when Included is selected) -->
+        {#if configUsageModel === "included"}
+          <div class="space-y-3 pt-2">
+            <div class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1">When Limit Exceeded</div>
+            <div class="flex bg-bg-card border border-border p-1 rounded-md">
+              {#each [{ value: "block", label: "Block" }, { value: "charge", label: "Charge" }] as opt}
+                <button
+                  type="button"
+                  class="flex-1 py-1.5 text-xs font-bold transition-all rounded-sm {configOverage ===
+                  opt.value
+                    ? 'bg-accent text-accent-contrast'
+                    : 'text-text-muted hover:text-text-primary'}"
+                  onclick={() =>
+                    (configOverage = opt.value as typeof configOverage)}
+                >
+                  {opt.label}
+                </button>
+              {/each}
+            </div>
+
+            {#if configOverage === "charge"}
+              <div class="space-y-5 p-5 bg-bg-elevated border border-border rounded-lg" transition:fly={{ y: 5, duration: 150 }}>
+                <div class="flex flex-col gap-4">
+                  <div>
+                    <div class="text-sm font-bold text-text-primary">
+                      Overage Pricing
+                    </div>
+                    <p class="mt-1 text-xs text-text-muted">
+                      Applied only after the included grant is exhausted.
+                    </p>
+                  </div>
+                  <div class="flex w-fit bg-bg-card border border-border p-1 rounded-md">
+                    {#each [
+                      { value: "package", label: "Package" },
+                      { value: "graduated", label: "Graduated" },
+                      { value: "volume", label: "Volume" },
+                    ] as model}
+                      <button
+                        type="button"
+                        class="px-4 py-1.5 text-[11px] font-bold transition-all rounded-sm {configRatingModel ===
+                        model.value
+                          ? 'bg-accent text-accent-contrast'
+                          : 'text-text-muted hover:text-text-primary'}"
+                        onclick={() => selectRatingModel(model.value as RatingModel)}
+                      >
+                        {model.label}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+
+                {#if configRatingModel === "package"}
+                  <div class="grid grid-cols-2 gap-4">
+                    <div class="">
+                      <label for="overagePricePerUnit" class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1">
+                        Overage Price
+                      </label>
+                      <div class="input-icon-wrapper">
+                        <input
+                          id="overagePricePerUnit"
+                          type="number"
+                          step="0.01"
+                          placeholder="5.00"
+                          class="input h-9 !text-xs !pl-8"
+                          bind:value={configPricePerUnit}
+                        />
+                        <div class="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                          {COMMON_CURRENCIES.find(
+                            (c) => c.code === (plan?.currency || $defaultCurrency),
+                          )?.symbol ||
+                            plan?.currency ||
+                            "₦"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="space-y-1.5">
+                      <label for="overageBillingUnits" class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1">
+                        Per X Units
+                      </label>
+                      <input
+                        id="overageBillingUnits"
+                        type="number"
+                        placeholder="1000"
+                        class="input h-9 !text-xs"
+                        bind:value={configBillingUnits}
+                      />
+                    </div>
+                  </div>
+                {:else}
+                  <div class="space-y-4 pt-1">
+                    <div class="flex items-center justify-between">
+                      <div class="text-sm font-semibold text-text-primary">
+                        Overage Tiers
+                      </div>
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-sm h-7 px-3 gap-1"
+                        onclick={addPricingTier}
+                      >
+                        <Plus size={12} weight="bold" /> Add Tier
+                      </button>
+                    </div>
+
+                    <div class="">
+                      <div class="grid grid-cols-[1fr_1fr_1fr_18px] gap-3 px-1">
+                        <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">Up To</div>
+                        <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">Unit Price</div>
+                        <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">Flat Price</div>
+                      </div>
+
+                      {#each configTiers as tier, index (tier.id)}
+                        <div class="grid grid-cols-[1fr_1fr_1fr_18px] gap-1 items-center group">
+                          <div class="relative">
+                            <input
+                              type="number"
+                              placeholder={index === configTiers.length - 1
+                                ? "Infinity"
+                                : "1000"}
+                              class="input h-9 !text-xs"
+                              bind:value={tier.upTo}
+                            />
+                          </div>
+                          <div class="input-icon-wrapper">
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.50"
+                              class="input h-9 !text-xs !pl-7"
+                              bind:value={tier.unitPrice}
+                            />
+                            <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                              {COMMON_CURRENCIES.find(
+                                (c) => c.code === (plan?.currency || $defaultCurrency),
+                              )?.symbol || plan?.currency || "₦"}
+                            </div>
+                          </div>
+                          <div class="input-icon-wrapper">
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="Optional"
+                              class="input h-9 !text-xs !pl-7"
+                              bind:value={tier.flatFee}
+                            />
+                            <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                              {COMMON_CURRENCIES.find(
+                                (c) => c.code === (plan?.currency || $defaultCurrency),
+                              )?.symbol || plan?.currency || "₦"}
+                            </div>
+                          </div>
+                          <div class="flex justify-end">
+                            {#if configTiers.length > 1}
+                              <button
+                                type="button"
+                                class="p-1.5 text-text-dim hover:text-error hover:bg-error-bg/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                                onclick={() => removePricingTier(tier.id)}
+                              >
+                                <Trash size={14} weight="bold" />
+                              </button>
+                            {/if}
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+
+                    <p class="text-[10px] text-text-muted px-1">
+                      Each tier can charge by unit, by flat price, or both.
+                    </p>
+                    <p class="text-[10px] text-text-muted italic px-1">
+                      * {configRatingModel === 'graduated'
+                        ? 'Each tier prices only overage units inside it. Flat price is added once when overage enters that tier.'
+                        : 'All overage units use the reached tier. Flat price can be used on its own for fixed-price overage bands.'}
+                    </p>
+                  </div>
+                {/if}
+
+                <div class="space-y-1.5 pt-1">
+                  <label for="maxOverageUnits" class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1">Max Overage Units</label>
                   <input
                     id="maxOverageUnits"
                     type="number"
                     placeholder="Leave empty for unlimited"
-                    class="input"
+                    class="input h-9 !text-xs"
                     bind:value={configMaxOverageUnits}
                   />
-                  <p class="text-xs text-text-muted">
-                    Hard cap on how many overage units a customer can use per
-                    period. Empty = no cap.
-                  </p>
                 </div>
               </div>
             {/if}
           </div>
         {/if}
 
-        <!-- Interval -->
-        <div class="space-y-4">
-          <div class="label">Interval</div>
-          <div class="grid grid-cols-4 gap-2">
-            {#each [{ value: "5min", label: "5 Min" }, { value: "15min", label: "15 Min" }, { value: "30min", label: "30 Min" }, { value: "hourly", label: "Hourly" }, { value: "daily", label: "Daily" }, { value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }, { value: "quarter", label: "Quarterly" }, { value: "yearly", label: "Yearly" }, { value: "none", label: "One-off" }] as int}
-              <button
-                type="button"
-                class="py-2 text-xs font-medium border rounded transition-all {configResetInterval ===
-                int.value
-                  ? 'bg-accent text-accent-contrast border-accent'
-                  : 'bg-bg-card text-text-secondary border-border hover:border-border-strong'}"
-                onclick={() => (configResetInterval = int.value)}
-              >
-                {int.label}
-              </button>
-            {/each}
+        <!-- Reset Window -->
+        {#if configUsageModel === "included"}
+          <div class="space-y-3">
+            <div class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1">Reset Window</div>
+            <div class="grid grid-cols-5 gap-2">
+              {#each [{ value: "5min", label: "5 Min" }, { value: "15min", label: "15 Min" }, { value: "30min", label: "30 Min" }, { value: "hourly", label: "Hourly" }, { value: "daily", label: "Daily" }, { value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }, { value: "quarterly", label: "Quarter" }, { value: "yearly", label: "Yearly" }, { value: "none", label: "One-off" }] as int}
+                <button
+                  type="button"
+                  class="py-2 text-[10px] font-bold border rounded-md transition-all duration-75 {configResetInterval ===
+                  int.value
+                    ? 'bg-accent text-accent-contrast border-accent-border'
+                    : 'bg-bg-card text-text-muted border-border hover:border-border-strong hover:text-text-primary'}"
+                  onclick={() => (configResetInterval = int.value)}
+                >
+                  {int.label}
+                </button>
+              {/each}
+            </div>
           </div>
-        </div>
+        {/if}
 
         <!-- Rollover -->
-        {#if configResetInterval !== "none"}
+        {#if configUsageModel === "included" && configResetInterval !== "none"}
           <div class="space-y-4">
             <div class="flex items-center gap-3">
               <input
@@ -1460,12 +1948,14 @@
   </div>
 </SidePanel>
 
-<CreateFeatureModal
-  bind:isOpen={showCreateFeatureModal}
-  organizationId={projectId}
-  onclose={() => (showCreateFeatureModal = false)}
-  onsuccess={onFeatureCreated}
-/>
+{#if projectId}
+  <CreateFeatureModal
+    bind:isOpen={showCreateFeatureModal}
+    organizationId={projectId}
+    onclose={() => (showCreateFeatureModal = false)}
+    onsuccess={onFeatureCreated}
+  />
+{/if}
 
 <!-- Attach Customer Panel -->
 <SidePanel
@@ -1603,14 +2093,16 @@
   </div>
 </SidePanel>
 
-<CreateCustomerModal
-  bind:isOpen={showCreateCustomerModal}
-  organizationId={projectId}
-  onsuccess={(customer) => {
-    // After creating the customer, attach them to the plan
-    attachCustomerToPlan(customer.id);
-  }}
-/>
+{#if projectId}
+  <CreateCustomerModal
+    bind:isOpen={showCreateCustomerModal}
+    organizationId={projectId}
+    onsuccess={(customer) => {
+      // After creating the customer, attach them to the plan
+      attachCustomerToPlan(customer.id);
+    }}
+  />
+{/if}
 
 <style lang="postcss">
   .custom-scrollbar::-webkit-scrollbar {

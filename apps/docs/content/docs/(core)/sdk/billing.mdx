@@ -12,7 +12,8 @@ The `owo.billing` namespace provides access to unbilled overage usage, invoice g
 
 ## `owo.billing.usage(params)`
 
-Get a breakdown of all billable overage usage that has not yet been invoiced.
+Get a breakdown of all billable usage that has not yet been invoiced. This now
+includes simple package pricing, graduated tiers, and volume pricing.
 
 ```ts
 const usage = await owo.billing.usage({ customer: "user_123" });
@@ -21,15 +22,19 @@ console.log("Currency:", usage.currency);
 console.log("Total estimated:", usage.totalEstimated);
 
 for (const feature of usage.features) {
-  console.log(feature.featureSlug, feature.overageUnits, "units @", feature.overagePrice);
+  console.log(
+    feature.featureName,
+    feature.billableQuantity,
+    feature.ratingModel,
+  );
 }
 ```
 
 ### Parameters
 
-| Parameter  | Type     | Required | Description                         |
-| ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | Yes      | User ID or email                    |
+| Parameter  | Type     | Required | Description      |
+| ---------- | -------- | -------- | ---------------- |
+| `customer` | `string` | Yes      | User ID or email |
 
 ### Returns `Promise<BillingUsageResult>`
 
@@ -42,13 +47,69 @@ interface BillingUsageResult {
 }
 
 interface BillingFeatureUsage {
-  featureSlug: string;
+  featureId: string;
   featureName: string;
-  overageUnits: number;
-  overagePrice: number;
-  estimatedCost: number;
+  usage: number;
+  included: number | null;
+  billableQuantity: number;
+  estimatedAmount: number;
+  usageModel: string;
+  ratingModel?: "package" | "graduated" | "volume";
+  pricePerUnit?: number | null;
+  billingUnits?: number | null;
+  tierBreakdown?: Array<{
+    tier: number;
+    units: number;
+    unitPrice: number;
+    flatFee?: number;
+    amount: number;
+  }>;
 }
 ```
+
+When `ratingModel` is `graduated` or `volume`, `tierBreakdown` shows exactly
+how the estimate was calculated.
+
+### How tiered pricing works
+
+`graduated` and `volume` both use tiers, but they do not calculate the same way.
+
+- `graduated`: each tier prices only the usage inside that tier
+- `volume`: the reached tier prices all billable usage
+
+Example with `31` billable units and these unit-price tiers:
+
+```ts
+const tiers = [
+  { upTo: 30, unitPrice: 100 },
+  { upTo: 100, unitPrice: 50 },
+];
+```
+
+- `graduated` = `30 * 100 + 1 * 50 = 3050`
+- `volume` = `31 * 50 = 1550`
+
+Flat-priced tiers follow the same rule:
+
+- in `graduated`, each entered tier can add its `flatFee` once
+- in `volume`, only the reached tier's `flatFee` applies
+
+Example:
+
+```ts
+const tiers = [
+  { upTo: 30, flatFee: 1000 },
+  { upTo: 100, flatFee: 5000 },
+];
+```
+
+For `31` billable units:
+
+- `graduated` = `1000 + 5000 = 6000`
+- `volume` = `5000`
+
+This is why `tierBreakdown` is useful: it shows whether the amount came from
+stacked tier accumulation or a single reached band.
 
 ---
 
@@ -66,9 +127,9 @@ console.log("Status:", result.invoice.status);
 
 ### Parameters
 
-| Parameter  | Type     | Required | Description                         |
-| ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | Yes      | User ID or email                    |
+| Parameter  | Type     | Required | Description      |
+| ---------- | -------- | -------- | ---------------- |
+| `customer` | `string` | Yes      | User ID or email |
 
 ### Returns `Promise<InvoiceResult>`
 
@@ -117,9 +178,9 @@ for (const inv of result.invoices) {
 
 ### Parameters
 
-| Parameter  | Type     | Required | Description                         |
-| ---------- | -------- | -------- | ----------------------------------- |
-| `customer` | `string` | Yes      | User ID or email                    |
+| Parameter  | Type     | Required | Description      |
+| ---------- | -------- | -------- | ---------------- |
+| `customer` | `string` | Yes      | User ID or email |
 
 ### Returns `Promise<InvoicesResult>`
 

@@ -75,7 +75,6 @@ export async function sendCheckoutEmail(
     amount,
     currency,
     organizationName,
-    organizationLogo,
   } = options;
   const displayName = customerName || to;
   const priceStr =

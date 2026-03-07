@@ -2,7 +2,7 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { resolve, extname, isAbsolute } from "node:path";
+import { resolve, isAbsolute } from "node:path";
 import {
   getApiKey,
   getLiveApiUrl,
@@ -10,11 +10,9 @@ import {
 } from "../lib/config.js";
 import { loadConfigSettings, resolveConfigPath } from "../lib/loader.js";
 import {
-  fetchPlans,
-  fetchCreditSystems,
-  fetchCreditPacks,
-} from "../lib/api.js";
-import { generateConfig, ConfigFormat } from "../lib/generate.js";
+  buildRemoteCatalogSnapshot,
+  determineConfigFormat,
+} from "../lib/catalog-import.js";
 
 interface PullOptions {
   config?: string;
@@ -22,20 +20,6 @@ interface PullOptions {
   force?: boolean;
   prod?: boolean;
   dryRun?: boolean;
-}
-
-function determineFormat(fullPath: string): ConfigFormat {
-  const ext = extname(fullPath);
-
-  if (ext === ".ts" || ext === ".mts" || ext === ".cts") return "ts";
-  if (ext === ".mjs") return "esm";
-  if (ext === ".cjs") {
-    throw new Error(
-      "CommonJS config files are not supported. Use owo.config.js or owo.config.ts.",
-    );
-  }
-  if (ext === ".js") return "esm";
-  return "ts"; // default
 }
 
 export async function runPull(options: PullOptions) {
@@ -64,9 +48,9 @@ export async function runPull(options: PullOptions) {
   const liveUrl = getLiveApiUrl(configSettings.environments?.live);
   const filters = configSettings.filters || {};
 
-  let format: ConfigFormat;
+  let format;
   try {
-    format = determineFormat(fullPath);
+    format = determineConfigFormat(fullPath);
   } catch (e: any) {
     p.log.error(pc.red(e.message));
     process.exit(1);
@@ -74,124 +58,56 @@ export async function runPull(options: PullOptions) {
 
   const s = p.spinner();
 
-  // Default to sandbox environment, prod only with --prod flag
-  if (options.prod) {
-    p.log.step(pc.magenta("Production Mode: Pulling from PROD environment"));
-    const apiUrl = `${liveUrl}/api/v1`;
+  const modeLabel = options.prod ? "prod" : "sandbox";
+  const modeMessage = options.prod
+    ? pc.magenta("Production Mode: Pulling from PROD environment")
+    : pc.cyan("Sandbox Mode: Pulling from SANDBOX environment");
+  const apiUrl = `${options.prod ? liveUrl : testUrl}/api/v1`;
 
-    s.start(`Fetching plans from ${pc.dim("prod")}...`);
-    const plans = await fetchPlans({
-      apiKey,
-      apiUrl: apiUrl,
-      ...filters,
-    });
-    s.stop(`Fetched ${plans.length} plans from prod`);
+  p.log.step(modeMessage);
 
-    s.start(`Fetching credit systems...`);
-    const creditSystems = await fetchCreditSystems(apiKey, apiUrl);
-    s.stop(`Fetched ${creditSystems.length} credit systems`);
+  s.start(`Fetching remote catalog from ${pc.dim(modeLabel)}...`);
+  const snapshot = await buildRemoteCatalogSnapshot({
+    apiKey,
+    apiUrl,
+    format,
+    filters,
+  });
+  s.stop(
+    `Fetched ${snapshot.plans.length} plans, ${snapshot.creditSystems.length} credit systems, and ${snapshot.creditPacks.length} credit packs from ${modeLabel}`,
+  );
 
-    s.start(`Fetching credit packs...`);
-    const creditPacks = await fetchCreditPacks(apiKey, apiUrl);
-    s.stop(`Fetched ${creditPacks.length} credit packs`);
-
-    // Detect common provider for default
-    const providers = new Set(
-      plans.map((p: any) => p.provider).filter(Boolean),
+  if (options.dryRun) {
+    p.note(snapshot.configContent, "Generated Config (Dry Run)");
+    printPullSummary(
+      snapshot.plans,
+      snapshot.creditSystems,
+      snapshot.creditPacks,
     );
-    const defaultProvider =
-      providers.size === 1 ? Array.from(providers)[0] : undefined;
-
-    const configContent = generateConfig(
-      plans,
-      creditSystems,
-      creditPacks,
-      defaultProvider,
-      format,
-    );
-
-    if (options.dryRun) {
-      p.note(configContent, "Generated Config (Dry Run)");
-      printPullSummary(plans, creditSystems, creditPacks);
-      p.outro(pc.yellow("Dry run complete. No changes made."));
-      return;
-    }
-
-    if (existsSync(fullPath) && !options.force) {
-      const confirm = await p.confirm({
-        message: `Config file already exists at ${fullPath}. Overwrite?`,
-        initialValue: false,
-      });
-
-      if (p.isCancel(confirm) || !confirm) {
-        p.outro(pc.yellow("Operation cancelled"));
-        process.exit(0);
-      }
-    }
-
-    await writeFile(fullPath, configContent, "utf8");
-    p.log.success(pc.green(`Wrote configuration to ${fullPath}`));
-
-    printPullSummary(plans, creditSystems, creditPacks);
-  } else {
-    p.log.step(pc.cyan("Sandbox Mode: Pulling from SANDBOX environment"));
-    const apiUrl = `${testUrl}/api/v1`;
-
-    s.start(`Fetching plans from ${pc.dim("sandbox")}...`);
-    const plans = await fetchPlans({
-      apiKey,
-      apiUrl: apiUrl,
-      ...filters,
-    });
-    s.stop(`Fetched ${plans.length} plans from sandbox`);
-
-    s.start(`Fetching credit systems...`);
-    const creditSystems = await fetchCreditSystems(apiKey, apiUrl);
-    s.stop(`Fetched ${creditSystems.length} credit systems`);
-
-    s.start(`Fetching credit packs...`);
-    const creditPacks = await fetchCreditPacks(apiKey, apiUrl);
-    s.stop(`Fetched ${creditPacks.length} credit packs`);
-
-    // Detect common provider for default
-    const providers = new Set(
-      plans.map((p: any) => p.provider).filter(Boolean),
-    );
-    const defaultProvider =
-      providers.size === 1 ? Array.from(providers)[0] : undefined;
-
-    const configContent = generateConfig(
-      plans,
-      creditSystems,
-      creditPacks,
-      defaultProvider,
-      format,
-    );
-
-    if (options.dryRun) {
-      p.note(configContent, "Generated Config (Dry Run)");
-      printPullSummary(plans, creditSystems, creditPacks);
-      p.outro(pc.yellow("Dry run complete. No changes made."));
-      return;
-    }
-
-    if (existsSync(fullPath) && !options.force) {
-      const confirm = await p.confirm({
-        message: `Config file already exists. Overwrite?`,
-        initialValue: false,
-      });
-
-      if (p.isCancel(confirm) || !confirm) {
-        p.outro(pc.yellow("Operation cancelled"));
-        process.exit(0);
-      }
-    }
-
-    await writeFile(fullPath, configContent, "utf8");
-    p.log.success(pc.green(`Wrote configuration to ${fullPath}`));
-
-    printPullSummary(plans, creditSystems, creditPacks);
+    p.outro(pc.yellow("Dry run complete. No changes made."));
+    return;
   }
+
+  if (existsSync(fullPath) && !options.force) {
+    const confirm = await p.confirm({
+      message: `Config file already exists${options.prod ? ` at ${fullPath}` : ""}. Overwrite?`,
+      initialValue: false,
+    });
+
+    if (p.isCancel(confirm) || !confirm) {
+      p.outro(pc.yellow("Operation cancelled"));
+      process.exit(0);
+    }
+  }
+
+  await writeFile(fullPath, snapshot.configContent, "utf8");
+  p.log.success(pc.green(`Wrote configuration to ${fullPath}`));
+
+  printPullSummary(
+    snapshot.plans,
+    snapshot.creditSystems,
+    snapshot.creditPacks,
+  );
 
   p.outro(pc.green("Pull complete! ✨"));
 }

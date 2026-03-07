@@ -145,6 +145,75 @@ export interface OverageDetails {
   billingUnits?: number | null;
 }
 
+/** A single tier in a usage pricing model */
+export interface PricingTier {
+  /** Inclusive upper bound for this tier; null means infinity */
+  upTo: number | null;
+
+  /** Optional price per unit in minor currency units */
+  unitPrice?: number;
+
+  /** Optional flat fee charged when this tier is entered */
+  flatFee?: number;
+}
+
+/** How billable usage is converted into money */
+export type RatingModel = "package" | "graduated" | "volume";
+
+/** Current tier for tiered pricing responses */
+export interface CurrentPricingTier {
+  /** Zero-based tier index */
+  index: number;
+
+  /** Usage at which this tier starts */
+  startsAt: number;
+
+  /** Inclusive upper bound of the tier; null means infinity */
+  endsAt: number | null;
+
+  /** Price per unit for this tier; 0 when the tier is flat-only */
+  unitPrice: number;
+
+  /** Optional flat fee charged when this tier is entered */
+  flatFee?: number;
+}
+
+/** Pricing metadata returned alongside access/billing responses */
+export interface PricingDetails {
+  /** Entitlement model for this feature */
+  usageModel?: "included" | "usage_based" | "prepaid";
+
+  /** Rating model used when usage is billable */
+  ratingModel?: RatingModel;
+
+  /** Package or per-unit price in minor currency units */
+  pricePerUnit?: number | null;
+
+  /** Package size for package pricing */
+  billingUnits?: number | null;
+
+  /** Current tier when using graduated or volume pricing */
+  currentTier?: CurrentPricingTier;
+}
+
+/** Per-tier billing breakdown for rated usage */
+export interface BillingTierBreakdown {
+  /** Zero-based tier index */
+  tier: number;
+
+  /** Units billed in this tier */
+  units: number;
+
+  /** Price per unit for this tier; 0 when the tier is flat-only */
+  unitPrice: number;
+
+  /** Optional flat fee applied for the tier */
+  flatFee?: number;
+
+  /** Amount billed for this tier in minor currency units */
+  amount: number;
+}
+
 /**
  * Contextual details object returned alongside standard check/track fields.
  * Contains all optional/situational information that isn't part of the
@@ -177,6 +246,9 @@ export interface ResponseDetails {
 
   /** Remaining add-on credits after this request */
   addonCreditsRemaining?: number;
+
+  /** Pricing metadata for chargeable metered features */
+  pricing?: PricingDetails;
 }
 
 /** Plan credit breakdown for credit system features */
@@ -312,6 +384,18 @@ export interface BillingFeatureUsage {
 
   /** Usage billing model */
   usageModel: string;
+
+  /** Rating model used to calculate the estimated amount */
+  ratingModel?: RatingModel;
+
+  /** Package or per-unit price in minor currency units */
+  pricePerUnit?: number | null;
+
+  /** Package size when using package pricing */
+  billingUnits?: number | null;
+
+  /** Optional tier breakdown for graduated or volume pricing */
+  tierBreakdown?: BillingTierBreakdown[];
 }
 
 export interface BillingUsageResult {
@@ -344,11 +428,17 @@ export interface InvoiceLineItem {
   /** Quantity */
   quantity: number;
 
-  /** Unit price in minor currency units */
+  /** Unit price component in minor currency units; tiered lines rely on tierBreakdown for exact pricing */
   unitPrice: number;
 
-  /** Line total in minor currency units */
+  /** Line total in minor currency units; may include package rounding or flat tier amounts */
   amount: number;
+
+  /** Rating model used for tiered usage lines */
+  ratingModel?: RatingModel;
+
+  /** Optional tier breakdown for graduated or volume usage lines */
+  tierBreakdown?: BillingTierBreakdown[];
 }
 
 export interface Invoice {
@@ -526,6 +616,7 @@ export type PlanInterval =
   | "yearly";
 
 export type ResetInterval =
+  | "none"
   | "never"
   | "5min"
   | "15min"
@@ -535,6 +626,7 @@ export type ResetInterval =
   | "weekly"
   | "monthly"
   | "quarterly"
+  | "semi_annual"
   | "yearly";
 
 export type SubscriptionStatus =
@@ -675,6 +767,18 @@ export interface MeteredFeatureConfig {
 
   /** Billing units for overage */
   billingUnits?: number;
+
+  /** Entitlement model for this feature */
+  usageModel?: "included" | "usage_based" | "prepaid";
+
+  /** Package or per-unit price in minor currency units */
+  pricePerUnit?: number;
+
+  /** Rating model used for billable usage */
+  ratingModel?: RatingModel;
+
+  /** Tiers used for graduated or volume pricing */
+  tiers?: PricingTier[];
 
   /** Credit cost for credit systems */
   creditCost?: number;
@@ -937,6 +1041,21 @@ export interface PublicPlanFeature {
 
   /** Overage price per unit in minor currency units */
   overagePrice?: number | null;
+
+  /** Entitlement model for metered features */
+  usageModel?: "included" | "usage_based" | "prepaid";
+
+  /** Package or per-unit price in minor currency units */
+  pricePerUnit?: number | null;
+
+  /** Package size for package pricing */
+  billingUnits?: number | null;
+
+  /** Rating model used for billable usage */
+  ratingModel?: RatingModel;
+
+  /** Tier definitions for graduated or volume pricing */
+  tiers?: PricingTier[] | null;
 }
 
 /** A plan as returned by the public API — safe for client-side consumption */
@@ -1037,6 +1156,10 @@ export interface SyncPayload {
       enabled: boolean;
       limit?: number | null;
       reset?: ResetInterval;
+      usageModel?: "included" | "usage_based" | "prepaid";
+      pricePerUnit?: number;
+      ratingModel?: RatingModel;
+      tiers?: PricingTier[];
       overage?: "block" | "charge";
       overagePrice?: number;
       maxOverageUnits?: number;

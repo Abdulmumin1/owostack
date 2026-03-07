@@ -9,7 +9,7 @@ The Owostack CLI uses a secure, browser-based authentication flow to link your t
 
 ## How it works
 
-1. **Initiate**: When you run `npx owo connect`, the CLI generates a unique session token.
+1. **Initiate**: When you run `npx owosk connect`, the CLI generates a unique session token.
 2. **Browser Flow**: A browser window opens automatically, asking you to sign in to your Owostack dashboard.
 3. **Approval**: Once signed in, you'll see a request to authorize the CLI.
 4. **Completion**: After approval, the CLI receives an authentication token and stores it securely in your local machine's config directory.
@@ -28,5 +28,5 @@ For CI/CD environments where browser-based auth isn't possible, you can use the 
 
 ```bash
 export OWOSTACK_SECRET_KEY=sk_test_...
-npx owo sync
+npx owosk sync
 ```
