@@ -51,7 +51,7 @@ export async function setActiveEnvironment(env: AppEnvironment) {
 
   try {
     const res = await fetch(
-      `${API_URLS[prev]}/api/dashboard/switch-environment`,
+      `${API_URLS[env]}/api/dashboard/switch-environment`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
