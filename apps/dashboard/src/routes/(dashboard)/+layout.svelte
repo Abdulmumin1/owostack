@@ -36,6 +36,7 @@
     X,
   } from "phosphor-svelte";
   import { page } from "$app/state";
+  import { untrack } from "svelte";
   import {
     useSession,
     organization,
@@ -110,23 +111,29 @@
   let apiKeyCopied = $state(false);
 
   let theme = $state<"light" | "dark">("dark");
+  let themeInitialized = $state(false);
 
   $effect(() => {
-    const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
-    if (savedTheme) {
-      theme = savedTheme;
-    } else {
-      theme = window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
+    if (!themeInitialized) {
+      untrack(() => {
+        const initialTheme = (page.data.theme as "light" | "dark") || (localStorage.getItem("theme") as "light" | "dark") || "dark";
+        theme = initialTheme;
+        themeInitialized = true;
+      });
     }
-    applyTheme();
+  });
+
+  // Sync theme to DOM and cookies whenever it changes
+  $effect(() => {
+    if (themeInitialized) {
+      applyTheme();
+      localStorage.setItem("theme", theme);
+      document.cookie = `theme=${theme}; path=/; max-age=31536000`;
+    }
   });
 
   function toggleTheme() {
     theme = theme === "light" ? "dark" : "light";
-    localStorage.setItem("theme", theme);
-    applyTheme();
   }
 
   function applyTheme() {
@@ -137,6 +144,7 @@
       document.documentElement.classList.add("light");
       document.documentElement.classList.remove("dark");
     }
+    document.documentElement.setAttribute("data-theme", theme);
   }
 
   function toggleGroup(label: string) {
@@ -549,6 +557,7 @@
 
 <svelte:head>
   <title>Dashboard - Owostack</title>
+  <meta name="theme-color" content={theme === "dark" ? "#131313" : "#fafaf5"} />
 </svelte:head>
 
 <div class="min-h-screen flex bg-bg-primary text-sm">
