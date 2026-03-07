@@ -868,44 +868,63 @@
                     {#if !isLive && config}
                       {#each config.fields as field}
                         {@const secretKey = `${providerId}.${field.key}`}
-                        <div class="relative input-icon-wrapper">
-                          <Lock
-                            size={12}
-                            class="input-icon-left text-text-dim"
-                            weight="duotone"
-                          />
-                          <input
-                            type={field.secret && !deployShowSecrets[secretKey]
-                              ? "password"
-                              : "text"}
-                            value={deployCredentials[providerId]?.[field.key] ||
-                              ""}
-                            oninput={(e) => {
-                              if (!deployCredentials[providerId])
-                                deployCredentials[providerId] = {};
-                              deployCredentials[providerId][field.key] = (
-                                e.target as HTMLInputElement
-                              ).value;
-                              deployCredentials = deployCredentials;
-                            }}
-                            placeholder={field.placeholder}
-                            class="input input-has-icon-left pr-10 font-mono text-xs w-full"
-                          />
-                          {#if field.secret}
-                            <button
-                              type="button"
-                              class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary transition-colors"
-                              onclick={() => {
-                                deployShowSecrets[secretKey] =
-                                  !deployShowSecrets[secretKey];
-                                deployShowSecrets = deployShowSecrets;
+                        {@const isWebhookSecret = field.key === "webhookSecret"}
+                        <div class="space-y-1">
+                          <div class="relative input-icon-wrapper">
+                            <Lock
+                              size={12}
+                              class="input-icon-left text-text-dim"
+                              weight="duotone"
+                            />
+                            <input
+                              type={field.secret && !deployShowSecrets[secretKey]
+                                ? "password"
+                                : "text"}
+                              value={deployCredentials[providerId]?.[field.key] ||
+                                ""}
+                              oninput={(e) => {
+                                if (!deployCredentials[providerId])
+                                  deployCredentials[providerId] = {};
+                                deployCredentials[providerId][field.key] = (
+                                  e.target as HTMLInputElement
+                                ).value;
+                                deployCredentials = deployCredentials;
                               }}
-                            >
-                              {#if deployShowSecrets[secretKey]}<EyeSlash
-                                  size={14}
-                                  weight="duotone"
-                                />{:else}<Eye size={14} weight="duotone" />{/if}
-                            </button>
+                              placeholder={field.placeholder}
+                              class="input input-has-icon-left pr-10 font-mono text-xs w-full"
+                            />
+                            {#if field.secret}
+                              <button
+                                type="button"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary transition-colors"
+                                onclick={() => {
+                                  deployShowSecrets[secretKey] =
+                                    !deployShowSecrets[secretKey];
+                                  deployShowSecrets = deployShowSecrets;
+                                }}
+                              >
+                                {#if deployShowSecrets[secretKey]}<EyeSlash
+                                    size={14}
+                                    weight="duotone"
+                                  />{:else}<Eye size={14} weight="duotone" />{/if}
+                              </button>
+                            {/if}
+                          </div>
+                          {#if isWebhookSecret}
+                            {@const liveApiUrl = getApiUrlForEnv("live")}
+                            {@const webhookUrl = `${liveApiUrl}/webhooks/${projectId}/${providerId}`}
+                            <div class="flex items-center gap-2 bg-bg-secondary/50 border border-border px-2 py-1.5">
+                              <Globe size={10} class="text-text-dim shrink-0" weight="duotone" />
+                              <code class="flex-1 font-mono text-[10px] text-text-dim truncate">{webhookUrl}</code>
+                              <button
+                                type="button"
+                                class="text-text-dim hover:text-text-primary transition-colors shrink-0"
+                                onclick={() => navigator.clipboard.writeText(webhookUrl)}
+                                title="Copy webhook URL"
+                              >
+                                <Copy size={10} weight="fill" />
+                              </button>
+                            </div>
                           {/if}
                         </div>
                       {/each}
