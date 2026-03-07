@@ -368,6 +368,12 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
   // provider code and advance its billing period so usage pools reset.
   if (!metadata.plan_id && event.subscription?.providerCode) {
     await handleAutoRenewal(ctx, dbCustomer);
+  } else if (
+    !metadata.plan_id &&
+    metadata.invoice_action === "update" &&
+    event.plan?.providerPlanCode
+  ) {
+    await handleAutoRenewalByCustomerPlan(ctx, dbCustomer);
   }
 
   // 7. Handle Credits (if applicable)
@@ -969,7 +975,10 @@ async function handleAutoRenewal(
 
   if (existingSub && existingSub.plan) {
     const periodMs = intervalToMs(existingSub.plan.interval);
-    const startMs = safeParseDate(event.payment?.paidAt) || Date.now();
+    const startMs =
+      safeParseDate(event.subscription?.startDate) ||
+      safeParseDate(event.payment?.paidAt) ||
+      Date.now();
     // Prefer provider's next billing date over calculated period (more accurate for variable-length months)
     const endMs =
       safeParseDate(event.subscription?.nextPaymentDate) || startMs + periodMs;
@@ -1001,6 +1010,79 @@ async function handleAutoRenewal(
       } catch (e) {
         console.warn(`[WEBHOOK] Auto-renewal cache invalidation failed:`, e);
       }
+    }
+  }
+}
+
+async function handleAutoRenewalByCustomerPlan(
+  ctx: WebhookContext,
+  dbCustomer: any,
+): Promise<void> {
+  const { db, organizationId, event, cache } = ctx;
+  const providerPlanCode = event.plan?.providerPlanCode;
+  if (!providerPlanCode) return;
+
+  const dbPlan = await db.query.plans.findFirst({
+    where: and(
+      or(
+        eq(schema.plans.providerPlanId, providerPlanCode),
+        eq(schema.plans.paystackPlanId, providerPlanCode),
+      ),
+      eq(schema.plans.organizationId, organizationId),
+    ),
+  });
+  if (!dbPlan) return;
+
+  const existingSub = await db.query.subscriptions.findFirst({
+    where: and(
+      eq(schema.subscriptions.customerId, dbCustomer.id),
+      eq(schema.subscriptions.planId, dbPlan.id),
+      or(
+        eq(schema.subscriptions.status, "active"),
+        eq(schema.subscriptions.status, "pending_cancel"),
+        eq(schema.subscriptions.status, "past_due"),
+      ),
+    ),
+    with: { plan: true },
+  });
+
+  if (!existingSub || !existingSub.plan) {
+    return;
+  }
+
+  const periodMs = intervalToMs(existingSub.plan.interval);
+  const startMs =
+    safeParseDate(event.subscription?.startDate) ||
+    safeParseDate(event.payment?.paidAt) ||
+    Date.now();
+  const endMs =
+    safeParseDate(event.subscription?.nextPaymentDate) || startMs + periodMs;
+
+  await db
+    .update(schema.subscriptions)
+    .set({
+      status: "active",
+      currentPeriodStart: startMs,
+      currentPeriodEnd: endMs,
+      providerId: event.provider,
+      updatedAt: Date.now(),
+    })
+    .where(eq(schema.subscriptions.id, existingSub.id));
+
+  await cleanupPendingRemovalEntities(db, existingSub.customerId);
+
+  console.log(
+    `[WEBHOOK] Auto-renewal fallback: advanced sub ${existingSub.id} by customer+plan ${dbCustomer.id}/${dbPlan.id}, newEnd=${new Date(endMs).toISOString()}`,
+  );
+
+  if (cache) {
+    try {
+      await cache.invalidateSubscriptions(organizationId, existingSub.customerId);
+    } catch (e) {
+      console.warn(
+        `[WEBHOOK] Auto-renewal customer+plan cache invalidation failed:`,
+        e,
+      );
     }
   }
 }

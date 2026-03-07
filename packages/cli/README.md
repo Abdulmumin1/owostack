@@ -20,7 +20,7 @@ npx owo --help
 
 ### `init`
 
-Initialize a new Owostack project with a default `owo.config.ts`.
+Initialize a new Owostack project with a default configuration file (`owo.config.ts` or `owo.config.js`). JavaScript configs use ESM `import`/`export` syntax.
 
 ```bash
 npx owo init
@@ -52,7 +52,7 @@ npx owo diff
 
 ### `validate`
 
-Check your local `owo.config.ts` for errors without applying changes.
+Check your local configuration for errors without applying changes.
 
 ```bash
 npx owo validate

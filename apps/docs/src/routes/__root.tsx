@@ -20,12 +20,12 @@ export const Route = createRootRoute({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "Owostack - Paystack Billing Made Easy",
+        title: "Owostack - Billing infrastructure for AI SaaS",
       },
       {
         name: "description",
         content:
-          "Make Paystack billing as easy as Stripe Billing - metered usage, entitlements, and subscriptions without the complexity.",
+          "Developer-friendly billing infrastructure. 3 API calls. Zero webhooks. Usage metering, subscriptions, and feature gating with multi-provider support.",
       },
     ],
     links: [

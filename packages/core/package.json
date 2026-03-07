@@ -1,11 +1,11 @@
 {
   "name": "owostack",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Core SDK for Owostack billing infrastructure",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Abdulmumin1/owostack.git",
+    "url": "https://github.com/Abdulmumin1/owostack",
     "directory": "packages/core"
   },
   "type": "module",

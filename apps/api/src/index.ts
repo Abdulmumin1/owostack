@@ -30,15 +30,17 @@ import dashboardTransactions from "./routes/dashboard/transactions";
 import dashboardProviders from "./routes/dashboard/providers";
 import dashboardCreditPacks from "./routes/dashboard/credit-packs";
 import dashboardOverageSettings from "./routes/dashboard/overage-settings";
+import dashboardEntitlementOverrides from "./routes/dashboard/entitlement-overrides";
 import apiCheckout from "./routes/api/checkout";
 import apiEntitlements from "./routes/api/entitlements";
-import apiBilling from "./routes/api/billing";
 import apiAddon from "./routes/api/addon";
+import apiBilling from "./routes/api/billing";
 import apiSync from "./routes/api/sync";
 import apiWallet from "./routes/api/wallet";
 import apiPlans from "./routes/api/plans";
 import apiCustomers from "./routes/api/customers";
 import apiCreditSystems from "./routes/api/credit-systems";
+import apiCreditPacks from "./routes/api/credit-packs";
 import apiSubscriptions from "./routes/api/subscriptions";
 import cliAuth from "./routes/cli-auth";
 
@@ -51,12 +53,14 @@ export { UsageMeterDO, UsageLedgerDO };
 import { TrialEndWorkflow } from "./lib/workflows/trial-end";
 import { DowngradeWorkflow } from "./lib/workflows/downgrade";
 import { PlanUpgradeWorkflow } from "./lib/workflows/plan-upgrade";
+import { RenewalSetupRetryWorkflow } from "./lib/workflows/renewal-setup-retry";
 import { OverageBillingWorkflow } from "./lib/workflows/overage-billing";
 import { CancelDowngradeWorkflow } from "./lib/workflows/cancel-downgrade";
 export {
   TrialEndWorkflow,
   DowngradeWorkflow,
   PlanUpgradeWorkflow,
+  RenewalSetupRetryWorkflow,
   OverageBillingWorkflow,
   CancelDowngradeWorkflow,
 };
@@ -76,6 +80,7 @@ export type Env = {
   TRIAL_END_WORKFLOW: Workflow;
   DOWNGRADE_WORKFLOW: Workflow;
   PLAN_UPGRADE_WORKFLOW: Workflow;
+  RENEWAL_SETUP_WORKFLOW: Workflow;
   CANCEL_DOWNGRADE_WORKFLOW: Workflow;
   OVERAGE_BILLING_WORKFLOW: Workflow;
   OVERAGE_BILLING_QUEUE: Queue;
@@ -284,8 +289,16 @@ dashboardRoutes.use("*", async (c, next) => {
     const db = c.get("db");
     const authDb = c.get("authDb");
 
-    // Resolve organization identifier (could be ID or slug)
-    const resolvedId = await resolveOrganizationId(db, organizationId);
+    // Resolve from auth DB first because it is the canonical source for
+    // organizations across test/live workers. Falling back to the business DB
+    // preserves compatibility for local/dev states where auth data may lag.
+    const authOrg = await authDb.query.organizations.findFirst({
+      where: or(
+        eq(schema.organizations.id, organizationId),
+        eq(schema.organizations.slug, organizationId),
+      ),
+    });
+    const resolvedId = authOrg?.id ?? (await resolveOrganizationId(db, organizationId));
     const finalOrgId = resolvedId || organizationId;
 
     // Store resolved ID in context for downstream handlers
@@ -296,9 +309,11 @@ dashboardRoutes.use("*", async (c, next) => {
       columns: { id: true },
     });
     if (!existing) {
-      const org = await authDb.query.organizations.findFirst({
-        where: eq(schema.organizations.id, finalOrgId),
-      });
+      const org =
+        authOrg ??
+        (await authDb.query.organizations.findFirst({
+          where: eq(schema.organizations.id, finalOrgId),
+        }));
       if (org) {
         await db.insert(schema.organizations).values(org).onConflictDoNothing();
       }
@@ -327,6 +342,7 @@ dashboardRoutes.route("/providers", dashboardProviders);
 dashboardRoutes.route("/credit-packs", dashboardCreditPacks);
 dashboardRoutes.route("/overage-settings", dashboardOverageSettings);
 dashboardRoutes.route("/catalog", dashboardCatalog);
+dashboardRoutes.route("/entitlement-overrides", dashboardEntitlementOverrides);
 dashboardRoutes.route("/", dashboardConfig);
 
 app.route("/api/dashboard", dashboardRoutes);
@@ -352,6 +368,7 @@ v1Routes.route("/", apiWallet);
 v1Routes.route("/plans", apiPlans);
 v1Routes.route("/", apiCustomers);
 v1Routes.route("/credit-systems", apiCreditSystems);
+v1Routes.route("/credit-packs", apiCreditPacks);
 
 apiRoutes.route("/v1", v1Routes);
 
@@ -669,7 +686,7 @@ app.post("/webhooks/:organizationId/:provider", async (c) => {
 // Queue message shape for overage billing dispatch
 interface OverageBillingQueueMessage {
   organizationId: string;
-  targetInterval: string;
+  targetInterval: "daily" | "weekly" | "end_of_period" | "paid_reconcile";
   scheduledTime: number;
 }
 
@@ -689,36 +706,109 @@ export default {
     // Determine which billing intervals this cron matches
     // Daily cron  → process "daily"
     // Weekly cron → process "weekly"
-    // Monthly is handled by end_of_period via subscription renewal webhooks
-    let targetInterval: string;
+    // Daily cron also checks free-plan period-end renewals for end_of_period orgs
+    const targetIntervals: OverageBillingQueueMessage["targetInterval"][] = [];
     if (event.cron === "0 0 * * 1") {
-      targetInterval = "weekly";
+      targetIntervals.push("weekly");
     } else {
-      targetInterval = "daily";
+      targetIntervals.push("daily");
+    }
+    if (event.cron === "0 0 * * *") {
+      targetIntervals.push("end_of_period");
+      targetIntervals.push("paid_reconcile");
     }
 
     try {
-      const orgs = await db
-        .select()
-        .from((schema as any).overageSettings)
-        .where(
-          eq((schema as any).overageSettings.billingInterval, targetInterval),
-        );
+      const messages: { body: OverageBillingQueueMessage }[] = [];
+      for (const targetInterval of targetIntervals) {
+        if (targetInterval === "paid_reconcile") {
+          // Reconcile paid renewals for orgs that are not already handled by
+          // other scheduled billing lanes in the same run.
+          const dueOrgs = await env.DB.prepare(
+            `SELECT DISTINCT c.organization_id AS organization_id
+             FROM subscriptions s
+             INNER JOIN customers c ON c.id = s.customer_id
+             INNER JOIN plans p ON p.id = s.plan_id
+             LEFT JOIN overage_settings os ON os.organization_id = c.organization_id
+             WHERE s.status = 'active'
+               AND p.type != 'free'
+               AND s.current_period_end <= ?
+               AND os.billing_interval IS NOT NULL
+               AND os.billing_interval NOT IN ('end_of_period', 'daily', 'weekly')`,
+          )
+            .bind(event.scheduledTime)
+            .all<{ organization_id: string }>();
 
-      console.log(
-        `[CRON] Found ${orgs.length} orgs with interval=${targetInterval}, enqueuing...`,
-      );
+          const orgs = dueOrgs.results || [];
+          console.log(
+            `[CRON] Found ${orgs.length} orgs for paid_reconcile, enqueuing...`,
+          );
 
-      // Enqueue one message per org — the queue consumer handles the heavy lifting
-      const messages: { body: OverageBillingQueueMessage }[] = orgs.map(
-        (org: any) => ({
-          body: {
-            organizationId: org.organizationId,
-            targetInterval,
-            scheduledTime: event.scheduledTime,
-          },
-        }),
-      );
+          for (const org of orgs) {
+            messages.push({
+              body: {
+                organizationId: org.organization_id,
+                targetInterval,
+                scheduledTime: event.scheduledTime,
+              },
+            });
+          }
+        } else if (targetInterval === "end_of_period") {
+          // Include orgs with explicit end_of_period setting OR no row (default behavior).
+          // Only enqueue orgs that actually have due subscriptions.
+          const dueOrgs = await env.DB.prepare(
+            `SELECT DISTINCT c.organization_id AS organization_id
+             FROM subscriptions s
+             INNER JOIN customers c ON c.id = s.customer_id
+             LEFT JOIN overage_settings os ON os.organization_id = c.organization_id
+             WHERE s.status = 'active'
+               AND s.current_period_end <= ?
+               AND (os.billing_interval = 'end_of_period' OR os.billing_interval IS NULL)`,
+          )
+            .bind(event.scheduledTime)
+            .all<{ organization_id: string }>();
+
+          const orgs = dueOrgs.results || [];
+          console.log(
+            `[CRON] Found ${orgs.length} orgs with due end_of_period subscriptions, enqueuing...`,
+          );
+
+          for (const org of orgs) {
+            messages.push({
+              body: {
+                organizationId: org.organization_id,
+                targetInterval,
+                scheduledTime: event.scheduledTime,
+              },
+            });
+          }
+        } else {
+          const orgs = await db
+            .select()
+            .from((schema as any).overageSettings)
+            .where(
+              eq(
+                (schema as any).overageSettings.billingInterval,
+                targetInterval,
+              ),
+            );
+
+          console.log(
+            `[CRON] Found ${orgs.length} orgs with interval=${targetInterval} (queue=${targetInterval}), enqueuing...`,
+          );
+
+          // Enqueue one message per org — the queue consumer handles the heavy lifting
+          for (const org of orgs as any[]) {
+            messages.push({
+              body: {
+                organizationId: org.organizationId,
+                targetInterval,
+                scheduledTime: event.scheduledTime,
+              },
+            });
+          }
+        }
+      }
 
       // Queue.sendBatch accepts up to 100 messages per call
       const QUEUE_BATCH_LIMIT = 100;
@@ -746,26 +836,61 @@ export default {
     const db = createDb(env.DB);
 
     for (const msg of batch.messages) {
-      const { organizationId, scheduledTime } = msg.body;
+      const { organizationId, scheduledTime, targetInterval } = msg.body;
       try {
-        const customers = await db
-          .select({ id: schema.customers.id })
-          .from(schema.customers)
-          .innerJoin(
-            schema.subscriptions,
-            and(
-              eq(schema.subscriptions.customerId, schema.customers.id),
-              eq(schema.subscriptions.status, "active"),
-            ),
-          )
-          .where(eq(schema.customers.organizationId, organizationId));
+        let uniqueIds: string[] = [];
+        let trigger: "cron" | "period_end" | "reconcile_only" = "cron";
 
-        // Deduplicate — a customer with multiple active subs appears multiple times
-        const uniqueIds = [
-          ...new Set(customers.map((c: { id: string }) => c.id)),
-        ];
+        if (targetInterval === "end_of_period") {
+          const due = await env.DB.prepare(
+            `SELECT DISTINCT s.customer_id AS id
+             FROM subscriptions s
+             INNER JOIN customers c ON c.id = s.customer_id
+             WHERE c.organization_id = ?
+               AND s.status = 'active'
+               AND s.current_period_end <= ?`,
+          )
+            .bind(organizationId, scheduledTime)
+            .all<{ id: string }>();
+
+          uniqueIds = (due.results || []).map((row) => row.id);
+          trigger = "period_end";
+        } else if (targetInterval === "paid_reconcile") {
+          const due = await env.DB.prepare(
+            `SELECT DISTINCT s.customer_id AS id
+             FROM subscriptions s
+             INNER JOIN plans p ON p.id = s.plan_id
+             INNER JOIN customers c ON c.id = s.customer_id
+             WHERE c.organization_id = ?
+               AND s.status = 'active'
+               AND p.type != 'free'
+               AND s.current_period_end <= ?`,
+          )
+            .bind(organizationId, scheduledTime)
+            .all<{ id: string }>();
+
+          uniqueIds = (due.results || []).map((row) => row.id);
+          trigger = "reconcile_only";
+        } else {
+          const customers = await db
+            .select({ id: schema.customers.id })
+            .from(schema.customers)
+            .innerJoin(
+              schema.subscriptions,
+              and(
+                eq(schema.subscriptions.customerId, schema.customers.id),
+                eq(schema.subscriptions.status, "active"),
+              ),
+            )
+            .where(eq(schema.customers.organizationId, organizationId));
+
+          // Deduplicate — a customer with multiple active subs appears multiple times
+          const customerIds: string[] = customers.map((c: any) => String(c.id));
+          uniqueIds = Array.from(new Set(customerIds));
+        }
+
         console.log(
-          `[QUEUE] Org ${organizationId}: dispatching ${uniqueIds.length} workflows`,
+          `[QUEUE] Org ${organizationId}: dispatching ${uniqueIds.length} workflows (target=${targetInterval}, trigger=${trigger})`,
         );
 
         // Dispatch in parallel batches
@@ -775,11 +900,11 @@ export default {
           await Promise.allSettled(
             chunk.map((customerId) =>
               env.OVERAGE_BILLING_WORKFLOW.create({
-                id: `overage-cron-${customerId}-${scheduledTime}`,
+                id: `overage-${targetInterval}-${customerId}-${scheduledTime}`,
                 params: {
                   organizationId,
                   customerId,
-                  trigger: "cron" as const,
+                  trigger,
                 },
               }).catch((e) => {
                 console.warn(

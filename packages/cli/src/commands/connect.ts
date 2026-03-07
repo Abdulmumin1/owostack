@@ -8,7 +8,7 @@ import {
 } from "../lib/config.js";
 import { loadConfigSettings, resolveConfigPath } from "../lib/loader.js";
 import { executeConnectFlow } from "../lib/connect.js";
-import { printBrand } from "../lib/brand.js";
+
 
 interface ConnectOptions {
   browser?: boolean;
@@ -17,13 +17,13 @@ interface ConnectOptions {
 export async function runConnect(options: ConnectOptions) {
   p.intro(pc.bgYellow(pc.black(" connect ")));
 
-  const configPath = "./owo.config.ts";
-  let apiUrl = getApiUrl();
-  let dashboardUrl = getDashboardUrl();
+  const fullPath = resolveConfigPath();
+  let apiUrl: string = getApiUrl();
+  let dashboardUrl: string = getDashboardUrl();
   let noBrowser = options.browser === false;
 
-  if (existsSync(resolveConfigPath(configPath))) {
-    const configSettings = await loadConfigSettings(configPath);
+  if (fullPath && existsSync(fullPath)) {
+    const configSettings = await loadConfigSettings(fullPath);
     if (configSettings.connect?.dashboardUrl) {
       dashboardUrl = getDashboardUrl(configSettings.connect.dashboardUrl);
     }

@@ -1,0 +1,282 @@
+---
+title: Addon Packs
+description: Let customers purchase prepaid credit top-ups
+icon: Coins
+---
+
+# Addon Packs
+
+Credit packs are one-time purchasable bundles that top up a prepaid balance. Instead of simple counters (1 API call = 1 unit), you abstract usage into **credits** — customers buy credit packs (e.g. $10 for 1,000 credits) and features consume credits at different rates. This guide shows how to set them up and sell them.
+
+## Set up a credit system
+
+Credits are scoped to a **credit system**. A credit system groups related features that share a balance (e.g. "AI Credits").
+
+Define it in code:
+
+```ts
+const aiTokens = metered("ai-tokens", { name: "AI Tokens" });
+
+const aiCredits = creditSystem("ai-credits", {
+  name: "AI Credits",
+  description: "Credits for AI model usage",
+  features: [
+    aiTokens(1), // 1 token costs 1 credit
+  ],
+});
+
+plan("pro", {
+  name: "Pro",
+  price: 2000,
+  currency: "USD",
+  interval: "monthly",
+  features: [aiTokens.limit(5000, { creditCost: 1 })],
+});
+```
+
+Each call to `track()` for `ai-tokens` deducts 1 credit from the customer's balance in that credit system.
+
+## Create a credit pack
+
+Credit packs are one-time purchasable bundles of credits. You can define them programmatically in your catalog using the `creditPack()` function:
+
+```ts
+const starterPack = creditPack("starter-credits", {
+  name: "Starter Pack",
+  description: "500 credits for getting started",
+  credits: 500,
+  price: 1000, // $10.00 (minor currency units)
+  currency: "USD",
+  creditSystem: "ai-credits", // Must match the credit system slug
+});
+
+export const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  catalog: [
+    aiCredits,
+    starterPack,
+    // ... your plans
+  ],
+});
+```
+
+Then sync to deploy:
+
+```bash
+owosk sync
+```
+
+The pack will be created and is now available for purchase.
+
+<Callout type="tip">
+  You can also create credit packs in the dashboard under **Add-ons → Credit
+  Packs** if you prefer a UI approach.
+</Callout>
+
+### Credit pack options
+
+| Option         | Type       | Required | Description                                        |
+| -------------- | ---------- | -------- | -------------------------------------------------- |
+| `name`         | `string`   | Yes      | Human-readable name                                |
+| `description`  | `string`   | No       | Description shown to customers                     |
+| `credits`      | `number`   | Yes      | Number of credits in the pack                      |
+| `price`        | `number`   | Yes      | Price in minor currency units (e.g. 1000 = $10.00) |
+| `currency`     | `Currency` | Yes      | Currency code (e.g. "USD", "NGN")                  |
+| `creditSystem` | `string`   | Yes      | Slug of the credit system this pack is tied to     |
+| `provider`     | `string`   | No       | Override the default payment provider              |
+| `metadata`     | `object`   | No       | Custom metadata for your use                       |
+
+## Let customers buy credits
+
+Use `addon()` to initiate a credit pack purchase:
+
+```ts
+const result = await owo.addon({
+  customer: "user_123",
+  pack: "starter-credits", // credit pack slug
+  quantity: 1,
+});
+
+if (result.requiresCheckout) {
+  // Redirect to payment
+  console.log(result.checkoutUrl);
+} else {
+  // Credits applied immediately (card on file was charged)
+  console.log("New balance:", result.balance);
+}
+```
+
+If the customer has a payment method on file, the charge happens immediately and credits are added to their balance. Otherwise, a checkout URL is returned.
+
+## Adjust quantity
+
+Customers can buy multiple packs at once:
+
+```ts
+const result = await owo.addon({
+  customer: "user_123",
+  pack: "starter-credits",
+  quantity: 3, // 1500 credits total
+});
+```
+
+## Check the balance
+
+Use `check()` on a feature in the credit system to see the remaining balance:
+
+```ts
+const access = await owo.check({
+  customer: "user_123",
+  feature: "ai-tokens",
+});
+
+console.log("Credits remaining:", access.balance);
+```
+
+## Consume credits
+
+`track()` deducts credits automatically based on the feature's `creditCost`:
+
+```ts
+await owo.track({
+  customer: "user_123",
+  feature: "ai-tokens",
+  value: 1, // deducts creditCost (1) from balance
+});
+```
+
+## Variable credit costs
+
+Different features can consume credits at different rates within the same credit system:
+
+```ts
+const gpt4 = metered("gpt-4");
+const dallE = metered("dall-e");
+
+const aiCredits = creditSystem("ai-credits", {
+  name: "AI Credits",
+  features: [
+    gpt4(20), // 1 GPT-4 call costs 20 credits
+    dallE(50), // 1 DALL-E generation costs 50 credits
+  ],
+});
+
+// Create different pack sizes
+const basicPack = creditPack("basic-credits", {
+  name: "Basic Pack",
+  credits: 500,
+  price: 500, // $5.00
+  currency: "USD",
+  creditSystem: "ai-credits",
+});
+
+const proPack = creditPack("pro-credits", {
+  name: "Pro Pack",
+  credits: 2500,
+  price: 2000, // $20.00
+  currency: "USD",
+  creditSystem: "ai-credits",
+});
+```
+
+When you `track()` a feature in a credit system, Owostack deducts the calculated amount automatically:
+
+```ts
+await owo.track({
+  customer: "user_123",
+  feature: "gpt-4",
+});
+// Deducts 20 credits from the "ai-credits" balance
+```
+
+## Complete example
+
+Here's a complete setup with plans, credit systems, and credit packs:
+
+```ts
+import { Owostack, metered, creditSystem, creditPack, plan } from "owostack";
+
+// Define features
+const apiCalls = metered("api-calls", { name: "API Calls" });
+const aiTokens = metered("ai-tokens", { name: "AI Tokens" });
+
+// Define credit system
+const apiCredits = creditSystem("api-credits", {
+  name: "API Credits",
+  description: "Credits for API and AI usage",
+  features: [
+    apiCalls(1), // 1 API call = 1 credit
+    aiTokens(10), // 1 AI token = 10 credits
+  ],
+});
+
+// Define credit packs
+const starterPack = creditPack("starter-pack", {
+  name: "Starter Pack",
+  description: "500 API credits",
+  credits: 500,
+  price: 1000, // $10.00
+  currency: "USD",
+  creditSystem: "api-credits",
+});
+
+const proPack = creditPack("pro-pack", {
+  name: "Pro Pack",
+  description: "2500 API credits",
+  credits: 2500,
+  price: 3500, // $35.00
+  currency: "USD",
+  creditSystem: "api-credits",
+});
+
+// Define plan with some included credits
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  catalog: [
+    plan("pro", {
+      name: "Pro",
+      price: 2900,
+      currency: "USD",
+      interval: "monthly",
+      features: [
+        apiCalls.limit(1000, { reset: "monthly" }),
+        apiCredits.credits(100, { reset: "monthly" }), // Include 100 credits monthly
+      ],
+    }),
+    apiCredits,
+    starterPack,
+    proPack,
+  ],
+});
+
+export { owo };
+```
+
+Sync once to create everything:
+
+```bash
+owosk sync
+```
+
+Then let customers purchase additional credits:
+
+```ts
+// Customer buys a pack
+const result = await owo.addon({
+  customer: "user_123",
+  pack: "pro-pack",
+  quantity: 2, // 5000 credits total
+});
+
+if (result.requiresCheckout) {
+  res.redirect(result.checkoutUrl!);
+} else {
+  console.log(
+    `Added ${result.credits} credits. New balance: ${result.balance}`,
+  );
+}
+
+// Track usage (deducts credits automatically)
+await owo.track({ customer: "user_123", feature: "ai-tokens" });
+// Deducts 10 credits from balance
+```

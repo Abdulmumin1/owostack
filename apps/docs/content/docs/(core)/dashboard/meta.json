@@ -1,5 +1,0 @@
-{
-  "title": "Dashboard",
-  "icon": "LayoutDashboard",
-  "pages": ["organizations", "plans", "api-keys"]
-}

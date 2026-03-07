@@ -282,6 +282,9 @@ export const entitlements = sqliteTable(
     resetInterval: text("reset_interval").notNull().default("monthly"),
     lastResetAt: integer("last_reset_at"),
     expiresAt: integer("expires_at"),
+    source: text("source").notNull().default("plan"), // plan, manual, addon
+    grantedBy: text("granted_by"),
+    grantedReason: text("granted_reason"),
     createdAt: integer("created_at")
       .notNull()
       .$defaultFn(() => Date.now()),

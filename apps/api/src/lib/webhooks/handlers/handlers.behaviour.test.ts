@@ -3,6 +3,7 @@ import { handleChargeSuccess } from "./charge-success";
 import { handleSubscriptionCreated } from "./subscription-created";
 import { handleRefund } from "./refund";
 import { handleCustomerIdentified } from "./customer-identified";
+import { handleSubscriptionStatus } from "./subscription-status";
 import { topUpScopedBalance } from "../../addon-credits";
 import { provisionEntitlements } from "../../plan-switch";
 import { upsertPaymentMethod } from "../../payment-methods";
@@ -40,6 +41,7 @@ vi.mock("@owostack/db", () => ({
     entitlements: { customerId: "customerId" },
     credits: { id: "id", customerId: "customerId", balance: "balance" },
     creditPurchases: { paymentReference: "paymentReference" },
+    entities: { customerId: "customerId", status: "status" },
   },
 }));
 
@@ -71,7 +73,9 @@ function createDbMock() {
 
   const deleteWhereMock = vi.fn(async () => []);
   const deleteMock = vi.fn(() => ({
-    where: deleteWhereMock,
+    where: vi.fn(() => ({
+      returning: deleteWhereMock,
+    })),
   }));
 
   const db: MockDb = {
@@ -99,7 +103,12 @@ interface WebhookEventData {
   type: string;
   provider: string;
   customer: { email: string; providerCustomerId: string };
-  payment?: { amount: number; currency: string; reference: string };
+  payment?: {
+    amount: number;
+    currency: string;
+    reference: string;
+    paidAt?: string;
+  };
   subscription?: {
     providerCode: string;
     startDate?: string;
@@ -334,6 +343,46 @@ describe("Webhook handlers behavior", () => {
     );
   });
 
+  it("subscription.active updates billing dates from provider renewal data", async () => {
+    const { db, updateSetMock } = createDbMock();
+
+    db.query.subscriptions.findFirst.mockResolvedValue({
+      id: "sub_active_1",
+      customerId: "cus_1",
+      planId: "plan_1",
+      status: "active",
+      currentPeriodEnd: new Date("2026-03-08T00:00:00.000Z").getTime(),
+      metadata: {},
+    });
+
+    const event = {
+      type: "subscription.active",
+      provider: "paystack",
+      customer: {
+        email: "renew@example.com",
+        providerCustomerId: "prov_cus_renew",
+      },
+      subscription: {
+        providerCode: "SUB_renew_1",
+        startDate: "2026-03-06T17:00:15.000Z",
+        nextPaymentDate: "2026-04-06T17:00:15.000Z",
+      },
+      metadata: {},
+      raw: { event: "invoice.update" },
+    };
+
+    await handleSubscriptionStatus("active")(makeCtx(db, event));
+
+    const updatePayload = updateSetMock.mock.calls[0]?.[0];
+    expect(updatePayload.status).toBe("active");
+    expect(updatePayload.currentPeriodStart).toBe(
+      new Date("2026-03-06T17:00:15.000Z").getTime(),
+    );
+    expect(updatePayload.currentPeriodEnd).toBe(
+      new Date("2026-04-06T17:00:15.000Z").getTime(),
+    );
+  });
+
   it("refund.success partial refund records refund metadata without revoking access", async () => {
     const { db, updateSetMock, deleteMock } = createDbMock();
     const cancelSubscription = vi.fn(async () => null);
@@ -383,6 +432,69 @@ describe("Webhook handlers behavior", () => {
 
     expect(cancelSubscription).not.toHaveBeenCalled();
     expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("charge.success invoice update fallback advances renewal by customer and plan when subscription code is missing", async () => {
+    const { db, updateSetMock } = createDbMock();
+
+    db.query.customers.findFirst.mockResolvedValue({
+      id: "cus_renew_1",
+      email: "customerx12@example.com",
+      organizationId: "org_1",
+      externalId: null,
+      providerId: "paystack",
+      providerCustomerId: "CUS_41uuf7daarvgkkw",
+      paystackAuthorizationCode: null,
+      providerAuthorizationCode: null,
+      paystackCustomerId: "CUS_41uuf7daarvgkkw",
+    });
+    db.query.plans.findFirst.mockResolvedValue({
+      id: "plan_pro_1",
+      organizationId: "org_1",
+      interval: "monthly",
+    });
+    db.query.subscriptions.findFirst.mockResolvedValue({
+      id: "sub_local_1",
+      customerId: "cus_renew_1",
+      planId: "plan_pro_1",
+      status: "active",
+      currentPeriodStart: new Date("2026-02-06T16:14:28.000Z").getTime(),
+      currentPeriodEnd: new Date("2026-03-08T00:00:00.000Z").getTime(),
+      plan: { interval: "monthly" },
+    });
+
+    const event = {
+      type: "charge.success",
+      provider: "paystack",
+      customer: {
+        email: "customerx12@example.com",
+        providerCustomerId: "CUS_41uuf7daarvgkkw",
+      },
+      payment: {
+        amount: 3000000,
+        currency: "NGN",
+        reference: "renew_ref_1",
+        paidAt: "2026-03-06T17:00:15.000Z",
+      },
+      plan: {
+        providerPlanCode: "PLN_mfm3iy6fyattbda",
+      },
+      metadata: {
+        invoice_action: "update",
+      },
+      raw: { event: "charge.success" },
+    };
+
+    await handleChargeSuccess(makeCtx(db, event));
+
+    const updatePayload = updateSetMock.mock.calls[0]?.[0];
+    expect(updatePayload.status).toBe("active");
+    expect(updatePayload.currentPeriodStart).toBe(
+      new Date("2026-03-06T17:00:15.000Z").getTime(),
+    );
+    expect(updatePayload.currentPeriodEnd).toBe(
+      new Date("2026-04-05T17:00:15.000Z").getTime(),
+    );
   });
 
   it("refund.success full refund cancels subscriptions, revokes entitlements, invalidates cache, and deducts credits", async () => {

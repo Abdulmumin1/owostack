@@ -6,27 +6,46 @@ import {
   loadOwostackFromConfig,
   resolveConfigPath,
 } from "../lib/loader.js";
-import { printBrand } from "../lib/brand.js";
+import {
+  fetchPlans,
+  fetchCreditSystems,
+  fetchCreditPacks,
+} from "../lib/api.js";
+import { diffPlans, printDiff, DiffResult } from "../lib/diff.js";
 
 interface SyncOptions {
-  config: string;
+  config?: string;
   dryRun?: boolean;
   key?: string;
   prod?: boolean;
+  yes?: boolean;
 }
 
 async function runSyncSingle(options: {
-  configPath: string;
+  configPath?: string;
   dryRun: boolean;
+  autoApprove: boolean;
   apiKey: string;
   apiUrl: string;
+  environment: string;
 }) {
-  const { configPath, dryRun, apiUrl } = options;
+  const { configPath, dryRun, autoApprove, environment } = options;
   const apiKey = getApiKey(options.apiKey);
+  // Construct full API URL with /api/v1
+  const apiUrl = `${options.apiUrl}/api/v1`;
   const fullPath = resolveConfigPath(configPath);
 
+  if (!fullPath) {
+    p.log.error(
+      pc.red(
+        `Configuration file not found.${configPath ? ` looked at ${configPath}` : " searched defaults."}`,
+      ),
+    );
+    process.exit(1);
+  }
+
   const s = p.spinner();
-  s.start(`Loading ${pc.cyan(configPath)}`);
+  s.start(`Loading ${pc.cyan(fullPath)}`);
 
   let owo: any;
   try {
@@ -52,71 +71,80 @@ async function runSyncSingle(options: {
     process.exit(1);
   }
 
-  s.message("Syncing with API...");
+  s.stop("Configuration loaded");
+
+  // Build payload for diff
+  const { buildSyncPayload } = (await import("owostack").catch(() => ({
+    buildSyncPayload: null,
+  }))) as any;
+  const localPayload = buildSyncPayload?.(owo._config.catalog);
+
+  // Fetch remote state for diff
+  s.start(`Fetching remote catalog from ${pc.dim(environment)}...`);
+  const remotePlans = await fetchPlans({ apiKey, apiUrl: apiUrl });
+  const remoteCreditSystems = await fetchCreditSystems(apiKey, apiUrl);
+  const remoteCreditPacks = await fetchCreditPacks(apiKey, apiUrl);
+  s.stop("Remote catalog fetched");
+
+  // Show diff
+  const diff = diffPlans(
+    localPayload?.plans ?? [],
+    remotePlans,
+    localPayload?.creditSystems ?? [],
+    remoteCreditSystems,
+    localPayload?.creditPacks ?? [],
+    remoteCreditPacks,
+  );
+  printDiff(diff);
+
+  // Check if there are any changes
+  const hasChanges =
+    diff.onlyLocal.length > 0 ||
+    diff.onlyRemote.length > 0 ||
+    diff.changed.length > 0 ||
+    diff.creditSystems.onlyLocal.length > 0 ||
+    diff.creditSystems.onlyRemote.length > 0 ||
+    diff.creditSystems.changed.length > 0 ||
+    diff.creditPacks.onlyLocal.length > 0 ||
+    diff.creditPacks.onlyRemote.length > 0 ||
+    diff.creditPacks.changed.length > 0;
+
+  if (!hasChanges) {
+    p.outro(pc.green("Everything is already in sync! ✨"));
+    return;
+  }
+
+  // If dry run, stop here
+  if (dryRun) {
+    p.log.info(pc.yellow("Dry run - no changes were applied."));
+    return;
+  }
+
+  // Interactive confirmation (unless --yes flag)
+  if (!autoApprove) {
+    const confirm = await p.confirm({
+      message: `Proceed with sync to ${pc.cyan(environment)}?`,
+      initialValue: false,
+    });
+
+    if (p.isCancel(confirm) || !confirm) {
+      p.outro(pc.yellow("Sync cancelled"));
+      process.exit(0);
+    }
+  }
+
+  // Proceed with sync
+  s.start(`Syncing with ${pc.cyan(environment)}...`);
 
   if (apiKey && typeof owo.setSecretKey === "function") {
     owo.setSecretKey(apiKey);
   }
   if (apiUrl && typeof owo.setApiUrl === "function") {
+    // SDK expects the full base URL including /api/v1
     owo.setApiUrl(apiUrl);
   }
 
   try {
-    if (dryRun) {
-      s.stop(pc.yellow("Dry run mode (showing catalog payload)"));
-
-      const { buildSyncPayload } = (await import("owostack").catch(() => {
-        return { buildSyncPayload: null };
-      })) as any;
-
-      if (buildSyncPayload && owo._config?.catalog) {
-        const payload = buildSyncPayload(owo._config.catalog);
-
-        let featureSummary = payload.features
-          .map(
-            (f: any) =>
-              `${pc.green("+")} ${pc.bold(f.slug)} ${pc.dim(`(${f.type})`)}`,
-          )
-          .join("\n");
-
-        p.note(
-          featureSummary || pc.dim("No features defined"),
-          "Features to Sync",
-        );
-
-        let planSummary = "";
-        for (const p_obj of payload.plans) {
-          planSummary += `${pc.green("+")} ${pc.bold(p_obj.slug)} ${pc.dim(`${p_obj.currency} ${p_obj.price}/${p_obj.interval}`)}\n`;
-          for (const f of p_obj.features) {
-            const status = f.enabled ? pc.green("✓") : pc.red("✗");
-            const configParts = [];
-            if (f.limit !== undefined)
-              configParts.push(
-                `limit: ${f.limit === null ? "unlimited" : f.limit}`,
-              );
-            if (f.reset) configParts.push(`reset: ${f.reset}`);
-            if (f.overage) configParts.push(`overage: ${f.overage}`);
-            if (f.overagePrice) configParts.push(`price: ${f.overagePrice}`);
-
-            const configStr =
-              configParts.length > 0
-                ? ` ${pc.dim(`(${configParts.join(", ")})`)}`
-                : "";
-            planSummary += `  ${status} ${pc.dim(f.slug)}${configStr}\n`;
-          }
-          planSummary += "\n";
-        }
-
-        p.note(
-          planSummary.trim() || pc.dim("No plans defined"),
-          "Plans to Sync",
-        );
-      }
-
-      p.log.info(pc.yellow("No changes were applied to the server."));
-      return;
-    }
-
     const result = await owo.sync();
     s.stop(pc.green("Sync completed"));
 
@@ -125,26 +153,110 @@ async function runSyncSingle(options: {
       process.exit(1);
     }
 
-    const fc = result.features;
-    const pc_res = result.plans;
+    // Use the diff data to show detailed changes, same format as Plans Diff
+    const lines: string[] = [];
 
-    let summary = [];
-    if (fc.created.length)
-      summary.push(pc.green(`+ ${fc.created.length} features`));
-    if (fc.updated.length)
-      summary.push(pc.cyan(`~ ${fc.updated.length} features`));
-    if (pc_res.created.length)
-      summary.push(pc.green(`+ ${pc_res.created.length} plans`));
-    if (pc_res.updated.length)
-      summary.push(pc.cyan(`~ ${pc_res.updated.length} plans`));
-
-    if (summary.length > 0) {
-      p.note(summary.join("\n"), "Changes applied");
-    } else {
-      p.log.info(pc.dim("No changes detected. Catalog is up to date."));
+    // Plans changes
+    if (diff.onlyLocal.length > 0) {
+      for (const slug of diff.onlyLocal) {
+        lines.push(`${pc.green("+")} ${pc.bold(slug)}`);
+      }
+    }
+    if (diff.onlyRemote.length > 0) {
+      for (const slug of diff.onlyRemote) {
+        lines.push(`${pc.red("-")} ${pc.bold(slug)}`);
+      }
+    }
+    if (diff.changed.length > 0) {
+      for (const item of diff.changed) {
+        lines.push(`${pc.cyan("~")} ${pc.bold(item.slug)}`);
+        for (const detail of item.details) {
+          lines.push(`  ${detail}`);
+        }
+      }
     }
 
-    if (result.warnings.length) {
+    // Credit Systems changes
+    if (diff.creditSystems.onlyLocal.length > 0) {
+      for (const slug of diff.creditSystems.onlyLocal) {
+        lines.push(`${pc.green("+")} ${pc.bold(slug)}`);
+      }
+    }
+    if (diff.creditSystems.onlyRemote.length > 0) {
+      for (const slug of diff.creditSystems.onlyRemote) {
+        lines.push(`${pc.red("-")} ${pc.bold(slug)}`);
+      }
+    }
+    if (diff.creditSystems.changed.length > 0) {
+      for (const item of diff.creditSystems.changed) {
+        lines.push(`${pc.cyan("~")} ${pc.bold(item.slug)}`);
+        for (const detail of item.details) {
+          lines.push(`  ${detail}`);
+        }
+      }
+    }
+
+    // Credit Packs changes
+    if (diff.creditPacks.onlyLocal.length > 0) {
+      for (const slug of diff.creditPacks.onlyLocal) {
+        lines.push(`${pc.green("+")} ${pc.bold(slug)}`);
+      }
+    }
+    if (diff.creditPacks.onlyRemote.length > 0) {
+      for (const slug of diff.creditPacks.onlyRemote) {
+        lines.push(`${pc.red("-")} ${pc.bold(slug)}`);
+      }
+    }
+    if (diff.creditPacks.changed.length > 0) {
+      for (const item of diff.creditPacks.changed) {
+        lines.push(`${pc.cyan("~")} ${pc.bold(item.slug)}`);
+        for (const detail of item.details) {
+          lines.push(`  ${detail}`);
+        }
+      }
+    }
+
+    if (lines.length > 0) {
+      p.note(lines.join("\n"), "Changes applied");
+
+      const counts = [
+        diff.onlyLocal.length > 0
+          ? `${pc.green(pc.bold(diff.onlyLocal.length.toString()))} plans added`
+          : "",
+        diff.onlyRemote.length > 0
+          ? `${pc.red(pc.bold(diff.onlyRemote.length.toString()))} plans removed`
+          : "",
+        diff.changed.length > 0
+          ? `${pc.cyan(pc.bold(diff.changed.length.toString()))} plans modified`
+          : "",
+        diff.creditSystems.onlyLocal.length > 0
+          ? `${pc.green(pc.bold(diff.creditSystems.onlyLocal.length.toString()))} systems added`
+          : "",
+        diff.creditSystems.onlyRemote.length > 0
+          ? `${pc.red(pc.bold(diff.creditSystems.onlyRemote.length.toString()))} systems removed`
+          : "",
+        diff.creditSystems.changed.length > 0
+          ? `${pc.cyan(pc.bold(diff.creditSystems.changed.length.toString()))} systems modified`
+          : "",
+        diff.creditPacks.onlyLocal.length > 0
+          ? `${pc.green(pc.bold(diff.creditPacks.onlyLocal.length.toString()))} packs added`
+          : "",
+        diff.creditPacks.onlyRemote.length > 0
+          ? `${pc.red(pc.bold(diff.creditPacks.onlyRemote.length.toString()))} packs removed`
+          : "",
+        diff.creditPacks.changed.length > 0
+          ? `${pc.cyan(pc.bold(diff.creditPacks.changed.length.toString()))} packs modified`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(pc.dim("  ·  "));
+
+      p.log.info(counts);
+    } else {
+      p.log.success(pc.dim("No changes detected. Catalog is up to date."));
+    }
+
+    if (result.warnings && result.warnings.length) {
       p.log.warn(pc.yellow(`Warnings:\n${result.warnings.join("\n")}`));
     }
   } catch (e: any) {
@@ -158,33 +270,31 @@ export async function runSync(options: SyncOptions) {
   p.intro(pc.bgYellow(pc.black(" sync ")));
 
   const configSettings = await loadConfigSettings(options.config);
-  let apiUrl = configSettings.apiUrl;
-
   const testUrl = getTestApiUrl(configSettings.environments?.test);
   const liveUrl = getApiUrl(configSettings.environments?.live);
 
+  // Default to sandbox environment, prod only with --prod flag
   if (options.prod) {
-    p.log.step(pc.magenta("Production Mode: Syncing both environments"));
+    p.log.step(pc.magenta("Production Mode: Syncing to PROD environment"));
 
     await runSyncSingle({
       configPath: options.config,
       dryRun: !!options.dryRun,
+      autoApprove: !!options.yes,
       apiKey: options.key || "",
-      apiUrl: apiUrl || `${testUrl}/api/v1`,
-    });
-
-    await runSyncSingle({
-      configPath: options.config,
-      dryRun: !!options.dryRun,
-      apiKey: options.key || "",
-      apiUrl: apiUrl || `${liveUrl}/api/v1`,
+      apiUrl: configSettings.apiUrl || liveUrl,
+      environment: "prod",
     });
   } else {
+    p.log.step(pc.cyan("Sandbox Mode: Syncing to SANDBOX environment"));
+
     await runSyncSingle({
       configPath: options.config,
       dryRun: !!options.dryRun,
+      autoApprove: !!options.yes,
       apiKey: options.key || "",
-      apiUrl: apiUrl || `${liveUrl}/api/v1`,
+      apiUrl: testUrl,
+      environment: "sandbox",
     });
   }
 

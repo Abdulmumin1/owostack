@@ -39,3 +39,4 @@ plan.md
 task.md
 *.bak
 .windsurf/
+scripts/bench-check.ts

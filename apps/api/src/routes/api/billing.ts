@@ -319,7 +319,7 @@ app.post("/invoice/:id/pay", async (c) => {
     return c.json({ success: false, error: "Customer not found" }, 404);
   }
 
-  // 3. Resolve provider from the customer's subscription
+  // 3. Resolve provider
   const subscription = await db.query.subscriptions.findFirst({
     where: and(
       eq(schema.subscriptions.customerId, customer.id),
@@ -331,7 +331,34 @@ app.post("/invoice/:id/pay", async (c) => {
     ),
   });
 
-  if (!subscription?.providerId) {
+  // Environment comes directly from ENVIRONMENT variable
+  const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
+
+  const registry = getProviderRegistry();
+  const accounts = await loadProviderAccounts(
+    db,
+    organizationId,
+    c.env.ENCRYPTION_KEY,
+  );
+
+  let selectedProviderId = customer.providerId || subscription?.providerId;
+  let account;
+
+  if (selectedProviderId) {
+    account = accounts.find(
+      (a) =>
+        a.providerId === selectedProviderId && a.environment === providerEnv,
+    );
+  } else {
+    // Fallback: use the first account matching the environment
+    const defaultAccount = accounts.find((a) => a.environment === providerEnv);
+    if (defaultAccount) {
+      selectedProviderId = defaultAccount.providerId;
+      account = defaultAccount;
+    }
+  }
+
+  if (!selectedProviderId || !account) {
     trackBusinessEvent(c.env, {
       event: "billing.invoice.pay",
       outcome: "provider_missing",
@@ -339,33 +366,20 @@ app.post("/invoice/:id/pay", async (c) => {
       customerId: customer.id,
     });
     return c.json(
-      { success: false, error: "No provider configured for this customer" },
+      { success: false, error: "No payment provider configured for this customer or environment" },
       400,
     );
   }
 
-  // Environment comes directly from ENVIRONMENT variable
-  const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
+  const adapter = registry.get(selectedProviderId);
 
-  const registry = getProviderRegistry();
-  const adapter = registry.get(subscription.providerId);
-  const accounts = await loadProviderAccounts(
-    db,
-    organizationId,
-    c.env.ENCRYPTION_KEY,
-  );
-  const account = accounts.find(
-    (a) =>
-      a.providerId === subscription.providerId && a.environment === providerEnv,
-  );
-
-  if (!adapter || !account) {
+  if (!adapter) {
     trackBusinessEvent(c.env, {
       event: "billing.invoice.pay",
       outcome: "provider_not_configured",
       organizationId,
       customerId: customer.id,
-      providerId: subscription.providerId,
+      providerId: selectedProviderId,
     });
     return c.json(
       { success: false, error: "Payment provider not configured" },
@@ -436,7 +450,7 @@ app.post("/invoice/:id/pay", async (c) => {
           outcome: "auto_charge_paid",
           organizationId,
           customerId: customer.id,
-          providerId: subscription.providerId,
+          providerId: selectedProviderId,
           value: Number(invoice.amountDue || 0),
           currency: invoice.currency || null,
         });
@@ -464,7 +478,7 @@ app.post("/invoice/:id/pay", async (c) => {
         outcome: "auto_charge_failed",
         organizationId,
         customerId: customer.id,
-        providerId: subscription.providerId,
+        providerId: selectedProviderId,
         value: Number(invoice.amountDue || 0),
         currency: invoice.currency || null,
       });
@@ -475,7 +489,7 @@ app.post("/invoice/:id/pay", async (c) => {
         outcome: "auto_charge_error",
         organizationId,
         customerId: customer.id,
-        providerId: subscription.providerId,
+        providerId: selectedProviderId,
         value: Number(invoice.amountDue || 0),
         currency: invoice.currency || null,
       });
@@ -511,7 +525,7 @@ app.post("/invoice/:id/pay", async (c) => {
       outcome: "checkout_error",
       organizationId,
       customerId: customer.id,
-      providerId: subscription.providerId,
+      providerId: selectedProviderId,
       value: Number(invoice.amountDue || 0),
       currency: invoice.currency || null,
     });
@@ -531,7 +545,7 @@ app.post("/invoice/:id/pay", async (c) => {
     outcome: "checkout_required",
     organizationId,
     customerId: customer.id,
-    providerId: subscription.providerId,
+    providerId: selectedProviderId,
     value: Number(invoice.amountDue || 0),
     currency: invoice.currency || null,
   });

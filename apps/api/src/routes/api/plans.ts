@@ -86,6 +86,7 @@ app.get("/", async (c) => {
     planGroup: p.planGroup || null,
     trialDays: p.trialDays ?? 0,
     provider: p.providerId || null,
+    autoEnable: p.autoEnable ?? false,
     features: (p.planFeatures || []).map((pf: any) => {
       const featureType = pf.feature?.type ?? "metered";
       const isBoolean = featureType === "boolean";
@@ -94,6 +95,7 @@ app.get("/", async (c) => {
         slug: pf.feature?.slug ?? pf.featureId,
         name: pf.feature?.name ?? pf.featureId,
         type: featureType,
+        meterType: pf.feature?.meterType || "consumable",
         enabled: isBoolean
           ? pf.limitValue !== 0
           : pf.limitValue !== 0 && pf.limitValue !== null,
@@ -152,6 +154,7 @@ app.get("/:slug", async (c) => {
       slug: pf.feature?.slug ?? pf.featureId,
       name: pf.feature?.name ?? pf.featureId,
       type: pf.feature?.type ?? "metered",
+      meterType: pf.feature?.meterType || "consumable",
       enabled: pf.limitValue !== 0,
       limit: pf.limitValue ?? null,
       resetInterval: pf.resetInterval || null,

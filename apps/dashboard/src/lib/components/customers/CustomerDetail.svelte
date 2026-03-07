@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Calendar, CircleNotch, Clock, CreditCard, Envelope, Hash, Lightning, Package, Pulse, User } from "phosphor-svelte";
+  import { Calendar, CircleNotch, Clock, CreditCard, Envelope, Hash, Lightning, Package, Pulse, User, WarningCircle } from "phosphor-svelte";
   import { apiFetch } from "$lib/auth-client";
   import { formatCurrency } from "$lib/utils/currency";
   import ProgressBar from "$lib/components/ui/ProgressBar.svelte";
@@ -7,6 +7,7 @@
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import Avatar from "$lib/components/ui/Avatar.svelte";
+  import CustomerEntitlementsSection from "./CustomerEntitlementsSection.svelte";
 
   let {
     customerId,
@@ -59,6 +60,41 @@
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
     return n.toString();
+  }
+
+  function getHealthMessage(sub: any) {
+    const reasons = Array.isArray(sub?.health?.reasons) ? sub.health.reasons : [];
+    const renewalStatus = sub?.health?.renewalSetup?.renewal_setup_status;
+    if (reasons.includes("renewal_setup_failed")) {
+      if (renewalStatus === "scheduled" || renewalStatus === "retrying") {
+        return "Renewal setup failed after trial conversion. Automatic retry is scheduled.";
+      }
+      return "Renewal setup failed after trial conversion. Access will stop at period end unless renewal setup succeeds.";
+    }
+    if (
+      reasons.includes("period_end_stale") &&
+      reasons.includes("provider_link_missing")
+    ) {
+      return "Period ended and provider link is missing.";
+    }
+    if (reasons.includes("period_end_stale")) {
+      return "Period ended and renewal reconciliation is pending.";
+    }
+    if (reasons.includes("provider_link_missing")) {
+      return "Provider linkage is missing.";
+    }
+    return "Needs review.";
+  }
+
+  function getHealthLabel(sub: any) {
+    const reasons = Array.isArray(sub?.health?.reasons) ? sub.health.reasons : [];
+    const renewalStatus = sub?.health?.renewalSetup?.renewal_setup_status;
+    if (reasons.includes("renewal_setup_failed")) {
+      return renewalStatus === "scheduled" || renewalStatus === "retrying"
+        ? "retrying"
+        : "renewal setup";
+    }
+    return "billing review";
   }
 
   function statusColor(status: string) {
@@ -221,6 +257,15 @@
               <div class="text-[9px] text-text-dim">
                 {formatDate(sub.currentPeriodStart)} – {formatDate(sub.currentPeriodEnd)}
               </div>
+              {#if sub.health?.requiresAction}
+                <div
+                  class="mt-1 inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-warning"
+                  title={getHealthMessage(sub)}
+                >
+                  <WarningCircle size={10} weight="fill" />
+                  {getHealthLabel(sub)}
+                </div>
+              {/if}
             </div>
           {/each}
         </div>
@@ -255,8 +300,13 @@
       </div>
     {/if}
 
+    <!-- Entitlement Overrides -->
+    <div class="border-t border-border pt-6 mt-6">
+      <CustomerEntitlementsSection {customerId} />
+    </div>
+
     <!-- Pulse Timeline -->
-    <div>
+    <div class="border-t border-border pt-6 mt-6">
       <h4 class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-2">Pulse</h4>
       <div class="bg-bg-secondary rounded overflow-hidden">
         <Timeline items={timeline} />

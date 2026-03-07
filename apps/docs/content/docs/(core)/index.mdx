@@ -6,14 +6,15 @@ icon: Rocket
 
 # Owostack
 
-Owostack is a billing infrastructure for subscriptions, usage, and entitlements. You connect a payment provider, model plans and features, and use three API primitives to enforce access and track usage: `attach`, `check`, and `track`.
+Owostack is a billing infrastructure for subscriptions, usage, and entitlements. You define your plans in code using the catalog, connect a payment provider, and use three API primitives to enforce access and track usage: `attach`, `check`, and `track`.
 
 ## What you build with Owostack
 
 - **Subscription lifecycle** without bespoke webhook code
 - **Entitlements** that gate features by plan
 - **Usage metering** for API calls, credits, or quotas
-- **Plan switching** with upgrades, downgrades, and add-ons
+- **Entity management** for per-seat, per-project, or per-workspace billing
+- **Code-first plans** with an SDK that syncs your definitions with a single command
 
 ## Core primitives
 
@@ -55,10 +56,14 @@ Owostack receives provider webhooks, normalizes events, and keeps subscription s
 
 <Cards>
   <Card title="Quickstart" href="/getting-started/quickstart" icon="Zap" />
-  <Card title="Webhook Setup" href="/getting-started/webhook-setup" icon="Webhook" />
+  <Card
+    title="Webhook Setup"
+    href="/getting-started/webhook-setup"
+    icon="Webhook"
+  />
   <Card
     title="How It Works"
-    href="/concepts/how-it-works"
+    href="/getting-started/how-it-works"
     icon="Workflow"
   />
 </Cards>
@@ -71,4 +76,4 @@ Owostack receives provider webhooks, normalizes events, and keeps subscription s
 | Usage-based (metered)   | ✅ Supported |
 | Credits / prepaid       | ✅ Supported |
 | Trials & freemium       | ✅ Supported |
-| Per-seat pricing        | 🔜 Planned   |
+| Per-seat (entities)     | ✅ Supported |

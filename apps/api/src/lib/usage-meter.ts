@@ -25,6 +25,7 @@ interface TrackResult {
   usage: number;
   limit: number | null;
   code: string;
+  rolloverBalance: number;
 }
 
 // Type for serialized storage (plain objects instead of Maps)
@@ -95,7 +96,10 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
       // If config hasn't changed, skip entirely (no persist, no write)
       const configChanged =
         oldConfig?.resetInterval !== config.resetInterval ||
-        oldConfig?.limit !== config.limit;
+        oldConfig?.limit !== config.limit ||
+        oldConfig?.rolloverEnabled !== config.rolloverEnabled ||
+        oldConfig?.rolloverMaxBalance !== config.rolloverMaxBalance ||
+        oldConfig?.creditCost !== config.creditCost;
 
       if (!configChanged) {
         return { success: true };
@@ -204,6 +208,7 @@ if (currentAlarm !== null) {
         usage: 0,
         limit: null,
         code: "feature_not_found",
+        rolloverBalance: 0,
       };
     }
 
@@ -218,6 +223,7 @@ if (currentAlarm !== null) {
         usage: state.usage,
         limit: null,
         code: "unlimited",
+        rolloverBalance: state.rolloverBalance,
       };
     }
 
@@ -234,6 +240,7 @@ if (currentAlarm !== null) {
       usage: state.usage,
       limit: state.limit,
       code: allowed ? "allowed" : "insufficient_balance",
+      rolloverBalance: state.rolloverBalance,
     };
   }
 
@@ -259,6 +266,7 @@ if (currentAlarm !== null) {
         usage: 0,
         limit: null,
         code: "feature_not_found",
+        rolloverBalance: 0,
       };
     }
 
@@ -279,6 +287,7 @@ if (currentAlarm !== null) {
         usage: state.usage,
         limit: null,
         code: "tracked",
+        rolloverBalance: state.rolloverBalance,
       };
     }
 
@@ -292,6 +301,7 @@ if (currentAlarm !== null) {
         usage: state.usage,
         limit: state.limit,
         code: "insufficient_balance",
+        rolloverBalance: state.rolloverBalance,
       };
     }
 
@@ -313,6 +323,7 @@ if (currentAlarm !== null) {
       usage: state.usage,
       limit: state.limit,
       code: "tracked",
+      rolloverBalance: state.rolloverBalance,
     };
   }
 
@@ -439,7 +450,7 @@ if (currentAlarm !== null) {
     }
 
     // Re-schedule for the next soonest reset across all features
-    await this.scheduleResetAlarm();
+    // await this.scheduleResetAlarm();
   }
 
   /**

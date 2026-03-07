@@ -1,173 +1,36 @@
-import { Owostack, metered, boolean, creditSystem, plan } from "owostack";
-
-export const sso = boolean("sso", { name: "sso" });
-export const thirdpen = metered("thirdpen", { name: "Thirdpen" });
-export const dearfutureself = metered("dearfutureself", { name: "dearfutureself" });
-export const apiRequests = metered("api-requests", { name: "api requests" });
-export const dfs = metered("dfs", { name: "dfs" });
-
-export const supportCredits = creditSystem("support-credits", { name: "support credits", features: [dfs(20), apiRequests(10), dearfutureself(1)] });
-export const thirdpenCredits = creditSystem("thirdpen-credits", { name: "thirdpen-credits", features: [thirdpen(3)] });
-
+import { Owostack, metered, boolean, creditSystem, creditPack, plan } from "owostack";
+export const sendEmail = metered("send-email", { name: "send email" });
+export const apiRequest = metered("api-request", { name: "api-request" });
 export const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  provider: "paystack",
 
   catalog: [
-    plan("money-man", {
-      name: "money man",
-      price: 100000,
-      currency: "NGN",
-      interval: "monthly",
-      provider: "paystack",
-      features: [sso.off(), supportCredits.credits(100, { reset: "monthly" })]
-    }),
-    plan("test-trial-polar2", {
-      name: "test-trial-polar2",
-      price: 1000,
-      currency: "USD",
-      interval: "monthly",
-      trialDays: 1,
-      provider: "polar",
-      features: [thirdpen.limit(100, {"reset":"5min","overage":"charge"}), dearfutureself.limit(10, {"reset":"5min","overage":"charge"})]
-    }),
-    plan("test-trial-polar", {
-      name: "test-trial-polar",
-      price: 1000,
-      currency: "USD",
-      interval: "monthly",
-      planGroup: "sales",
-      trialDays: 3,
-      provider: "polar",
-      features: [supportCredits.credits(100, { reset: "monthly" })]
-    }),
-    plan("wanssoawe", {
-      name: "wanssoawe",
-      price: 2000,
-      currency: "USD",
-      interval: "monthly",
-      planGroup: "support",
-      provider: "dodopayments",
-      features: [thirdpen.limit(100, {"reset":"monthly"}), dearfutureself.config({"enabled":false,"limit":null,"reset":"monthly"})]
-    }),
-    plan("dry", {
-      name: "dry",
-      description: "a nice poor plan",
-      price: 1400,
-      currency: "USD",
-      interval: "monthly",
-      provider: "dodopayments",
-      features: [supportCredits.credits(100, { reset: "5min", overage: "charge" }), thirdpen.config({"enabled":false,"limit":null,"reset":"monthly"})]
-    }),
-    plan("test-trial-dodod", {
-      name: "test-trial-dodod",
+    plan("test3", {
+      name: "test3",
       price: 10000,
-      currency: "USD",
-      interval: "monthly",
-      trialDays: 2,
-      provider: "dodopayments",
-      features: [thirdpen.limit(100, {"reset":"monthly"}), supportCredits.credits(100, { reset: "monthly", overage: "charge" }), dearfutureself.limit(10, {"reset":"5min","overage":"charge"})]
-    }),
-    plan("test-trial-dodo-1", {
-      name: "test-trial-dodo",
-      price: 1000,
-      currency: "USD",
-      interval: "monthly",
-      trialDays: 15,
-      provider: "dodopayments",
-      features: [supportCredits.credits(100, { reset: "monthly" })]
-    }),
-    plan("test-trial-dodo", {
-      name: "test-trial-dodo",
-      price: 1000,
-      currency: "USD",
-      interval: "monthly",
-      trialDays: 3,
-      provider: "dodopayments",
-      features: [thirdpen.limit(100, {"reset":"monthly"})]
-    }),
-    plan("test-trial-stack", {
-      name: "test-trial-stack",
-      price: 100000,
       currency: "NGN",
       interval: "monthly",
-      trialDays: 3,
       provider: "paystack",
-      features: [thirdpenCredits.credits(100, { reset: "monthly" }), dearfutureself.config({"enabled":false,"limit":null,"reset":"monthly","overage":"charge"})]
+      features: [sendEmail.limit(100, {"reset":"5min"})]
     }),
-    plan("masterxx", {
-      name: "masterxx",
-      price: 100000,
+    plan("test-free1", {
+      name: "test-free1",
+      price: 0,
       currency: "USD",
       interval: "monthly",
-      provider: "dodopayments",
-      features: [supportCredits.credits(100, { reset: "5min" })]
+      planGroup: "main",
+      provider: "paystack",
+      features: []
     }),
-    plan("teast", {
-      name: "teast",
+    plan("test-free", {
+      name: "test-free",
       price: 0,
       currency: "NGN",
       interval: "monthly",
-      planGroup: "sales",
-      features: [supportCredits.credits(100, { reset: "15min", overage: "charge" })]
-    }),
-    plan("mastert", {
-      name: "mastert",
-      price: 1000000,
-      currency: "NGN",
-      interval: "monthly",
-      trialDays: 4,
-      provider: "paystack",
-      features: [dearfutureself.limit(100, {"reset":"monthly"}), apiRequests.limit(100, {"reset":"monthly"})]
-    }),
-    plan("masterx", {
-      name: "masterx",
-      price: 1000000,
-      currency: "NGN",
-      interval: "monthly",
-      trialDays: 4,
-      provider: "paystack",
-      features: [apiRequests.limit(100, {"reset":"monthly"}), thirdpen.limit(100, {"reset":"monthly"})]
-    }),
-    plan("master2", {
-      name: "master2",
-      price: 10000,
-      currency: "NGN",
-      interval: "monthly",
-      trialDays: 4,
-      provider: "paystack",
-      features: [apiRequests.limit(100, {"reset":"monthly"})]
-    }),
-    plan("master", {
-      name: "master",
-      price: 1000000,
-      currency: "NGN",
-      interval: "monthly",
-      trialDays: 4,
-      provider: "paystack",
-      features: [apiRequests.limit(100, {"reset":"monthly"})]
-    }),
-    plan("credit-plan", {
-      name: "Credit plan",
-      price: 10000,
-      currency: "NGN",
-      interval: "monthly",
-      features: [thirdpen.limit(10, {"reset":"5min","overage":"charge"}), dearfutureself.limit(10, {"reset":"5min","overage":"charge"}), dfs.config({"enabled":false,"limit":null,"reset":"5min"})]
-    }),
-    plan("pro-plan", {
-      name: "pro plan",
-      price: 3000000,
-      currency: "NGN",
-      interval: "monthly",
-      provider: "paystack",
-      features: [thirdpen.limit(200, {"reset":"5min"}), apiRequests.limit(200, {"reset":"5min"})]
-    }),
-    plan("basic", {
-      name: "basic",
-      price: 100000,
-      currency: "NGN",
-      interval: "monthly",
-      provider: "paystack",
-      features: [apiRequests.limit(100, {"reset":"monthly"})]
+      planGroup: "main",
+      autoEnable: true,
+      features: [apiRequest.limit(100, {"reset":"15min","overage":"charge"})]
     })
   ],
 });

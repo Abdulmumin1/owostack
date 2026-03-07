@@ -15,14 +15,14 @@ Define your features and plans in TypeScript and push them to Owostack with a si
 
 ## 1. Define your features
 
-Create a file (e.g. `src/billing/features.ts`) and define your features using `metered()` and `boolean()`:
+Create a file (e.g. `src/billing/features.ts`) and define your features using `metered()`, `boolean()`, and `entity()`:
 
 ```ts
-import { metered, boolean } from "owostack";
+import { metered, boolean, entity } from "owostack";
 
 export const apiCalls = metered("api-calls", { name: "API Calls" });
 export const analytics = boolean("analytics", { name: "Analytics Dashboard" });
-export const seats = metered("seats", { name: "Team Seats" });
+export const seats = entity("seats", { name: "Team Seats" });
 ```
 
 ## 2. Define your plans
@@ -44,7 +44,7 @@ export default new Owostack({
       features: [
         apiCalls.limit(1000),
         analytics.off(),
-        seats.limit(3, { reset: "never" }),
+        seats.limit(3),
       ],
     }),
     plan("pro", {
@@ -55,7 +55,7 @@ export default new Owostack({
       features: [
         apiCalls.limit(50000, { overage: "charge", overagePrice: 100 }),
         analytics.on(),
-        seats.limit(20, { reset: "never" }),
+        seats.limit(20),
       ],
     }),
     plan("enterprise", {
@@ -63,11 +63,7 @@ export default new Owostack({
       price: 2000000,
       currency: "NGN",
       interval: "monthly",
-      features: [
-        apiCalls.unlimited(),
-        analytics.on(),
-        seats.unlimited(),
-      ],
+      features: [apiCalls.unlimited(), analytics.on(), seats.unlimited()],
     }),
   ],
 });
@@ -78,7 +74,7 @@ export default new Owostack({
 ### Using the CLI
 
 ```bash
-npx owostack sync --config ./owo.config.ts
+npx owo sync --config ./owo.config.ts
 ```
 
 ### Using `owo.sync()` in a script
@@ -96,7 +92,7 @@ console.log(result);
 ```json
 {
   "scripts": {
-    "sync": "npx owostack sync",
+    "sync": "npx owo sync",
     "deploy": "pnpm sync && pnpm build && pnpm start"
   }
 }
@@ -134,11 +130,11 @@ const { allowed } = await analytics.check("user_123");
 
 Every feature and plan has a `source` field (`"dashboard"` or `"sdk"`). Sync follows a **code-wins** policy for resources it manages:
 
-| Scenario | What happens |
-|----------|-------------|
-| Feature exists only in code | Created on sync |
-| Feature exists only in dashboard | Untouched |
-| Feature exists in both, code changed | Code version wins |
+| Scenario                                    | What happens             |
+| ------------------------------------------- | ------------------------ |
+| Feature exists only in code                 | Created on sync          |
+| Feature exists only in dashboard            | Untouched                |
+| Feature exists in both, code changed        | Code version wins        |
 | Feature removed from code but exists in API | Nothing — resource stays |
 
 The dashboard shows a **"Managed by SDK"** badge for code-managed resources.
@@ -150,5 +146,6 @@ The dashboard shows a **"Managed by SDK"** badge for code-managed resources.
 **Larger teams:** Use the catalog for core features and plans. Let product managers create experimental plans in the dashboard. The two don't interfere.
 
 <Callout type="info">
-  Resources created in the dashboard remain untouched by sync. Code-managed and dashboard-managed resources coexist safely.
+  Resources created in the dashboard remain untouched by sync. Code-managed and
+  dashboard-managed resources coexist safely.
 </Callout>

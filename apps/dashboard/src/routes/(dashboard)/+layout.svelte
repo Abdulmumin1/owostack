@@ -58,7 +58,7 @@
   let { children } = $props();
 
   const session = useSession();
-  
+
   // Auth is now handled server-side in hooks.server.ts
   // No client-side redirect needed here
 
@@ -647,7 +647,7 @@
       <!-- Settings Button -->
 
       <a
-        href={import.meta.env.VITE_DOCS_URL}
+        href="https://docs.owostack.com"
         target="_blank"
         class="w-full flex items-center gap-3 px-3 mb-3 rounded-lg transition-all duration-200 text-text-secondary"
       >
@@ -821,7 +821,7 @@
                 ? 'bg-accent text-accent-contrast'
                 : step1Done
                   ? 'bg-accent/60 text-accent-contrast'
-                  : 'bg-accent-contrast text-text-dim border border-border'}"
+                  : 'bg-bg-secondary text-text-dim border border-border'}"
             >
               {#if allTestProvidersLive}
                 <Check size={14} weight="fill" />
@@ -946,7 +946,7 @@
             <div
               class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {step2Done
                 ? 'bg-accent text-accent-contrast'
-                : 'bg-accent-contrast text-text-dim border border-border'}"
+                : 'bg-bg-secondary text-text-dim border border-border'}"
             >
               {#if step2Done}
                 <Check size={14} weight="fill" />
@@ -998,7 +998,7 @@
             <div
               class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {step3Done
                 ? 'bg-accent text-accent-contrast'
-                : 'bg-accent-contrast text-text-dim border border-border'}"
+                : 'bg-bg-secondary text-text-dim border border-border'}"
             >
               {#if step3Done}
                 <Check size={14} weight="fill" />

@@ -144,7 +144,7 @@
 </script>
 
 <SidePanel open={isOpen} title="Edit Credit System" onclose={close} width="max-w-md">
-  <div class="text-sm">
+  <div class="text-sm flex flex-col justify-between h-full">
     {#if isLoading}
       <div class="p-5 flex items-center justify-center min-h-[300px]">
         <CircleNotch size={24} class="animate-spin text-text-muted" weight="duotone" />

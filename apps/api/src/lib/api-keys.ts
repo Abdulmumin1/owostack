@@ -4,6 +4,7 @@ import { schema } from "@owostack/db";
 import { eq } from "drizzle-orm";
 
 type DB = ReturnType<typeof createDb>;
+const API_KEY_CACHE_TTL_SECONDS = 60;
 
 /**
  * Middleware to validate API keys from Database
@@ -129,30 +130,92 @@ export async function hashApiKey(key: string): Promise<string> {
 /**
  * Verify an API key and return the key record
  */
+export interface VerifyApiKeyOptions {
+  cache?: KVNamespace | null;
+  cacheTtlSeconds?: number;
+  waitUntil?: (promise: Promise<unknown>) => void;
+  skipLastUsedTouch?: boolean;
+}
+
+function getApiKeyCacheKey(hash: string): string {
+  return `auth:api-key:${hash}`;
+}
+
+async function touchApiKeyLastUsedAt(
+  db: DB,
+  keyId: string,
+  waitUntil?: (promise: Promise<unknown>) => void,
+): Promise<void> {
+  const touchPromise = db
+    .update(schema.apiKeys)
+    .set({ lastUsedAt: Date.now() })
+    .where(eq(schema.apiKeys.id, keyId))
+    .catch((error: unknown) => {
+      console.warn("[api-keys] Failed to update lastUsedAt:", error);
+    });
+
+  if (waitUntil) {
+    waitUntil(touchPromise);
+    return;
+  }
+
+  await touchPromise;
+}
+
 export async function verifyApiKey(
   db: DB,
   apiKey: string,
+  options: VerifyApiKeyOptions = {},
 ): Promise<{ id: string; organizationId: string } | null> {
   const match = apiKey.match(/^owo_sk_\w+$/i);
   if (!match) return null;
 
-  // In a real app, strict hashing.
-  // Here we use the same hash logic
   const hash = await hashApiKey(apiKey);
+  const cache = options.cache;
+  const cacheKey = getApiKeyCacheKey(hash);
+
+  if (cache) {
+    const cachedRecord = await cache.get(cacheKey, "json");
+    if (cachedRecord) {
+      const parsed = cachedRecord as { id: string; organizationId: string };
+
+      if (!options.skipLastUsedTouch) {
+        await touchApiKeyLastUsedAt(db, parsed.id, options.waitUntil);
+      }
+
+      return parsed;
+    }
+  }
 
   const [keyRecord] = await db
-    .select()
+    .select({
+      id: schema.apiKeys.id,
+      organizationId: schema.apiKeys.organizationId,
+    })
     .from(schema.apiKeys)
     .where(eq(schema.apiKeys.hash, hash))
     .limit(1);
 
   if (!keyRecord) return null;
 
-  // Update last used
-  await db
-    .update(schema.apiKeys)
-    .set({ lastUsedAt: Date.now() })
-    .where(eq(schema.apiKeys.id, keyRecord.id));
+  if (cache) {
+    const cacheWrite = cache.put(cacheKey, JSON.stringify(keyRecord), {
+      expirationTtl: options.cacheTtlSeconds ?? API_KEY_CACHE_TTL_SECONDS,
+    });
+    if (options.waitUntil) {
+      options.waitUntil(
+        cacheWrite.catch((error: unknown) => {
+          console.warn("[api-keys] Failed to write auth cache:", error);
+        }),
+      );
+    } else {
+      await cacheWrite;
+    }
+  }
+
+  if (!options.skipLastUsedTouch) {
+    await touchApiKeyLastUsedAt(db, keyRecord.id, options.waitUntil);
+  }
 
   return keyRecord;
 }

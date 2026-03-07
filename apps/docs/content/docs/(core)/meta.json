@@ -4,11 +4,47 @@
   "root": true,
   "pages": [
     "index",
-    "getting-started",
-    "concepts",
-    "guides",
-    "dashboard",
-    "sdk",
-    "cli"
+
+    "---Getting Started---",
+    "getting-started/installation",
+    "getting-started/quickstart",
+    "getting-started/how-it-works",
+    "getting-started/data-model",
+    "getting-started/providers",
+    "getting-started/api-keys",
+    "getting-started/webhook-setup",
+
+    "---Pricing & Products---",
+    "pricing/features",
+    "pricing/plans",
+    "pricing/programmatic-plans",
+    "pricing/credits",
+    "pricing/seat-pricing",
+    "pricing/pricing-page",
+
+    "---Subscriptions---",
+    "subscriptions/checkout",
+    "subscriptions/plan-switching",
+    "subscriptions/trials",
+    "subscriptions/billing",
+    "subscriptions/wallet",
+
+    "---SDK Reference---",
+    "sdk/configuration",
+    "sdk/customer",
+    "sdk/entities",
+    "sdk/attach",
+    "sdk/plans",
+    "sdk/check",
+    "sdk/track",
+    "sdk/addon",
+    "sdk/wallet",
+    "sdk/billing",
+    "sdk/catalog",
+
+    "---CLI Reference---",
+    "cli/index",
+    "cli/commands",
+    "cli/auth"
   ]
 }

@@ -6,6 +6,7 @@ import {
   deductScopedBalance,
   getScopedBalance,
 } from "../src/lib/addon-credits";
+import { checkOverageAllowed } from "../src/lib/overage-guards";
 
 vi.mock("../src/lib/api-keys", async () => {
   const actual = await vi.importActual<typeof import("../src/lib/api-keys")>(
@@ -26,12 +27,20 @@ vi.mock("../src/lib/addon-credits", () => ({
   topUpScopedBalance: vi.fn(async () => 0),
 }));
 
+vi.mock("../src/lib/overage-guards", () => ({
+  checkOverageAllowed: vi.fn(async () => ({ allowed: true })),
+  getOrgOverageSettings: vi.fn(async () => null),
+  getUnbilledOverageAmount: vi.fn(async () => 0),
+}));
+
 // Type for response body
 type TrackResponse = {
   success: boolean;
   allowed: boolean;
   code: string;
   addonCredits?: number;
+  usage?: number | null;
+  balance?: number | null;
 };
 
 // Mock DB type with vitest mocks
@@ -43,6 +52,7 @@ type MockDb = {
     planFeatures: { findFirst: Mock; findMany: Mock };
     credits: { findFirst: Mock };
     entities: { findFirst: Mock };
+    entitlements: { findFirst: Mock; findMany: Mock };
   };
   insert: Mock;
   values: Mock;
@@ -75,14 +85,18 @@ describe("Entitlements Engine (Check & Track)", () => {
 
   beforeEach(() => {
     usageTotal = 0;
+    vi.mocked(checkOverageAllowed).mockClear();
+    vi.mocked(checkOverageAllowed).mockResolvedValue({ allowed: true });
 
+    const now = Date.now();
     const subscription = {
       id: "sub_test",
       customerId,
       planId: "plan_test",
       status: "active",
-      currentPeriodStart: new Date("2025-01-01T00:00:00.000Z"),
-      currentPeriodEnd: new Date("2025-02-01T00:00:00.000Z"),
+      currentPeriodStart: now - 5 * 24 * 60 * 60 * 1000,
+      currentPeriodEnd: now + 25 * 24 * 60 * 60 * 1000,
+      plan: { type: "paid", name: "Pro" },
     };
 
     mockDb = {
@@ -143,6 +157,10 @@ describe("Entitlements Engine (Check & Track)", () => {
             entityId: "workspace_1",
             status: "active",
           }),
+        },
+        entitlements: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          findMany: vi.fn().mockResolvedValue([]),
         },
       },
       insert: vi.fn().mockReturnThis(),
@@ -438,6 +456,65 @@ describe("Entitlements Engine (Check & Track)", () => {
     );
   });
 
+  it("check filters stale paid subscriptions past grace and marks them past_due", async () => {
+    const kv = {
+      get: vi.fn(async () => null),
+      put: vi.fn(async () => null),
+      delete: vi.fn(async () => null),
+    };
+    const envWithCache = {
+      ...mockEnv,
+      CACHE: kv,
+    };
+
+    const now = Date.now();
+    mockDb.query.subscriptions.findMany.mockResolvedValueOnce([
+      {
+        id: "sub_paid_stale",
+        customerId,
+        planId: "plan_test",
+        status: "active",
+        currentPeriodStart: now - 40 * 24 * 60 * 60 * 1000,
+        currentPeriodEnd: now - 5 * 24 * 60 * 60 * 1000,
+        plan: { type: "paid", name: "Pro" },
+      },
+    ]);
+
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: featureIdMetered,
+      organizationId: "org_test",
+      slug: "api-calls",
+      type: "metered",
+    });
+
+    const res = await app.request(
+      "/check",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: featureIdMetered,
+        }),
+      },
+      envWithCache,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.allowed).toBe(false);
+    expect(body.code).toBe("no_active_subscription");
+
+    expect(mockExecutionCtx.waitUntil).toHaveBeenCalled();
+    expect(mockDb.set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "past_due" }),
+    );
+    expect(kv.delete).toHaveBeenCalledWith(
+      expect.stringContaining(`org:org_test:subscriptions:${customerId}`),
+    );
+  });
+
   it("check uses DO and falls back to addon credits for credit system features when limit is exceeded (sendEvent=true)", async () => {
     const usageMeter = {
       check: vi.fn(async () => ({
@@ -656,6 +733,123 @@ describe("Entitlements Engine (Check & Track)", () => {
       expect.objectContaining({
         featureId: "cs_feature_1",
         amount: 60,
+      }),
+    );
+  });
+
+  it("track consumes remaining included balance before overage when overage is enabled", async () => {
+    const usageMeter = {
+      track: vi
+        .fn()
+        .mockResolvedValueOnce({
+          allowed: false,
+          code: "insufficient_balance",
+          balance: 10,
+          usage: 90,
+          limit: 100,
+          rolloverBalance: 0,
+        })
+        .mockResolvedValueOnce({
+          allowed: true,
+          code: "tracked",
+          balance: 0,
+          usage: 100,
+          limit: 100,
+          rolloverBalance: 0,
+        }),
+      configureFeature: vi.fn(async () => ({ success: true })),
+    };
+
+    const envWithMeter = {
+      ...mockEnv,
+      USAGE_METER: {
+        idFromName: vi.fn(() => "do_1"),
+        get: vi.fn(() => usageMeter),
+      },
+    };
+
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: featureIdMetered,
+      organizationId: "org_test",
+      slug: "api-calls",
+      type: "metered",
+    });
+
+    mockDb.query.planFeatures.findMany.mockResolvedValueOnce([
+      {
+        planId: "plan_test",
+        featureId: featureIdMetered,
+        limitValue: 100,
+        resetInterval: "monthly",
+        resetOnEnable: false,
+        rolloverEnabled: false,
+        rolloverMaxBalance: null,
+        usageModel: "included",
+        creditCost: 0,
+        overage: "charge",
+        maxOverageUnits: 200,
+      },
+    ]);
+
+    const res = await app.request(
+      "/track",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: featureIdMetered,
+          value: 20,
+        }),
+      },
+      envWithMeter,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as TrackResponse;
+    expect(body.success).toBe(true);
+    expect(body.allowed).toBe(true);
+    expect(body.code).toBe("tracked_overage");
+    expect(body.usage).toBe(100);
+    expect(body.balance).toBe(0);
+
+    expect(vi.mocked(checkOverageAllowed)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(checkOverageAllowed)).toHaveBeenCalledWith(
+      mockDb,
+      customerId,
+      featureIdMetered,
+      expect.anything(),
+      expect.anything(),
+      100,
+      200,
+      10,
+    );
+
+    expect(usageMeter.track).toHaveBeenNthCalledWith(
+      1,
+      "api-calls",
+      20,
+      expect.objectContaining({
+        limit: 100,
+        resetInterval: "monthly",
+      }),
+    );
+    expect(usageMeter.track).toHaveBeenNthCalledWith(
+      2,
+      "api-calls",
+      10,
+      expect.objectContaining({
+        limit: 100,
+        resetInterval: "monthly",
+      }),
+    );
+
+    expect(mockExecutionCtx.waitUntil).toHaveBeenCalled();
+    expect(mockDb.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        featureId: featureIdMetered,
+        amount: 20,
       }),
     );
   });

@@ -242,7 +242,7 @@
           <div
             class="w-20 h-20 rounded-full bg-success-bg flex items-center justify-center mb-6 border border-success/20"
           >
-            <CheckCircle size={40} class="text-success" weight="fill" />
+            <img src="https://mac-file.yaqeen.me/407C7F04-annotely_image%20%284%29.png" alt="" class="h-full w-full object-contain">
           </div>
           <h2
             class="text-2xl font-bold text-text-primary uppercase tracking-tight mb-2"
@@ -260,9 +260,9 @@
       {:else}
         <div class="flex flex-col items-center text-center py-8" in:fade>
           <div
-            class="w-20 h-20 rounded-full bg-error-bg flex items-center justify-center mb-6 border border-error/20"
+            class="w-20 h-20 rounded-full flex items-center justify-center mb-6 "
           >
-            <XCircle size={40} class="text-error" weight="fill" />
+            <img src="https://mac-file.yaqeen.me/407C7F04-annotely_image%20%284%29.png" alt="" class="h-full w-full object-contain">
           </div>
           <h2
             class="text-2xl font-bold text-text-primary uppercase tracking-tight mb-2"

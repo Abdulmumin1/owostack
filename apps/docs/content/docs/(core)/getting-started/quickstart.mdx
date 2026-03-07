@@ -22,17 +22,21 @@ You need:
 - A payment provider account (Paystack or Dodo Payments)
 - Node.js 18+
 
-## 1. Create your organization and connect a provider
+## 1. Create your organization and generate an API key
 
-1. Log in to the dashboard and click **Create Organization**.
+1. Log in to the dashboard at [app.owostack.com](https://app.owostack.com) and click **Create Organization**.
 2. Name it anything you like (e.g. "My Tutorial App").
-3. Go to **Settings → Payment Providers** and add your provider's secret key.
+3. Go to **API Keys → Create New Key**. Name it "Tutorial" and copy the key.
+4. Save it in a `.env` file:
 
-You should see a green **Connected** badge next to the provider.
+```sh
+OWOSTACK_API_KEY=owo_sk_xxxxxxxxxxxxxxxx
+```
 
-## 2. Set up webhooks
+## 2. Connect a provider and set up webhooks
 
-Copy the webhook URL shown in the dashboard. It looks like this:
+1. Go to **Settings → Payment Providers** and add your provider's secret key. You should see a green **Connected** badge.
+2. Copy the webhook URL shown in the dashboard. It looks like this:
 
 ```
 https://api.owostack.com/webhooks/<your-org-id>/<provider-id>
@@ -45,41 +49,44 @@ Paste it into your provider's webhook settings page. If your provider asks for e
   depends on webhooks working.
 </Callout>
 
-## 3. Create a plan with features
+## 3. Create your catalog
 
-1. Go to **Features** and create two features:
+Instead of clicking around a dashboard, Owostack lets you define your features and plans in code.
 
-| Name      | Slug        | Type    |
-| --------- | ----------- | ------- |
-| API Calls | `api-calls` | Metered |
-| Analytics | `analytics` | Boolean |
+Create `owo.config.mjs`:
 
-2. Go to **Plans** and click **Create Plan**:
+```js
+import { Owostack, metered, boolean, plan } from "owostack";
 
-| Field      | Value                               |
-| ---------- | ----------------------------------- |
-| Name       | Starter                             |
-| Price      | 500 (in your currency's minor unit) |
-| Interval   | Monthly                             |
-| Plan Group | main                                |
+// 1. Define features
+export const apiCalls = metered("api-calls", { name: "API Calls" });
+export const analytics = boolean("analytics", { name: "Analytics Dashboard" });
 
-3. Attach the features:
-   - `api-calls` → limit **100**, reset **monthly**
-   - `analytics` → **enabled**
-
-You should see the plan listed with both features attached.
-
-## 4. Generate an API key
-
-Go to **API Keys → Create New Key**. Name it "Tutorial" and copy the key. You will not see it again.
-
-Save it in a `.env` file:
-
-```sh
-OWOSTACK_API_KEY=owo_sk_xxxxxxxxxxxxxxxx
+// 2. Define the client and catalog
+export const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_API_KEY,
+  catalog: [
+    plan("starter", {
+      name: "Starter",
+      price: 500, // minor units
+      currency: "NGN",
+      interval: "monthly",
+      planGroup: "main",
+      features: [apiCalls.limit(100, { reset: "monthly" }), analytics.on()],
+    }),
+  ],
+});
 ```
 
-## 5. Install the SDK and write your first script
+Now, push this configuration to your Owostack account:
+
+```bash
+npx owo sync --config ./owo.config.mjs
+```
+
+You should see output confirming that your features and plans were created.
+
+## 4. Write your first script
 
 ```bash
 mkdir owostack-tutorial && cd owostack-tutorial
@@ -91,9 +98,7 @@ Create `index.mjs`:
 
 ```js
 import "dotenv/config";
-import { Owostack } from "owostack";
-
-const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+import { owo } from "./owo.config.mjs";
 
 // --- Step A: Subscribe a customer ---
 const attach = await owo.attach({
@@ -193,17 +198,18 @@ Run it. The SDK returns `allowed: false` and `code: "limit_exceeded"`. This is t
 
 You now have a working billing flow:
 
-1. **attach()** creates a checkout or returns an existing subscription
-2. **check()** tells you whether a customer can use a feature right now
-3. **track()** records usage and enforces limits
+1. **Define** your plans and features in code, syncing them with `npx owo sync`.
+2. **attach()** creates a checkout or returns an existing subscription.
+3. **check()** tells you whether a customer can use a feature right now.
+4. **track()** records usage and enforces limits.
 
 Everything else — webhook processing, entitlement provisioning, period resets — happens automatically.
 
 ## Next steps
 
 <Cards>
-  <Card title="How to set up checkout" href="/guides/checkout" />
-  <Card title="How to switch plans" href="/guides/plan-switching" />
-  <Card title="How it works" href="/concepts/how-it-works" />
+  <Card title="How to set up checkout" href="/subscriptions/checkout" />
+  <Card title="How to switch plans" href="/subscriptions/plan-switching" />
+  <Card title="How it works" href="/getting-started/how-it-works" />
   <Card title="SDK Reference" href="/sdk/attach" />
 </Cards>

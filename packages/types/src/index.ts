@@ -651,7 +651,10 @@ export interface UsageRecord {
  */
 
 /** Union of all catalog entries passed to OwostackConfig.catalog */
-export type CatalogEntry = PlanDefinition | CreditSystemDefinition;
+export type CatalogEntry =
+  | PlanDefinition
+  | CreditSystemDefinition
+  | CreditPackDefinition;
 
 /** Configuration for a metered feature within a plan */
 export interface MeteredFeatureConfig {
@@ -744,6 +747,12 @@ export interface PlanDefinition {
 
   /** Custom metadata */
   metadata?: Record<string, unknown>;
+
+  /** Auto-assign this plan to new customers */
+  autoEnable?: boolean;
+
+  /** Optional: Is this an add-on plan? */
+  isAddon?: boolean;
 }
 
 /** A feature entry within a credit system */
@@ -771,6 +780,39 @@ export interface CreditSystemDefinition {
 
   /** Features that consume credits from this system with their credit costs */
   features: CreditSystemFeatureEntry[];
+}
+
+/** A credit pack definition in the catalog */
+export interface CreditPackDefinition {
+  /** @internal */
+  _type: "credit_pack";
+
+  /** Credit pack slug (used as unique identifier) */
+  slug: string;
+
+  /** Human-readable credit pack name */
+  name: string;
+
+  /** Credit pack description */
+  description?: string;
+
+  /** Number of credits included in this pack */
+  credits: number;
+
+  /** Price in minor currency units (e.g. kobo) */
+  price: number;
+
+  /** Currency code */
+  currency: Currency;
+
+  /** Credit system this pack is tied to (required) */
+  creditSystem: string;
+
+  /** Provider for this pack (overrides default) */
+  provider?: string;
+
+  /** Custom metadata */
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -955,6 +997,7 @@ export interface SyncPayload {
     slug: string;
     type: "metered" | "boolean";
     name: string;
+    meterType?: "consumable" | "non_consumable";
   }>;
   creditSystems: Array<{
     slug: string;
@@ -964,6 +1007,17 @@ export interface SyncPayload {
       feature: string;
       creditCost: number;
     }>;
+  }>;
+  creditPacks: Array<{
+    slug: string;
+    name: string;
+    description?: string;
+    credits: number;
+    price: number;
+    currency: Currency;
+    creditSystem: string;
+    provider?: string;
+    metadata?: Record<string, unknown>;
   }>;
   plans: Array<{
     slug: string;
@@ -976,6 +1030,8 @@ export interface SyncPayload {
     trialDays?: number;
     provider?: string;
     metadata?: Record<string, unknown>;
+    autoEnable?: boolean;
+    isAddon?: boolean;
     features: Array<{
       slug: string;
       enabled: boolean;
@@ -1002,6 +1058,7 @@ export interface SyncResult {
   success: boolean;
   features: SyncChanges;
   creditSystems: SyncChanges;
+  creditPacks: SyncChanges;
   plans: SyncChanges;
   warnings: string[];
 }

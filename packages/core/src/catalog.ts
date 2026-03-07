@@ -5,11 +5,15 @@ import type {
   PlanFeatureEntry,
   PlanDefinition,
   CreditSystemDefinition,
+  CreditPackDefinition,
   Currency,
   PlanInterval,
   ResetInterval,
   SyncPayload,
   CatalogEntry,
+  AddEntityResult,
+  RemoveEntityResult,
+  ListEntitiesResult,
 } from "@owostack/types";
 
 /**
@@ -217,6 +221,123 @@ export function boolean(slug: string, opts?: { name?: string }): BooleanHandle {
 }
 
 /**
+ * EntityHandle — returned by entity().
+ * Non-consumable features managed via addEntity()/removeEntity().
+ */
+export class EntityHandle {
+  readonly slug: string;
+  readonly featureType = "metered" as const;
+  readonly meterType = "non_consumable" as const;
+  readonly featureName: string | undefined;
+  _client: any = null;
+
+  constructor(slug: string, name?: string) {
+    this.slug = slug;
+    this.featureName = name;
+  }
+
+  async check(
+    customer: string,
+    opts?: { value?: number; entity?: string; sendEvent?: boolean },
+  ): Promise<CheckResult> {
+    return FeatureMethods.check(this, customer, opts);
+  }
+
+  async add(
+    customer: string,
+    opts: {
+      entity: string;
+      name?: string;
+      email?: string;
+      metadata?: Record<string, unknown>;
+    },
+  ): Promise<AddEntityResult> {
+    if (!this._client) {
+      throw new Error(
+        `Feature '${this.slug}' is not bound to an Owostack client.`,
+      );
+    }
+    return this._client.addEntity({
+      customer,
+      feature: this.slug,
+      ...opts,
+    });
+  }
+
+  async remove(customer: string, entity: string): Promise<RemoveEntityResult> {
+    if (!this._client) {
+      throw new Error(
+        `Feature '${this.slug}' is not bound to an Owostack client.`,
+      );
+    }
+    return this._client.removeEntity({
+      customer,
+      feature: this.slug,
+      entity,
+    });
+  }
+
+  async list(customer: string): Promise<ListEntitiesResult> {
+    if (!this._client) {
+      throw new Error(
+        `Feature '${this.slug}' is not bound to an Owostack client.`,
+      );
+    }
+    return this._client.listEntities({
+      customer,
+      feature: this.slug,
+    });
+  }
+
+  limit(
+    value: number,
+    config?: Omit<MeteredFeatureConfig, "limit">,
+  ): PlanFeatureEntry {
+    return {
+      _type: "plan_feature",
+      slug: this.slug,
+      featureType: "metered",
+      name: this.featureName,
+      enabled: true,
+      config: { limit: value, reset: "never", overage: "block", ...config },
+    };
+  }
+
+  unlimited(config?: Omit<MeteredFeatureConfig, "limit">): PlanFeatureEntry {
+    return {
+      _type: "plan_feature",
+      slug: this.slug,
+      featureType: "metered",
+      name: this.featureName,
+      enabled: true,
+      config: { limit: null, reset: "never", overage: "block", ...config },
+    };
+  }
+
+  config(configOpts: MeteredFeatureConfig): PlanFeatureEntry {
+    const isEnabled = configOpts.enabled !== false;
+    return {
+      _type: "plan_feature",
+      slug: this.slug,
+      featureType: "metered",
+      name: this.featureName,
+      enabled: isEnabled,
+      config: { reset: "never", overage: "block", ...configOpts },
+    };
+  }
+}
+
+/**
+ * Create a non-consumable entity feature handle (seats, projects, workspaces).
+ * Managed via addEntity()/removeEntity() instead of track().
+ */
+export function entity(slug: string, opts?: { name?: string }): EntityHandle {
+  const handle = new EntityHandle(slug, opts?.name);
+  _featureRegistry.set(slug, handle);
+  return handle;
+}
+
+/**
  * CreditSystemHandle — returned by creditSystem().
  */
 export class CreditSystemHandle {
@@ -313,10 +434,36 @@ export function plan(
     trialDays?: number;
     provider?: string;
     metadata?: Record<string, unknown>;
+    autoEnable?: boolean;
+    isAddon?: boolean;
   },
 ): PlanDefinition {
   return {
     _type: "plan",
+    slug,
+    ...config,
+  };
+}
+
+/**
+ * Create a credit pack definition.
+ * Credit packs are one-time purchases that add credits to a customer's balance.
+ */
+export function creditPack(
+  slug: string,
+  config: {
+    name: string;
+    description?: string;
+    credits: number;
+    price: number;
+    currency: Currency;
+    creditSystem: string;
+    provider?: string;
+    metadata?: Record<string, unknown>;
+  },
+): CreditPackDefinition {
+  return {
+    _type: "credit_pack",
     slug,
     ...config,
   };
@@ -338,7 +485,12 @@ export function buildSyncPayload(
 ): SyncPayload {
   const featureMap = new Map<
     string,
-    { slug: string; type: "metered" | "boolean"; name: string }
+    {
+      slug: string;
+      type: "metered" | "boolean";
+      name: string;
+      meterType?: "consumable" | "non_consumable";
+    }
   >();
 
   for (const entry of catalog) {
@@ -346,10 +498,14 @@ export function buildSyncPayload(
     for (const f of entry.features) {
       if (_creditSystemRegistry.has(f.slug)) continue;
       if (!featureMap.has(f.slug)) {
+        const handle = _featureRegistry.get(f.slug);
         featureMap.set(f.slug, {
           slug: f.slug,
           type: f.featureType,
           name: f.name || slugToName(f.slug),
+          ...(handle instanceof EntityHandle && {
+            meterType: "non_consumable" as const,
+          }),
         });
       }
     }
@@ -393,6 +549,8 @@ export function buildSyncPayload(
       trialDays: p.trialDays ?? undefined,
       provider: p.provider ?? undefined,
       metadata: p.metadata ?? undefined,
+      autoEnable: p.autoEnable ?? undefined,
+      isAddon: p.isAddon ?? undefined,
       features: p.features.map((f: PlanFeatureEntry) => ({
         slug: f.slug,
         enabled: f.enabled,
@@ -418,10 +576,25 @@ export function buildSyncPayload(
       })),
     }));
 
+  const creditPacks = catalog
+    .filter((e): e is CreditPackDefinition => e._type === "credit_pack")
+    .map((cp) => ({
+      slug: cp.slug,
+      name: cp.name,
+      description: cp.description ?? undefined,
+      credits: cp.credits,
+      price: cp.price,
+      currency: cp.currency,
+      creditSystem: cp.creditSystem,
+      provider: cp.provider ?? undefined,
+      metadata: cp.metadata ?? undefined,
+    }));
+
   return {
     defaultProvider,
     features: Array.from(featureMap.values()),
     creditSystems,
+    creditPacks,
     plans,
   };
 }

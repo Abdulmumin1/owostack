@@ -7,10 +7,9 @@ import {
 } from "../lib/loader.js";
 import { fetchPlans } from "../lib/api.js";
 import { getApiKey, getApiUrl, getTestApiUrl } from "../lib/config.js";
-import { printBrand } from "../lib/brand.js";
 
 interface ValidateOptions {
-  config: string;
+  config?: string;
   prod?: boolean;
 }
 
@@ -18,9 +17,15 @@ export async function runValidate(options: ValidateOptions) {
   p.intro(pc.bgYellow(pc.black(" validate ")));
 
   const fullPath = resolveConfigPath(options.config);
+
+  if (!fullPath) {
+    p.log.error(pc.red("No configuration file found."));
+    process.exit(1);
+  }
+
   const s = p.spinner();
 
-  s.start(`Loading ${pc.cyan(options.config)}`);
+  s.start(`Loading ${pc.cyan(fullPath)}`);
   let owo: any;
   try {
     owo = await loadOwostackFromConfig(fullPath);
@@ -68,42 +73,55 @@ export async function runValidate(options: ValidateOptions) {
       p.log.message(`${pc.green("✓")} ${f.slug} ${pc.dim(`(${f.type})`)}`);
     }
 
+    if (payload.creditSystems && payload.creditSystems.length > 0) {
+      p.log.step(pc.bold("Credit Systems"));
+      for (const cs of payload.creditSystems) {
+        p.log.message(
+          `${pc.green("✓")} ${pc.bold(cs.slug)} ${pc.dim(`(${cs.features.length} features)`)}`,
+        );
+      }
+    }
+
     p.log.step(pc.bold("Plans"));
     for (const p_obj of payload.plans) {
       p.log.message(
-        `${pc.green("✓")} ${pc.bold(p_obj.slug)} ${pc.dim(`${p_obj.currency} ${p_obj.price} / ${p_obj.interval}`)}`,
+        `${pc.green("✓")} ${p_obj.isAddon ? pc.cyan("(addon)") : ""} ${pc.bold(p_obj.slug)} ${pc.dim(`${p_obj.currency} ${p_obj.price} / ${p_obj.interval}`)}`,
       );
     }
 
+    // Default to test environment, prod only with --prod flag
+    const configSettings = await loadConfigSettings(options.config);
+    const testUrl = getTestApiUrl(configSettings.environments?.test);
+    const liveUrl = getApiUrl(configSettings.environments?.live);
+    const apiKey = getApiKey();
+
     if (options.prod) {
-      p.log.step(pc.magenta("Production Mode Check"));
-      const configSettings = await loadConfigSettings(options.config);
-      const testUrl = getTestApiUrl(configSettings.environments?.test);
-      const liveUrl = getApiUrl(configSettings.environments?.live);
-      const apiKey = getApiKey();
-
-      try {
-        const testPlans = await fetchPlans({
-          apiKey,
-          apiUrl: `${testUrl}/api/v1`,
-        });
-        p.log.success(
-          `TEST environment accessible (${testPlans.length} remote plans)`,
-        );
-      } catch (e: any) {
-        p.log.error(`TEST environment check failed: ${e.message}`);
-      }
-
+      p.log.step(pc.magenta("Production Mode: Checking PROD environment"));
+      const apiUrl = `${liveUrl}/api/v1`;
       try {
         const livePlans = await fetchPlans({
           apiKey,
-          apiUrl: `${liveUrl}/api/v1`,
+          apiUrl: apiUrl,
         });
         p.log.success(
-          `LIVE environment accessible (${livePlans.length} remote plans)`,
+          `PROD environment accessible (${livePlans.length} remote plans)`,
         );
       } catch (e: any) {
-        p.log.error(`LIVE environment check failed: ${e.message}`);
+        p.log.error(`PROD environment check failed: ${e.message}`);
+      }
+    } else {
+      p.log.step(pc.cyan("Sandbox Mode: Checking SANDBOX environment"));
+      const apiUrl = `${testUrl}/api/v1`;
+      try {
+        const testPlans = await fetchPlans({
+          apiKey,
+          apiUrl: apiUrl,
+        });
+        p.log.success(
+          `SANDBOX environment accessible (${testPlans.length} remote plans)`,
+        );
+      } catch (e: any) {
+        p.log.error(`SANDBOX environment check failed: ${e.message}`);
       }
     }
 

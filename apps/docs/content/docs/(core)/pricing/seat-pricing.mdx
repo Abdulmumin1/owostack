@@ -16,9 +16,9 @@ This guide shows a common setup:
 ## 1. Define features
 
 ```ts
-import { metered, plan, Owostack } from "owostack";
+import { metered, entity, plan, Owostack } from "owostack";
 
-export const seats = metered("seats", { name: "Team Seats" });
+export const seats = entity("seats", { name: "Team Seats" });
 export const aiCredits = metered("ai-credits", { name: "AI Credits" });
 ```
 
@@ -34,7 +34,7 @@ export default new Owostack({
       currency: "USD",
       interval: "monthly",
       features: [
-        seats.limit(5, { reset: "monthly", overage: "block" }),
+        seats.limit(5, { overage: "block" }),
         aiCredits.limit(1000, { reset: "monthly" }),
       ],
     }),
@@ -60,17 +60,15 @@ await org.attach({
 });
 ```
 
-## 5. Add a seat (entity)
+## 5. Add a seat
 
-Use `addEntity()` to reserve a seat. This validates against the seat limit and tracks the entity.
+Use `seats.add()` to reserve a seat. This validates against the seat limit.
 
 ```ts
 // Add team members - validates against 5-seat limit
 try {
-  await owo.addEntity({
-    customer: "org@acme.com",
-    feature: "seats",
-    entity: "user_123", // Your user ID
+  await seats.add("org@acme.com", {
+    entity: "user_123",
     name: "John Doe",
     email: "john@acme.com",
     metadata: { role: "admin" },
@@ -112,17 +110,10 @@ console.log("Credits remaining:", credits.balance);
 
 ```ts
 // List all active seats
-const { entities } = await owo.listEntities({
-  customer: "org@acme.com",
-  feature: "seats",
-});
+const { entities } = await seats.list("org@acme.com");
 
 // Remove a seat (frees the slot)
-await owo.removeEntity({
-  customer: "org@acme.com",
-  feature: "seats",
-  entity: "user_123",
-});
+await seats.remove("org@acme.com", "user_123");
 ```
 
 ## Org-wide credits (shared pool)
@@ -142,10 +133,25 @@ await owo.track({
 ## Complete example
 
 ```ts
-import { Owostack } from "owostack";
+import { Owostack, entity, metered, plan } from "owostack";
+
+const seats = entity("seats", { name: "Team Seats" });
+const aiCredits = metered("ai-credits", { name: "AI Credits" });
 
 const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  catalog: [
+    plan("team", {
+      name: "Team",
+      price: 2000,
+      currency: "USD",
+      interval: "monthly",
+      features: [
+        seats.limit(5, { overage: "block" }),
+        aiCredits.limit(1000, { reset: "monthly" }),
+      ],
+    }),
+  ],
 });
 
 async function setupOrg() {
@@ -166,9 +172,7 @@ async function setupOrg() {
 
   for (const member of teamMembers) {
     try {
-      await owo.addEntity({
-        customer: org.email,
-        feature: "seats",
+      await seats.add(org.email, {
         entity: member.id,
         name: member.name,
         email: member.email,
@@ -181,31 +185,27 @@ async function setupOrg() {
     }
   }
 
-  // 4. Track usage per seat
-  await owo.track({
-    customer: org.email,
-    feature: "ai-credits",
-    entity: "user_1",
-    value: 100,
-  });
+  // 4. Track AI credits per seat
+  await aiCredits.track(org.email, 100, { entity: "user_1" });
 
-  // 5. Check seat status
-  const seatStatus = await owo.check({
-    customer: org.email,
-    feature: "ai-credits",
-    entity: "user_1",
-  });
+  // 5. Check remaining credits for a seat
+  const credits = await aiCredits.check(org.email, { entity: "user_1" });
+  console.log(`User 1 has ${credits.balance} credits remaining`);
 
-  console.log(`User 1 has ${seatStatus.balance} credits remaining`);
+  // 6. List and manage seats
+  const { entities } = await seats.list(org.email);
+  console.log(`${entities.length} seats active`);
+
+  await seats.remove(org.email, "user_1");
 }
 ```
 
 ## Notes
 
 - **Entity uniqueness:** Entity IDs are unique per feature. The same ID can be reused across different features.
-- **Limit validation:** `addEntity()` validates synchronously against the feature limit. If the limit would be exceeded, it throws with code `limit_exceeded`.
-- **Entity required:** You must explicitly add an entity with `addEntity()` before using it in `check()` or `track()`. Attempting to track/check a non-existent entity will fail with `entity_not_found` error.
-- **Seat removal:** Removing an entity immediately frees the slot for reuse.
+- **Limit validation:** `.add()` validates against the feature limit. If the limit would be exceeded, it throws with code `limit_exceeded`.
+- **Entity required:** You must explicitly add an entity with `.add()` before using it in `check()` or `track()`. Attempting to track/check a non-existent entity will fail with `entity_not_found` error.
+- **Seat removal:** `.remove()` immediately frees the slot for reuse.
 - **Metadata:** Store custom data (role, permissions, etc.) in the `metadata` field when adding entities.
 - **Org vs individual:** An org customer is the same as an individual customer in Owostack. Use entities to represent seats/workspaces within that customer.
 
@@ -213,9 +213,7 @@ async function setupOrg() {
 
 See the SDK reference for detailed documentation:
 
+- [`entity()`](/sdk/catalog#entityslug-opts) - Define entity features (seats, projects)
 - [`customer()`](/sdk/customer) - Create and manage customers
-- [`addEntity()`](/sdk/entities) - Add entities/seats
-- [`removeEntity()`](/sdk/entities) - Remove entities
-- [`listEntities()`](/sdk/entities) - List entities
 - [`check()`](/sdk/check) - Check feature access (supports entity scope)
-- [`track()`](/sdk/track) - Track usage (supports entity scope)
+- [`track()`](/sdk/track) - Track usage for consumable features

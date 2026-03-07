@@ -21,7 +21,7 @@ export async function topUpScopedBalance(
         DO UPDATE SET balance = balance + ${amount}, updated_at = ${now}`
   );
 
-  // Return updated balance
+  // Return updated balance 
   const row = await (db as any)
     .select({ balance: (schema as any).creditSystemBalances.balance })
     .from((schema as any).creditSystemBalances)

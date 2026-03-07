@@ -1068,6 +1068,7 @@ export async function provisionEntitlements(
             and(
               eq(schema.entitlements.customerId, customerId),
               eq(schema.entitlements.featureId, opf.featureId),
+              eq(schema.entitlements.source, "plan"),
             ),
           );
       }
@@ -1081,6 +1082,7 @@ export async function provisionEntitlements(
             and(
               eq(schema.entitlements.customerId, customerId),
               eq(schema.entitlements.featureId, featureId),
+              eq(schema.entitlements.source, "plan"),
             ),
           );
       }

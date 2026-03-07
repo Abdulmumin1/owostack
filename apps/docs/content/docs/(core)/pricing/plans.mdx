@@ -1,0 +1,98 @@
+---
+title: Plans & products
+description: How plans, plan groups, and add-ons work
+icon: Layers
+---
+
+# Plans & products
+
+Owostack models billing around **plans** (what customers subscribe to) and **features** (what they get).
+
+## Plans
+
+A plan represents a subscription tier (e.g. "Free", "Pro", "Enterprise"). Each plan includes:
+
+- **Price** and **billing interval** (monthly, yearly, one-time)
+- **Currency** tied to your payment provider
+- **Features** and their specific limits for this tier
+- Optional **trial period**
+
+_Owostack creates the plan on your payment provider automatically when the first customer checks out._
+
+## Plan Groups
+
+Plans belong to a **plan group**.
+
+- **Within a group:** Plans are mutually exclusive. Calling `attach()` with a new plan in the same group triggers a plan switch (upgrade/downgrade).
+- **Across groups:** Plans are independent. A customer can subscribe to multiple plans simultaneously if they are in different groups (e.g., a "Compute" plan and a "Support" plan).
+
+## Features
+
+A **feature** is a product capability defined once (e.g., "API Calls"). A **plan feature** is the specific configuration of that feature on a given plan.
+
+| Plan | Feature: api-calls             | Feature: analytics |
+| ---- | ------------------------------ | ------------------ |
+| Free | limit: 100, reset: monthly     | disabled           |
+| Pro  | limit: 10,000, overage: charge | enabled            |
+
+This separation lets you change a feature's limit on the Pro plan without affecting Free or Enterprise users.
+
+## Add-ons and Credit Packs
+
+Owostack supports two types of add-ons:
+
+### Credit Packs
+
+**Credit packs** are one-time purchases of credits that top up a prepaid balance. They're tied to a credit system and can be purchased at any time. See [Addon Packs](/pricing/credits) for details.
+
+```ts
+const starterPack = creditPack("starter-credits", {
+  name: "Starter Credits",
+  credits: 500,
+  price: 1000, // $10.00
+  currency: "USD",
+  creditSystem: "api-credits",
+});
+```
+
+### Recurring Add-ons
+
+You can also create **recurring add-on plans** by setting `isAddon: true`. These are subscription plans that stack on top of a base plan instead of replacing it.
+
+```ts
+plan("priority-support", {
+  name: "Priority Support",
+  price: 5000, // $50.00/month
+  currency: "USD",
+  interval: "monthly",
+  isAddon: true, // Stacks on existing subscription
+  features: [
+    supportTickets.limit(10),
+    responseTime.limit(1, { reset: "hourly" }),
+  ],
+});
+```
+
+A customer can subscribe to a base plan and multiple addon plans simultaneously.
+
+## Creation & Synchronization
+
+Plans can be created through the dashboard or defined in code using the catalog. Both coexist safely. See [Programmatic Plans](/pricing/programmatic-plans) for details on how conflicts are resolved.
+
+When you update a plan:
+
+- **Price changes** affect new subscribers only.
+- **Feature changes** affect all subscribers immediately.
+
+## Managing Plans via Dashboard
+
+If you prefer managing plans manually:
+
+1. Go to **Plans** in the sidebar and click **Create Plan**
+2. Fill in the Name, Price, and Interval.
+3. Configure the **Features** included in the plan.
+
+<Callout type="important">
+  If you already created plans directly in Stripe/Paystack/Dodo, go to **Plans →
+  Sync from Provider** to import them into Owostack.
+</Callout>

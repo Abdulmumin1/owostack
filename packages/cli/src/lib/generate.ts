@@ -62,19 +62,24 @@ function slugToIdentifier(slug: string, used: Set<string>): string {
   return candidate;
 }
 
+export type ConfigFormat = "ts" | "esm";
+
 export function generateConfig(
   plans: any[],
   creditSystems: any[] = [],
+  creditPacks: any[] = [],
   defaultProvider?: string,
+  format: ConfigFormat = "ts",
 ): string {
+  const isTs = format === "ts";
+
   // Build a map of credit systems by slug
   const creditSystemSlugs = new Set(creditSystems.map((cs) => cs.slug));
-  const creditSystemBySlug = new Map(creditSystems.map((cs) => [cs.slug, cs]));
 
   // Collect all features, excluding credit system pseudo-features
   const featuresBySlug = new Map<
     string,
-    { slug: string; name?: string; type: string }
+    { slug: string; name?: string; type: string; meterType?: string }
   >();
   for (const plan of plans) {
     for (const f of plan.features || []) {
@@ -85,6 +90,7 @@ export function generateConfig(
           slug: f.slug,
           name: f.name,
           type: f.type || "metered",
+          meterType: f.meterType,
         });
       }
     }
@@ -103,7 +109,16 @@ export function generateConfig(
     }
   }
 
-  const usedNames = new Set<string>();
+  const usedNames = new Set<string>([
+    "Owostack",
+    "metered",
+    "boolean",
+    "entity",
+    "creditSystem",
+    "creditPack",
+    "plan",
+    "owo",
+  ]);
   const featureVars = new Map<string, string>();
 
   const featureLines: string[] = [];
@@ -113,15 +128,13 @@ export function generateConfig(
     const nameArg = feature.name
       ? `, { name: ${JSON.stringify(feature.name)} }`
       : "";
-    if (feature.type === "boolean") {
-      featureLines.push(
-        `export const ${varName} = boolean(${JSON.stringify(feature.slug)}${nameArg});`,
-      );
-    } else {
-      featureLines.push(
-        `export const ${varName} = metered(${JSON.stringify(feature.slug)}${nameArg});`,
-      );
-    }
+
+    const isEntity = feature.meterType === "non_consumable";
+    const builder =
+      feature.type === "boolean" ? "boolean" : isEntity ? "entity" : "metered";
+    const decl = `${builder}(${JSON.stringify(feature.slug)}${nameArg})`;
+
+    featureLines.push(`export const ${varName} = ${decl};`);
   }
 
   // Generate credit system definitions
@@ -132,25 +145,20 @@ export function generateConfig(
     const varName = slugToIdentifier(cs.slug, usedNames);
     creditSystemVars.set(cs.slug, varName);
 
-    const nameArg = cs.name ? `name: ${JSON.stringify(cs.name)}` : "";
-    const descArg = cs.description
-      ? `description: ${JSON.stringify(cs.description)}`
-      : "";
+    const configLines: string[] = [];
+    if (cs.name) configLines.push(`name: ${JSON.stringify(cs.name)}`);
+    if (cs.description)
+      configLines.push(`description: ${JSON.stringify(cs.description)}`);
 
     const featureEntries = (cs.features || []).map((f: any) => {
       const childVar = featureVars.get(f.feature) || f.feature;
       return `${childVar}(${f.creditCost})`;
     });
+    configLines.push(`features: [${featureEntries.join(", ")}]`);
 
-    const optsParts = [
-      nameArg,
-      descArg,
-      `features: [${featureEntries.join(", ")}]`,
-    ].filter(Boolean);
+    const decl = `creditSystem(${JSON.stringify(cs.slug)}, {\n  ${configLines.join(",\n  ")}\n})`;
 
-    creditSystemLines.push(
-      `export const ${varName} = creditSystem(${JSON.stringify(cs.slug)}, { ${optsParts.join(", ")} });`,
-    );
+    creditSystemLines.push(`export const ${varName} = ${decl};`);
   }
 
   const planLines: string[] = [];
@@ -168,6 +176,8 @@ export function generateConfig(
       configLines.push(`trialDays: ${plan.trialDays}`);
     if (plan.provider)
       configLines.push(`provider: ${JSON.stringify(plan.provider)}`);
+    if (plan.autoEnable) configLines.push(`autoEnable: true`);
+    if (plan.isAddon) configLines.push(`isAddon: true`);
 
     const featureEntries: string[] = [];
     for (const pf of plan.features || []) {
@@ -216,9 +226,14 @@ export function generateConfig(
         continue;
       }
 
+      const isEntityFeature = globalFeature?.meterType === "non_consumable";
       const config: Record<string, unknown> = {};
       if (pf.limit !== undefined) config.limit = pf.limit;
-      config.reset = pf.resetInterval || pf.reset || "monthly";
+      // Entity features default to reset: "never", so omit reset for them
+      if (!isEntityFeature) {
+        const reset = pf.resetInterval || pf.reset || "monthly";
+        if (reset !== "none") config.reset = reset;
+      }
       if (pf.overage) config.overage = pf.overage;
       if (pf.overagePrice !== undefined) config.overagePrice = pf.overagePrice;
 
@@ -244,24 +259,70 @@ export function generateConfig(
     );
   }
 
+  // Generate credit pack definitions
+  const creditPackLines: string[] = [];
+  for (const pack of creditPacks) {
+    const configLines: string[] = [];
+    configLines.push(`name: ${JSON.stringify(pack.name)}`);
+    if (pack.description)
+      configLines.push(`description: ${JSON.stringify(pack.description)}`);
+    configLines.push(`credits: ${pack.credits}`);
+    configLines.push(`price: ${pack.price}`);
+    configLines.push(`currency: ${JSON.stringify(pack.currency)}`);
+    configLines.push(
+      `creditSystem: ${JSON.stringify(pack.creditSystemId || pack.creditSystem)}`,
+    );
+    if (pack.provider)
+      configLines.push(`provider: ${JSON.stringify(pack.provider)}`);
+    if (pack.metadata)
+      configLines.push(`metadata: ${JSON.stringify(pack.metadata)}`);
+
+    creditPackLines.push(
+      `creditPack(${JSON.stringify(pack.slug)}, {\n      ${configLines.join(",\n      ")}\n    })`,
+    );
+  }
+
   const hasCreditSystems = creditSystemLines.length > 0;
+  const hasCreditPacks = creditPackLines.length > 0;
+  const hasEntities = Array.from(featuresBySlug.values()).some(
+    (f) => f.meterType === "non_consumable",
+  );
   const providerLine = defaultProvider
     ? `  provider: ${JSON.stringify(defaultProvider)},\n`
     : "";
 
+  const importParts = ["Owostack", "metered", "boolean"];
+  if (hasEntities) importParts.push("entity");
+  importParts.push("creditSystem", "creditPack", "plan");
+
+  const imports = `import { ${importParts.join(", ")} } from "owostack";`;
+
+  const tsCheck = !isTs ? `// @ts-check` : "";
+  const jsDoc = !isTs ? `/** @type {import('owostack').Owostack} */` : "";
+
+  const owoDecl = "export const owo =";
+  const secretKey = isTs
+    ? "process.env.OWOSTACK_SECRET_KEY!"
+    : "process.env.OWOSTACK_SECRET_KEY";
+
+  const catalogEntries = [...planLines, ...creditPackLines];
+
   return [
-    `import { Owostack, metered, boolean, creditSystem, plan } from "owostack";`,
+    tsCheck,
+    imports,
     ``,
     ...featureLines,
     ...(hasCreditSystems ? ["", ...creditSystemLines] : []),
     ``,
-    `export const owo = new Owostack({`,
-    `  secretKey: process.env.OWOSTACK_SECRET_KEY!,`,
+    jsDoc,
+    `${owoDecl} new Owostack({`,
+    `  secretKey: ${secretKey},`,
     providerLine,
     `  catalog: [`,
-    `    ${planLines.join(",\n    ")}`,
+    `    ${catalogEntries.join(",\n    ")}`,
     `  ],`,
     `});`,
-    ``,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

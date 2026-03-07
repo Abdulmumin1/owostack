@@ -1,10 +1,10 @@
 ---
-title: plans
+title: plans()
 description: List and retrieve plans for your organization
 icon: LayoutList
 ---
 
-# plans
+# plans()
 
 Query your organization's plans programmatically. Useful for building pricing pages, plan selection UIs, and dynamic upgrade flows.
 
@@ -22,12 +22,12 @@ for (const plan of plans) {
 
 ### Parameters
 
-| Parameter          | Type          | Required | Description                                |
-| ------------------ | ------------- | -------- | ------------------------------------------ |
-| `params.group`     | `string`      | No       | Filter by plan group (e.g. `"support"`)    |
-| `params.interval`  | `PlanInterval`| No       | Filter by billing interval (e.g. `"monthly"`) |
-| `params.currency`  | `string`      | No       | Filter by currency code (e.g. `"USD"`)     |
-| `params.includeInactive` | `boolean` | No    | Include inactive plans (default: `false`)  |
+| Parameter                | Type           | Required | Description                                   |
+| ------------------------ | -------------- | -------- | --------------------------------------------- |
+| `params.group`           | `string`       | No       | Filter by plan group (e.g. `"support"`)       |
+| `params.interval`        | `PlanInterval` | No       | Filter by billing interval (e.g. `"monthly"`) |
+| `params.currency`        | `string`       | No       | Filter by currency code (e.g. `"USD"`)        |
+| `params.includeInactive` | `boolean`      | No       | Include inactive plans (default: `false`)     |
 
 ### Returns `Promise<PlansResult>`
 
@@ -67,16 +67,16 @@ Retrieve a single plan by its slug.
 ```ts
 const plan = await owo.plans.get("pro-monthly");
 
-console.log(plan.name);        // "Pro"
-console.log(plan.price);       // 500000
-console.log(plan.features);    // [{ slug: "api-calls", limit: 50000, ... }]
+console.log(plan.name); // "Pro"
+console.log(plan.price); // 500000
+console.log(plan.features); // [{ slug: "api-calls", limit: 50000, ... }]
 ```
 
 ### Parameters
 
-| Parameter | Type     | Required | Description    |
-| --------- | -------- | -------- | -------------- |
-| `slug`    | `string` | Yes      | The plan slug  |
+| Parameter | Type     | Required | Description   |
+| --------- | -------- | -------- | ------------- |
+| `slug`    | `string` | Yes      | The plan slug |
 
 ### Returns `Promise<PublicPlan>`
 
@@ -92,11 +92,11 @@ interface PublicPlan {
   slug: string;
   name: string;
   description: string | null;
-  price: number;              // Minor currency units (e.g. kobo, cents)
+  price: number; // Minor currency units (e.g. kobo, cents)
   currency: string;
-  interval: PlanInterval;     // "monthly" | "yearly" | "weekly" | "quarterly"
-  type: string;               // "free" | "paid"
-  billingType: string;        // "recurring" | "one_time"
+  interval: PlanInterval; // "monthly" | "yearly" | "weekly" | "quarterly"
+  type: string; // "free" | "paid"
+  billingType: string; // "recurring" | "one_time"
   isAddon: boolean;
   planGroup: string | null;
   trialDays: number;
@@ -112,9 +112,9 @@ interface PublicPlanFeature {
   name: string;
   type: "metered" | "boolean" | "static";
   enabled: boolean;
-  limit: number | null;       // null = unlimited
+  limit: number | null; // null = unlimited
   resetInterval: string | null;
-  unit: string | null;        // "call", "message", "GB", etc.
+  unit: string | null; // "call", "message", "GB", etc.
   overage?: "block" | "charge";
   overagePrice?: number | null;
 }

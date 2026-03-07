@@ -2,96 +2,94 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
+import { resolve, extname, isAbsolute } from "node:path";
 import { getApiKey, getApiUrl, getTestApiUrl } from "../lib/config.js";
 import { loadConfigSettings, resolveConfigPath } from "../lib/loader.js";
-import { fetchPlans, fetchCreditSystems } from "../lib/api.js";
-import { generateConfig } from "../lib/generate.js";
-import { printBrand } from "../lib/brand.js";
+import {
+  fetchPlans,
+  fetchCreditSystems,
+  fetchCreditPacks,
+} from "../lib/api.js";
+import { generateConfig, ConfigFormat } from "../lib/generate.js";
 
 interface PullOptions {
-  config: string;
+  config?: string;
   key?: string;
   force?: boolean;
   prod?: boolean;
   dryRun?: boolean;
 }
 
+function determineFormat(fullPath: string): ConfigFormat {
+  const ext = extname(fullPath);
+
+  if (ext === ".ts" || ext === ".mts" || ext === ".cts") return "ts";
+  if (ext === ".mjs") return "esm";
+  if (ext === ".cjs") {
+    throw new Error(
+      "CommonJS config files are not supported. Use owo.config.js or owo.config.ts.",
+    );
+  }
+  if (ext === ".js") return "esm";
+  return "ts"; // default
+}
+
 export async function runPull(options: PullOptions) {
   p.intro(pc.bgYellow(pc.black(" pull ")));
 
-  const fullPath = resolveConfigPath(options.config);
+  let fullPath: string;
+
+  if (options.config) {
+    fullPath = isAbsolute(options.config)
+      ? options.config
+      : resolve(process.cwd(), options.config);
+  } else {
+    const resolved = resolveConfigPath();
+    if (!resolved) {
+      p.log.error(
+        pc.red("No configuration file found. Run 'owostack init' first."),
+      );
+      process.exit(1);
+    }
+    fullPath = resolved;
+  }
+
   const apiKey = getApiKey(options.key);
   const configSettings = await loadConfigSettings(options.config);
-  const baseUrl = getApiUrl(configSettings.apiUrl);
+  const testUrl = getTestApiUrl(configSettings.environments?.test);
+  const liveUrl = getApiUrl(configSettings.environments?.live);
   const filters = configSettings.filters || {};
+
+  let format: ConfigFormat;
+  try {
+    format = determineFormat(fullPath);
+  } catch (e: any) {
+    p.log.error(pc.red(e.message));
+    process.exit(1);
+  }
 
   const s = p.spinner();
 
+  // Default to sandbox environment, prod only with --prod flag
   if (options.prod) {
-    p.log.step(pc.magenta("Production Mode: Fetching both environments"));
+    p.log.step(pc.magenta("Production Mode: Pulling from PROD environment"));
+    const apiUrl = `${liveUrl}/api/v1`;
 
-    const testUrl = getTestApiUrl(configSettings.environments?.test);
-    const liveUrl = getApiUrl(configSettings.environments?.live);
-
-    s.start(`Fetching from ${pc.dim("test")}...`);
-    const testPlans = await fetchPlans({
-      apiKey,
-      apiUrl: `${testUrl}/api/v1`,
-      ...filters,
-    });
-    s.stop(`Fetched ${testPlans.length} plans from test`);
-
-    s.start(`Fetching from ${pc.dim("live")}...`);
-    const livePlans = await fetchPlans({
-      apiKey,
-      apiUrl: `${liveUrl}/api/v1`,
-      ...filters,
-    });
-    s.stop(`Fetched ${livePlans.length} plans from live`);
-
-    s.start(`Fetching credit systems...`);
-    const creditSystems = await fetchCreditSystems(apiKey, `${liveUrl}/api/v1`);
-    s.stop(`Fetched ${creditSystems.length} credit systems`);
-
-    // Detect common provider for default
-    const providers = new Set(
-      livePlans.map((p: any) => p.provider).filter(Boolean),
-    );
-    const defaultProvider =
-      providers.size === 1 ? Array.from(providers)[0] : undefined;
-
-    const configContent = generateConfig(
-      livePlans,
-      creditSystems,
-      defaultProvider,
-    );
-
-    if (options.dryRun) {
-      p.note(configContent, "Generated Config (Dry Run)");
-      p.outro(pc.yellow("Dry run complete. No changes made."));
-      return;
-    }
-
-    if (existsSync(fullPath) && !options.force) {
-      p.log.error(pc.red(`Config file already exists at ${fullPath}`));
-      p.log.info(pc.dim("Use --force to overwrite."));
-      process.exit(1);
-    }
-
-    await writeFile(fullPath, configContent, "utf8");
-    p.log.success(pc.green(`Wrote configuration to ${fullPath}`));
-  } else {
-    s.start(`Fetching plans from ${pc.dim(baseUrl)}...`);
+    s.start(`Fetching plans from ${pc.dim("prod")}...`);
     const plans = await fetchPlans({
       apiKey,
-      apiUrl: `${baseUrl}/api/v1`,
+      apiUrl: apiUrl,
       ...filters,
     });
-    s.stop(`Fetched ${plans.length} plans`);
+    s.stop(`Fetched ${plans.length} plans from prod`);
 
     s.start(`Fetching credit systems...`);
-    const creditSystems = await fetchCreditSystems(apiKey, `${baseUrl}/api/v1`);
+    const creditSystems = await fetchCreditSystems(apiKey, apiUrl);
     s.stop(`Fetched ${creditSystems.length} credit systems`);
+
+    s.start(`Fetching credit packs...`);
+    const creditPacks = await fetchCreditPacks(apiKey, apiUrl);
+    s.stop(`Fetched ${creditPacks.length} credit packs`);
 
     // Detect common provider for default
     const providers = new Set(
@@ -100,10 +98,75 @@ export async function runPull(options: PullOptions) {
     const defaultProvider =
       providers.size === 1 ? Array.from(providers)[0] : undefined;
 
-    const configContent = generateConfig(plans, creditSystems, defaultProvider);
+    const configContent = generateConfig(
+      plans,
+      creditSystems,
+      creditPacks,
+      defaultProvider,
+      format,
+    );
 
     if (options.dryRun) {
       p.note(configContent, "Generated Config (Dry Run)");
+      printPullSummary(plans, creditSystems, creditPacks);
+      p.outro(pc.yellow("Dry run complete. No changes made."));
+      return;
+    }
+
+    if (existsSync(fullPath) && !options.force) {
+      const confirm = await p.confirm({
+        message: `Config file already exists at ${fullPath}. Overwrite?`,
+        initialValue: false,
+      });
+
+      if (p.isCancel(confirm) || !confirm) {
+        p.outro(pc.yellow("Operation cancelled"));
+        process.exit(0);
+      }
+    }
+
+    await writeFile(fullPath, configContent, "utf8");
+    p.log.success(pc.green(`Wrote configuration to ${fullPath}`));
+
+    printPullSummary(plans, creditSystems, creditPacks);
+  } else {
+    p.log.step(pc.cyan("Sandbox Mode: Pulling from SANDBOX environment"));
+    const apiUrl = `${testUrl}/api/v1`;
+
+    s.start(`Fetching plans from ${pc.dim("sandbox")}...`);
+    const plans = await fetchPlans({
+      apiKey,
+      apiUrl: apiUrl,
+      ...filters,
+    });
+    s.stop(`Fetched ${plans.length} plans from sandbox`);
+
+    s.start(`Fetching credit systems...`);
+    const creditSystems = await fetchCreditSystems(apiKey, apiUrl);
+    s.stop(`Fetched ${creditSystems.length} credit systems`);
+
+    s.start(`Fetching credit packs...`);
+    const creditPacks = await fetchCreditPacks(apiKey, apiUrl);
+    s.stop(`Fetched ${creditPacks.length} credit packs`);
+
+    // Detect common provider for default
+    const providers = new Set(
+      plans.map((p: any) => p.provider).filter(Boolean),
+    );
+    const defaultProvider =
+      providers.size === 1 ? Array.from(providers)[0] : undefined;
+
+    const configContent = generateConfig(
+      plans,
+      creditSystems,
+      creditPacks,
+      defaultProvider,
+      format,
+    );
+
+    if (options.dryRun) {
+      p.note(configContent, "Generated Config (Dry Run)");
+      printPullSummary(plans, creditSystems, creditPacks);
       p.outro(pc.yellow("Dry run complete. No changes made."));
       return;
     }
@@ -122,7 +185,63 @@ export async function runPull(options: PullOptions) {
 
     await writeFile(fullPath, configContent, "utf8");
     p.log.success(pc.green(`Wrote configuration to ${fullPath}`));
+
+    printPullSummary(plans, creditSystems, creditPacks);
   }
 
   p.outro(pc.green("Pull complete! ✨"));
+}
+
+function printPullSummary(
+  plans: any[],
+  creditSystems: any[],
+  creditPacks: any[] = [],
+) {
+  const featureSlugs = new Set<string>();
+  for (const plan of plans) {
+    for (const f of plan.features || []) {
+      featureSlugs.add(f.slug);
+    }
+  }
+
+  const lines: string[] = [];
+  for (const plan of plans) {
+    const featureCount = (plan.features || []).length;
+    lines.push(
+      `${pc.green("↓")} ${pc.bold(plan.slug)} ${pc.dim(`${plan.currency} ${plan.price}/${plan.interval}`)} ${pc.dim(`(${featureCount} features)`)} ${plan.isAddon ? pc.cyan("(addon)") : ""}`,
+    );
+  }
+
+  if (creditSystems.length > 0) {
+    lines.push("");
+    for (const cs of creditSystems) {
+      const childCount = (cs.features || []).length;
+      lines.push(
+        `${pc.green("↓")} ${pc.bold(cs.slug)} ${pc.dim(`credit system (${childCount} features)`)}`,
+      );
+    }
+  }
+
+  if (creditPacks.length > 0) {
+    lines.push("");
+    for (const pack of creditPacks) {
+      lines.push(
+        `${pc.green("↓")} ${pc.bold(pack.slug)} ${pc.dim(`${pack.currency} ${pack.price} for ${pack.credits} credits`)} ${pc.cyan("(pack)")}`,
+      );
+    }
+  }
+
+  p.note(lines.join("\n"), "Pulled");
+
+  const counts = [
+    `${pc.bold(plans.length.toString())} plans`,
+    `${pc.bold(featureSlugs.size.toString())} features`,
+    creditSystems.length > 0
+      ? `${pc.bold(creditSystems.length.toString())} credit systems`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(pc.dim("  ·  "));
+
+  p.log.info(counts);
 }

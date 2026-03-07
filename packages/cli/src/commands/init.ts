@@ -2,28 +2,45 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import {
-  getApiKey,
-  getApiUrl,
-  getTestApiUrl,
-  getDashboardUrl,
-} from "../lib/config.js";
+import { join, resolve, isAbsolute, extname } from "node:path";
+import { getApiKey, getApiUrl, getDashboardUrl } from "../lib/config.js";
 import { resolveConfigPath } from "../lib/loader.js";
 import { fetchPlans, fetchCreditSystems } from "../lib/api.js";
-import { generateConfig } from "../lib/generate.js";
+import { generateConfig, ConfigFormat } from "../lib/generate.js";
 import { executeConnectFlow } from "../lib/connect.js";
-import { printBrand } from "../lib/brand.js";
 
 interface InitOptions {
-  config: string;
+  config?: string;
   key?: string;
   force?: boolean;
+}
+
+function getProjectInfo() {
+  const cwd = process.cwd();
+  const isTs = existsSync(join(cwd, "tsconfig.json"));
+  return { isTs };
 }
 
 export async function runInit(options: InitOptions) {
   p.intro(pc.bgYellow(pc.black(" init ")));
 
-  const fullPath = resolveConfigPath(options.config);
+  let targetPath = options.config;
+
+  // If no path provided, try to find existing or determine default
+  if (!targetPath) {
+    const existing = resolveConfigPath();
+    if (existing) {
+      targetPath = existing;
+    } else {
+      const { isTs } = getProjectInfo();
+      targetPath = isTs ? "owo.config.ts" : "owo.config.js";
+    }
+  }
+
+  const fullPath = isAbsolute(targetPath)
+    ? targetPath
+    : resolve(process.cwd(), targetPath);
+
   let apiKey = getApiKey(options.key);
 
   if (!apiKey) {
@@ -61,25 +78,44 @@ export async function runInit(options: InitOptions) {
   s.start("Generating project configuration...");
 
   try {
-    const plans = await fetchPlans({ apiKey, apiUrl: `${getApiUrl()}/api/v1` });
-    const creditSystems = await fetchCreditSystems(
-      apiKey,
-      `${getApiUrl()}/api/v1`,
+    const apiUrl = `${getApiUrl()}/api/v1`;
+    const plans = await fetchPlans({ apiKey, apiUrl: apiUrl });
+    const creditSystems = await fetchCreditSystems(apiKey, apiUrl);
+
+    // Determine format
+    const ext = extname(fullPath);
+    let format: ConfigFormat = "ts";
+
+    if (ext === ".ts" || ext === ".mts" || ext === ".cts") {
+      format = "ts";
+    } else if (ext === ".mjs") {
+      format = "esm";
+    } else if (ext === ".cjs") {
+      throw new Error(
+        "CommonJS config files are not supported. Use owo.config.js or owo.config.ts.",
+      );
+    } else if (ext === ".js") {
+      format = "esm";
+    }
+
+    const configContent = generateConfig(
+      plans,
+      creditSystems,
+      [],
+      undefined,
+      format,
     );
-    const configContent = generateConfig(plans, creditSystems);
     await writeFile(fullPath, configContent, "utf8");
 
     s.stop(pc.green("Configuration created"));
 
     p.note(
-      `${pc.dim("File:")} ${fullPath}\n${pc.dim("Plans:")} ${plans.length} imported\n${pc.dim("Credit Systems:")} ${creditSystems.length}`,
+      `${pc.dim("File:")} ${fullPath}\n${pc.dim("Format:")} ${format.toUpperCase()}\n${pc.dim("Plans:")} ${plans.length} imported\n${pc.dim("Credit Systems:")} ${creditSystems.length}`,
       "✨ Project Initialized",
     );
 
     p.outro(
-      pc.cyan(
-        `Next step: Run ${pc.bold("owostack sync")} to apply your catalog.`,
-      ),
+      pc.cyan(`Next step: Run ${pc.bold("owosk sync")} to apply your catalog.`),
     );
   } catch (e: any) {
     s.stop(pc.red("Initialization failed"));

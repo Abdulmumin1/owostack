@@ -10,6 +10,11 @@ import {
 import { listRecentEvents } from "../../lib/analytics-engine";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
+import { getSubscriptionHealthState } from "../../lib/subscription-health";
+import {
+  hasRenewalSetupIssue,
+  readRenewalSetupMetadata,
+} from "../../lib/renewal-setup";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -181,14 +186,18 @@ app.get("/:id", async (c) => {
           id: schema.subscriptions.id,
           status: schema.subscriptions.status,
           providerId: schema.subscriptions.providerId,
+          providerSubscriptionCode: schema.subscriptions.providerSubscriptionCode,
+          paystackSubscriptionCode: schema.subscriptions.paystackSubscriptionCode,
           currentPeriodStart: schema.subscriptions.currentPeriodStart,
           currentPeriodEnd: schema.subscriptions.currentPeriodEnd,
           cancelAt: schema.subscriptions.cancelAt,
           canceledAt: schema.subscriptions.canceledAt,
+          metadata: schema.subscriptions.metadata,
           createdAt: schema.subscriptions.createdAt,
           planId: schema.plans.id,
           planName: schema.plans.name,
           planSlug: schema.plans.slug,
+          planType: schema.plans.type,
           planPrice: schema.plans.price,
           planCurrency: schema.plans.currency,
           planInterval: schema.plans.interval,
@@ -337,7 +346,32 @@ app.get("/:id", async (c) => {
       success: true,
       data: {
         customer,
-        subscriptions,
+        subscriptions: subscriptions.map((sub: any) => {
+          const health = getSubscriptionHealthState({
+            status: sub.status,
+            currentPeriodEnd: sub.currentPeriodEnd,
+            providerId: sub.providerId,
+            providerSubscriptionCode: sub.providerSubscriptionCode,
+            paystackSubscriptionCode: sub.paystackSubscriptionCode,
+            planType: sub.planType,
+          });
+          const renewalSetupIssue = hasRenewalSetupIssue(sub.metadata);
+          return {
+            ...sub,
+            health: {
+              ...health,
+              requiresAction: health.requiresAction || renewalSetupIssue,
+              renewalSetup: readRenewalSetupMetadata(sub.metadata),
+              reasons: [
+                ...(health.pastGracePeriodEnd ? ["period_end_stale"] : []),
+                ...(health.providerLinkMissing
+                  ? ["provider_link_missing"]
+                  : []),
+                ...(renewalSetupIssue ? ["renewal_setup_failed"] : []),
+              ],
+            },
+          };
+        }),
         recentUsage,
         featureUsageSummary,
         events,
