@@ -35,7 +35,8 @@ app.get("/config/active-environment", async (c) => {
 // Switch active environment
 app.post("/switch-environment", async (c) => {
   const body = await c.req.json();
-  const { organizationId, environment } = body;
+  const { environment } = body;
+  const organizationId = c.get("organizationId") ?? body.organizationId;
 
   if (!organizationId || !["test", "live"].includes(environment)) {
     return c.json({ success: false, error: "Invalid parameters" }, 400);
