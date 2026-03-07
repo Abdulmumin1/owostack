@@ -233,16 +233,6 @@
   <!-- Hero -->
   <section class="px-6 pt-28 pb-20 md:pt-40 md:pb-28 relative">
     <div class="max-w-4xl mx-auto">
-      <div
-        class="text-[11px] font-bold text-text-secondary flex gap-2 uppercase tracking-[0.25em] mb-8"
-      >
-        <div
-          class="w-4 h-4 bg-[#F26522] flex items-center justify-center rounded-xs"
-        >
-          <span class="text-white text-[10px] font-bold font-sans">Y</span>
-        </div>
-        Not backed by Y Combinator
-      </div>
       <h1
         class="text-4xl md:text-6xl font-bold leading-[1.08] tracking-tight mb-6"
       >
