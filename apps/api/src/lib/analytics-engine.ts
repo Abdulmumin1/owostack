@@ -40,7 +40,7 @@ type AnalyticsEnv = {
 };
 
 // ---------------------------------------------------------------------------
-// Lazy-cached store per environment config hash
+// Lazy-cached store per environment config hash!
 // ---------------------------------------------------------------------------
 
 const storeCache = new WeakMap<object, EventStore>();
