@@ -6,7 +6,11 @@ import {
   resolveConfigPath,
 } from "../lib/loader.js";
 import { fetchPlans } from "../lib/api.js";
-import { getApiKey, getApiUrl, getTestApiUrl } from "../lib/config.js";
+import {
+  getApiKey,
+  getLiveApiUrl,
+  getTestApiUrl,
+} from "../lib/config.js";
 
 interface ValidateOptions {
   config?: string;
@@ -92,7 +96,7 @@ export async function runValidate(options: ValidateOptions) {
     // Default to test environment, prod only with --prod flag
     const configSettings = await loadConfigSettings(options.config);
     const testUrl = getTestApiUrl(configSettings.environments?.test);
-    const liveUrl = getApiUrl(configSettings.environments?.live);
+    const liveUrl = getLiveApiUrl(configSettings.environments?.live);
     const apiKey = getApiKey();
 
     if (options.prod) {

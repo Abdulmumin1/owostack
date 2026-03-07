@@ -3,7 +3,11 @@ import pc from "picocolors";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { resolve, extname, isAbsolute } from "node:path";
-import { getApiKey, getApiUrl, getTestApiUrl } from "../lib/config.js";
+import {
+  getApiKey,
+  getLiveApiUrl,
+  getTestApiUrl,
+} from "../lib/config.js";
 import { loadConfigSettings, resolveConfigPath } from "../lib/loader.js";
 import {
   fetchPlans,
@@ -57,7 +61,7 @@ export async function runPull(options: PullOptions) {
   const apiKey = getApiKey(options.key);
   const configSettings = await loadConfigSettings(options.config);
   const testUrl = getTestApiUrl(configSettings.environments?.test);
-  const liveUrl = getApiUrl(configSettings.environments?.live);
+  const liveUrl = getLiveApiUrl(configSettings.environments?.live);
   const filters = configSettings.filters || {};
 
   let format: ConfigFormat;
