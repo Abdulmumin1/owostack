@@ -25,6 +25,43 @@
   // Organization fields
   let newOrgName = $state("");
   let newOrgSlug = $state("");
+  let isCheckingSlug = $state(false);
+  let slugAvailable = $state<boolean | null>(null);
+
+  // Update slug automatically from name if not already set
+  $effect(() => {
+    if (currentStep === 1 && newOrgName && !newOrgSlug) {
+      newOrgSlug = newOrgName
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+    }
+  });
+
+  // Check slug availability when it changes (debounced)
+  let slugTimeout: any;
+  $effect(() => {
+    if (newOrgSlug.length >= 3) {
+      clearTimeout(slugTimeout);
+      isCheckingSlug = true;
+      slugTimeout = setTimeout(async () => {
+        try {
+          const res = await apiFetch(
+            `/api/organizations/slug-check/${newOrgSlug}`,
+          );
+          slugAvailable = res.data?.available;
+        } catch (e) {
+          slugAvailable = null;
+        } finally {
+          isCheckingSlug = false;
+        }
+      }, 500);
+    } else {
+      slugAvailable = null;
+      isCheckingSlug = false;
+    }
+  });
 
   // Provider fields
   let selectedProviderId = $state("paystack");
@@ -144,6 +181,8 @@
     open = false;
     newOrgName = "";
     newOrgSlug = "";
+    slugAvailable = null;
+    isCheckingSlug = false;
     selectedProviderId = availableProviders[0]?.id || "paystack";
     providerCredentials = {};
     showSecretFields = {};
@@ -239,9 +278,34 @@
                 id="orgSlug"
                 bind:value={newOrgSlug}
                 placeholder="e.g. acme-corp"
-                class="input input-has-icon-left font-bold"
+                class="input input-has-icon-left pr-10 font-bold {slugAvailable ===
+                false
+                  ? 'border-error'
+                  : slugAvailable === true
+                    ? 'border-success'
+                    : ''}"
               />
+              <div
+                class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center"
+              >
+                {#if isCheckingSlug}
+                  <CircleNotch size={14} class="animate-spin text-text-dim" />
+                {:else if slugAvailable === true}
+                  <CheckCircle size={14} weight="fill" class="text-success" />
+                {:else if slugAvailable === false}
+                  <div
+                    class="w-1.5 h-1.5 bg-error rounded-full animate-pulse"
+                  ></div>
+                {/if}
+              </div>
             </div>
+            {#if slugAvailable === false}
+              <p
+                class="mt-1.5 text-[10px] text-error font-bold uppercase tracking-tight"
+              >
+                Slug is already taken
+              </p>
+            {/if}
           </div>
         </div>
       {:else}
@@ -370,7 +434,7 @@
         <button
           class="btn btn-primary px-6"
           onclick={nextStep}
-          disabled={!newOrgName || !newOrgSlug}
+          disabled={!newOrgName || !newOrgSlug || slugAvailable !== true}
         >
           Continue
           <ArrowRight size={14} weight="fill" />
