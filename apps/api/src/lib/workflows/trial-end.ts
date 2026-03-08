@@ -17,6 +17,22 @@ import {
   writeRenewalSetupMetadata,
 } from "../renewal-setup";
 
+export type TrialEndWorkflowDependencies = {
+  getAdapter: typeof getAdapter;
+  resolveProviderAccount: typeof resolveProviderAccount;
+  intervalToMs: typeof intervalToMs;
+  provisionEntitlements: typeof provisionEntitlements;
+  invalidateSubscriptionCache: typeof invalidateSubscriptionCache;
+};
+
+const defaultDependencies: TrialEndWorkflowDependencies = {
+  getAdapter,
+  resolveProviderAccount,
+  intervalToMs,
+  provisionEntitlements,
+  invalidateSubscriptionCache,
+};
+
 // Serializable snapshot of the fields we need from ProviderAccount
 interface ResolvedAccount {
   id: string;
@@ -60,6 +76,12 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
   WorkflowEnv,
   TrialEndParams
 > {
+  static dependencies: TrialEndWorkflowDependencies = defaultDependencies;
+
+  private get deps() {
+    return TrialEndWorkflow.dependencies;
+  }
+
   async run(event: WorkflowEvent<TrialEndParams>, step: WorkflowStep) {
     const {
       subscriptionId,
@@ -110,7 +132,11 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
         )
           .bind(now, now, subscriptionId)
           .run();
-        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        await this.deps.invalidateSubscriptionCache(
+          this.env,
+          organizationId,
+          customerId,
+        );
         console.log(
           `[TrialEndWorkflow] Canceled (user requested): subscription=${subscriptionId}`,
         );
@@ -128,7 +154,11 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
         )
           .bind(now, subscriptionId)
           .run();
-        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        await this.deps.invalidateSubscriptionCache(
+          this.env,
+          organizationId,
+          customerId,
+        );
         console.log(
           `[TrialEndWorkflow] Native trial ended, activated: subscription=${subscriptionId} (provider handles billing)`,
         );
@@ -184,7 +214,11 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
         )
           .bind(now, subscriptionId)
           .run();
-        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        await this.deps.invalidateSubscriptionCache(
+          this.env,
+          organizationId,
+          customerId,
+        );
         console.log(
           `[TrialEndWorkflow] Expired (no card/data): subscription=${subscriptionId}, authCode=${!!resolvedAuthCode}, email=${!!resolvedEmail}, amount=${amount}`,
         );
@@ -196,7 +230,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
     const accountData: ResolvedAccount | null = await step.do(
       "resolve-provider",
       async () => {
-        const account = await resolveProviderAccount(
+        const account = await this.deps.resolveProviderAccount(
           this.env,
           organizationId,
           providerId,
@@ -244,7 +278,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
       const result = await step.do(
         `charge-card-attempt-${attempt}`,
         async () => {
-          const adapter = getAdapter(providerId);
+          const adapter = this.deps.getAdapter(providerId);
           if (!adapter) {
             return {
               success: false as const,
@@ -381,7 +415,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
       const customerCode =
         customer?.provider_customer_id || customer?.paystack_customer_id;
       const subscriptionPeriodEnd = plan
-        ? Date.now() + intervalToMs(plan.interval)
+        ? Date.now() + this.deps.intervalToMs(plan.interval)
         : Date.now() + 30 * 24 * 60 * 60 * 1000;
 
       // Step 6b: For recurring plans with provider plan codes, create a
@@ -394,7 +428,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
       // management (supportsNativeTrials). For these providers, the subscription already
       // exists from the initial checkout — calling createSubscription would create a new
       // checkout session requiring user interaction.
-      const trialAdapter = getAdapter(providerId);
+      const trialAdapter = this.deps.getAdapter(providerId);
       const skipProviderSub = trialAdapter?.supportsNativeTrials === true;
       const requiresProviderSubscription = isRecurring && !skipProviderSub;
       const missingRenewalInputs: string[] = [];
@@ -418,7 +452,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
             "create-provider-subscription",
             { retries: { limit: 2, delay: "5 seconds", backoff: "exponential" } },
             async () => {
-              const adapter = getAdapter(providerId);
+              const adapter = this.deps.getAdapter(providerId);
               if (!adapter)
                 throw new Error(`No adapter for provider: ${providerId}`);
 
@@ -511,7 +545,11 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
             `[TrialEndWorkflow] Activated: subscription=${subscriptionId}, providerSub=${providerSubCode || "none"}`,
           );
         }
-        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        await this.deps.invalidateSubscriptionCache(
+          this.env,
+          organizationId,
+          customerId,
+        );
       });
 
       if (requiresProviderSubscription && !providerSubCode) {
@@ -572,7 +610,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
 
       // Step 6d: Re-provision entitlements (idempotent — ensures features are current)
       await step.do("provision-entitlements", async () => {
-        await provisionEntitlements(this.env, customerId, planId);
+        await this.deps.provisionEntitlements(this.env, customerId, planId);
         console.log(
           `[TrialEndWorkflow] Entitlements provisioned: customer=${customerId}, plan=${planId}`,
         );
@@ -586,7 +624,11 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
         )
           .bind(now, subscriptionId)
           .run();
-        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        await this.deps.invalidateSubscriptionCache(
+          this.env,
+          organizationId,
+          customerId,
+        );
         console.log(
           `[TrialEndWorkflow] Expired (charge failed): subscription=${subscriptionId}`,
         );

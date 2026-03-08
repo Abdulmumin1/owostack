@@ -1,58 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Hono } from "hono";
-import type { Mock } from "vitest";
-import checkoutRoute from "../src/routes/api/checkout";
-import { verifyApiKey } from "../src/lib/api-keys";
-import { resolveOrCreateCustomer } from "../src/lib/customers";
-import { executeSwitch } from "../src/lib/plan-switch";
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
-  getProviderRegistry,
-  loadProviderAccounts,
-  loadProviderRules,
-} from "../src/lib/providers";
-import { resolveProvider } from "@owostack/adapters";
-import type { Adapter } from "@owostack/adapters";
+  createCheckoutRoute,
+  type CheckoutDependencies,
+} from "../src/routes/api/checkout";
+import type { Adapter, ProviderAccount } from "@owostack/adapters";
+import { createRouteTestApp } from "./helpers/route-harness";
+import { err, ok } from "./helpers/result";
 
-vi.mock("@owostack/db", () => ({
-  schema: {
-    plans: { organizationId: "organizationId", slug: "slug" },
-  },
-}));
-
-vi.mock("../src/lib/api-keys", () => ({
-  verifyApiKey: vi.fn(),
-}));
-
-vi.mock("../src/lib/customers", () => ({
-  resolveOrCreateCustomer: vi.fn(),
-}));
-
-vi.mock("../src/lib/plan-switch", () => ({
-  executeSwitch: vi.fn(),
-  provisionEntitlements: vi.fn(),
-}));
-
-vi.mock("../src/lib/overage-guards", () => ({
-  hasPaymentMethod: vi.fn(async () => false),
-}));
-
-vi.mock("../src/lib/plan-sync", () => ({
-  ensurePlanSynced: vi.fn(async () => null),
-}));
-
-vi.mock("../src/lib/providers", () => ({
-  getProviderRegistry: vi.fn(),
-  buildProviderContext: vi.fn((params) => params),
-  deriveProviderEnvironment: vi.fn(() => "test"),
-  loadProviderAccounts: vi.fn(),
-  loadProviderRules: vi.fn(),
-}));
-
-vi.mock("@owostack/adapters", () => ({
-  resolveProvider: vi.fn(),
-}));
-
-// Mock types
 type MockDb = {
   query: {
     plans: {
@@ -67,13 +21,6 @@ type MockAuthDb = {
       findFirst: Mock;
     };
   };
-};
-
-type ProviderAccount = {
-  id: string;
-  providerId: string;
-  environment: string;
-  credentials: { secretKey: string };
 };
 
 type SwitchResult = {
@@ -108,42 +55,80 @@ describe("/attach behavior", () => {
     DOWNGRADE_WORKFLOW: { create: vi.fn(async () => null) },
   };
 
-  let app: Hono<{ Variables: { db: MockDb; authDb: MockAuthDb } }>;
+  const verifyApiKeyMock = vi.fn();
+  const resolveOrCreateCustomerMock = vi.fn();
+  const executeSwitchMock = vi.fn();
+  const provisionEntitlementsMock = vi.fn(async () => null);
+  const hasPaymentMethodMock = vi.fn(async () => false);
+  const ensurePlanSyncedMock = vi.fn(async () => null);
+  const resolveProviderMock = vi.fn(() => err("no match"));
+  const registryGetMock = vi.fn();
+  const getProviderRegistryMock = vi.fn(() => ({
+    get: registryGetMock,
+  }));
+  const buildProviderContextMock = vi.fn((params) => params);
+  const deriveProviderEnvironmentMock = vi.fn(() => "test");
+  const loadProviderAccountsMock = vi.fn(async () => []);
+  const loadProviderRulesMock = vi.fn(async () => []);
 
-  const paystackAdapter: Adapter & { createCheckoutSession: Mock } = {
+  const deps: CheckoutDependencies = {
+    verifyApiKey: verifyApiKeyMock as unknown as CheckoutDependencies["verifyApiKey"],
+    resolveOrCreateCustomer:
+      resolveOrCreateCustomerMock as unknown as CheckoutDependencies["resolveOrCreateCustomer"],
+    executeSwitch: executeSwitchMock as unknown as CheckoutDependencies["executeSwitch"],
+    provisionEntitlements:
+      provisionEntitlementsMock as unknown as CheckoutDependencies["provisionEntitlements"],
+    hasPaymentMethod:
+      hasPaymentMethodMock as unknown as CheckoutDependencies["hasPaymentMethod"],
+    ensurePlanSynced:
+      ensurePlanSyncedMock as unknown as CheckoutDependencies["ensurePlanSynced"],
+    resolveProvider:
+      resolveProviderMock as unknown as CheckoutDependencies["resolveProvider"],
+    getProviderRegistry:
+      getProviderRegistryMock as unknown as CheckoutDependencies["getProviderRegistry"],
+    buildProviderContext:
+      buildProviderContextMock as unknown as CheckoutDependencies["buildProviderContext"],
+    deriveProviderEnvironment:
+      deriveProviderEnvironmentMock as unknown as CheckoutDependencies["deriveProviderEnvironment"],
+    loadProviderAccounts:
+      loadProviderAccountsMock as unknown as CheckoutDependencies["loadProviderAccounts"],
+    loadProviderRules:
+      loadProviderRulesMock as unknown as CheckoutDependencies["loadProviderRules"],
+  };
+
+  let app: ReturnType<
+    typeof createRouteTestApp<{ db: MockDb; authDb: MockAuthDb }>
+  >;
+
+  const paystackAdapter: Adapter = {
     id: "paystack",
     supportsNativeTrials: false,
     createCheckoutSession: vi.fn(),
-  };
+  } as Adapter;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    app = new Hono<{ Variables: { db: MockDb; authDb: MockAuthDb } }>();
-    app.use("*", async (c, next) => {
-      c.set("db", mockDb);
-      c.set("authDb", mockAuthDb);
-      await next();
+    app = createRouteTestApp(createCheckoutRoute(deps), {
+      db: mockDb,
+      authDb: mockAuthDb,
     });
-    app.route("/", checkoutRoute);
 
-    vi.mocked(verifyApiKey).mockResolvedValue({
+    verifyApiKeyMock.mockResolvedValue({
       id: "key_1",
       organizationId: "org_1",
     });
 
-    vi.mocked(getProviderRegistry).mockReturnValue({
-      get: vi.fn((id: string) =>
-        id === "paystack" ? paystackAdapter : undefined,
-      ),
+    getProviderRegistryMock.mockReturnValue({
+      get: registryGetMock,
     });
+    registryGetMock.mockImplementation((id: string) =>
+      id === "paystack" ? paystackAdapter : undefined,
+    );
 
-    vi.mocked(loadProviderRules).mockResolvedValue([]);
-    vi.mocked(loadProviderAccounts).mockResolvedValue([]);
-    vi.mocked(resolveProvider).mockReturnValue({
-      isOk: () => false,
-      isErr: () => true,
-    } as ReturnType<typeof resolveProvider>);
+    loadProviderRulesMock.mockResolvedValue([]);
+    loadProviderAccountsMock.mockResolvedValue([]);
+    resolveProviderMock.mockImplementation(() => err("no match"));
   });
 
   it("bypasses provider resolution for free plan and executes switch with null provider context", async () => {
@@ -158,12 +143,12 @@ describe("/attach behavior", () => {
       trialCardRequired: false,
     });
 
-    vi.mocked(resolveOrCreateCustomer).mockResolvedValue({
+    resolveOrCreateCustomerMock.mockResolvedValue({
       id: "cus_1",
       email: "free@example.com",
     });
 
-    vi.mocked(executeSwitch).mockResolvedValue({
+    executeSwitchMock.mockResolvedValue({
       success: true,
       type: "new",
       requiresCheckout: false,
@@ -193,13 +178,13 @@ describe("/attach behavior", () => {
     };
     expect(body.success).toBe(true);
     expect(body.customer_id).toBe("cus_1");
-    expect(vi.mocked(resolveProvider)).not.toHaveBeenCalled();
+    expect(resolveProviderMock).not.toHaveBeenCalled();
 
-    const providerCtxArg = vi.mocked(executeSwitch).mock.calls[0]?.[3];
+    const providerCtxArg = executeSwitchMock.mock.calls[0]?.[3];
     expect(providerCtxArg).toBeNull();
   });
 
-  it("returns 400 when explicit provider is requested but account is not configured", async () => {
+  it("returns 400 when no provider account is configured for a paid plan", async () => {
     mockDb.query.plans.findFirst.mockResolvedValue({
       id: "plan_paid",
       slug: "pro",
@@ -212,7 +197,7 @@ describe("/attach behavior", () => {
       providerId: null,
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([]);
+    loadProviderAccountsMock.mockResolvedValue([]);
 
     const res = await app.request(
       "/attach",
@@ -234,11 +219,11 @@ describe("/attach behavior", () => {
     const body = (await res.json()) as { success: boolean; error: string };
     expect(body.success).toBe(false);
     expect(body.error).toContain("No payment provider configured");
-    expect(vi.mocked(resolveOrCreateCustomer)).not.toHaveBeenCalled();
-    expect(vi.mocked(executeSwitch)).not.toHaveBeenCalled();
+    expect(resolveOrCreateCustomerMock).not.toHaveBeenCalled();
+    expect(executeSwitchMock).not.toHaveBeenCalled();
   });
 
-  it("uses explicit provider account and passes resolved provider context into executeSwitch", async () => {
+  it("uses the first configured account in the current environment when no explicit provider is set", async () => {
     const providerAccount: ProviderAccount = {
       id: "acct_1",
       providerId: "paystack",
@@ -260,14 +245,14 @@ describe("/attach behavior", () => {
       paystackPlanId: null,
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([providerAccount]);
+    loadProviderAccountsMock.mockResolvedValue([providerAccount]);
 
-    vi.mocked(resolveOrCreateCustomer).mockResolvedValue({
+    resolveOrCreateCustomerMock.mockResolvedValue({
       id: "cus_2",
       email: "paid@example.com",
     });
 
-    vi.mocked(executeSwitch).mockResolvedValue({
+    executeSwitchMock.mockResolvedValue({
       success: true,
       type: "new",
       requiresCheckout: true,
@@ -293,7 +278,7 @@ describe("/attach behavior", () => {
 
     expect(res.status).toBe(200);
 
-    const providerCtxArg = vi.mocked(executeSwitch).mock.calls[0]?.[3] as {
+    const providerCtxArg = executeSwitchMock.mock.calls[0]?.[3] as {
       adapter: Adapter;
       account: ProviderAccount;
     };
@@ -314,8 +299,8 @@ describe("/attach behavior", () => {
       providerId: null,
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([]);
-    vi.mocked(loadProviderRules).mockResolvedValue([]);
+    loadProviderAccountsMock.mockResolvedValue([]);
+    loadProviderRulesMock.mockResolvedValue([]);
 
     const res = await app.request(
       "/attach",
@@ -336,8 +321,8 @@ describe("/attach behavior", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("No payment provider configured");
-    expect(vi.mocked(resolveOrCreateCustomer)).not.toHaveBeenCalled();
-    expect(vi.mocked(executeSwitch)).not.toHaveBeenCalled();
+    expect(resolveOrCreateCustomerMock).not.toHaveBeenCalled();
+    expect(executeSwitchMock).not.toHaveBeenCalled();
   });
 
   it("uses rules-based provider resolution when no explicit provider or plan provider is set", async () => {
@@ -362,24 +347,22 @@ describe("/attach behavior", () => {
       paystackPlanId: null,
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([resolvedAccount]);
-    vi.mocked(loadProviderRules).mockResolvedValue([{ id: "rule_1" }]);
-    vi.mocked(resolveProvider).mockReturnValue({
-      isOk: () => true,
-      isErr: () => false,
-      value: {
+    loadProviderAccountsMock.mockResolvedValue([resolvedAccount]);
+    loadProviderRulesMock.mockResolvedValue([{ id: "rule_1" }]);
+    resolveProviderMock.mockImplementation(() =>
+      ok({
         adapter: paystackAdapter,
         account: resolvedAccount,
         ruleId: "rule_1",
-      },
-    } as ReturnType<typeof resolveProvider>);
+      }),
+    );
 
-    vi.mocked(resolveOrCreateCustomer).mockResolvedValue({
+    resolveOrCreateCustomerMock.mockResolvedValue({
       id: "cus_rule",
       email: "rule@example.com",
     });
 
-    vi.mocked(executeSwitch).mockResolvedValue({
+    executeSwitchMock.mockResolvedValue({
       success: true,
       type: "new",
       requiresCheckout: true,
@@ -404,17 +387,17 @@ describe("/attach behavior", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(vi.mocked(resolveProvider)).toHaveBeenCalledTimes(1);
+    expect(resolveProviderMock).toHaveBeenCalledTimes(1);
 
-    const resolverArg = vi.mocked(resolveProvider).mock.calls[0]?.[1] as {
-      context: { region: string; currency: string };
+    const resolverArg = resolveProviderMock.mock.calls[0]?.[1] as {
+      context: { region?: string; currency: string };
       accounts: ProviderAccount[];
     };
     expect(resolverArg.context.region).toBe(undefined);
     expect(resolverArg.context.currency).toBe("USD");
     expect(resolverArg.accounts[0].id).toBe("acct_rule_paystack");
 
-    const providerCtxArg = vi.mocked(executeSwitch).mock.calls[0]?.[3] as {
+    const providerCtxArg = executeSwitchMock.mock.calls[0]?.[3] as {
       adapter: Adapter;
       account: ProviderAccount;
     };

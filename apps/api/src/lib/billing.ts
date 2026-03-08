@@ -16,6 +16,16 @@ import type {
 
 type DB = ReturnType<typeof createDb>;
 
+export type BillingServiceDependencies = {
+  markUsageInvoiced: typeof markUsageInvoiced;
+  sumUnbilledByFeaturePeriod: typeof sumUnbilledByFeaturePeriod;
+};
+
+const defaultDependencies: BillingServiceDependencies = {
+  markUsageInvoiced,
+  sumUnbilledByFeaturePeriod,
+};
+
 export interface InvoiceLineItem {
   featureId: string;
   featureSlug: string;
@@ -68,8 +78,16 @@ export class BillingService {
     private db: DB,
     private opts?: {
       usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
+      deps?: Partial<BillingServiceDependencies>;
     },
   ) {}
+
+  private get deps(): BillingServiceDependencies {
+    return {
+      ...defaultDependencies,
+      ...this.opts?.deps,
+    };
+  }
 
   async getUnbilledUsage(
     customerId: string,
@@ -147,7 +165,7 @@ export class BillingService {
             .map((pf) => [pf.featureId, pf]),
         );
 
-        const unbilledUsageRows = await sumUnbilledByFeaturePeriod(
+        const unbilledUsageRows = await this.deps.sumUnbilledByFeaturePeriod(
           {
             usageLedger: this.opts?.usageLedger,
             organizationId,
@@ -378,7 +396,7 @@ export class BillingService {
               ...(f.tierBreakdown ? { tierBreakdown: f.tierBreakdown } : {}),
             });
 
-            const ledgerMarked = await markUsageInvoiced(
+            const ledgerMarked = await this.deps.markUsageInvoiced(
               {
                 usageLedger: this.opts?.usageLedger,
                 organizationId,

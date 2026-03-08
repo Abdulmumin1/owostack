@@ -6,7 +6,15 @@ import { generateApiKey, hashApiKey } from "../../lib/api-keys";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+export type DashboardKeysDependencies = {
+  generateApiKey: typeof generateApiKey;
+  hashApiKey: typeof hashApiKey;
+};
+
+const defaultDependencies: DashboardKeysDependencies = {
+  generateApiKey,
+  hashApiKey,
+};
 
 function zodErrorToResponse(zodError: {
   flatten: () => {
@@ -38,103 +46,108 @@ const createKeySchema = z.object({
   name: z.string().min(1),
 });
 
-app.post("/", async (c) => {
-  const body = await c.req.json();
-  const parsed = createKeySchema.safeParse(body);
+export function createDashboardKeysRoute(
+  overrides: Partial<DashboardKeysDependencies> = {},
+) {
+  const deps = { ...defaultDependencies, ...overrides };
+  const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-  if (!parsed.success) {
-    return c.json(zodErrorToResponse(parsed.error), 400);
-  }
+  app.post("/", async (c) => {
+    const body = await c.req.json();
+    const parsed = createKeySchema.safeParse(body);
 
-  const { name } = parsed.data;
-  // Use resolved organization ID from context (middleware resolves slug to UUID)
-  const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
-  const db = c.get("authDb");
+    if (!parsed.success) {
+      return c.json(zodErrorToResponse(parsed.error), 400);
+    }
 
-  // Generate Key
-  const finalKey = generateApiKey();
-  const keyHash = await hashApiKey(finalKey);
+    const { name } = parsed.data;
+    const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
+    const db = c.get("authDb");
 
-  try {
-    const [key] = await db
-      .insert(schema.apiKeys)
-      .values({
-        id: crypto.randomUUID(),
-        organizationId,
-        name,
-        prefix: "owo_sk_",
-        hash: keyHash,
-      })
-      .returning();
+    const finalKey = deps.generateApiKey();
+    const keyHash = await deps.hashApiKey(finalKey);
 
-    // Return the raw key ONLY ONCE
-    return c.json({
-      success: true,
-      data: {
-        ...key,
-        secretKey: finalKey, // This is the only time the user sees this
-      },
-    });
-  } catch (e: any) {
-    console.error("Failed to create key:", e);
-    return c.json(
-      { success: false, error: e.message || "Database error" },
-      500,
-    );
-  }
-});
+    try {
+      const [key] = await db
+        .insert(schema.apiKeys)
+        .values({
+          id: crypto.randomUUID(),
+          organizationId,
+          name,
+          prefix: "owo_sk_",
+          hash: keyHash,
+        })
+        .returning();
 
-app.get("/", async (c) => {
-  const organizationId = c.get("organizationId");
-  if (!organizationId) {
-    return c.json({ error: "Organization ID required" }, 400);
-  }
-
-  const db = c.get("authDb");
-  const keys = await db.query.apiKeys.findMany({
-    where: eq(schema.apiKeys.organizationId, organizationId),
-    orderBy: (keys: any, { desc }: any) => [desc(keys.createdAt)],
-    columns: {
-      id: true,
-      name: true,
-      prefix: true,
-      lastUsedAt: true,
-      createdAt: true,
-      // Never return hash
-    },
+      return c.json({
+        success: true,
+        data: {
+          ...key,
+          secretKey: finalKey,
+        },
+      });
+    } catch (e: any) {
+      console.error("Failed to create key:", e);
+      return c.json(
+        { success: false, error: e.message || "Database error" },
+        500,
+      );
+    }
   });
 
-  return c.json({ success: true, data: keys });
-});
+  app.get("/", async (c) => {
+    const organizationId = c.get("organizationId");
+    if (!organizationId) {
+      return c.json({ error: "Organization ID required" }, 400);
+    }
 
-app.delete("/:id", async (c) => {
-  const id = c.req.param("id");
-  const organizationId = c.get("organizationId");
+    const db = c.get("authDb");
+    const keys = await db.query.apiKeys.findMany({
+      where: eq(schema.apiKeys.organizationId, organizationId),
+      orderBy: (keys: any, { desc }: any) => [desc(keys.createdAt)],
+      columns: {
+        id: true,
+        name: true,
+        prefix: true,
+        lastUsedAt: true,
+        createdAt: true,
+      },
+    });
 
-  if (!organizationId) {
-    return c.json({ success: false, error: "Organization ID required" }, 400);
-  }
+    return c.json({ success: true, data: keys });
+  });
 
-  const db = c.get("authDb");
+  app.delete("/:id", async (c) => {
+    const id = c.req.param("id");
+    const organizationId = c.get("organizationId");
 
-  try {
-    await db
-      .delete(schema.apiKeys)
-      .where(
-        and(
-          eq(schema.apiKeys.id, id),
-          eq(schema.apiKeys.organizationId, organizationId),
-        ),
+    if (!organizationId) {
+      return c.json({ success: false, error: "Organization ID required" }, 400);
+    }
+
+    const db = c.get("authDb");
+
+    try {
+      await db
+        .delete(schema.apiKeys)
+        .where(
+          and(
+            eq(schema.apiKeys.id, id),
+            eq(schema.apiKeys.organizationId, organizationId),
+          ),
+        );
+
+      return c.json({ success: true });
+    } catch (e: any) {
+      console.error("Failed to delete key:", e);
+      return c.json(
+        { success: false, error: e.message || "Database error" },
+        500,
       );
+    }
+  });
 
-    return c.json({ success: true });
-  } catch (e: any) {
-    console.error("Failed to delete key:", e);
-    return c.json(
-      { success: false, error: e.message || "Database error" },
-      500,
-    );
-  }
-});
+  return app;
+}
 
-export default app;
+export default createDashboardKeysRoute();

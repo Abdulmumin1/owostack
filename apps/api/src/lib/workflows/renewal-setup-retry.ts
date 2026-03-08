@@ -6,7 +6,9 @@ import {
 import type { ProviderAccount } from "@owostack/adapters";
 import { isPlaceholderSubscriptionCode } from "../subscription-health";
 import {
+  buildRenewalSetupRecoveryUpdate,
   coerceMetadataRecord,
+  isRetryableRenewalSetupFailure,
   RENEWAL_SETUP_RETRY_DELAYS_MS,
   readRenewalSetupMetadata,
   writeRenewalSetupMetadata,
@@ -17,6 +19,18 @@ import {
   invalidateSubscriptionCache,
   resolveProviderAccount,
 } from "./utils";
+
+export type RenewalSetupRetryWorkflowDependencies = {
+  getAdapter: typeof getAdapter;
+  invalidateSubscriptionCache: typeof invalidateSubscriptionCache;
+  resolveProviderAccount: typeof resolveProviderAccount;
+};
+
+const defaultDependencies: RenewalSetupRetryWorkflowDependencies = {
+  getAdapter,
+  invalidateSubscriptionCache,
+  resolveProviderAccount,
+};
 
 export interface RenewalSetupRetryParams {
   subscriptionId: string;
@@ -152,6 +166,7 @@ async function attemptRenewalSetup(
   payload: RenewalSetupRetryParams,
   source: string,
   nextDelayMs: number | null,
+  deps: RenewalSetupRetryWorkflowDependencies = defaultDependencies,
 ): Promise<RetryAttemptResult> {
   const now = Date.now();
   const subscription = await readSubscription(env, payload.subscriptionId);
@@ -164,21 +179,27 @@ async function attemptRenewalSetup(
   const existingCode =
     subscription.provider_subscription_code || subscription.paystack_subscription_code;
   if (existingCode && !isPlaceholderSubscriptionCode(existingCode)) {
-    await updateSubscriptionMetadata(env, subscription, {
-      renewal_setup_status: "complete",
-      renewal_setup_retry_count: retryCount,
-      renewal_setup_last_error: null,
-      renewal_setup_last_attempt_at: now,
-      renewal_setup_next_attempt_at: null,
-      renewal_setup_updated_at: now,
-      renewal_setup_last_source: source,
-    });
-    if (subscription.cancel_at) {
+    const recovery = buildRenewalSetupRecoveryUpdate(
+      subscription.metadata,
+      source,
+      now,
+    );
+    if (recovery) {
       await env.DB.prepare(
-        "UPDATE subscriptions SET cancel_at = NULL, updated_at = ? WHERE id = ?",
+        "UPDATE subscriptions SET metadata = ?, cancel_at = ?, updated_at = ? WHERE id = ?",
       )
-        .bind(now, subscription.id)
+        .bind(
+          JSON.stringify(recovery.metadata),
+          recovery.clearCancelAt ? null : subscription.cancel_at,
+          now,
+          subscription.id,
+        )
         .run();
+      await deps.invalidateSubscriptionCache(
+        env,
+        payload.organizationId,
+        payload.customerId,
+      );
     }
     return { status: "noop", reason: "provider_subscription_exists" };
   }
@@ -202,45 +223,54 @@ async function attemptRenewalSetup(
 
   const providerPlanCode = plan.provider_plan_id || plan.paystack_plan_id;
   if (!providerPlanCode) {
+    const reason = "missing_provider_plan_code";
+    const retryable =
+      nextDelayMs !== null && isRetryableRenewalSetupFailure(reason);
     await updateSubscriptionMetadata(env, subscription, {
-      renewal_setup_status: nextDelayMs ? "scheduled" : "failed",
+      renewal_setup_status: retryable ? "scheduled" : "failed",
       renewal_setup_retry_count: retryCount,
-      renewal_setup_last_error: "missing_provider_plan_code",
+      renewal_setup_last_error: reason,
       renewal_setup_last_attempt_at: now,
-      renewal_setup_next_attempt_at: nextDelayMs ? now + nextDelayMs : null,
+      renewal_setup_next_attempt_at: retryable ? now + nextDelayMs! : null,
       renewal_setup_updated_at: now,
       renewal_setup_last_source: source,
     });
-    return { status: nextDelayMs ? "retryable" : "aborted", reason: "missing_provider_plan_code" };
+    return { status: retryable ? "retryable" : "aborted", reason };
   }
 
   const customer = await readCustomer(env, subscription.customer_id);
   if (!customer?.email) {
+    const reason = "missing_customer_email";
+    const retryable =
+      nextDelayMs !== null && isRetryableRenewalSetupFailure(reason);
     await updateSubscriptionMetadata(env, subscription, {
-      renewal_setup_status: nextDelayMs ? "scheduled" : "failed",
+      renewal_setup_status: retryable ? "scheduled" : "failed",
       renewal_setup_retry_count: retryCount,
-      renewal_setup_last_error: "missing_customer_email",
+      renewal_setup_last_error: reason,
       renewal_setup_last_attempt_at: now,
-      renewal_setup_next_attempt_at: nextDelayMs ? now + nextDelayMs : null,
+      renewal_setup_next_attempt_at: retryable ? now + nextDelayMs! : null,
       renewal_setup_updated_at: now,
       renewal_setup_last_source: source,
     });
-    return { status: nextDelayMs ? "retryable" : "aborted", reason: "missing_customer_email" };
+    return { status: retryable ? "retryable" : "aborted", reason };
   }
 
   const customerCode =
     customer.provider_customer_id || customer.paystack_customer_id;
   if (!customerCode) {
+    const reason = "missing_provider_customer_id";
+    const retryable =
+      nextDelayMs !== null && isRetryableRenewalSetupFailure(reason);
     await updateSubscriptionMetadata(env, subscription, {
-      renewal_setup_status: nextDelayMs ? "scheduled" : "failed",
+      renewal_setup_status: retryable ? "scheduled" : "failed",
       renewal_setup_retry_count: retryCount,
-      renewal_setup_last_error: "missing_provider_customer_id",
+      renewal_setup_last_error: reason,
       renewal_setup_last_attempt_at: now,
-      renewal_setup_next_attempt_at: nextDelayMs ? now + nextDelayMs : null,
+      renewal_setup_next_attempt_at: retryable ? now + nextDelayMs! : null,
       renewal_setup_updated_at: now,
       renewal_setup_last_source: source,
     });
-    return { status: nextDelayMs ? "retryable" : "aborted", reason: "missing_provider_customer_id" };
+    return { status: retryable ? "retryable" : "aborted", reason };
   }
 
   const paymentMethod = await readProviderPaymentMethod(
@@ -249,48 +279,57 @@ async function attemptRenewalSetup(
     payload.providerId,
   );
   if (!paymentMethod?.token) {
+    const reason = "missing_provider_payment_method";
+    const retryable =
+      nextDelayMs !== null && isRetryableRenewalSetupFailure(reason);
     await updateSubscriptionMetadata(env, subscription, {
-      renewal_setup_status: nextDelayMs ? "scheduled" : "failed",
+      renewal_setup_status: retryable ? "scheduled" : "failed",
       renewal_setup_retry_count: retryCount,
-      renewal_setup_last_error: "missing_provider_payment_method",
+      renewal_setup_last_error: reason,
       renewal_setup_last_attempt_at: now,
-      renewal_setup_next_attempt_at: nextDelayMs ? now + nextDelayMs : null,
+      renewal_setup_next_attempt_at: retryable ? now + nextDelayMs! : null,
       renewal_setup_updated_at: now,
       renewal_setup_last_source: source,
     });
-    return { status: nextDelayMs ? "retryable" : "aborted", reason: "missing_provider_payment_method" };
+    return { status: retryable ? "retryable" : "aborted", reason };
   }
 
-  const adapter = getAdapter(payload.providerId);
+  const adapter = deps.getAdapter(payload.providerId);
   if (!adapter) {
+    const reason = "missing_provider_adapter";
+    const retryable =
+      nextDelayMs !== null && isRetryableRenewalSetupFailure(reason);
     await updateSubscriptionMetadata(env, subscription, {
-      renewal_setup_status: nextDelayMs ? "scheduled" : "failed",
+      renewal_setup_status: retryable ? "scheduled" : "failed",
       renewal_setup_retry_count: retryCount,
-      renewal_setup_last_error: "missing_provider_adapter",
+      renewal_setup_last_error: reason,
       renewal_setup_last_attempt_at: now,
-      renewal_setup_next_attempt_at: nextDelayMs ? now + nextDelayMs : null,
+      renewal_setup_next_attempt_at: retryable ? now + nextDelayMs! : null,
       renewal_setup_updated_at: now,
       renewal_setup_last_source: source,
     });
-    return { status: nextDelayMs ? "retryable" : "aborted", reason: "missing_provider_adapter" };
+    return { status: retryable ? "retryable" : "aborted", reason };
   }
 
-  const account = await resolveProviderAccount(
+  const account = await deps.resolveProviderAccount(
     env,
     payload.organizationId,
     payload.providerId,
   );
   if (!account) {
+    const reason = "missing_provider_account";
+    const retryable =
+      nextDelayMs !== null && isRetryableRenewalSetupFailure(reason);
     await updateSubscriptionMetadata(env, subscription, {
-      renewal_setup_status: nextDelayMs ? "scheduled" : "failed",
+      renewal_setup_status: retryable ? "scheduled" : "failed",
       renewal_setup_retry_count: retryCount,
-      renewal_setup_last_error: "missing_provider_account",
+      renewal_setup_last_error: reason,
       renewal_setup_last_attempt_at: now,
-      renewal_setup_next_attempt_at: nextDelayMs ? now + nextDelayMs : null,
+      renewal_setup_next_attempt_at: retryable ? now + nextDelayMs! : null,
       renewal_setup_updated_at: now,
       renewal_setup_last_source: source,
     });
-    return { status: nextDelayMs ? "retryable" : "aborted", reason: "missing_provider_account" };
+    return { status: retryable ? "retryable" : "aborted", reason };
   }
 
   const startDate = new Date(subscription.current_period_end).toISOString();
@@ -313,18 +352,18 @@ async function attemptRenewalSetup(
 
   if (result.isErr()) {
     const reason = result.error.message || "create_subscription_failed";
+    const retryable =
+      nextDelayMs !== null && isRetryableRenewalSetupFailure(reason);
     await updateSubscriptionMetadata(env, subscription, {
-      renewal_setup_status: nextDelayMs ? "scheduled" : "failed",
+      renewal_setup_status: retryable ? "scheduled" : "failed",
       renewal_setup_retry_count: retryCount,
       renewal_setup_last_error: reason,
       renewal_setup_last_attempt_at: now,
-      renewal_setup_next_attempt_at: nextDelayMs ? now + nextDelayMs : null,
+      renewal_setup_next_attempt_at: retryable ? now + nextDelayMs! : null,
       renewal_setup_updated_at: now,
       renewal_setup_last_source: source,
     });
-    return nextDelayMs
-      ? { status: "retryable", reason }
-      : { status: "aborted", reason };
+    return retryable ? { status: "retryable", reason } : { status: "aborted", reason };
   }
 
   const providerSubCode = result.value.id;
@@ -358,7 +397,7 @@ async function attemptRenewalSetup(
     )
     .run();
 
-  await invalidateSubscriptionCache(
+  await deps.invalidateSubscriptionCache(
     env,
     payload.organizationId,
     payload.customerId,
@@ -371,6 +410,12 @@ export class RenewalSetupRetryWorkflow extends WorkflowEntrypoint<
   WorkflowEnv,
   RenewalSetupRetryParams
 > {
+  static dependencies: RenewalSetupRetryWorkflowDependencies = defaultDependencies;
+
+  private get deps() {
+    return RenewalSetupRetryWorkflow.dependencies;
+  }
+
   async run(event: WorkflowEvent<RenewalSetupRetryParams>, step: WorkflowStep) {
     const source = event.payload.source || "renewal_setup_retry";
     const delays = event.payload.immediate
@@ -385,7 +430,13 @@ export class RenewalSetupRetryWorkflow extends WorkflowEntrypoint<
 
       const nextDelayMs = delays[i + 1] ?? null;
       const result = await step.do(`renewal-setup-attempt-${i}`, async () =>
-        attemptRenewalSetup(this.env, event.payload, source, nextDelayMs),
+        attemptRenewalSetup(
+          this.env,
+          event.payload,
+          source,
+          nextDelayMs,
+          this.deps,
+        ),
       );
 
       if (result.status === "succeeded" || result.status === "noop") {

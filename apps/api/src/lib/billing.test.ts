@@ -1,14 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockSumUnbilledByFeaturePeriod } = vi.hoisted(() => ({
-  mockSumUnbilledByFeaturePeriod: vi.fn(),
-}));
-
-vi.mock("./usage-ledger", () => ({
-  sumUnbilledByFeaturePeriod: mockSumUnbilledByFeaturePeriod,
-  markUsageInvoiced: vi.fn(),
-}));
-
 import { BillingService } from "./billing";
 
 function createDbMock() {
@@ -53,12 +44,15 @@ function createDbMock() {
 }
 
 describe("BillingService.getUnbilledUsage", () => {
+  const sumUnbilledByFeaturePeriodMock = vi.fn();
+  const markUsageInvoicedMock = vi.fn();
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("keeps the just-finished reset window invoiceable after a rollover", async () => {
-    mockSumUnbilledByFeaturePeriod.mockResolvedValue([
+    sumUnbilledByFeaturePeriodMock.mockResolvedValue([
       {
         featureId: "feature_1",
         periodStart: 1_000,
@@ -67,7 +61,13 @@ describe("BillingService.getUnbilledUsage", () => {
       },
     ]);
 
-    const service = new BillingService(createDbMock() as any, {});
+    const service = new BillingService(createDbMock() as any, {
+      deps: {
+        sumUnbilledByFeaturePeriod:
+          sumUnbilledByFeaturePeriodMock as any,
+        markUsageInvoiced: markUsageInvoicedMock as any,
+      },
+    });
     const result = await service.getUnbilledUsage("cust_1", "org_1");
 
     expect(result.isOk()).toBe(true);
@@ -89,7 +89,7 @@ describe("BillingService.getUnbilledUsage", () => {
   });
 
   it("keeps uninvoiced usage split by recorded period instead of collapsing to the current window", async () => {
-    mockSumUnbilledByFeaturePeriod.mockResolvedValue([
+    sumUnbilledByFeaturePeriodMock.mockResolvedValue([
       {
         featureId: "feature_1",
         periodStart: 1_000,
@@ -104,7 +104,13 @@ describe("BillingService.getUnbilledUsage", () => {
       },
     ]);
 
-    const service = new BillingService(createDbMock() as any, {});
+    const service = new BillingService(createDbMock() as any, {
+      deps: {
+        sumUnbilledByFeaturePeriod:
+          sumUnbilledByFeaturePeriodMock as any,
+        markUsageInvoiced: markUsageInvoicedMock as any,
+      },
+    });
     const result = await service.getUnbilledUsage("cust_1", "org_1");
 
     expect(result.isOk()).toBe(true);

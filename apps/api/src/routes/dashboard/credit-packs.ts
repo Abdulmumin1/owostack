@@ -87,7 +87,7 @@ app.post("/", async (c) => {
   }
 
   const {
-    organizationId,
+    organizationId: orgIdFromData,
     name,
     description,
     credits,
@@ -97,6 +97,7 @@ app.post("/", async (c) => {
     providerId,
     metadata,
   } = parsed.data;
+  const organizationId = c.get("organizationId") ?? orgIdFromData;
   const db = c.get("db");
 
   const slug = name

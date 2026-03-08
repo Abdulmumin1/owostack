@@ -22,6 +22,29 @@ import {
   isPlaceholderSubscriptionCode,
 } from "../subscription-health";
 
+export type OverageBillingWorkflowDependencies = {
+  getAdapter: typeof getAdapter;
+  intervalToMs: typeof intervalToMs;
+  invalidateSubscriptionCache: typeof invalidateSubscriptionCache;
+  resolveProviderAccount: typeof resolveProviderAccount;
+  createDb: typeof createDb;
+  createBillingService: (
+    db: ReturnType<typeof createDb>,
+    options: { usageLedger: WorkflowEnv["USAGE_LEDGER"] },
+  ) => Pick<BillingService, "getUnbilledUsage">;
+  markUsageInvoiced: typeof markUsageInvoiced;
+};
+
+const defaultDependencies: OverageBillingWorkflowDependencies = {
+  getAdapter,
+  intervalToMs,
+  invalidateSubscriptionCache,
+  resolveProviderAccount,
+  createDb,
+  createBillingService: (db, options) => new BillingService(db, options),
+  markUsageInvoiced,
+};
+
 // Serializable snapshot of ProviderAccount
 interface ResolvedAccount {
   id: string;
@@ -53,7 +76,7 @@ export function rollPeriodForward(
   interval: string,
   now: number = Date.now(),
 ): { nextPeriodStart: number; nextPeriodEnd: number } {
-  const periodMs = intervalToMs(interval);
+  const periodMs = defaultDependencies.intervalToMs(interval);
 
   let nextPeriodStart = currentPeriodEnd;
   let nextPeriodEnd = currentPeriodEnd + periodMs;
@@ -140,6 +163,12 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
   WorkflowEnv,
   OverageBillingParams
 > {
+  static dependencies: OverageBillingWorkflowDependencies = defaultDependencies;
+
+  private get deps() {
+    return OverageBillingWorkflow.dependencies;
+  }
+
   private async advanceDueFreeSubscriptionPeriods(
     step: WorkflowStep,
     organizationId: string,
@@ -215,7 +244,11 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
 
     if (advancedCount > 0) {
       await step.do("invalidate-period-end-subscription-cache", async () => {
-        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        await this.deps.invalidateSubscriptionCache(
+          this.env,
+          organizationId,
+          customerId,
+        );
       });
     }
   }
@@ -312,7 +345,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             continue;
           }
 
-          const adapter = getAdapter(providerId);
+          const adapter = this.deps.getAdapter(providerId);
           if (!adapter) {
             console.warn(
               `[OverageBilling] Reconcile skipped: no adapter for provider=${providerId}, sub=${sub.id}`,
@@ -321,7 +354,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             continue;
           }
 
-          const account = await resolveProviderAccount(
+          const account = await this.deps.resolveProviderAccount(
             this.env,
             organizationId,
             providerId,
@@ -469,7 +502,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
       await step.do(
         "invalidate-paid-reconcile-subscription-cache",
         async () => {
-          await invalidateSubscriptionCache(
+          await this.deps.invalidateSubscriptionCache(
             this.env,
             organizationId,
             customerId,
@@ -531,8 +564,8 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
 
       // Step 3: Calculate unbilled overage usage
       const unbilled = await step.do("calculate-unbilled-usage", async () => {
-        const db = createDb(this.env.DB);
-        const billingService = new BillingService(db, {
+        const db = this.deps.createDb(this.env.DB);
+        const billingService = this.deps.createBillingService(db, {
           usageLedger: this.env.USAGE_LEDGER,
         });
         const result = await billingService.getUnbilledUsage(
@@ -705,7 +738,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
               .run();
           }
 
-          const ledgerStamped = await markUsageInvoiced(
+          const ledgerStamped = await this.deps.markUsageInvoiced(
             {
               usageLedger: this.env.USAGE_LEDGER,
               organizationId,
@@ -811,7 +844,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
       const accountData: ResolvedAccount | null = await step.do(
         "resolve-provider",
         async () => {
-          const account = await resolveProviderAccount(
+          const account = await this.deps.resolveProviderAccount(
             this.env,
             organizationId,
             providerId,
@@ -885,7 +918,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
         const result = await step.do(
           `charge-card-attempt-${attempt}`,
           async () => {
-            const adapter = getAdapter(providerId);
+            const adapter = this.deps.getAdapter(providerId);
             if (!adapter) {
               return {
                 success: false as const,

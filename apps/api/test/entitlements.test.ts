@@ -1,37 +1,9 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
-import { Hono } from "hono";
 import type { Mock } from "vitest";
-import entitlements from "../src/routes/api/entitlements";
-import {
-  deductScopedBalance,
-  getScopedBalance,
-} from "../src/lib/addon-credits";
-import { checkOverageAllowed } from "../src/lib/overage-guards";
-
-vi.mock("../src/lib/api-keys", async () => {
-  const actual = await vi.importActual<typeof import("../src/lib/api-keys")>(
-    "../src/lib/api-keys",
-  );
-  return {
-    ...actual,
-    verifyApiKey: vi.fn().mockResolvedValue({
-      id: "key_test",
-      organizationId: "org_test",
-    }),
-  };
-});
-
-vi.mock("../src/lib/addon-credits", () => ({
-  getScopedBalance: vi.fn(async () => 0),
-  deductScopedBalance: vi.fn(async () => false),
-  topUpScopedBalance: vi.fn(async () => 0),
-}));
-
-vi.mock("../src/lib/overage-guards", () => ({
-  checkOverageAllowed: vi.fn(async () => ({ allowed: true })),
-  getOrgOverageSettings: vi.fn(async () => null),
-  getUnbilledOverageAmount: vi.fn(async () => 0),
-}));
+import entitlements, {
+  type EntitlementsDependencies,
+} from "../src/routes/api/entitlements";
+import { createRouteTestApp } from "./helpers/route-harness";
 
 // Type for response body
 type TrackResponse = {
@@ -78,15 +50,59 @@ describe("Entitlements Engine (Check & Track)", () => {
     waitUntil: vi.fn(),
     passThroughOnException: vi.fn(),
   };
+  const verifyApiKeyMock = vi.fn();
+  const resolveOrCreateCustomerMock = vi.fn();
+  const getScopedBalanceMock = vi.fn(async () => 0);
+  const deductScopedBalanceMock = vi.fn(async () => false);
+  const checkOverageAllowedMock = vi.fn(async () => ({ allowed: true }));
+  const getOrgOverageSettingsMock = vi.fn(async () => null);
+  const getUnbilledOverageAmountMock = vi.fn(async () => 0);
+  const deps: EntitlementsDependencies = {
+    verifyApiKey:
+      verifyApiKeyMock as unknown as EntitlementsDependencies["verifyApiKey"],
+    resolveOrCreateCustomer:
+      resolveOrCreateCustomerMock as unknown as EntitlementsDependencies["resolveOrCreateCustomer"],
+    getScopedBalance:
+      getScopedBalanceMock as unknown as EntitlementsDependencies["getScopedBalance"],
+    deductScopedBalance:
+      deductScopedBalanceMock as unknown as EntitlementsDependencies["deductScopedBalance"],
+    checkOverageAllowed:
+      checkOverageAllowedMock as unknown as EntitlementsDependencies["checkOverageAllowed"],
+    getOrgOverageSettings:
+      getOrgOverageSettingsMock as unknown as EntitlementsDependencies["getOrgOverageSettings"],
+    getUnbilledOverageAmount:
+      getUnbilledOverageAmountMock as unknown as EntitlementsDependencies["getUnbilledOverageAmount"],
+  };
 
   let usageTotal = 0;
   let mockDb: MockDb;
-  let app: Hono<{ Variables: { db: MockDb; organizationId?: string } }>;
+  let app: ReturnType<
+    typeof createRouteTestApp<{
+      db: MockDb;
+      authDb: unknown;
+      entitlementsDeps: EntitlementsDependencies;
+    }>
+  >;
 
   beforeEach(() => {
     usageTotal = 0;
-    vi.mocked(checkOverageAllowed).mockClear();
-    vi.mocked(checkOverageAllowed).mockResolvedValue({ allowed: true });
+    verifyApiKeyMock.mockReset();
+    resolveOrCreateCustomerMock.mockReset();
+    getScopedBalanceMock.mockReset();
+    deductScopedBalanceMock.mockReset();
+    checkOverageAllowedMock.mockReset();
+    getOrgOverageSettingsMock.mockReset();
+    getUnbilledOverageAmountMock.mockReset();
+
+    verifyApiKeyMock.mockResolvedValue({
+      id: "key_test",
+      organizationId: "org_test",
+    });
+    checkOverageAllowedMock.mockResolvedValue({ allowed: true });
+    getScopedBalanceMock.mockResolvedValue(0);
+    deductScopedBalanceMock.mockResolvedValue(false);
+    getOrgOverageSettingsMock.mockResolvedValue(null);
+    getUnbilledOverageAmountMock.mockResolvedValue(0);
 
     const now = Date.now();
     const subscription = {
@@ -190,12 +206,19 @@ describe("Entitlements Engine (Check & Track)", () => {
       }),
     };
 
-    app = new Hono<{ Variables: { db: MockDb; organizationId?: string } }>();
-    app.use("*", async (c, next) => {
-      c.set("db", mockDb);
-      await next();
+    app = createRouteTestApp(entitlements, {
+      db: mockDb,
+      authDb: {},
+      entitlementsDeps: deps,
     });
-    app.route("/", entitlements);
+
+    resolveOrCreateCustomerMock.mockImplementation(
+      async ({ customerId: requestedCustomerId }: { customerId: string }) => ({
+        id: requestedCustomerId,
+        externalId: null,
+        organizationId: "org_test",
+      }),
+    );
   });
 
   it("should allow access to valid boolean feature", async () => {
@@ -319,7 +342,7 @@ describe("Entitlements Engine (Check & Track)", () => {
         billingUnits: 1,
       }),
     );
-    expect(checkOverageAllowed).toHaveBeenCalledWith(
+    expect(checkOverageAllowedMock).toHaveBeenCalledWith(
       mockDb,
       customerId,
       featureIdMetered,
@@ -410,7 +433,7 @@ describe("Entitlements Engine (Check & Track)", () => {
   });
 
   it("blocks usage-based tracking when billing guardrails fail", async () => {
-    vi.mocked(checkOverageAllowed).mockResolvedValueOnce({
+    checkOverageAllowedMock.mockResolvedValueOnce({
       allowed: false,
       reason: "No payment method on file.",
     });
@@ -654,8 +677,8 @@ describe("Entitlements Engine (Check & Track)", () => {
       },
     };
 
-    vi.mocked(getScopedBalance).mockResolvedValue(100);
-    vi.mocked(deductScopedBalance).mockResolvedValue(true);
+    getScopedBalanceMock.mockResolvedValue(100);
+    deductScopedBalanceMock.mockResolvedValue(true);
 
     mockDb.query.features.findFirst.mockResolvedValueOnce({
       id: "feat_child",
@@ -743,7 +766,7 @@ describe("Entitlements Engine (Check & Track)", () => {
     expect(body.addonCredits).toBe(40);
 
     expect(usageMeter.check).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(deductScopedBalance)).toHaveBeenCalledWith(
+    expect(deductScopedBalanceMock).toHaveBeenCalledWith(
       mockDb,
       customerId,
       "cs_feature_1",
@@ -929,8 +952,8 @@ describe("Entitlements Engine (Check & Track)", () => {
     expect(body.usage).toBe(100);
     expect(body.balance).toBe(0);
 
-    expect(vi.mocked(checkOverageAllowed)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(checkOverageAllowed)).toHaveBeenCalledWith(
+    expect(checkOverageAllowedMock).toHaveBeenCalledTimes(1);
+    expect(checkOverageAllowedMock).toHaveBeenCalledWith(
       mockDb,
       customerId,
       featureIdMetered,

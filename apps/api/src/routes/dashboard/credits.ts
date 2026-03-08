@@ -29,11 +29,12 @@ app.post("/", async (c) => {
   }
 
   const {
-    organizationId,
+    organizationId: orgIdFromData,
     name,
     description,
     features: csFeatures,
   } = parsed.data;
+  const organizationId = c.get("organizationId") ?? orgIdFromData;
   const db = c.get("db");
 
   const slug = name

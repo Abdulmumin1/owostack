@@ -1,39 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Result } from "better-result";
 
-const {
-  mockCreateSubscription,
-  mockResolveProviderAccount,
-  mockInvalidateSubscriptionCache,
-} = vi.hoisted(() => ({
-  mockCreateSubscription: vi.fn(),
-  mockResolveProviderAccount: vi.fn(),
-  mockInvalidateSubscriptionCache: vi.fn(async () => undefined),
-}));
-
 vi.mock("cloudflare:workers", () => ({
   WorkflowEntrypoint: class {},
 }));
 
-vi.mock("./utils", () => ({
-  getAdapter: vi.fn(() => ({
-    createSubscription: mockCreateSubscription,
-  })),
-  resolveProviderAccount: mockResolveProviderAccount,
-  invalidateSubscriptionCache: mockInvalidateSubscriptionCache,
-}));
-
-import { RenewalSetupRetryWorkflow } from "./renewal-setup-retry";
-
-function createStepMock() {
-  return {
-    sleep: vi.fn(async () => undefined),
-    do: vi.fn(async (...args: any[]) => {
-      const fn = typeof args[1] === "function" ? args[1] : args[2];
-      return fn();
-    }),
-  };
-}
+import {
+  RenewalSetupRetryWorkflow,
+  type RenewalSetupRetryWorkflowDependencies,
+} from "./renewal-setup-retry";
+import {
+  createWorkflowInstance,
+  createWorkflowStepMock,
+} from "./test-helpers";
 
 function createDbMock(options: {
   subscription: any;
@@ -87,9 +66,23 @@ function createDbMock(options: {
 }
 
 describe("RenewalSetupRetryWorkflow", () => {
+  const createSubscriptionMock = vi.fn();
+  const resolveProviderAccountMock = vi.fn();
+  const invalidateSubscriptionCacheMock = vi.fn(async () => undefined);
+  const deps: RenewalSetupRetryWorkflowDependencies = {
+    getAdapter: vi.fn(() => ({
+      createSubscription: createSubscriptionMock,
+    })) as unknown as RenewalSetupRetryWorkflowDependencies["getAdapter"],
+    resolveProviderAccount:
+      resolveProviderAccountMock as unknown as RenewalSetupRetryWorkflowDependencies["resolveProviderAccount"],
+    invalidateSubscriptionCache:
+      invalidateSubscriptionCacheMock as unknown as RenewalSetupRetryWorkflowDependencies["invalidateSubscriptionCache"],
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolveProviderAccount.mockResolvedValue({
+    RenewalSetupRetryWorkflow.dependencies = deps;
+    resolveProviderAccountMock.mockResolvedValue({
       id: "acct_1",
       organizationId: "org_1",
       providerId: "paystack",
@@ -105,7 +98,7 @@ describe("RenewalSetupRetryWorkflow", () => {
     vi.spyOn(Date, "now").mockReturnValue(
       new Date("2026-03-06T17:00:15.000Z").getTime(),
     );
-    mockCreateSubscription.mockResolvedValue(
+    createSubscriptionMock.mockResolvedValue(
       Result.ok({ id: "SUB_retry_1", status: "active", metadata: {} }),
     );
 
@@ -146,7 +139,7 @@ describe("RenewalSetupRetryWorkflow", () => {
     });
 
     await RenewalSetupRetryWorkflow.prototype.run.call(
-      { env: { DB: db.DB } },
+      createWorkflowInstance(RenewalSetupRetryWorkflow, { DB: db.DB }),
       {
         payload: {
           subscriptionId: "sub_1",
@@ -157,10 +150,10 @@ describe("RenewalSetupRetryWorkflow", () => {
           immediate: true,
         },
       },
-      createStepMock(),
+      createWorkflowStepMock(),
     );
 
-    expect(mockCreateSubscription).toHaveBeenCalledWith(
+    expect(createSubscriptionMock).toHaveBeenCalledWith(
       expect.objectContaining({
         startDate: new Date(periodEnd).toISOString(),
         authorizationCode: "AUTH_123",
@@ -173,7 +166,7 @@ describe("RenewalSetupRetryWorkflow", () => {
       '"renewal_setup_status":"complete"',
     );
     expect(db.updates[0].params[4]).toBeTypeOf("number");
-    expect(mockInvalidateSubscriptionCache).toHaveBeenCalledWith(
+    expect(invalidateSubscriptionCacheMock).toHaveBeenCalledWith(
       expect.anything(),
       "org_1",
       "cust_1",
@@ -186,7 +179,7 @@ describe("RenewalSetupRetryWorkflow", () => {
     vi.spyOn(Date, "now").mockReturnValue(
       new Date("2026-03-06T17:00:15.000Z").getTime(),
     );
-    mockCreateSubscription.mockResolvedValue(
+    createSubscriptionMock.mockResolvedValue(
       Result.err({
         code: "request_failed",
         message: "provider temporarily unavailable",
@@ -231,7 +224,7 @@ describe("RenewalSetupRetryWorkflow", () => {
     });
 
     await RenewalSetupRetryWorkflow.prototype.run.call(
-      { env: { DB: db.DB } },
+      createWorkflowInstance(RenewalSetupRetryWorkflow, { DB: db.DB }),
       {
         payload: {
           subscriptionId: "sub_2",
@@ -242,11 +235,13 @@ describe("RenewalSetupRetryWorkflow", () => {
           immediate: false,
         },
       },
-      createStepMock(),
+      createWorkflowStepMock(),
     );
 
-    expect(mockCreateSubscription).toHaveBeenCalledTimes(3);
-    expect(db.updates.at(-1)?.params[0]).toContain('"renewal_setup_status":"failed"');
+    expect(createSubscriptionMock).toHaveBeenCalledTimes(3);
+    expect(db.updates.at(-1)?.params[0]).toContain(
+      '"renewal_setup_status":"failed"',
+    );
 
     vi.restoreAllMocks();
   });

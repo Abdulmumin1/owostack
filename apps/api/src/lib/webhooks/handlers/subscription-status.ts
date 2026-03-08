@@ -2,9 +2,20 @@ import { schema } from "@owostack/db";
 import { eq, and, or } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
 import { upsertPaymentMethod } from "../../payment-methods";
+import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
 import type { WebhookContext } from "../types";
 import { handleSubscriptionCreated } from "./subscription-created";
 import { safeParseDate } from "../types";
+
+export type SubscriptionStatusDependencies = {
+  provisionEntitlements: typeof provisionEntitlements;
+  upsertPaymentMethod: typeof upsertPaymentMethod;
+};
+
+export const subscriptionStatusDependencies: SubscriptionStatusDependencies = {
+  provisionEntitlements,
+  upsertPaymentMethod,
+};
 
 // Note: We no longer enforce a maximum trial duration here.
 // Trial dates are validated at creation time in charge-success.ts.
@@ -23,7 +34,7 @@ export function handleSubscriptionStatus(status: string) {
       const customerId = event.metadata.customer_id as string;
       if (customerId) {
         try {
-          await upsertPaymentMethod(db, {
+          await subscriptionStatusDependencies.upsertPaymentMethod(db, {
             customerId,
             organizationId,
             providerId: event.provider,
@@ -92,6 +103,14 @@ export function handleSubscriptionStatus(status: string) {
       providerId: event.provider,
       updatedAt: now,
     };
+    const renewalSetupRecovery =
+      status === "active"
+        ? buildRenewalSetupRecoveryUpdate(sub.metadata, "subscription_status", now)
+        : null;
+    if (renewalSetupRecovery) {
+      updates.cancelAt = null;
+      updates.metadata = renewalSetupRecovery.metadata;
+    }
 
     // Provider renewal events are authoritative for billing dates.
     if (status === "active") {
@@ -134,7 +153,12 @@ export function handleSubscriptionStatus(status: string) {
         );
 
         // Re-provision entitlements so the customer gets the new plan's features
-        await provisionEntitlements(db, sub.customerId, newPlan.id, sub.planId);
+        await subscriptionStatusDependencies.provisionEntitlements(
+          db,
+          sub.customerId,
+          newPlan.id,
+          sub.planId,
+        );
       }
     }
 
@@ -214,7 +238,7 @@ export function handleSubscriptionStatus(status: string) {
 
             if (existingFreeSub) {
               // Customer already has active free plan, just provision entitlements
-              await provisionEntitlements(
+              await subscriptionStatusDependencies.provisionEntitlements(
                 db,
                 canceledSub.customer.id,
                 freePlan.id,
@@ -246,7 +270,7 @@ export function handleSubscriptionStatus(status: string) {
                 .returning();
 
               // Provision free plan entitlements
-              await provisionEntitlements(
+              await subscriptionStatusDependencies.provisionEntitlements(
                 db,
                 canceledSub.customer.id,
                 freePlan.id,
