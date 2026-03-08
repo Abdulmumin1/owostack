@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createDashboardKeysRoute,
+  type DashboardKeysDependencies,
+} from "../src/routes/dashboard/keys";
+import { createDashboardShell } from "../src/routes/dashboard/shell";
+import { createRouteTestApp } from "./helpers/route-harness";
 
-const hoisted = vi.hoisted(() => {
+describe("Dashboard API keys", () => {
   const businessDb = {
     insert: vi.fn(() => ({
       values: vi.fn(() => ({
@@ -18,12 +24,10 @@ const hoisted = vi.hoisted(() => {
   const authInsertValuesMock = vi.fn(() => ({
     returning: authInsertReturningMock,
   }));
-  const authInsertMock = vi.fn(() => ({
-    values: authInsertValuesMock,
-  }));
-
   const authDb = {
-    insert: authInsertMock,
+    insert: vi.fn(() => ({
+      values: authInsertValuesMock,
+    })),
     query: {
       organizations: {
         findFirst: vi.fn(),
@@ -34,84 +38,39 @@ const hoisted = vi.hoisted(() => {
     },
   };
 
-  return {
-    businessDb,
+  const generateApiKeyMock = vi.fn(() => "owo_sk_test_generated");
+  const hashApiKeyMock = vi.fn(async () => "hashed-key");
+  const getSessionMock = vi.fn(async () => ({
+    user: { id: "user_123" },
+    session: { id: "session_123" },
+  }));
+  const resolveOrganizationIdMock = vi.fn(async () => null);
+  const keyDeps: DashboardKeysDependencies = {
+    generateApiKey:
+      generateApiKeyMock as unknown as DashboardKeysDependencies["generateApiKey"],
+    hashApiKey:
+      hashApiKeyMock as unknown as DashboardKeysDependencies["hashApiKey"],
+  };
+
+  const dashboardApp = createDashboardShell({
+    getSession: getSessionMock,
+    resolveOrganizationId: resolveOrganizationIdMock,
+  });
+  dashboardApp.route("/keys", createDashboardKeysRoute(keyDeps));
+
+  const app = createRouteTestApp(dashboardApp, {
+    db: businessDb,
     authDb,
-    authInsertMock,
-    authInsertValuesMock,
-    authInsertReturningMock,
-    getSessionMock: vi.fn(),
-    generateApiKeyMock: vi.fn(() => "owo_sk_test_generated"),
-    hashApiKeyMock: vi.fn(async () => "hashed-key"),
+  });
+
+  const env = {
+    ENCRYPTION_KEY: "test_key",
+    PAYSTACK_SECRET_KEY: "sk_test",
+    PAYSTACK_WEBHOOK_SECRET: "wh_secret",
   };
-});
 
-const {
-  businessDb,
-  authDb,
-  authInsertValuesMock,
-  authInsertReturningMock,
-  getSessionMock,
-  generateApiKeyMock,
-  hashApiKeyMock,
-} = hoisted;
-
-vi.mock("@owostack/db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@owostack/db")>("@owostack/db");
-
-  return {
-    ...actual,
-    createDb: (binding: unknown) => {
-      if (binding === env.DB_AUTH) return authDb;
-      return businessDb;
-    },
-  };
-});
-
-vi.mock("../src/lib/auth", () => ({
-  auth: () => ({
-    handler: () => new Response("Auth"),
-    api: {
-      getSession: getSessionMock,
-    },
-  }),
-}));
-
-vi.mock("../src/lib/api-keys", async () => {
-  const actual = await vi.importActual<typeof import("../src/lib/api-keys")>(
-    "../src/lib/api-keys",
-  );
-
-  return {
-    ...actual,
-    generateApiKey: generateApiKeyMock,
-    hashApiKey: hashApiKeyMock,
-  };
-});
-
-vi.mock("../src/lib/webhooks", () => ({
-  WebhookHandler: class {},
-}));
-
-const env = {
-  DB: { name: "business" },
-  DB_AUTH: { name: "auth" },
-  BETTER_AUTH_SECRET: "secret",
-  BETTER_AUTH_URL: "http://localhost",
-  ENCRYPTION_KEY: "test_key",
-  PAYSTACK_SECRET_KEY: "sk_test",
-  PAYSTACK_WEBHOOK_SECRET: "wh_secret",
-};
-
-describe("Dashboard API keys", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    getSessionMock.mockResolvedValue({
-      user: { id: "user_123" },
-      session: { id: "session_123" },
-    });
 
     authDb.query.organizations.findFirst.mockResolvedValue({
       id: "org_uuid_123",
@@ -122,9 +81,7 @@ describe("Dashboard API keys", () => {
       createdAt: Date.now(),
     });
 
-    businessDb.query.organizations.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null);
+    businessDb.query.organizations.findFirst.mockResolvedValue(null);
 
     authInsertReturningMock.mockResolvedValue([
       {
@@ -138,10 +95,8 @@ describe("Dashboard API keys", () => {
   });
 
   it("resolves an organization slug through auth DB before inserting the API key", async () => {
-    const { app } = await import("../src/index");
-
     const res = await app.request(
-      "/api/dashboard/keys",
+      "/keys",
       {
         method: "POST",
         headers: {
@@ -156,6 +111,7 @@ describe("Dashboard API keys", () => {
     );
 
     expect(res.status).toBe(200);
+    expect(resolveOrganizationIdMock).not.toHaveBeenCalled();
     expect(authInsertValuesMock).toHaveBeenCalledWith(
       expect.objectContaining({
         organizationId: "org_uuid_123",
@@ -164,5 +120,7 @@ describe("Dashboard API keys", () => {
       }),
     );
     expect(businessDb.insert).toHaveBeenCalled();
+    expect(generateApiKeyMock).toHaveBeenCalledTimes(1);
+    expect(hashApiKeyMock).toHaveBeenCalledWith("owo_sk_test_generated");
   });
 });

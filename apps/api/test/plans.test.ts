@@ -1,5 +1,8 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
-let app: typeof import("../src/index").app;
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { createRouteTestApp } from "./helpers/route-harness";
+import { err, ok } from "./helpers/result";
+
+let app: ReturnType<typeof createRouteTestApp<{ db: MockDb }>>;
 
 interface ProviderContext {
   currency?: string;
@@ -50,18 +53,6 @@ vi.mock("../src/lib/providers", async () => {
       buildProviderContextMock(...args),
   };
 });
-
-vi.mock("../src/lib/auth", () => ({
-  auth: () => ({
-    handler: () => new Response("Auth"),
-    api: {
-      getSession: vi.fn().mockResolvedValue({
-        user: { id: "test-user" },
-        session: { id: "test-session" },
-      }),
-    },
-  }),
-}));
 
 interface Plan {
   id: string;
@@ -123,46 +114,12 @@ const mockDb: MockDb = {
   },
 };
 
-vi.mock("@owostack/db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@owostack/db")>("@owostack/db");
-  return {
-    ...actual,
-    createDb: () => mockDb,
-  };
-});
-
-interface Env {
-  DB: unknown;
-  BETTER_AUTH_SECRET: string;
-  BETTER_AUTH_URL: string;
-  ENCRYPTION_KEY: string;
-  PAYSTACK_SECRET_KEY: string;
-  PAYSTACK_WEBHOOK_SECRET: string;
-}
-
-const env: Env = {
-  DB: {},
-  BETTER_AUTH_SECRET: "secret",
-  BETTER_AUTH_URL: "http://localhost",
+const env = {
   ENCRYPTION_KEY: "test_key",
-  PAYSTACK_SECRET_KEY: "sk_test",
-  PAYSTACK_WEBHOOK_SECRET: "wh_secret",
+  ENVIRONMENT: "test",
 };
 
 describe("Plans API", () => {
-  const ok = <T>(value: T) => ({
-    isOk: () => true,
-    isErr: () => false,
-    value,
-  });
-
-  const err = <E>(error: E) => ({
-    isOk: () => false,
-    isErr: () => true,
-    error,
-  });
-
   const paystackAdapter = {
     id: "paystack",
     createPlan: vi.fn(async () => ok({ id: "prov_plan_paystack_1" })),
@@ -205,7 +162,8 @@ describe("Plans API", () => {
     insertValuesMock.mockClear();
     insertReturningMock.mockClear();
 
-    ({ app } = await import("../src/index"));
+    const { default: plansRoute } = await import("../src/routes/dashboard/plans");
+    app = createRouteTestApp(plansRoute, { db: mockDb });
   });
 
   it("should create a basic paid plan", async () => {
@@ -226,7 +184,7 @@ describe("Plans API", () => {
     };
 
     const res = await app.request(
-      "/api/dashboard/plans",
+      "/",
       {
         method: "POST",
         body: JSON.stringify({
@@ -271,7 +229,7 @@ describe("Plans API", () => {
     };
 
     const res = await app.request(
-      "/api/dashboard/plans",
+      "/",
       {
         method: "POST",
         body: JSON.stringify({
@@ -315,7 +273,7 @@ describe("Plans API", () => {
     };
 
     const res = await app.request(
-      "/api/dashboard/plans",
+      "/",
       {
         method: "POST",
         body: JSON.stringify({
@@ -385,7 +343,7 @@ describe("Plans API", () => {
     };
 
     const res = await app.request(
-      "/api/dashboard/plans",
+      "/",
       {
         method: "POST",
         body: JSON.stringify({
@@ -440,7 +398,7 @@ describe("Plans API", () => {
     };
 
     const res = await app.request(
-      "/api/dashboard/plans",
+      "/",
       {
         method: "POST",
         body: JSON.stringify({
@@ -490,7 +448,7 @@ describe("Plans API", () => {
     });
 
     const res = await app.request(
-      "/api/dashboard/plans/plan_patch_1",
+      "/plan_patch_1",
       {
         method: "PATCH",
         body: JSON.stringify({ price: 6000 }),
@@ -536,7 +494,7 @@ describe("Plans API", () => {
     }));
 
     const res = await app.request(
-      "/api/dashboard/plans/plan_patch_2",
+      "/plan_patch_2",
       {
         method: "PATCH",
         body: JSON.stringify({ isActive: true }),
@@ -565,7 +523,7 @@ describe("Plans API", () => {
     };
 
     const res = await app.request(
-      "/api/dashboard/plans",
+      "/",
       {
         method: "POST",
         body: JSON.stringify({
@@ -590,12 +548,11 @@ describe("Plans API", () => {
 
   it("should fail with invalid data", async () => {
     const res = await app.request(
-      "/api/dashboard/plans",
+      "/",
       {
         method: "POST",
         body: JSON.stringify({
           organizationId: "org_123",
-          // name missing
           price: 5000,
         }),
       },

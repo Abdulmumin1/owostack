@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { Hono } from "hono";
-import walletRoute from "../src/routes/api/wallet";
-import { verifyApiKey } from "../src/lib/api-keys";
 import {
-  deriveProviderEnvironment,
-  getProviderRegistry,
-  loadProviderAccounts,
-} from "../src/lib/providers";
+  createWalletRoute,
+  type WalletDependencies,
+} from "../src/routes/api/wallet";
+import { createRouteTestApp } from "./helpers/route-harness";
+import { err, ok } from "./helpers/result";
 
 interface MockDb {
   query: {
@@ -27,40 +25,6 @@ interface Env {
   ENCRYPTION_KEY: string;
   ENVIRONMENT: string;
 }
-
-vi.mock("@owostack/db", () => ({
-  schema: {
-    organizations: { id: "id" },
-    customers: { id: "id" },
-    paymentMethods: {
-      id: "id",
-      customerId: "customerId",
-      organizationId: "organizationId",
-    },
-  },
-}));
-
-vi.mock("../src/lib/api-keys", () => ({
-  verifyApiKey: vi.fn(),
-}));
-
-vi.mock("../src/lib/providers", () => ({
-  getProviderRegistry: vi.fn(),
-  loadProviderAccounts: vi.fn(),
-  deriveProviderEnvironment: vi.fn(() => "test"),
-}));
-
-const ok = <T>(value: T) => ({
-  isOk: () => true,
-  isErr: () => false,
-  value,
-});
-
-const err = (message: string) => ({
-  isOk: () => false,
-  isErr: () => true,
-  error: { message },
-});
 
 describe("/wallet/setup behavior", () => {
   const dbUpdateWhere = vi.fn(async () => []);
@@ -98,7 +62,20 @@ describe("/wallet/setup behavior", () => {
     ENVIRONMENT: "test",
   };
 
-  let app: Hono;
+  const verifyApiKeyMock = vi.fn();
+  const getProviderRegistryMock = vi.fn();
+  const loadProviderAccountsMock = vi.fn();
+  const deriveProviderEnvironmentMock = vi.fn(() => "test");
+  const deps: WalletDependencies = {
+    verifyApiKey:
+      verifyApiKeyMock as unknown as WalletDependencies["verifyApiKey"],
+    getProviderRegistry:
+      getProviderRegistryMock as unknown as WalletDependencies["getProviderRegistry"],
+    loadProviderAccounts:
+      loadProviderAccountsMock as unknown as WalletDependencies["loadProviderAccounts"],
+    deriveProviderEnvironment:
+      deriveProviderEnvironmentMock as unknown as WalletDependencies["deriveProviderEnvironment"],
+  };
 
   interface CustomerSessionResult {
     id: string;
@@ -140,29 +117,26 @@ describe("/wallet/setup behavior", () => {
     ),
   };
 
+  const app = createRouteTestApp(createWalletRoute(deps), {
+    db: mockDb,
+    authDb: mockAuthDb,
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
 
-    app = new Hono();
-    app.use("*", async (c, next) => {
-      c.set("db", mockDb);
-      c.set("authDb", mockAuthDb);
-      await next();
-    });
-    app.route("/", walletRoute);
-
-    vi.mocked(verifyApiKey).mockResolvedValue({
+    verifyApiKeyMock.mockResolvedValue({
       id: "key_1",
       organizationId: "org_1",
     });
 
-    vi.mocked(getProviderRegistry).mockReturnValue({
+    getProviderRegistryMock.mockReturnValue({
       get: vi.fn((providerId: string) =>
         providerId === "polar" ? polarAdapter : undefined,
       ),
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([
+    loadProviderAccountsMock.mockResolvedValue([
       {
         id: "acct_polar_1",
         organizationId: "org_1",
@@ -172,7 +146,7 @@ describe("/wallet/setup behavior", () => {
       },
     ]);
 
-    vi.mocked(deriveProviderEnvironment).mockReturnValue("test");
+    deriveProviderEnvironmentMock.mockReturnValue("test");
 
     mockDb.query.customers.findFirst.mockResolvedValue({
       id: "cust_1",

@@ -1,12 +1,18 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { handleChargeSuccess } from "./charge-success";
-import { handleSubscriptionCreated } from "./subscription-created";
+import {
+  chargeSuccessDependencies,
+  handleChargeSuccess,
+} from "./charge-success";
+import {
+  handleSubscriptionCreated,
+  subscriptionCreatedDependencies,
+} from "./subscription-created";
 import { handleRefund } from "./refund";
 import { handleCustomerIdentified } from "./customer-identified";
-import { handleSubscriptionStatus } from "./subscription-status";
-import { topUpScopedBalance } from "../../addon-credits";
-import { provisionEntitlements } from "../../plan-switch";
-import { upsertPaymentMethod } from "../../payment-methods";
+import {
+  handleSubscriptionStatus,
+  subscriptionStatusDependencies,
+} from "./subscription-status";
 
 interface MockDb {
   query: {
@@ -20,42 +26,6 @@ interface MockDb {
   update: Mock;
   delete: Mock;
 }
-
-vi.mock("@owostack/db", () => ({
-  schema: {
-    customers: { id: "id", email: "email", organizationId: "organizationId" },
-    subscriptions: {
-      id: "id",
-      customerId: "customerId",
-      status: "status",
-      planId: "planId",
-      paystackSubscriptionCode: "paystackSubscriptionCode",
-      providerSubscriptionCode: "providerSubscriptionCode",
-    },
-    plans: {
-      id: "id",
-      organizationId: "organizationId",
-      paystackPlanId: "paystackPlanId",
-      providerPlanId: "providerPlanId",
-    },
-    entitlements: { customerId: "customerId" },
-    credits: { id: "id", customerId: "customerId", balance: "balance" },
-    creditPurchases: { paymentReference: "paymentReference" },
-    entities: { customerId: "customerId", status: "status" },
-  },
-}));
-
-vi.mock("../../addon-credits", () => ({
-  topUpScopedBalance: vi.fn(async () => null),
-}));
-
-vi.mock("../../plan-switch", () => ({
-  provisionEntitlements: vi.fn(async () => null),
-}));
-
-vi.mock("../../payment-methods", () => ({
-  upsertPaymentMethod: vi.fn(async () => null),
-}));
 
 function createDbMock() {
   const insertValuesMock = vi.fn(async () => []);
@@ -157,8 +127,26 @@ function makeCtx(
 }
 
 describe("Webhook handlers behavior", () => {
+  const topUpScopedBalanceMock = vi.fn(async () => null);
+  const provisionEntitlementsMock = vi.fn(async () => null);
+  const upsertPaymentMethodMock = vi.fn(async () => null);
+
   beforeEach(() => {
     vi.clearAllMocks();
+    chargeSuccessDependencies.topUpScopedBalance =
+      topUpScopedBalanceMock as unknown as typeof chargeSuccessDependencies.topUpScopedBalance;
+    chargeSuccessDependencies.provisionEntitlements =
+      provisionEntitlementsMock as unknown as typeof chargeSuccessDependencies.provisionEntitlements;
+    chargeSuccessDependencies.upsertPaymentMethod =
+      upsertPaymentMethodMock as unknown as typeof chargeSuccessDependencies.upsertPaymentMethod;
+    subscriptionCreatedDependencies.provisionEntitlements =
+      provisionEntitlementsMock as unknown as typeof subscriptionCreatedDependencies.provisionEntitlements;
+    subscriptionCreatedDependencies.upsertPaymentMethod =
+      upsertPaymentMethodMock as unknown as typeof subscriptionCreatedDependencies.upsertPaymentMethod;
+    subscriptionStatusDependencies.provisionEntitlements =
+      provisionEntitlementsMock as unknown as typeof subscriptionStatusDependencies.provisionEntitlements;
+    subscriptionStatusDependencies.upsertPaymentMethod =
+      upsertPaymentMethodMock as unknown as typeof subscriptionStatusDependencies.upsertPaymentMethod;
   });
 
   it("charge.success credit purchase recalculates quantity from checkout line items and tops up scoped balance", async () => {
@@ -199,7 +187,7 @@ describe("Webhook handlers behavior", () => {
 
     await handleChargeSuccess(makeCtx(db, event));
 
-    expect(vi.mocked(topUpScopedBalance)).toHaveBeenCalledWith(
+    expect(topUpScopedBalanceMock).toHaveBeenCalledWith(
       db,
       "cus_1",
       "cs_1",
@@ -245,7 +233,7 @@ describe("Webhook handlers behavior", () => {
 
     await handleChargeSuccess(makeCtx(db, event));
 
-    expect(vi.mocked(topUpScopedBalance)).not.toHaveBeenCalled();
+    expect(topUpScopedBalanceMock).not.toHaveBeenCalled();
     expect(insertValuesMock).not.toHaveBeenCalled();
   });
 
@@ -282,7 +270,7 @@ describe("Webhook handlers behavior", () => {
     const updatePayload = updateSetMock.mock.calls[0]?.[0];
     expect(updatePayload.providerSubscriptionCode).toBe("sub_provider_1");
     expect(updatePayload.paystackSubscriptionCode).toBe("sub_provider_1");
-    expect(vi.mocked(provisionEntitlements)).not.toHaveBeenCalled();
+    expect(provisionEntitlementsMock).not.toHaveBeenCalled();
   });
 
   it("subscription.created creates subscription, provisions entitlements, and stores provider-managed payment method", async () => {
@@ -327,12 +315,12 @@ describe("Webhook handlers behavior", () => {
     expect(insertPayload.providerSubscriptionCode).toBe("dodo_sub_1");
     expect(insertPayload.status).toBe("active");
 
-    expect(vi.mocked(provisionEntitlements)).toHaveBeenCalledWith(
+    expect(provisionEntitlementsMock).toHaveBeenCalledWith(
       db,
       "cus_2",
       "plan_db_1",
     );
-    expect(vi.mocked(upsertPaymentMethod)).toHaveBeenCalledWith(
+    expect(upsertPaymentMethodMock).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         customerId: "cus_2",

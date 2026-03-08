@@ -20,6 +20,11 @@ export interface RenewalSetupMetadata {
   renewal_setup_last_source?: string | null;
 }
 
+export interface RenewalSetupRecoveryUpdate {
+  clearCancelAt: boolean;
+  metadata: Record<string, unknown>;
+}
+
 export function coerceMetadataRecord(
   metadata: unknown,
 ): Record<string, unknown> {
@@ -90,4 +95,52 @@ export function writeRenewalSetupMetadata(
 export function hasRenewalSetupIssue(metadata: unknown): boolean {
   const status = readRenewalSetupMetadata(metadata).renewal_setup_status;
   return status === "failed" || status === "scheduled" || status === "retrying";
+}
+
+export function buildRenewalSetupRecoveryUpdate(
+  metadata: unknown,
+  source: string,
+  now: number = Date.now(),
+): RenewalSetupRecoveryUpdate | null {
+  if (!hasRenewalSetupIssue(metadata)) return null;
+
+  const state = readRenewalSetupMetadata(metadata);
+  return {
+    clearCancelAt: true,
+    metadata: writeRenewalSetupMetadata(metadata, {
+      renewal_setup_status: "complete",
+      renewal_setup_retry_count: state.renewal_setup_retry_count || 0,
+      renewal_setup_last_error: null,
+      renewal_setup_last_attempt_at: now,
+      renewal_setup_next_attempt_at: null,
+      renewal_setup_updated_at: now,
+      renewal_setup_last_source: source,
+    }),
+  };
+}
+
+export function isRetryableRenewalSetupFailure(reason: string): boolean {
+  const normalized = (reason || "").trim().toLowerCase();
+  if (!normalized) return true;
+
+  if (
+    normalized === "missing_provider_plan_code" ||
+    normalized === "missing_provider_adapter" ||
+    normalized === "missing_customer_email" ||
+    normalized === "missing_provider_customer_id" ||
+    normalized === "missing_provider_payment_method" ||
+    normalized === "missing_provider_account"
+  ) {
+    return false;
+  }
+
+  if (
+    /invalid_authorization|validation_error|invalid_request|authorization.*(invalid|expired|not found)/i.test(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+
+  return true;
 }

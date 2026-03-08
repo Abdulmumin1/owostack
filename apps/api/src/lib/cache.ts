@@ -3,11 +3,12 @@
  * TTL: 60 seconds by default
  */
 
+const KV_MIN_TTL = 60; // Cloudflare KV requires expiration_ttl >= 60 seconds
 const DEFAULT_TTL = 60; // seconds
 const FEATURE_TTL = 300; // 5 min — rarely changes, invalidated on dashboard edits
 const PLAN_FEATURE_TTL = 300; // 5 min — rarely changes, invalidated on plan edits
 const SUBSCRIPTION_TTL = 120; // 2 min — more dynamic, invalidated on mutations
-const MANUAL_ENTITLEMENT_TTL = 30; // 30s — short to minimize stale override windows
+const MANUAL_ENTITLEMENT_TTL = KV_MIN_TTL; // KV minimum; shorter values are rejected
 
 type CacheKey =
   | `org:${string}:customer:${string}`
@@ -18,6 +19,10 @@ type CacheKey =
 
 export class EntitlementCache {
   constructor(private kv: KVNamespace) {}
+
+  private normalizeTtl(ttl: number): number {
+    return Math.max(KV_MIN_TTL, Math.ceil(ttl));
+  }
 
   private key(type: string, orgId: string, id: string): CacheKey {
     return `org:${orgId}:${type}:${id}` as CacheKey;
@@ -36,7 +41,7 @@ export class EntitlementCache {
     await this.kv.put(
       this.key("customer", orgId, customerId),
       JSON.stringify(data),
-      { expirationTtl: ttl }
+      { expirationTtl: this.normalizeTtl(ttl) }
     );
   }
 
@@ -91,7 +96,7 @@ export class EntitlementCache {
     await this.kv.put(
       this.key("feature", orgId, featureId),
       JSON.stringify(data),
-      { expirationTtl: ttl }
+      { expirationTtl: this.normalizeTtl(ttl) }
     );
   }
 
@@ -112,7 +117,7 @@ export class EntitlementCache {
     await this.kv.put(
       this.key("subscriptions", orgId, customerId),
       JSON.stringify(data),
-      { expirationTtl: ttl }
+      { expirationTtl: this.normalizeTtl(ttl) }
     );
   }
 
@@ -133,7 +138,7 @@ export class EntitlementCache {
     await this.kv.put(
       this.key("planFeatures", orgId, cacheKey),
       JSON.stringify(data),
-      { expirationTtl: ttl }
+      { expirationTtl: this.normalizeTtl(ttl) }
     );
   }
 
@@ -171,7 +176,7 @@ export class EntitlementCache {
     await this.kv.put(
       this.key("manualEntitlement", orgId, cacheKey),
       JSON.stringify({ value: data }),
-      { expirationTtl: ttl },
+      { expirationTtl: this.normalizeTtl(ttl) },
     );
   }
 

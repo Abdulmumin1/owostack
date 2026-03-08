@@ -3,8 +3,21 @@ import { eq, and, or, sql } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
 import { topUpScopedBalance } from "../../addon-credits";
 import { upsertPaymentMethod } from "../../payment-methods";
+import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
 import type { WebhookContext } from "../types";
 import { safeParseDate, intervalToMs } from "../types";
+
+export type ChargeSuccessDependencies = {
+  provisionEntitlements: typeof provisionEntitlements;
+  topUpScopedBalance: typeof topUpScopedBalance;
+  upsertPaymentMethod: typeof upsertPaymentMethod;
+};
+
+export const chargeSuccessDependencies: ChargeSuccessDependencies = {
+  provisionEntitlements,
+  topUpScopedBalance,
+  upsertPaymentMethod,
+};
 
 export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
   const { db, organizationId, event } = ctx;
@@ -115,7 +128,7 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
     event.authorization.last4
   ) {
     try {
-      await upsertPaymentMethod(db, {
+      await chargeSuccessDependencies.upsertPaymentMethod(db, {
         customerId: dbCustomer.id,
         organizationId,
         providerId: event.provider,
@@ -306,7 +319,7 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
 
       // Provision entitlements for newly activated subscription
       if (metadata.plan_id) {
-        await provisionEntitlements(
+        await chargeSuccessDependencies.provisionEntitlements(
           db,
           dbCustomer.id,
           String(metadata.plan_id),
@@ -627,7 +640,11 @@ async function handleTrialCreation(
   }
 
   // Provision entitlements so trial users can access features
-  await provisionEntitlements(db, dbCustomer.id, planId);
+  await chargeSuccessDependencies.provisionEntitlements(
+    db,
+    dbCustomer.id,
+    planId,
+  );
 
   // Invalidate cache so /check sees the trial subscription immediately
   if (ctx.cache) {
@@ -770,7 +787,12 @@ async function handleCreditPurchase(
   }
 
   // Atomic upsert into credit_system_balances (uses UNIQUE index)
-  await topUpScopedBalance(db, dbCustomer.id, creditSystemId, creditsAmount);
+  await chargeSuccessDependencies.topUpScopedBalance(
+    db,
+    dbCustomer.id,
+    creditSystemId,
+    creditsAmount,
+  );
 
   // Record the purchase in the ledger
   await (db as any).insert((schema as any).creditPurchases).values({
@@ -831,7 +853,11 @@ async function handleOneTimePurchase(
     ]);
   }
 
-  await provisionEntitlements(db, dbCustomer.id, planId);
+  await chargeSuccessDependencies.provisionEntitlements(
+    db,
+    dbCustomer.id,
+    planId,
+  );
 
   // Invalidate cache so /check sees the one-time purchase immediately
   if (ctx.cache) {
@@ -942,7 +968,11 @@ async function handleSubscriptionPayment(
     await cleanupPendingRemovalEntities(db, dbCustomer.id);
   }
 
-  await provisionEntitlements(db, dbCustomer.id, planId);
+  await chargeSuccessDependencies.provisionEntitlements(
+    db,
+    dbCustomer.id,
+    planId,
+  );
 
   // Invalidate cached subscriptions so /check and /track see the updated period
   if (cache) {
@@ -982,6 +1012,12 @@ async function handleAutoRenewal(
     // Prefer provider's next billing date over calculated period (more accurate for variable-length months)
     const endMs =
       safeParseDate(event.subscription?.nextPaymentDate) || startMs + periodMs;
+    const now = Date.now();
+    const renewalSetupRecovery = buildRenewalSetupRecoveryUpdate(
+      existingSub.metadata,
+      "auto_renewal",
+      now,
+    );
 
     await db
       .update(schema.subscriptions)
@@ -989,7 +1025,9 @@ async function handleAutoRenewal(
         status: "active",
         currentPeriodStart: startMs,
         currentPeriodEnd: endMs,
-        updatedAt: Date.now(),
+        cancelAt: renewalSetupRecovery?.clearCancelAt ? null : undefined,
+        metadata: renewalSetupRecovery?.metadata,
+        updatedAt: now,
       })
       .where(eq(schema.subscriptions.id, existingSub.id));
 
@@ -1057,6 +1095,12 @@ async function handleAutoRenewalByCustomerPlan(
     Date.now();
   const endMs =
     safeParseDate(event.subscription?.nextPaymentDate) || startMs + periodMs;
+  const now = Date.now();
+  const renewalSetupRecovery = buildRenewalSetupRecoveryUpdate(
+    existingSub.metadata,
+    "auto_renewal_fallback",
+    now,
+  );
 
   await db
     .update(schema.subscriptions)
@@ -1065,7 +1109,9 @@ async function handleAutoRenewalByCustomerPlan(
       currentPeriodStart: startMs,
       currentPeriodEnd: endMs,
       providerId: event.provider,
-      updatedAt: Date.now(),
+      cancelAt: renewalSetupRecovery?.clearCancelAt ? null : undefined,
+      metadata: renewalSetupRecovery?.metadata,
+      updatedAt: now,
     })
     .where(eq(schema.subscriptions.id, existingSub.id));
 
@@ -1229,7 +1275,12 @@ async function handlePlanUpgradeInline(
     }
   }
 
-  await provisionEntitlements(db, dbCustomer.id, newPlanId, oldPlanId);
+  await chargeSuccessDependencies.provisionEntitlements(
+    db,
+    dbCustomer.id,
+    newPlanId,
+    oldPlanId,
+  );
 
   // Invalidate cache so /check and /track see the new subscription
   if (cache) {

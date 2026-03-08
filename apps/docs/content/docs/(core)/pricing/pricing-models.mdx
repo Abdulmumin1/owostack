@@ -1,7 +1,7 @@
 ---
 title: Pricing models
 description: Included quotas, usage-based billing, graduated tiers, volume pricing, seats, and credits
-icon: Scale
+icon: Blend
 ---
 
 # Pricing models
@@ -16,6 +16,9 @@ credits, seat pricing, and volumetric pricing without inventing a different
 system for each product.
 
 ## The two layers
+
+
+![The two layers](https://mac-file.yaqeen.me/0091306E-Screenshot%202026-03-08%20at%2012.15.04.png)
 
 ### Entitlement model
 
@@ -45,6 +48,7 @@ This decides **how billable usage is priced**.
 
 You can combine these layers.
 
+
 Examples:
 
 - `included + package`
@@ -72,6 +76,8 @@ Important rule:
 
 So if a plan includes `100` units and the customer uses `220`, the rating model
 sees `120` billable units.
+
+![billable unit diagram](https://mac-file.yaqeen.me/BD780B48-Screenshot%202026-03-08%20at%2012.16.17.png)
 
 ## Usage-based pricing
 
@@ -155,6 +161,8 @@ Mental model:
 
 ## Graduated vs volume
 
+![graduated vs volume pricing diagram](https://mac-file.yaqeen.me/5D45E916-Screenshot%202026-03-08%20at%2012.17.58.png)
+
 These two models are the easiest to confuse.
 
 For the same `31` billable units:
@@ -182,6 +190,8 @@ usage at that band's rate.
 ## Flat-priced tiers
 
 Owostack also supports `flatFee` inside volumetric tiers.
+
+![flat fee diagram graduated vs volumetric](https://mac-file.yaqeen.me/958CC192-Screenshot%202026-03-08%20at%2012.29.07.png)
 
 A tier may define:
 

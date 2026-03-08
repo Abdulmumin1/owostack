@@ -11,7 +11,19 @@ import {
 import type { ProviderAccount } from "@owostack/adapters";
 import type { Env, Variables } from "../../index";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+export type WalletDependencies = {
+  verifyApiKey: typeof verifyApiKey;
+  getProviderRegistry: typeof getProviderRegistry;
+  loadProviderAccounts: typeof loadProviderAccounts;
+  deriveProviderEnvironment: typeof deriveProviderEnvironment;
+};
+
+const defaultDependencies: WalletDependencies = {
+  verifyApiKey,
+  getProviderRegistry,
+  loadProviderAccounts,
+  deriveProviderEnvironment,
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,20 +54,6 @@ function toPaymentMethod(row: any) {
   };
 }
 
-async function resolveAuth(c: any) {
-  const authHeader = c.req.header("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return { error: c.json({ success: false, error: "Missing API Key" }, 401) };
-  }
-  const apiKey = authHeader.split(" ")[1];
-  const authDb = c.get("authDb");
-  const keyRecord = await verifyApiKey(authDb, apiKey);
-  if (!keyRecord) {
-    return { error: c.json({ success: false, error: "Invalid API Key" }, 401) };
-  }
-  return { keyRecord, authDb };
-}
-
 async function resolveCustomer(
   db: any,
   organizationId: string,
@@ -71,62 +69,86 @@ async function resolveCustomer(
   });
 }
 
-// ---------------------------------------------------------------------------
-// GET /wallet?customer=...
-// ---------------------------------------------------------------------------
+export function createWalletRoute(
+  overrides: Partial<WalletDependencies> = {},
+) {
+  const deps = { ...defaultDependencies, ...overrides };
+  const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-app.get("/wallet", async (c) => {
-  const auth = await resolveAuth(c);
-  if ("error" in auth) return auth.error;
-  const { keyRecord } = auth;
-
-  const customer = c.req.query("customer");
-  if (!customer) {
-    return c.json(
-      { success: false, error: "customer query param required" },
-      400,
-    );
+  async function resolveAuth(c: any) {
+    const authHeader = c.req.header("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return {
+        error: c.json({ success: false, error: "Missing API Key" }, 401),
+      };
+    }
+    const apiKey = authHeader.split(" ")[1];
+    const authDb = c.get("authDb");
+    const keyRecord = await deps.verifyApiKey(authDb, apiKey);
+    if (!keyRecord) {
+      return {
+        error: c.json({ success: false, error: "Invalid API Key" }, 401),
+      };
+    }
+    return { keyRecord, authDb };
   }
 
-  const db = c.get("db");
-  const organizationId = keyRecord.organizationId;
+  // ---------------------------------------------------------------------------
+  // GET /wallet?customer=...
+  // ---------------------------------------------------------------------------
 
-  const dbCustomer = await resolveCustomer(db, organizationId, customer);
-  if (!dbCustomer) {
-    return c.json({ hasCard: false, card: null, methods: [] });
-  }
+  app.get("/wallet", async (c) => {
+    const auth = await resolveAuth(c);
+    if ("error" in auth) return auth.error;
+    const { keyRecord } = auth;
 
-  const methods = await db.query.paymentMethods.findMany({
-    where: and(
-      eq(schema.paymentMethods.customerId, dbCustomer.id),
-      eq(schema.paymentMethods.organizationId, organizationId),
-    ),
+    const customer = c.req.query("customer");
+    if (!customer) {
+      return c.json(
+        { success: false, error: "customer query param required" },
+        400,
+      );
+    }
+
+    const db = c.get("db");
+    const organizationId = keyRecord.organizationId;
+
+    const dbCustomer = await resolveCustomer(db, organizationId, customer);
+    if (!dbCustomer) {
+      return c.json({ hasCard: false, card: null, methods: [] });
+    }
+
+    const methods = await db.query.paymentMethods.findMany({
+      where: and(
+        eq(schema.paymentMethods.customerId, dbCustomer.id),
+        eq(schema.paymentMethods.organizationId, organizationId),
+      ),
+    });
+
+    const mapped = methods.map(toPaymentMethod);
+    const defaultMethod = mapped.find((m: any) => m.isDefault && m.isValid);
+
+    return c.json({
+      hasCard: !!defaultMethod,
+      card: defaultMethod?.card || null,
+      methods: mapped,
+    });
   });
 
-  const mapped = methods.map(toPaymentMethod);
-  const defaultMethod = mapped.find((m: any) => m.isDefault && m.isValid);
+  // ---------------------------------------------------------------------------
+  // POST /wallet/setup — generate a card capture checkout URL
+  // ---------------------------------------------------------------------------
 
-  return c.json({
-    hasCard: !!defaultMethod,
-    card: defaultMethod?.card || null,
-    methods: mapped,
+  const setupSchema = z.object({
+    customer: z.string(),
+    callbackUrl: z.string().url().optional(),
+    provider: z.string().optional(),
   });
-});
 
-// ---------------------------------------------------------------------------
-// POST /wallet/setup — generate a card capture checkout URL
-// ---------------------------------------------------------------------------
-
-const setupSchema = z.object({
-  customer: z.string(),
-  callbackUrl: z.string().url().optional(),
-  provider: z.string().optional(),
-});
-
-app.post("/wallet/setup", async (c) => {
-  const auth = await resolveAuth(c);
-  if ("error" in auth) return auth.error;
-  const { keyRecord } = auth;
+  app.post("/wallet/setup", async (c) => {
+    const auth = await resolveAuth(c);
+    if ("error" in auth) return auth.error;
+    const { keyRecord } = auth;
 
   const body = await c.req.json();
   const parsed = setupSchema.safeParse(body);
@@ -154,9 +176,9 @@ app.post("/wallet/setup", async (c) => {
   const orgDefaultCurrency = (org?.metadata as any)?.defaultCurrency || null;
 
   // Resolve provider account from provider_accounts table
-  const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
-  const registry = getProviderRegistry();
-  const providerAccounts = await loadProviderAccounts(
+  const providerEnv = deps.deriveProviderEnvironment(c.env.ENVIRONMENT, null);
+  const registry = deps.getProviderRegistry();
+  const providerAccounts = await deps.loadProviderAccounts(
     db,
     organizationId,
     c.env.ENCRYPTION_KEY,
@@ -366,21 +388,21 @@ app.post("/wallet/setup", async (c) => {
     url: result.value.url,
     reference: result.value.reference,
   });
-});
+  });
 
-// ---------------------------------------------------------------------------
-// POST /wallet/remove — remove a payment method
-// ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // POST /wallet/remove — remove a payment method
+  // ---------------------------------------------------------------------------
 
-const removeSchema = z.object({
-  customer: z.string(),
-  id: z.string(),
-});
+  const removeSchema = z.object({
+    customer: z.string(),
+    id: z.string(),
+  });
 
-app.post("/wallet/remove", async (c) => {
-  const auth = await resolveAuth(c);
-  if ("error" in auth) return auth.error;
-  const { keyRecord } = auth;
+  app.post("/wallet/remove", async (c) => {
+    const auth = await resolveAuth(c);
+    if ("error" in auth) return auth.error;
+    const { keyRecord } = auth;
 
   const body = await c.req.json();
   const parsed = removeSchema.safeParse(body);
@@ -416,6 +438,9 @@ app.post("/wallet/remove", async (c) => {
   }
 
   return c.json({ success: true });
-});
+  });
 
-export default app;
+  return app;
+}
+
+export default createWalletRoute();

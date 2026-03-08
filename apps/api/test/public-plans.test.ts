@@ -1,62 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { app } from "../src/index";
-import { verifyApiKey } from "../src/lib/api-keys";
-
-const mockDb = {
-  query: {
-    plans: {
-      findMany: vi.fn(),
-      findFirst: vi.fn(),
-    },
-  },
-};
-
-vi.mock("@owostack/db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@owostack/db")>("@owostack/db");
-  return {
-    ...actual,
-    createDb: () => mockDb,
-  };
-});
-
-vi.mock("../src/lib/api-keys", async () => {
-  const actual = await vi.importActual<typeof import("../src/lib/api-keys")>(
-    "../src/lib/api-keys",
-  );
-  return {
-    ...actual,
-    verifyApiKey: vi.fn(),
-  };
-});
-
-vi.mock("../src/lib/auth", () => ({
-  auth: () => ({
-    handler: () => new Response("Auth"),
-    api: {
-      getSession: vi.fn().mockResolvedValue(null),
-    },
-  }),
-}));
-
-vi.mock("../src/lib/webhooks", () => ({
-  WebhookHandler: class {},
-}));
-
-const env = {
-  DB: {},
-  DB_AUTH: {},
-  BETTER_AUTH_SECRET: "secret",
-  BETTER_AUTH_URL: "http://localhost",
-  ENCRYPTION_KEY: "test_key",
-  PAYSTACK_SECRET_KEY: "sk_test",
-  PAYSTACK_WEBHOOK_SECRET: "wh_secret",
-};
+import {
+  createApiPlansRoute,
+  type ApiPlansDependencies,
+} from "../src/routes/api/plans";
+import { createRouteTestApp } from "./helpers/route-harness";
 
 describe("GET /api/v1/plans", () => {
+  const mockDb = {
+    query: {
+      plans: {
+        findMany: vi.fn(),
+        findFirst: vi.fn(),
+      },
+    },
+  };
+  const verifyApiKeyMock = vi.fn();
+  const deps: ApiPlansDependencies = {
+    verifyApiKey:
+      verifyApiKeyMock as unknown as ApiPlansDependencies["verifyApiKey"],
+  };
+  const app = createRouteTestApp(createApiPlansRoute(deps), {
+    db: mockDb,
+    authDb: {},
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(verifyApiKey).mockResolvedValue({
+    verifyApiKeyMock.mockResolvedValue({
       id: "key_123",
       organizationId: "org_123",
     });
@@ -98,16 +68,12 @@ describe("GET /api/v1/plans", () => {
       },
     ]);
 
-    const res = await app.request(
-      "/api/v1/plans",
-      {
-        method: "GET",
-        headers: {
-          Authorization: "Bearer owo_sk_test",
-        },
+    const res = await app.request("/", {
+      method: "GET",
+      headers: {
+        Authorization: "Bearer owo_sk_test",
       },
-      env,
-    );
+    });
 
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -161,16 +127,12 @@ describe("GET /api/v1/plans", () => {
       },
     ]);
 
-    const res = await app.request(
-      "/api/v1/plans",
-      {
-        method: "GET",
-        headers: {
-          Authorization: "Bearer owo_sk_test",
-        },
+    const res = await app.request("/", {
+      method: "GET",
+      headers: {
+        Authorization: "Bearer owo_sk_test",
       },
-      env,
-    );
+    });
 
     expect(res.status).toBe(200);
     const body = await res.json();

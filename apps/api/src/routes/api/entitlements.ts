@@ -28,6 +28,30 @@ import {
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+export type EntitlementsDependencies = {
+  verifyApiKey: typeof verifyApiKey;
+  resolveOrCreateCustomer: typeof resolveOrCreateCustomer;
+  getScopedBalance: typeof getScopedBalance;
+  deductScopedBalance: typeof deductScopedBalance;
+  checkOverageAllowed: typeof checkOverageAllowed;
+  getOrgOverageSettings: typeof getOrgOverageSettings;
+  getUnbilledOverageAmount: typeof getUnbilledOverageAmount;
+};
+
+const defaultDependencies: EntitlementsDependencies = {
+  verifyApiKey,
+  resolveOrCreateCustomer,
+  getScopedBalance,
+  deductScopedBalance,
+  checkOverageAllowed,
+  getOrgOverageSettings,
+  getUnbilledOverageAmount,
+};
+
+function getEntitlementsDependencies(c: any): EntitlementsDependencies {
+  return c.get?.("entitlementsDeps") ?? defaultDependencies;
+}
+
 const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
 
 function getUsageModel(
@@ -286,6 +310,7 @@ function scheduleUsagePersist(
 
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
+  const deps = getEntitlementsDependencies(c);
   const authHeader = c.req.header("Authorization");
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -295,7 +320,7 @@ app.use("*", async (c, next) => {
   const apiKey = authHeader.split(" ")[1];
   const authDb = c.get("authDb");
 
-  const keyRecord = await verifyApiKey(authDb, apiKey, {
+  const keyRecord = await deps.verifyApiKey(authDb, apiKey, {
     cache: c.env.CACHE_SHARED ?? c.env.CACHE,
     waitUntil: (promise) => c.executionCtx.waitUntil(promise),
   });
@@ -346,16 +371,21 @@ async function tryDeductAddonCredits(
   customerId: string,
   amount: number,
   creditSystemId: string,
+  deps: EntitlementsDependencies = defaultDependencies,
 ): Promise<{ deducted: boolean; remaining?: number }> {
   // Atomic deduct with WHERE balance >= amount guard (prevents negative balance under concurrency)
-  const success = await deductScopedBalance(
+  const success = await deps.deductScopedBalance(
     db,
     customerId,
     creditSystemId,
     amount,
   );
   if (success) {
-    const remaining = await getScopedBalance(db, customerId, creditSystemId);
+    const remaining = await deps.getScopedBalance(
+      db,
+      customerId,
+      creditSystemId,
+    );
     return { deducted: true, remaining };
   }
   return { deducted: false };
@@ -368,8 +398,9 @@ async function getAddonBalance(
   db: any,
   customerId: string,
   creditSystemId: string,
+  deps: EntitlementsDependencies = defaultDependencies,
 ): Promise<number> {
-  return getScopedBalance(db, customerId, creditSystemId);
+  return deps.getScopedBalance(db, customerId, creditSystemId);
 }
 
 // ---------------------------------------------------------------------------
@@ -558,6 +589,7 @@ async function getManualEntitlementForFeature(
 
 // Check Access
 app.post("/check", async (c) => {
+  const deps = getEntitlementsDependencies(c);
   const body = await c.req.json();
   const parsed = checkSchema.safeParse(body);
 
@@ -586,7 +618,7 @@ app.post("/check", async (c) => {
 
   // 1 & 2. Resolve Customer and Feature in parallel
   const [customer, featureResult] = await Promise.all([
-    resolveOrCreateCustomer({
+    deps.resolveOrCreateCustomer({
       db,
       organizationId,
       customerId,
@@ -1110,7 +1142,7 @@ app.post("/check", async (c) => {
       }
 
       if (usageModel === "usage_based") {
-        const usageBasedGuard = await checkOverageAllowed(
+        const usageBasedGuard = await deps.checkOverageAllowed(
           db,
           customer.id,
           effectiveFeatureId,
@@ -1155,6 +1187,7 @@ app.post("/check", async (c) => {
             db,
             customer.id,
             creditMapping.creditSystemId,
+            deps,
           );
           if (addonBalance >= effectiveValue) {
             if (sendEvent) {
@@ -1163,6 +1196,7 @@ app.post("/check", async (c) => {
                 customer.id,
                 effectiveValue,
                 creditMapping.creditSystemId,
+                deps,
               );
               scheduleUsagePersist(
                 c,
@@ -1211,7 +1245,7 @@ app.post("/check", async (c) => {
 
         // If overage is "charge", check guards before allowing
         if (overageSetting === "charge") {
-          const overageGuard = await checkOverageAllowed(
+          const overageGuard = await deps.checkOverageAllowed(
             db,
             customer.id,
             effectiveFeatureId,
@@ -1258,7 +1292,12 @@ app.post("/check", async (c) => {
 
         // Otherwise block
         const blockAddonCredits = creditMapping
-          ? await getAddonBalance(db, customer.id, creditMapping.creditSystemId)
+          ? await getAddonBalance(
+              db,
+              customer.id,
+              creditMapping.creditSystemId,
+              deps,
+            )
           : undefined;
         return c.json({
           allowed: false,
@@ -1504,7 +1543,7 @@ app.post("/check", async (c) => {
     const usageModel = getUsageModel(planFeature);
 
     if (usageModel === "usage_based") {
-      const usageBasedGuard = await checkOverageAllowed(
+      const usageBasedGuard = await deps.checkOverageAllowed(
         db,
         customer.id,
         effectiveFeatureId,
@@ -1581,6 +1620,7 @@ app.post("/check", async (c) => {
           db,
           customer.id,
           creditMapping.creditSystemId,
+          deps,
         );
         if (addonBalance >= effectiveValue) {
           return c.json({
@@ -1611,7 +1651,7 @@ app.post("/check", async (c) => {
 
       // If overage is "charge", check guards before allowing
       if (overageSetting === "charge") {
-        const overageGuard = await checkOverageAllowed(
+        const overageGuard = await deps.checkOverageAllowed(
           db,
           customer.id,
           effectiveFeatureId,
@@ -1772,6 +1812,7 @@ app.post("/check", async (c) => {
 
 // Track Usage
 app.post("/track", async (c) => {
+  const deps = getEntitlementsDependencies(c);
   const body = await c.req.json();
   const parsed = trackSchema.safeParse(body);
 
@@ -1800,7 +1841,7 @@ app.post("/track", async (c) => {
 
   // 1 & 2. Resolve Customer and Feature in parallel
   const [trackCustomer, trackFeatureResult] = await Promise.all([
-    resolveOrCreateCustomer({
+    deps.resolveOrCreateCustomer({
       db,
       organizationId,
       customerId,
@@ -2218,7 +2259,7 @@ app.post("/track", async (c) => {
       };
 
       if (usageModel === "usage_based") {
-        const usageBasedGuard = await checkOverageAllowed(
+        const usageBasedGuard = await deps.checkOverageAllowed(
           db,
           customer.id,
           trackEffectiveFeatureId,
@@ -2334,6 +2375,7 @@ app.post("/track", async (c) => {
             customer.id,
             trackEffectiveValue,
             trackCreditMapping.creditSystemId,
+            deps,
           );
           if (deductResult.deducted) {
             scheduleUsagePersist(
@@ -2392,7 +2434,7 @@ app.post("/track", async (c) => {
             trackEffectiveValue - includedBalanceBeforeOverage,
           );
 
-          const overageGuard = await checkOverageAllowed(
+          const overageGuard = await deps.checkOverageAllowed(
             db,
             customer.id,
             trackEffectiveFeatureId,
@@ -2444,7 +2486,7 @@ app.post("/track", async (c) => {
               doResult = consumeIncludedResult;
             } else {
               // If balance changed concurrently, re-check guard for full request as overage.
-              const raceOverageGuard = await checkOverageAllowed(
+              const raceOverageGuard = await deps.checkOverageAllowed(
                 db,
                 customer.id,
                 trackEffectiveFeatureId,
@@ -2491,6 +2533,7 @@ app.post("/track", async (c) => {
                 db,
                 customer.id,
                 trackCreditMapping.creditSystemId,
+                deps,
               )
             : undefined;
           return c.json({
@@ -2519,7 +2562,7 @@ app.post("/track", async (c) => {
     }
 
     if (usageModel === "usage_based" && !doResult) {
-      const usageBasedGuard = await checkOverageAllowed(
+      const usageBasedGuard = await deps.checkOverageAllowed(
         db,
         customer.id,
         trackEffectiveFeatureId,
@@ -2603,12 +2646,15 @@ app.post("/track", async (c) => {
       c.executionCtx.waitUntil(
         (async () => {
           try {
-            const orgSettings = await getOrgOverageSettings(db, organizationId);
+            const orgSettings = await deps.getOrgOverageSettings(
+              db,
+              organizationId,
+            );
             if (
               orgSettings?.billingInterval === "threshold" &&
               orgSettings.thresholdAmount
             ) {
-              const unbilledAmount = await getUnbilledOverageAmount(
+              const unbilledAmount = await deps.getUnbilledOverageAmount(
                 db,
                 customer.id,
                 {

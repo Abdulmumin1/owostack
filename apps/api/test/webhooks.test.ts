@@ -1,108 +1,115 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createHmac } from "crypto";
-import { Result } from "better-result";
-import { app } from "../src/index";
-
-// =============================================================================
-// Mocks
-// =============================================================================
-
-const mockVerify = vi.fn();
-const mockHandle = vi.fn();
-
-const mockOrg = {
-  id: "org-123",
-  name: "Test Org",
-  slug: "test-org",
-  webhookSecret: "wh_secret",
-  testSecretKey: "encrypted_key",
-  testWebhookSecret: "wh_secret",
-};
-
-const mockDb = {
-  insert: vi.fn().mockReturnThis(),
-  values: vi.fn().mockResolvedValue([]),
-  query: {
-    organizations: { findFirst: vi.fn().mockResolvedValue(mockOrg) },
-    providerAccounts: { findMany: vi.fn().mockResolvedValue([]) },
-    customers: { findFirst: vi.fn() },
-    plans: { findFirst: vi.fn() },
-  },
-};
-
-vi.mock("@owostack/db", () => ({
-  createDb: () => mockDb,
-  schema: {
-    events: {},
-    organizations: { id: {}, organizationId: {} },
-    providerAccounts: { organizationId: {}, providerId: {} },
-    customers: {},
-    plans: {},
-    subscriptions: {},
-  },
-}));
-
-vi.mock("../src/lib/paystack", () => ({
-  PaystackClient: class {},
-}));
-
-vi.mock("../src/lib/entitlements", () => ({
-  EntitlementService: class {},
-}));
-
-vi.mock("../src/lib/webhooks", () => ({
-  WebhookHandler: class {
-    verify = mockVerify;
-    handle = mockHandle;
-  },
-}));
-
-vi.mock("../src/lib/auth", () => ({
-  auth: () => ({
-    handler: () => new Response("Auth"),
-    api: {
-      getSession: vi.fn().mockResolvedValue(null),
-    },
-  }),
-}));
-
-// Mock KV
-const mockKv = { get: vi.fn() };
-
-// =============================================================================
-// Tests
-// =============================================================================
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createWebhookRoutes } from "../src/routes/webhooks";
+import type { WebhookRouteDependencies } from "../src/routes/webhooks";
+import { createRouteTestApp } from "./helpers/route-harness";
+import { err, ok } from "./helpers/result";
 
 describe("Webhooks API", () => {
+  const handlerHandleMock = vi.fn();
+  const decryptMock = vi.fn(async (value: string) => value);
+  const registryGetMock = vi.fn();
+
+  const billingDb = {
+    insert: vi.fn(() => ({
+      values: vi.fn(() => ({
+        onConflictDoNothing: vi.fn(async () => null),
+      })),
+    })),
+    query: {
+      organizations: { findFirst: vi.fn() },
+      providerAccounts: { findMany: vi.fn() },
+    },
+  };
+
+  const authDb = {
+    query: {
+      organizations: { findFirst: vi.fn() },
+    },
+  };
+
   const secret = "wh_secret";
   const orgId = "org-123";
+  const mockOrg = {
+    id: orgId,
+    name: "Test Org",
+    slug: "test-org",
+    webhookSecret: secret,
+    testSecretKey: "encrypted_key",
+    testWebhookSecret: secret,
+    liveWebhookSecret: null,
+    liveSecretKey: null,
+  };
 
-  const mockEnv: {
-    DB: Record<string, unknown>;
-    API_KEYS: typeof mockKv;
-    PAYSTACK_SECRET_KEY: string;
-    PAYSTACK_WEBHOOK_SECRET: string;
-    BETTER_AUTH_SECRET: string;
-    BETTER_AUTH_URL: string;
-    ENCRYPTION_KEY: string;
-    ENVIRONMENT: string;
-  } = {
-    DB: {},
-    API_KEYS: mockKv,
-    PAYSTACK_SECRET_KEY: "sk_test",
-    PAYSTACK_WEBHOOK_SECRET: secret,
-    BETTER_AUTH_SECRET: "secret",
-    BETTER_AUTH_URL: "http://localhost",
+  const adapter = {
+    signatureHeaderName: "x-paystack-signature",
+    verifyWebhook: vi.fn(
+      async ({
+        signature,
+        payload,
+        secret,
+      }: {
+        signature: string;
+        payload: string;
+        secret: string;
+      }) => {
+        const expected = createHmac("sha512", secret).update(payload).digest("hex");
+        return expected === signature ? ok(true) : err("invalid_signature");
+      },
+    ),
+    parseWebhookEvent: vi.fn(
+      ({ payload }: { payload: Record<string, unknown> }) =>
+        ok({
+          type: String(payload.event || "unknown"),
+          provider: "paystack",
+          metadata: {},
+          raw: payload,
+          payment: undefined,
+        }),
+    ),
+  };
+
+  const deps: WebhookRouteDependencies = {
+    getProviderRegistry: (() => ({
+      get: registryGetMock,
+    })) as unknown as WebhookRouteDependencies["getProviderRegistry"],
+    decrypt: decryptMock as unknown as WebhookRouteDependencies["decrypt"],
+    createWebhookHandler: (() => ({
+      handle: handlerHandleMock,
+    })) as WebhookRouteDependencies["createWebhookHandler"],
+  };
+
+  const mockEnv = {
     ENCRYPTION_KEY: "test_key",
     ENVIRONMENT: "test",
+    CACHE: undefined,
+    TRIAL_END_WORKFLOW: { create: vi.fn(async () => null) },
+    PLAN_UPGRADE_WORKFLOW: { create: vi.fn(async () => null) },
+    ANALYTICS: undefined,
   };
+
+  let app: ReturnType<
+    typeof createRouteTestApp<{ db: typeof billingDb; authDb: typeof authDb }>
+  >;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDb.query.organizations.findFirst.mockResolvedValue(mockOrg);
+
+    app = createRouteTestApp(createWebhookRoutes(deps), {
+      db: billingDb,
+      authDb,
+    });
+
+    authDb.query.organizations.findFirst.mockResolvedValue(mockOrg);
+    billingDb.query.organizations.findFirst.mockResolvedValue({ id: orgId });
+    billingDb.query.providerAccounts.findMany.mockResolvedValue([]);
+    registryGetMock.mockImplementation((providerId: string) =>
+      providerId === "paystack" ? adapter : undefined,
+    );
+    handlerHandleMock.mockResolvedValue(ok(true));
   });
 
-  it("should reject requests without signature", async () => {
+  it("rejects requests without signature", async () => {
     const res = await app.request(
       `/webhooks/${orgId}`,
       {
@@ -118,11 +125,11 @@ describe("Webhooks API", () => {
     expect(json.error.code).toBe("WebhookError");
   });
 
-  it("should return 404 for unknown organization", async () => {
-    mockDb.query.organizations.findFirst.mockResolvedValue(null);
+  it("returns 404 for unknown organization", async () => {
+    authDb.query.organizations.findFirst.mockResolvedValue(null);
 
     const res = await app.request(
-      `/webhooks/unknown-org`,
+      "/webhooks/unknown-org",
       {
         method: "POST",
         body: JSON.stringify({ event: "test" }),
@@ -139,15 +146,7 @@ describe("Webhooks API", () => {
     expect(json.error).toContain("not found");
   });
 
-  it("should reject requests with invalid signature", async () => {
-    mockVerify.mockResolvedValue(
-      Result.err({
-        _tag: "WebhookError",
-        reason: "invalid_signature",
-        message: "Invalid",
-      }),
-    );
-
+  it("rejects requests with invalid signature", async () => {
     const res = await app.request(
       `/webhooks/${orgId}`,
       {
@@ -162,19 +161,15 @@ describe("Webhooks API", () => {
     );
 
     expect(res.status).toBe(401);
+    expect(handlerHandleMock).not.toHaveBeenCalled();
   });
 
-  it("should return 200 for valid signature", async () => {
-    mockVerify.mockResolvedValue(Result.ok(true));
-    mockHandle.mockResolvedValue(Result.ok(true));
-
+  it("returns 200 for a valid signature", async () => {
     const payload = JSON.stringify({
       event: "charge.success",
       data: { id: 1 },
     });
-    const signature = createHmac("sha512", secret)
-      .update(payload)
-      .digest("hex");
+    const signature = createHmac("sha512", secret).update(payload).digest("hex");
 
     const res = await app.request(
       `/webhooks/${orgId}`,
@@ -193,23 +188,18 @@ describe("Webhooks API", () => {
     const json = (await res.json()) as { success: boolean; received: boolean };
     expect(json.success).toBe(true);
     expect(json.received).toBe(true);
+    expect(handlerHandleMock).toHaveBeenCalledTimes(1);
   });
 
-  it("should use the organization-specific webhook secret", async () => {
-    // Using a different secret for this org
+  it("uses the organization-specific webhook secret", async () => {
     const orgSecret = "org_specific_secret";
-    mockDb.query.organizations.findFirst.mockResolvedValue({
+    authDb.query.organizations.findFirst.mockResolvedValue({
       ...mockOrg,
       testWebhookSecret: orgSecret,
     });
 
-    mockVerify.mockResolvedValue(Result.ok(true));
-    mockHandle.mockResolvedValue(Result.ok(true));
-
     const payload = JSON.stringify({ event: "test" });
-    const signature = createHmac("sha512", orgSecret)
-      .update(payload)
-      .digest("hex");
+    const signature = createHmac("sha512", orgSecret).update(payload).digest("hex");
 
     const res = await app.request(
       `/webhooks/${orgId}`,
@@ -225,5 +215,6 @@ describe("Webhooks API", () => {
     );
 
     expect(res.status).toBe(200);
+    expect(handlerHandleMock).toHaveBeenCalledTimes(1);
   });
 });

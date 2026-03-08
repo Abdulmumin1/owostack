@@ -826,6 +826,7 @@ app.post("/:id/retry-renewal-setup", async (c) => {
       renewal_setup_updated_at: now,
       renewal_setup_last_source: "dashboard_manual",
     });
+    const previousMetadata = subscription.metadata;
 
     await db
       .update(schema.subscriptions)
@@ -835,16 +836,46 @@ app.post("/:id/retry-renewal-setup", async (c) => {
       })
       .where(eq(schema.subscriptions.id, subscription.id));
 
-    const workflow = await c.env.RENEWAL_SETUP_WORKFLOW.create({
-      params: {
-        subscriptionId: subscription.id,
-        customerId: subscription.customerId,
-        organizationId: subscription.plan.organizationId,
-        providerId: subscription.providerId,
-        source: "dashboard_manual",
-        immediate: true,
-      },
-    });
+    let workflow;
+    try {
+      workflow = await c.env.RENEWAL_SETUP_WORKFLOW.create({
+        params: {
+          subscriptionId: subscription.id,
+          customerId: subscription.customerId,
+          organizationId: subscription.plan.organizationId,
+          providerId: subscription.providerId,
+          source: "dashboard_manual",
+          immediate: true,
+        },
+      });
+    } catch (e) {
+      await db
+        .update(schema.subscriptions)
+        .set({
+          metadata: previousMetadata as any,
+          updatedAt: Date.now(),
+        })
+        .where(eq(schema.subscriptions.id, subscription.id));
+      throw e;
+    }
+
+    if (c.env.CACHE) {
+      try {
+        const cache = new EntitlementCache(c.env.CACHE);
+        await Promise.all([
+          cache.invalidateSubscriptions(
+            subscription.plan.organizationId,
+            subscription.customerId,
+          ),
+          cache.invalidateDashboardCustomer(subscription.customerId),
+        ]);
+      } catch (e) {
+        console.warn(
+          "[subscriptions/retry-renewal-setup] Cache invalidation failed:",
+          e,
+        );
+      }
+    }
 
     return c.json({
       success: true,

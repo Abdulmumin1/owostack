@@ -1,56 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Result } from "better-result";
 
-const {
-  mockChargeAuthorization,
-  mockCreateSubscription,
-  mockResolveProviderAccount,
-  mockProvisionEntitlements,
-  mockInvalidateSubscriptionCache,
-  mockIntervalToMs,
-} = vi.hoisted(() => ({
-  mockChargeAuthorization: vi.fn(),
-  mockCreateSubscription: vi.fn(),
-  mockResolveProviderAccount: vi.fn(),
-  mockProvisionEntitlements: vi.fn(async () => undefined),
-  mockInvalidateSubscriptionCache: vi.fn(async () => undefined),
-  mockIntervalToMs: vi.fn((interval: string) => {
-    switch (interval) {
-      case "monthly":
-        return 30 * 24 * 60 * 60 * 1000;
-      default:
-        return 30 * 24 * 60 * 60 * 1000;
-    }
-  }),
-}));
-
 vi.mock("cloudflare:workers", () => ({
   WorkflowEntrypoint: class {},
 }));
 
-vi.mock("./utils", () => ({
-  getAdapter: vi.fn(() => ({
-    chargeAuthorization: mockChargeAuthorization,
-    createSubscription: mockCreateSubscription,
-    supportsNativeTrials: false,
-  })),
-  resolveProviderAccount: mockResolveProviderAccount,
-  provisionEntitlements: mockProvisionEntitlements,
-  intervalToMs: mockIntervalToMs,
-  invalidateSubscriptionCache: mockInvalidateSubscriptionCache,
-}));
-
-import { TrialEndWorkflow } from "./trial-end";
-
-function createStepMock() {
-  return {
-    sleep: vi.fn(async () => undefined),
-    do: vi.fn(async (...args: any[]) => {
-      const fn = typeof args[1] === "function" ? args[1] : args[2];
-      return fn();
-    }),
-  };
-}
+import {
+  TrialEndWorkflow,
+  type TrialEndWorkflowDependencies,
+} from "./trial-end";
+import {
+  createWorkflowInstance,
+  createWorkflowStepMock,
+} from "./test-helpers";
 
 function createDbMock(options: {
   providerDefaultPm?: { token: string; provider_id: string } | null;
@@ -143,9 +105,39 @@ function createDbMock(options: {
 }
 
 describe("TrialEndWorkflow", () => {
+  const chargeAuthorizationMock = vi.fn();
+  const createSubscriptionMock = vi.fn();
+  const resolveProviderAccountMock = vi.fn();
+  const provisionEntitlementsMock = vi.fn(async () => undefined);
+  const invalidateSubscriptionCacheMock = vi.fn(async () => undefined);
+  const intervalToMsMock = vi.fn((interval: string) => {
+    switch (interval) {
+      case "monthly":
+        return 30 * 24 * 60 * 60 * 1000;
+      default:
+        return 30 * 24 * 60 * 60 * 1000;
+    }
+  });
+  const deps: TrialEndWorkflowDependencies = {
+    getAdapter: vi.fn(() => ({
+      chargeAuthorization: chargeAuthorizationMock,
+      createSubscription: createSubscriptionMock,
+      supportsNativeTrials: false,
+    })) as unknown as TrialEndWorkflowDependencies["getAdapter"],
+    resolveProviderAccount:
+      resolveProviderAccountMock as unknown as TrialEndWorkflowDependencies["resolveProviderAccount"],
+    intervalToMs:
+      intervalToMsMock as unknown as TrialEndWorkflowDependencies["intervalToMs"],
+    provisionEntitlements:
+      provisionEntitlementsMock as unknown as TrialEndWorkflowDependencies["provisionEntitlements"],
+    invalidateSubscriptionCache:
+      invalidateSubscriptionCacheMock as unknown as TrialEndWorkflowDependencies["invalidateSubscriptionCache"],
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolveProviderAccount.mockResolvedValue({
+    TrialEndWorkflow.dependencies = deps;
+    resolveProviderAccountMock.mockResolvedValue({
       id: "acct_1",
       organizationId: "org_1",
       providerId: "paystack",
@@ -154,8 +146,8 @@ describe("TrialEndWorkflow", () => {
       createdAt: 0,
       updatedAt: 0,
     });
-    mockChargeAuthorization.mockResolvedValue(Result.ok({ reference: "ref_123" }));
-    mockCreateSubscription.mockResolvedValue(
+    chargeAuthorizationMock.mockResolvedValue(Result.ok({ reference: "ref_123" }));
+    createSubscriptionMock.mockResolvedValue(
       Result.ok({ id: "SUB_live_123", status: "active", metadata: {} }),
     );
   });
@@ -192,10 +184,10 @@ describe("TrialEndWorkflow", () => {
       },
     });
 
-    const step = createStepMock();
+    const step = createWorkflowStepMock();
 
     await TrialEndWorkflow.prototype.run.call(
-      { env: { DB: db.DB } },
+      createWorkflowInstance(TrialEndWorkflow, { DB: db.DB }),
       {
         payload: {
           subscriptionId: "sub_trial_1",
@@ -213,12 +205,12 @@ describe("TrialEndWorkflow", () => {
       step,
     );
 
-    expect(mockChargeAuthorization).toHaveBeenCalledWith(
+    expect(chargeAuthorizationMock).toHaveBeenCalledWith(
       expect.objectContaining({
         authorizationCode: "AUTH_paystack",
       }),
     );
-    expect(mockCreateSubscription).toHaveBeenCalledTimes(1);
+    expect(createSubscriptionMock).toHaveBeenCalledTimes(1);
     expect(db.updateBinds).toHaveLength(1);
     expect(db.updateBinds[0][0]).toBe("SUB_live_123");
     expect(db.updateBinds[0][1]).toBe("SUB_live_123");
@@ -231,7 +223,7 @@ describe("TrialEndWorkflow", () => {
   it("cuts off at period end when recurring renewal setup fails after the conversion charge", async () => {
     const now = new Date("2026-03-06T17:00:15.000Z").getTime();
     vi.spyOn(Date, "now").mockReturnValue(now);
-    mockCreateSubscription.mockRejectedValueOnce(
+    createSubscriptionMock.mockRejectedValueOnce(
       new Error("provider create subscription failed"),
     );
 
@@ -263,10 +255,10 @@ describe("TrialEndWorkflow", () => {
       },
     });
 
-    const step = createStepMock();
+    const step = createWorkflowStepMock();
 
     await TrialEndWorkflow.prototype.run.call(
-      { env: { DB: db.DB } },
+      createWorkflowInstance(TrialEndWorkflow, { DB: db.DB }),
       {
         payload: {
           subscriptionId: "sub_trial_2",
@@ -285,8 +277,8 @@ describe("TrialEndWorkflow", () => {
     );
 
     const periodEnd = now + 30 * 24 * 60 * 60 * 1000;
-    expect(mockChargeAuthorization).toHaveBeenCalledTimes(1);
-    expect(mockCreateSubscription).toHaveBeenCalledTimes(1);
+    expect(chargeAuthorizationMock).toHaveBeenCalledTimes(1);
+    expect(createSubscriptionMock).toHaveBeenCalledTimes(1);
     expect(db.updateBinds).toHaveLength(2);
     expect(db.updateBinds[0][0]).toBeNull();
     expect(db.updateBinds[0][1]).toBeNull();

@@ -20,7 +20,35 @@ import {
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+export type CheckoutDependencies = {
+  verifyApiKey: typeof verifyApiKey;
+  resolveOrCreateCustomer: typeof resolveOrCreateCustomer;
+  executeSwitch: typeof executeSwitch;
+  provisionEntitlements: typeof provisionEntitlements;
+  hasPaymentMethod: typeof hasPaymentMethod;
+  ensurePlanSynced: typeof ensurePlanSynced;
+  resolveProvider: typeof resolveProvider;
+  getProviderRegistry: typeof getProviderRegistry;
+  buildProviderContext: typeof buildProviderContext;
+  deriveProviderEnvironment: typeof deriveProviderEnvironment;
+  loadProviderAccounts: typeof loadProviderAccounts;
+  loadProviderRules: typeof loadProviderRules;
+};
+
+const defaultDependencies: CheckoutDependencies = {
+  verifyApiKey,
+  resolveOrCreateCustomer,
+  executeSwitch,
+  provisionEntitlements,
+  hasPaymentMethod,
+  ensurePlanSynced,
+  resolveProvider,
+  getProviderRegistry,
+  buildProviderContext,
+  deriveProviderEnvironment,
+  loadProviderAccounts,
+  loadProviderRules,
+};
 
 const attachSchema = z.object({
   // Customer identification (one required)
@@ -59,159 +87,168 @@ function zodErrorToResponse(zodError: {
   );
 }
 
-// Attach (Initialize Transaction)
-app.post("/attach", async (c) => {
-  try {
-    const authHeader = c.req.header("Authorization");
+export function createCheckoutRoute(
+  overrides: Partial<CheckoutDependencies> = {},
+) {
+  const deps = { ...defaultDependencies, ...overrides };
+  const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return c.json({ success: false, error: "Missing API Key" }, 401);
-    }
-
-    const apiKey = authHeader.split(" ")[1];
-    const db = c.get("db");
-    const authDb = c.get("authDb");
-
-    // Verify API Key
-    const keyRecord = await verifyApiKey(authDb, apiKey);
-    if (!keyRecord) {
-      return c.json({ success: false, error: "Invalid API Key" }, 401);
-    }
-
-    // Environment comes directly from ENVIRONMENT variable
-    const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
-
-    // Parse Body
-    let body;
+  // Attach (Initialize Transaction)
+  app.post("/attach", async (c) => {
     try {
-      body = await c.req.json();
-    } catch (parseError) {
-      console.error("[attach] Failed to parse request body:", parseError);
-      return c.json(
-        { success: false, error: "Invalid JSON in request body" },
-        400,
-      );
-    }
-    const parsed = attachSchema.safeParse(body);
-    if (!parsed.success) {
-      return c.json(zodErrorToResponse(parsed.error), 400);
-    }
+      const authHeader = c.req.header("Authorization");
 
-    const { customer, product, currency, channels, metadata, callbackUrl } =
-      parsed.data;
-
-    // 1. Resolve Plan (Price)
-    const plan = await db.query.plans.findFirst({
-      where: and(
-        eq(schema.plans.organizationId, keyRecord.organizationId),
-        eq(schema.plans.slug, product),
-      ),
-    });
-
-    if (!plan) {
-      return c.json(
-        { success: false, error: `Plan '${product}' not found` },
-        404,
-      );
-    }
-
-    const registry = getProviderRegistry();
-
-    const providerContext = buildProviderContext({
-      currency: currency || plan.currency,
-      metadata,
-    });
-
-    const providerRules = await loadProviderRules(db, keyRecord.organizationId);
-    const providerAccounts = await loadProviderAccounts(
-      db,
-      keyRecord.organizationId,
-      c.env.ENCRYPTION_KEY,
-    );
-
-    // ---------- Provider Resolution ----------
-    // Free plans don't need a provider — executeSwitch handles them entirely in the DB.
-    // For paid plans we must resolve a provider account.
-    const isFree = plan.type === "free" || plan.price === 0;
-
-    let selectedProviderId: string | null = null;
-    let selectedAccount: ProviderAccount | undefined;
-
-    if (!isFree) {
-      // 1. Plan's own provider — use the provider the plan was created on
-      if (!selectedAccount && plan.providerId) {
-        selectedAccount = providerAccounts.find(
-          (a) =>
-            a.providerId === plan.providerId && a.environment === providerEnv,
-        );
-        if (selectedAccount) {
-          selectedProviderId = plan.providerId;
-        }
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return c.json({ success: false, error: "Missing API Key" }, 401);
       }
 
-      // 2. Try rules-based resolution
-      if (!selectedAccount && providerRules.length > 0) {
-        const selectionResult = resolveProvider(registry, {
-          organizationId: keyRecord.organizationId,
-          environment: providerEnv,
-          context: providerContext,
-          rules: providerRules,
-          accounts: providerAccounts,
-        });
-        if (selectionResult.isOk()) {
-          selectedProviderId = selectionResult.value.adapter.id;
-          selectedAccount = selectionResult.value.account;
-        }
+      const apiKey = authHeader.split(" ")[1];
+      const db = c.get("db");
+      const authDb = c.get("authDb");
+
+      // Verify API Key
+      const keyRecord = await deps.verifyApiKey(authDb, apiKey);
+      if (!keyRecord) {
+        return c.json({ success: false, error: "Invalid API Key" }, 401);
       }
 
-      // 3. Default fallback: first account matching the current environment
-      if (!selectedAccount && providerAccounts.length > 0) {
-        const defaultAccount = providerAccounts.find(
-          (a) => a.environment === providerEnv,
-        );
-        if (defaultAccount) {
-          selectedProviderId = defaultAccount.providerId;
-          selectedAccount = defaultAccount;
-        }
-      }
+      // Environment comes directly from ENVIRONMENT variable
+      const providerEnv = deps.deriveProviderEnvironment(c.env.ENVIRONMENT, null);
 
-      if (!selectedAccount || !selectedProviderId) {
+      // Parse Body
+      let body;
+      try {
+        body = await c.req.json();
+      } catch (parseError) {
+        console.error("[attach] Failed to parse request body:", parseError);
         return c.json(
-          { success: false, error: "No payment provider configured" },
+          { success: false, error: "Invalid JSON in request body" },
           400,
         );
       }
-    }
+      const parsed = attachSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json(zodErrorToResponse(parsed.error), 400);
+      }
 
-    // Build ProviderContext (null for free plans — no provider API calls needed)
-    let providerCtx: ProviderContext | null = null;
-    if (selectedAccount && selectedProviderId) {
-      const resolvedAdapter = registry.get(selectedProviderId);
-      if (!resolvedAdapter) {
+      const { customer, product, currency, channels, metadata, callbackUrl } =
+        parsed.data;
+
+      // 1. Resolve Plan (Price)
+      const plan = await db.query.plans.findFirst({
+        where: and(
+          eq(schema.plans.organizationId, keyRecord.organizationId),
+          eq(schema.plans.slug, product),
+        ),
+      });
+
+      if (!plan) {
         return c.json(
-          {
-            success: false,
-            error: `Provider '${selectedProviderId}' not registered`,
-          },
-          400,
+          { success: false, error: `Plan '${product}' not found` },
+          404,
         );
       }
-      providerCtx = {
-        adapter: resolvedAdapter,
-        account: selectedAccount as ProviderAccount,
-      };
-    }
 
-    // 2. Resolve or create customer
-    const email = customer.toLowerCase();
-    let customerRecord = await resolveOrCreateCustomer({
-      db,
-      organizationId: keyRecord.organizationId,
-      customerId: customer,
-      customerData: { email, metadata },
-      providerId: selectedProviderId || undefined,
-      waitUntil: (p) => c.executionCtx.waitUntil(p),
-    });
+      const registry = deps.getProviderRegistry();
+
+      const providerContext = deps.buildProviderContext({
+        currency: currency || plan.currency,
+        metadata,
+      });
+
+      const providerRules = await deps.loadProviderRules(
+        db,
+        keyRecord.organizationId,
+      );
+      const providerAccounts = await deps.loadProviderAccounts(
+        db,
+        keyRecord.organizationId,
+        c.env.ENCRYPTION_KEY,
+      );
+
+      // ---------- Provider Resolution ----------
+      // Free plans don't need a provider — executeSwitch handles them entirely in the DB.
+      // For paid plans we must resolve a provider account.
+      const isFree = plan.type === "free" || plan.price === 0;
+
+      let selectedProviderId: string | null = null;
+      let selectedAccount: ProviderAccount | undefined;
+
+      if (!isFree) {
+        // 1. Plan's own provider — use the provider the plan was created on
+        if (!selectedAccount && plan.providerId) {
+          selectedAccount = providerAccounts.find(
+            (a) =>
+              a.providerId === plan.providerId && a.environment === providerEnv,
+          );
+          if (selectedAccount) {
+            selectedProviderId = plan.providerId;
+          }
+        }
+
+        // 2. Try rules-based resolution
+        if (!selectedAccount && providerRules.length > 0) {
+          const selectionResult = deps.resolveProvider(registry, {
+            organizationId: keyRecord.organizationId,
+            environment: providerEnv,
+            context: providerContext,
+            rules: providerRules,
+            accounts: providerAccounts,
+          });
+          if (selectionResult.isOk()) {
+            selectedProviderId = selectionResult.value.adapter.id;
+            selectedAccount = selectionResult.value.account;
+          }
+        }
+
+        // 3. Default fallback: first account matching the current environment
+        if (!selectedAccount && providerAccounts.length > 0) {
+          const defaultAccount = providerAccounts.find(
+            (a) => a.environment === providerEnv,
+          );
+          if (defaultAccount) {
+            selectedProviderId = defaultAccount.providerId;
+            selectedAccount = defaultAccount;
+          }
+        }
+
+        if (!selectedAccount || !selectedProviderId) {
+          return c.json(
+            { success: false, error: "No payment provider configured" },
+            400,
+          );
+        }
+      }
+
+      // Build ProviderContext (null for free plans — no provider API calls needed)
+      let providerCtx: ProviderContext | null = null;
+      if (selectedAccount && selectedProviderId) {
+        const resolvedAdapter = registry.get(selectedProviderId);
+        if (!resolvedAdapter) {
+          return c.json(
+            {
+              success: false,
+              error: `Provider '${selectedProviderId}' not registered`,
+            },
+            400,
+          );
+        }
+        providerCtx = {
+          adapter: resolvedAdapter,
+          account: selectedAccount as ProviderAccount,
+        };
+      }
+
+      // 2. Resolve or create customer
+      const email = customer.toLowerCase();
+      let customerRecord = await deps.resolveOrCreateCustomer({
+        db,
+        organizationId: keyRecord.organizationId,
+        customerId: customer,
+        customerData: { email, metadata },
+        providerId: selectedProviderId || undefined,
+        waitUntil: (p) => c.executionCtx.waitUntil(p),
+      });
 
     if (!customerRecord) {
       return c.json(
@@ -338,7 +375,7 @@ app.post("/attach", async (c) => {
         }
 
         // Provision entitlements so trial users can access features
-        await provisionEntitlements(db, customerRecord.id, plan.id);
+        await deps.provisionEntitlements(db, customerRecord.id, plan.id);
 
         console.log(
           `[TRIAL] No-card trial activated: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
@@ -373,7 +410,7 @@ app.post("/attach", async (c) => {
       plan.billingType === "recurring"
     ) {
       try {
-        const syncedId = await ensurePlanSynced(
+        const syncedId = await deps.ensurePlanSynced(
           db,
           plan,
           providerCtx.adapter,
@@ -406,7 +443,7 @@ app.post("/attach", async (c) => {
       // or a previous purchase), skip the card capture checkout entirely — just create
       // the trialing subscription directly. This is the elegant composition:
       // wallet.setup() + attach() work together without redundant charges.
-      const alreadyHasCard = await hasPaymentMethod(db, customerRecord.id);
+      const alreadyHasCard = await deps.hasPaymentMethod(db, customerRecord.id);
       if (alreadyHasCard) {
         console.log(
           `[TRIAL] Customer ${customerRecord.id} already has card — skipping auth capture, creating trial directly`,
@@ -500,7 +537,7 @@ app.post("/attach", async (c) => {
             );
           }
 
-          await provisionEntitlements(db, customerRecord.id, plan.id);
+          await deps.provisionEntitlements(db, customerRecord.id, plan.id);
 
           return c.json({
             success: true,
@@ -616,7 +653,7 @@ app.post("/attach", async (c) => {
     //    - Lateral: switches features immediately, no charge
     //    - New: creates subscription (direct if card on file, checkout if not)
     try {
-      const result = await executeSwitch(
+      const result = await deps.executeSwitch(
         db,
         customerRecord.id,
         plan.id,
@@ -656,6 +693,9 @@ app.post("/attach", async (c) => {
       500,
     );
   }
-});
+  });
 
-export default app;
+  return app;
+}
+
+export default createCheckoutRoute();

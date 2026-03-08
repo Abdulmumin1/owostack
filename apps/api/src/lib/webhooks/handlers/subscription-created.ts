@@ -2,8 +2,32 @@ import { schema } from "@owostack/db";
 import { eq, and, or } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
 import { upsertPaymentMethod } from "../../payment-methods";
+import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
 import type { WebhookContext } from "../types";
 import { safeParseDate } from "../types";
+
+export type SubscriptionCreatedDependencies = {
+  provisionEntitlements: typeof provisionEntitlements;
+  upsertPaymentMethod: typeof upsertPaymentMethod;
+};
+
+export const subscriptionCreatedDependencies: SubscriptionCreatedDependencies = {
+  provisionEntitlements,
+  upsertPaymentMethod,
+};
+
+async function invalidateSubscriptionCache(
+  ctx: WebhookContext,
+  customerId: string,
+): Promise<void> {
+  if (!ctx.cache) return;
+
+  try {
+    await ctx.cache.invalidateSubscriptions(ctx.organizationId, customerId);
+  } catch (e) {
+    console.warn(`[WEBHOOK] subscription.created cache invalidation failed:`, e);
+  }
+}
 
 export async function handleSubscriptionCreated(
   ctx: WebhookContext,
@@ -92,6 +116,12 @@ export async function handleSubscriptionCreated(
         ),
       });
       if (existingSubForCustomer) {
+        const now = Date.now();
+        const renewalSetupRecovery = buildRenewalSetupRecoveryUpdate(
+          existingSubForCustomer.metadata,
+          "subscription_created",
+          now,
+        );
         await db
           .update(schema.subscriptions)
           .set({
@@ -106,9 +136,12 @@ export async function handleSubscriptionCreated(
                 ? providerCode
                 : existingSubForCustomer.paystackSubscriptionCode,
             providerId: event.provider,
-            updatedAt: Date.now(),
+            cancelAt: renewalSetupRecovery?.clearCancelAt ? null : undefined,
+            metadata: renewalSetupRecovery?.metadata,
+            updatedAt: now,
           })
           .where(eq(schema.subscriptions.id, existingSubForCustomer.id));
+        await invalidateSubscriptionCache(ctx, existingSubForCustomer.customerId);
       }
     }
     return;
@@ -134,6 +167,12 @@ export async function handleSubscriptionCreated(
         ),
       });
       if (existingSubForCustomer) {
+        const now = Date.now();
+        const renewalSetupRecovery = buildRenewalSetupRecoveryUpdate(
+          existingSubForCustomer.metadata,
+          "subscription_created",
+          now,
+        );
         await db
           .update(schema.subscriptions)
           .set({
@@ -148,9 +187,12 @@ export async function handleSubscriptionCreated(
                 ? providerCode
                 : existingSubForCustomer.paystackSubscriptionCode,
             providerId: event.provider,
-            updatedAt: Date.now(),
+            cancelAt: renewalSetupRecovery?.clearCancelAt ? null : undefined,
+            metadata: renewalSetupRecovery?.metadata,
+            updatedAt: now,
           })
           .where(eq(schema.subscriptions.id, existingSubForCustomer.id));
+        await invalidateSubscriptionCache(ctx, existingSubForCustomer.customerId);
       } else {
         console.warn(
           `Plan ${planCode} not found in org ${organizationId}, no existing sub to link`,
@@ -196,6 +238,11 @@ export async function handleSubscriptionCreated(
       const periodEnd =
         safeParseDate(event.subscription?.nextPaymentDate) ||
         periodStart + 30 * 24 * 60 * 60 * 1000;
+      const renewalSetupRecovery = buildRenewalSetupRecoveryUpdate(
+        existingByPlan.metadata,
+        "subscription_created",
+        now,
+      );
 
       await db
         .update(schema.subscriptions)
@@ -210,20 +257,20 @@ export async function handleSubscriptionCreated(
               ? providerCode
               : existingByPlan.paystackSubscriptionCode,
           providerId: event.provider,
-          updatedAt: Date.now(),
+          cancelAt: renewalSetupRecovery?.clearCancelAt ? null : undefined,
+          metadata: renewalSetupRecovery?.metadata,
+          updatedAt: now,
         })
         .where(eq(schema.subscriptions.id, existingByPlan.id));
 
+      await invalidateSubscriptionCache(ctx, existingByPlan.customerId);
+
       if (isActivatingPending) {
-        await provisionEntitlements(db, dbCustomer.id, dbPlan.id);
-        if (ctx.cache) {
-          try {
-            await ctx.cache.invalidateSubscriptions(
-              organizationId,
-              dbCustomer.id,
-            );
-          } catch (e) {}
-        }
+        await subscriptionCreatedDependencies.provisionEntitlements(
+          db,
+          dbCustomer.id,
+          dbPlan.id,
+        );
       }
 
       console.log(
@@ -261,13 +308,17 @@ export async function handleSubscriptionCreated(
   ]);
 
   // Provision entitlements for the new subscription
-  await provisionEntitlements(db, dbCustomer.id, dbPlan.id);
+  await subscriptionCreatedDependencies.provisionEntitlements(
+    db,
+    dbCustomer.id,
+    dbPlan.id,
+  );
 
   // For providers without card auth codes (e.g. Dodo), the subscription ID
   // itself is the chargeable token. Store it as a provider_managed payment method.
   if (providerCode && event.provider !== "paystack") {
     try {
-      await upsertPaymentMethod(db, {
+      await subscriptionCreatedDependencies.upsertPaymentMethod(db, {
         customerId: dbCustomer.id,
         organizationId,
         providerId: event.provider,

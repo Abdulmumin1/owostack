@@ -17,7 +17,29 @@ import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 import { ensureCreditPackSynced } from "../../lib/credit-pack-sync";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+export type AddonDependencies = {
+  resolveOrCreateCustomer: typeof resolveOrCreateCustomer;
+  verifyApiKey: typeof verifyApiKey;
+  resolveProvider: typeof resolveProvider;
+  getProviderRegistry: typeof getProviderRegistry;
+  buildProviderContext: typeof buildProviderContext;
+  deriveProviderEnvironment: typeof deriveProviderEnvironment;
+  loadProviderAccounts: typeof loadProviderAccounts;
+  loadProviderRules: typeof loadProviderRules;
+  ensureCreditPackSynced: typeof ensureCreditPackSynced;
+};
+
+const defaultDependencies: AddonDependencies = {
+  resolveOrCreateCustomer,
+  verifyApiKey,
+  resolveProvider,
+  getProviderRegistry,
+  buildProviderContext,
+  deriveProviderEnvironment,
+  loadProviderAccounts,
+  loadProviderRules,
+  ensureCreditPackSynced,
+};
 
 const addonSchema = z.object({
   customer: z.string(), // Email or customer ID
@@ -53,68 +75,44 @@ function zodErrorToResponse(zodError: {
   );
 }
 
-// POST /addon — Purchase a credit pack
-app.post("/addon", async (c) => {
-  const authHeader = c.req.header("Authorization");
+export function createAddonRoute(overrides: Partial<AddonDependencies> = {}) {
+  const deps = { ...defaultDependencies, ...overrides };
+  const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return c.json({ success: false, error: "Missing API Key" }, 401);
-  }
+  // POST /addon — Purchase a credit pack
+  app.post("/addon", async (c) => {
+    const authHeader = c.req.header("Authorization");
 
-  const apiKey = authHeader.split(" ")[1];
-  const db = c.get("db");
-  const authDb = c.get("authDb");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return c.json({ success: false, error: "Missing API Key" }, 401);
+    }
 
-  // Verify API Key
-  const keyRecord = await verifyApiKey(authDb, apiKey);
-  if (!keyRecord) {
-    return c.json({ success: false, error: "Invalid API Key" }, 401);
-  }
+    const apiKey = authHeader.split(" ")[1];
+    const db = c.get("db");
+    const authDb = c.get("authDb");
 
-  // Parse Body
-  const body = await c.req.json();
-  const parsed = addonSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json(zodErrorToResponse(parsed.error), 400);
-  }
+    // Verify API Key
+    const keyRecord = await deps.verifyApiKey(authDb, apiKey);
+    if (!keyRecord) {
+      return c.json({ success: false, error: "Invalid API Key" }, 401);
+    }
 
-  const { customer, pack, quantity, currency, metadata, callbackUrl } =
-    parsed.data;
+    // Parse Body
+    const body = await c.req.json();
+    const parsed = addonSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(zodErrorToResponse(parsed.error), 400);
+    }
 
-  // 1. Resolve Credit Pack (by slug, then by ID)
-  let creditPack: any = null;
-  try {
-    if ((db.query as any).creditPacks) {
-      creditPack = await (db.query as any).creditPacks.findFirst({
-        where: and(
-          eq(
-            (schema as any).creditPacks.organizationId,
-            keyRecord.organizationId,
-          ),
-          eq((schema as any).creditPacks.slug, pack),
-          eq((schema as any).creditPacks.isActive, true),
-        ),
-      });
+    const { customer, pack, quantity, currency, metadata, callbackUrl } =
+      parsed.data;
 
-      if (!creditPack) {
+    // 1. Resolve Credit Pack (by slug, then by ID)
+    let creditPack: any = null;
+    try {
+      if ((db.query as any).creditPacks) {
         creditPack = await (db.query as any).creditPacks.findFirst({
           where: and(
-            eq((schema as any).creditPacks.id, pack),
-            eq(
-              (schema as any).creditPacks.organizationId,
-              keyRecord.organizationId,
-            ),
-            eq((schema as any).creditPacks.isActive, true),
-          ),
-        });
-      }
-    } else {
-      // Fallback: direct select
-      const rows = await (db as any)
-        .select()
-        .from((schema as any).creditPacks)
-        .where(
-          and(
             eq(
               (schema as any).creditPacks.organizationId,
               keyRecord.organizationId,
@@ -122,16 +120,11 @@ app.post("/addon", async (c) => {
             eq((schema as any).creditPacks.slug, pack),
             eq((schema as any).creditPacks.isActive, true),
           ),
-        )
-        .limit(1);
-      creditPack = rows[0] || null;
+        });
 
-      if (!creditPack) {
-        const byIdRows = await (db as any)
-          .select()
-          .from((schema as any).creditPacks)
-          .where(
-            and(
+        if (!creditPack) {
+          creditPack = await (db.query as any).creditPacks.findFirst({
+            where: and(
               eq((schema as any).creditPacks.id, pack),
               eq(
                 (schema as any).creditPacks.organizationId,
@@ -139,49 +132,85 @@ app.post("/addon", async (c) => {
               ),
               eq((schema as any).creditPacks.isActive, true),
             ),
+          });
+        }
+      } else {
+        // Fallback: direct select
+        const rows = await (db as any)
+          .select()
+          .from((schema as any).creditPacks)
+          .where(
+            and(
+              eq(
+                (schema as any).creditPacks.organizationId,
+                keyRecord.organizationId,
+              ),
+              eq((schema as any).creditPacks.slug, pack),
+              eq((schema as any).creditPacks.isActive, true),
+            ),
           )
           .limit(1);
-        creditPack = byIdRows[0] || null;
+        creditPack = rows[0] || null;
+
+        if (!creditPack) {
+          const byIdRows = await (db as any)
+            .select()
+            .from((schema as any).creditPacks)
+            .where(
+              and(
+                eq((schema as any).creditPacks.id, pack),
+                eq(
+                  (schema as any).creditPacks.organizationId,
+                  keyRecord.organizationId,
+                ),
+                eq((schema as any).creditPacks.isActive, true),
+              ),
+            )
+            .limit(1);
+          creditPack = byIdRows[0] || null;
+        }
       }
+    } catch (e: any) {
+      if (e?.message?.includes("no such table")) {
+        return c.json(
+          {
+            success: false,
+            error: "Credit packs not yet configured. Run migration 0004.",
+          },
+          500,
+        );
+      }
+      throw e;
     }
-  } catch (e: any) {
-    if (e?.message?.includes("no such table")) {
+
+    if (!creditPack) {
+      return c.json(
+        { success: false, error: `Credit pack '${pack}' not found` },
+        404,
+      );
+    }
+
+    if (!creditPack.creditSystemId) {
       return c.json(
         {
           success: false,
-          error: "Credit packs not yet configured. Run migration 0004.",
+          error: `Credit pack '${pack}' is not attached to a credit system. Every add-on pack must have a creditSystemId.`,
         },
-        500,
+        400,
       );
     }
-    throw e;
-  }
 
-  if (!creditPack) {
-    return c.json(
-      { success: false, error: `Credit pack '${pack}' not found` },
-      404,
-    );
-  }
-
-  if (!creditPack.creditSystemId) {
-    return c.json(
-      {
-        success: false,
-        error: `Credit pack '${pack}' is not attached to a credit system. Every add-on pack must have a creditSystemId.`,
-      },
-      400,
-    );
-  }
-
-  return handleAddonPurchase(c, db, keyRecord, creditPack, {
-    customer,
-    quantity,
-    currency,
-    metadata,
-    callbackUrl,
+    return handleAddonPurchase(c, db, keyRecord, creditPack, {
+      customer,
+      quantity,
+      currency,
+      metadata,
+      callbackUrl,
+    }, deps);
   });
-});
+
+  return app;
+}
 
 async function handleAddonPurchase(
   c: any,
@@ -195,26 +224,27 @@ async function handleAddonPurchase(
     metadata?: Record<string, unknown>;
     callbackUrl?: string;
   },
+  deps: AddonDependencies = defaultDependencies,
 ) {
   const { customer, quantity, currency, metadata, callbackUrl } = opts;
   const totalCredits = creditPack.credits * quantity;
   const totalPrice = creditPack.price * quantity;
-  const registry = getProviderRegistry();
+  const registry = deps.getProviderRegistry();
 
-  const providerContext = buildProviderContext({
+  const providerContext = deps.buildProviderContext({
     currency: currency || creditPack.currency,
     metadata,
   });
 
-  const providerRules = await loadProviderRules(db, keyRecord.organizationId);
-  const providerAccounts = await loadProviderAccounts(
+  const providerRules = await deps.loadProviderRules(db, keyRecord.organizationId);
+  const providerAccounts = await deps.loadProviderAccounts(
     db,
     keyRecord.organizationId,
     c.env.ENCRYPTION_KEY,
   );
 
   // Environment comes directly from ENVIRONMENT variable
-  const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
+  const providerEnv = deps.deriveProviderEnvironment(c.env.ENVIRONMENT, null);
 
   // ---------- Provider Resolution ----------
   // Prefer: explicit request param > pack's stored provider > rules/fallback
@@ -240,7 +270,7 @@ async function handleAddonPurchase(
 
   // 2. Rules-based
   if (!selectedAccount && providerRules.length > 0) {
-    const selectionResult = resolveProvider(registry, {
+    const selectionResult = deps.resolveProvider(registry, {
       organizationId: keyRecord.organizationId,
       environment: providerEnv,
       context: providerContext,
@@ -289,7 +319,7 @@ async function handleAddonPurchase(
     ? { email: normalizedCustomer.toLowerCase(), metadata }
     : undefined;
 
-  const customerRecord = await resolveOrCreateCustomer({
+  const customerRecord = await deps.resolveOrCreateCustomer({
     db,
     organizationId: keyRecord.organizationId,
     customerId: normalizedCustomer,
@@ -331,7 +361,7 @@ async function handleAddonPurchase(
 
   // Always use checkout for credit pack purchases (auto-charge reserved for overages only)
   // Try to sync credit pack to provider for native line-item checkout
-  const syncResult = await ensureCreditPackSynced(
+  const syncResult = await deps.ensureCreditPackSynced(
     db,
     creditPack,
     resolvedAdapter,
@@ -381,4 +411,4 @@ async function handleAddonPurchase(
   });
 }
 
-export default app;
+export default createAddonRoute();

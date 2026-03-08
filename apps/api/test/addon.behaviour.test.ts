@@ -1,30 +1,7 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { app } from "../src/index";
-import { verifyApiKey } from "../src/lib/api-keys";
-import { resolveOrCreateCustomer } from "../src/lib/customers";
-import { ensureCreditPackSynced } from "../src/lib/credit-pack-sync";
-import {
-  getProviderRegistry,
-  loadProviderAccounts,
-  loadProviderRules,
-} from "../src/lib/providers";
-import { resolveProvider } from "@owostack/adapters";
-
-function ok<T>(value: T) {
-  return {
-    isOk: () => true,
-    isErr: () => false,
-    value,
-  };
-}
-
-function err(message: string) {
-  return {
-    isOk: () => false,
-    isErr: () => true,
-    error: { message },
-  };
-}
+import { createAddonRoute, type AddonDependencies } from "../src/routes/api/addon";
+import { createRouteTestApp } from "./helpers/route-harness";
+import { err, ok } from "./helpers/result";
 
 interface MockDb {
   query: {
@@ -32,56 +9,13 @@ interface MockDb {
   };
 }
 
-const mockDb: MockDb = {
+type MockAuthDb = {
   query: {
-    creditPacks: { findFirst: vi.fn() },
-  },
+    organizations: {
+      findFirst: Mock;
+    };
+  };
 };
-
-vi.mock("@owostack/db", () => ({
-  createDb: () => mockDb,
-  schema: {
-    creditPacks: {
-      organizationId: "organizationId",
-      slug: "slug",
-      isActive: "isActive",
-      id: "id",
-    },
-  },
-}));
-
-vi.mock("../src/lib/api-keys", () => ({
-  verifyApiKey: vi.fn(),
-}));
-
-vi.mock("../src/lib/customers", () => ({
-  resolveOrCreateCustomer: vi.fn(),
-}));
-
-vi.mock("../src/lib/credit-pack-sync", () => ({
-  ensureCreditPackSynced: vi.fn(),
-}));
-
-vi.mock("../src/lib/providers", () => ({
-  getProviderRegistry: vi.fn(),
-  buildProviderContext: vi.fn((params) => params),
-  deriveProviderEnvironment: vi.fn(() => "test"),
-  loadProviderAccounts: vi.fn(),
-  loadProviderRules: vi.fn(),
-}));
-
-vi.mock("@owostack/adapters", () => ({
-  resolveProvider: vi.fn(),
-}));
-
-vi.mock("../src/lib/auth", () => ({
-  auth: () => ({
-    handler: () => new Response("Auth"),
-    api: {
-      getSession: vi.fn().mockResolvedValue(null),
-    },
-  }),
-}));
 
 interface Adapter {
   id: string;
@@ -89,13 +23,55 @@ interface Adapter {
 }
 
 interface Env {
-  DB: unknown;
-  BETTER_AUTH_SECRET: string;
-  BETTER_AUTH_URL: string;
   ENCRYPTION_KEY: string;
+  ENVIRONMENT?: string;
 }
 
 describe("POST /v1/addon behavior", () => {
+  const mockDb: MockDb = {
+    query: {
+      creditPacks: { findFirst: vi.fn() },
+    },
+  };
+
+  const mockAuthDb: MockAuthDb = {
+    query: {
+      organizations: {
+        findFirst: vi.fn(async () => ({ id: "org_1" })),
+      },
+    },
+  };
+
+  const verifyApiKeyMock = vi.fn();
+  const resolveOrCreateCustomerMock = vi.fn();
+  const ensureCreditPackSyncedMock = vi.fn();
+  const getProviderRegistryMock = vi.fn();
+  const buildProviderContextMock = vi.fn((params) => params);
+  const deriveProviderEnvironmentMock = vi.fn(() => "test");
+  const loadProviderAccountsMock = vi.fn();
+  const loadProviderRulesMock = vi.fn();
+  const resolveProviderMock = vi.fn(() => err("no match"));
+
+  const deps: AddonDependencies = {
+    resolveOrCreateCustomer:
+      resolveOrCreateCustomerMock as unknown as AddonDependencies["resolveOrCreateCustomer"],
+    verifyApiKey: verifyApiKeyMock as unknown as AddonDependencies["verifyApiKey"],
+    resolveProvider:
+      resolveProviderMock as unknown as AddonDependencies["resolveProvider"],
+    getProviderRegistry:
+      getProviderRegistryMock as unknown as AddonDependencies["getProviderRegistry"],
+    buildProviderContext:
+      buildProviderContextMock as unknown as AddonDependencies["buildProviderContext"],
+    deriveProviderEnvironment:
+      deriveProviderEnvironmentMock as unknown as AddonDependencies["deriveProviderEnvironment"],
+    loadProviderAccounts:
+      loadProviderAccountsMock as unknown as AddonDependencies["loadProviderAccounts"],
+    loadProviderRules:
+      loadProviderRulesMock as unknown as AddonDependencies["loadProviderRules"],
+    ensureCreditPackSynced:
+      ensureCreditPackSyncedMock as unknown as AddonDependencies["ensureCreditPackSynced"],
+  };
+
   const paystackAdapter: Adapter = {
     id: "paystack",
     createCheckoutSession: vi.fn(),
@@ -107,21 +83,28 @@ describe("POST /v1/addon behavior", () => {
   };
 
   const env: Env = {
-    DB: {},
-    BETTER_AUTH_SECRET: "secret",
-    BETTER_AUTH_URL: "http://localhost",
     ENCRYPTION_KEY: "test_key",
+    ENVIRONMENT: "test",
   };
+
+  let app: ReturnType<
+    typeof createRouteTestApp<{ db: MockDb; authDb: MockAuthDb }>
+  >;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    vi.mocked(verifyApiKey).mockResolvedValue({
+    app = createRouteTestApp(createAddonRoute(deps), {
+      db: mockDb,
+      authDb: mockAuthDb,
+    });
+
+    verifyApiKeyMock.mockResolvedValue({
       id: "key_1",
       organizationId: "org_1",
     });
 
-    vi.mocked(getProviderRegistry).mockReturnValue({
+    getProviderRegistryMock.mockReturnValue({
       get: vi.fn((providerId: string) => {
         if (providerId === "paystack") return paystackAdapter;
         if (providerId === "dodopayments") return dodoAdapter;
@@ -129,18 +112,18 @@ describe("POST /v1/addon behavior", () => {
       }),
     });
 
-    vi.mocked(loadProviderRules).mockResolvedValue([]);
-    vi.mocked(loadProviderAccounts).mockResolvedValue([]);
-    vi.mocked(resolveProvider).mockReturnValue(err("no match"));
+    loadProviderRulesMock.mockResolvedValue([]);
+    loadProviderAccountsMock.mockResolvedValue([]);
+    resolveProviderMock.mockReturnValue(err("no match"));
 
-    vi.mocked(resolveOrCreateCustomer).mockResolvedValue({
+    resolveOrCreateCustomerMock.mockResolvedValue({
       id: "cus_1",
       email: "customer@example.com",
       providerCustomerId: "prov_cus_1",
       paystackCustomerId: null,
     });
 
-    vi.mocked(ensureCreditPackSynced).mockResolvedValue(null);
+    ensureCreditPackSyncedMock.mockResolvedValue(null);
 
     paystackAdapter.createCheckoutSession.mockResolvedValue(
       ok({ url: "https://checkout.paystack.com/abc" }),
@@ -150,51 +133,7 @@ describe("POST /v1/addon behavior", () => {
     );
   });
 
-  it("fails early when explicit provider is requested but account is not configured", async () => {
-    mockDb.query.creditPacks.findFirst.mockResolvedValue({
-      id: "pack_1",
-      organizationId: "org_1",
-      slug: "credits-100",
-      name: "100 Credits",
-      credits: 100,
-      price: 2500,
-      currency: "USD",
-      providerId: null,
-      creditSystemId: "cs_1",
-      isActive: true,
-    });
-
-    vi.mocked(loadProviderAccounts).mockResolvedValue([]);
-
-    const res = await app.request(
-      "/v1/addon",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer owo_sk_test",
-        },
-        body: JSON.stringify({
-          customer: "customer@example.com",
-          pack: "credits-100",
-          provider: "paystack",
-          quantity: 1,
-        }),
-      },
-      env,
-    );
-
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { success: boolean; error: string };
-    expect(body.success).toBe(false);
-    expect(body.error).toContain("No payment provider configured");
-
-    expect(vi.mocked(resolveOrCreateCustomer)).not.toHaveBeenCalled();
-    expect(vi.mocked(resolveProvider)).not.toHaveBeenCalled();
-    expect(paystackAdapter.createCheckoutSession).not.toHaveBeenCalled();
-  });
-
-  it("uses pack provider when request has no explicit provider and produces checkout", async () => {
+  it("fails early when no provider account is configured for a provider-backed pack", async () => {
     mockDb.query.creditPacks.findFirst.mockResolvedValue({
       id: "pack_1",
       organizationId: "org_1",
@@ -208,7 +147,49 @@ describe("POST /v1/addon behavior", () => {
       isActive: true,
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([
+    loadProviderAccountsMock.mockResolvedValue([]);
+
+    const res = await app.request(
+      "/addon",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer owo_sk_test",
+        },
+        body: JSON.stringify({
+          customer: "customer@example.com",
+          pack: "credits-100",
+          quantity: 1,
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { success: boolean; error: string };
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Provider 'paystack' not configured");
+    expect(resolveOrCreateCustomerMock).not.toHaveBeenCalled();
+    expect(resolveProviderMock).not.toHaveBeenCalled();
+    expect(paystackAdapter.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("uses the pack provider and produces checkout", async () => {
+    mockDb.query.creditPacks.findFirst.mockResolvedValue({
+      id: "pack_1",
+      organizationId: "org_1",
+      slug: "credits-100",
+      name: "100 Credits",
+      credits: 100,
+      price: 2500,
+      currency: "USD",
+      providerId: "paystack",
+      creditSystemId: "cs_1",
+      isActive: true,
+    });
+
+    loadProviderAccountsMock.mockResolvedValue([
       {
         id: "acct_paystack",
         providerId: "paystack",
@@ -217,13 +198,13 @@ describe("POST /v1/addon behavior", () => {
       },
     ]);
 
-    vi.mocked(ensureCreditPackSynced).mockResolvedValue({
+    ensureCreditPackSyncedMock.mockResolvedValue({
       productId: "prod_1",
       priceId: "price_1",
     });
 
     const res = await app.request(
-      "/v1/addon",
+      "/addon",
       {
         method: "POST",
         headers: {
@@ -246,7 +227,7 @@ describe("POST /v1/addon behavior", () => {
     };
     expect(body.success).toBe(true);
     expect(body.requiresCheckout).toBe(true);
-    expect(vi.mocked(resolveProvider)).not.toHaveBeenCalled();
+    expect(resolveProviderMock).not.toHaveBeenCalled();
 
     const checkoutArg = paystackAdapter.createCheckoutSession.mock
       .calls[0]?.[0] as {
@@ -264,7 +245,7 @@ describe("POST /v1/addon behavior", () => {
     expect(checkoutArg.metadata.provider_id).toBe("paystack");
   });
 
-  it("falls back to rules-based provider resolution when pack has no provider", async () => {
+  it("falls back to rules-based provider resolution when the pack has no provider", async () => {
     mockDb.query.creditPacks.findFirst.mockResolvedValue({
       id: "pack_2",
       organizationId: "org_1",
@@ -278,8 +259,8 @@ describe("POST /v1/addon behavior", () => {
       isActive: true,
     });
 
-    vi.mocked(loadProviderRules).mockResolvedValue([{ id: "rule_1" }]);
-    vi.mocked(loadProviderAccounts).mockResolvedValue([
+    loadProviderRulesMock.mockResolvedValue([{ id: "rule_1" }]);
+    loadProviderAccountsMock.mockResolvedValue([
       {
         id: "acct_dodo",
         providerId: "dodopayments",
@@ -288,7 +269,7 @@ describe("POST /v1/addon behavior", () => {
       },
     ]);
 
-    vi.mocked(resolveProvider).mockReturnValue(
+    resolveProviderMock.mockReturnValue(
       ok({
         adapter: dodoAdapter,
         account: {
@@ -302,7 +283,7 @@ describe("POST /v1/addon behavior", () => {
     );
 
     const res = await app.request(
-      "/v1/addon",
+      "/addon",
       {
         method: "POST",
         headers: {
@@ -319,7 +300,7 @@ describe("POST /v1/addon behavior", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(vi.mocked(resolveProvider)).toHaveBeenCalledTimes(1);
+    expect(resolveProviderMock).toHaveBeenCalledTimes(1);
     expect(dodoAdapter.createCheckoutSession).toHaveBeenCalledTimes(1);
     expect(paystackAdapter.createCheckoutSession).not.toHaveBeenCalled();
   });
@@ -338,7 +319,7 @@ describe("POST /v1/addon behavior", () => {
       isActive: true,
     });
 
-    vi.mocked(loadProviderAccounts).mockResolvedValue([
+    loadProviderAccountsMock.mockResolvedValue([
       {
         id: "acct_paystack",
         providerId: "paystack",
@@ -347,10 +328,10 @@ describe("POST /v1/addon behavior", () => {
       },
     ]);
 
-    vi.mocked(resolveOrCreateCustomer).mockResolvedValue(null);
+    resolveOrCreateCustomerMock.mockResolvedValue(null);
 
     const res = await app.request(
-      "/v1/addon",
+      "/addon",
       {
         method: "POST",
         headers: {
@@ -370,7 +351,7 @@ describe("POST /v1/addon behavior", () => {
     const body = (await res.json()) as { success: boolean; error: string };
     expect(body.success).toBe(false);
     expect(body.error).toContain("Could not resolve customer");
-    expect(vi.mocked(resolveOrCreateCustomer)).toHaveBeenCalledWith(
+    expect(resolveOrCreateCustomerMock).toHaveBeenCalledWith(
       expect.objectContaining({
         customerId: "external-customer-123",
         customerData: undefined,

@@ -1,65 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Result } from "better-result";
 
-const {
-  mockGetUnbilledUsage,
-  mockChargeAuthorization,
-  mockResolveProviderAccount,
-  mockMarkUsageInvoiced,
-  mockCreateDb,
-} = vi.hoisted(() => ({
-  mockGetUnbilledUsage: vi.fn(),
-  mockChargeAuthorization: vi.fn(),
-  mockResolveProviderAccount: vi.fn(),
-  mockMarkUsageInvoiced: vi.fn(),
-  mockCreateDb: vi.fn(() => ({})),
-}));
-
 vi.mock("cloudflare:workers", () => ({
   WorkflowEntrypoint: class {},
 }));
 
-vi.mock("@owostack/db", () => ({
-  createDb: mockCreateDb,
-}));
-
-vi.mock("../billing", () => ({
-  BillingService: class {
-    getUnbilledUsage = mockGetUnbilledUsage;
-  },
-}));
-
-vi.mock("../usage-ledger", () => ({
-  markUsageInvoiced: mockMarkUsageInvoiced,
-}));
-
-vi.mock("./utils", () => ({
-  getAdapter: vi.fn(() => ({
-    chargeAuthorization: mockChargeAuthorization,
-  })),
-  resolveProviderAccount: mockResolveProviderAccount,
-  invalidateSubscriptionCache: vi.fn(async () => undefined),
-  intervalToMs: vi.fn((interval: string) => {
-    switch (interval) {
-      case "monthly":
-        return 30 * 24 * 60 * 60 * 1000;
-      default:
-        return 30 * 24 * 60 * 60 * 1000;
-    }
-  }),
-}));
-
-import { OverageBillingWorkflow } from "./overage-billing";
-
-function createStepMock() {
-  return {
-    sleep: vi.fn(async () => undefined),
-    do: vi.fn(async (...args: any[]) => {
-      const fn = typeof args[1] === "function" ? args[1] : args[2];
-      return fn();
-    }),
-  };
-}
+import {
+  OverageBillingWorkflow,
+  type OverageBillingWorkflowDependencies,
+} from "./overage-billing";
+import {
+  createWorkflowInstance,
+  createWorkflowStepMock,
+} from "./test-helpers";
 
 type DbOptions = {
   overageSettings?: {
@@ -151,9 +104,7 @@ function createDbMock(options: DbOptions = {}) {
                 }
 
                 if (
-                  sql.includes(
-                    "SELECT id, number, total, currency FROM invoices",
-                  )
+                  sql.includes("SELECT id, number, total, currency FROM invoices")
                 ) {
                   return options.existingInvoice ?? null;
                 }
@@ -301,13 +252,43 @@ function createUnbilledUsage(totalEstimated = 25000) {
 }
 
 describe("OverageBillingWorkflow", () => {
+  const getUnbilledUsageMock = vi.fn();
+  const chargeAuthorizationMock = vi.fn();
+  const resolveProviderAccountMock = vi.fn();
+  const markUsageInvoicedMock = vi.fn();
+  const invalidateSubscriptionCacheMock = vi.fn(async () => undefined);
+  const createDbMockFn = vi.fn((db) => db);
+  const deps: OverageBillingWorkflowDependencies = {
+    getAdapter: vi.fn(() => ({
+      chargeAuthorization: chargeAuthorizationMock,
+    })) as unknown as OverageBillingWorkflowDependencies["getAdapter"],
+    intervalToMs: vi.fn((interval: string) => {
+      switch (interval) {
+        case "monthly":
+          return 30 * 24 * 60 * 60 * 1000;
+        default:
+          return 30 * 24 * 60 * 60 * 1000;
+      }
+    }) as unknown as OverageBillingWorkflowDependencies["intervalToMs"],
+    invalidateSubscriptionCache:
+      invalidateSubscriptionCacheMock as unknown as OverageBillingWorkflowDependencies["invalidateSubscriptionCache"],
+    resolveProviderAccount:
+      resolveProviderAccountMock as unknown as OverageBillingWorkflowDependencies["resolveProviderAccount"],
+    createDb:
+      createDbMockFn as unknown as OverageBillingWorkflowDependencies["createDb"],
+    createBillingService: (() => ({
+      getUnbilledUsage: getUnbilledUsageMock,
+    })) as OverageBillingWorkflowDependencies["createBillingService"],
+    markUsageInvoiced:
+      markUsageInvoicedMock as unknown as OverageBillingWorkflowDependencies["markUsageInvoiced"],
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetUnbilledUsage.mockResolvedValue(Result.ok(createUnbilledUsage()));
-    mockChargeAuthorization.mockResolvedValue(
-      Result.ok({ reference: "ch_123" }),
-    );
-    mockResolveProviderAccount.mockResolvedValue({
+    OverageBillingWorkflow.dependencies = deps;
+    getUnbilledUsageMock.mockResolvedValue(Result.ok(createUnbilledUsage()));
+    chargeAuthorizationMock.mockResolvedValue(Result.ok({ reference: "ch_123" }));
+    resolveProviderAccountMock.mockResolvedValue({
       id: "acct_1",
       organizationId: "org_1",
       providerId: "paystack",
@@ -316,7 +297,7 @@ describe("OverageBillingWorkflow", () => {
       createdAt: 0,
       updatedAt: 0,
     });
-    mockMarkUsageInvoiced.mockResolvedValue(true);
+    markUsageInvoicedMock.mockResolvedValue(true);
   });
 
   it("creates an invoice, preserves flat-fee tier metadata, and auto-collects successfully", async () => {
@@ -327,7 +308,10 @@ describe("OverageBillingWorkflow", () => {
     });
 
     await OverageBillingWorkflow.prototype.run.call(
-      { env: { DB: db.DB, ENCRYPTION_KEY: "key" } },
+      createWorkflowInstance(OverageBillingWorkflow, {
+        DB: db.DB,
+        ENCRYPTION_KEY: "key",
+      }),
       {
         payload: {
           organizationId: "org_1",
@@ -335,10 +319,12 @@ describe("OverageBillingWorkflow", () => {
           trigger: "threshold",
         },
       },
-      createStepMock(),
+      createWorkflowStepMock(),
     );
 
-    expect(mockChargeAuthorization).toHaveBeenCalledWith(
+    expect(createDbMockFn).toHaveBeenCalledWith(db.DB);
+    expect(getUnbilledUsageMock).toHaveBeenCalledWith("cust_1", "org_1");
+    expect(chargeAuthorizationMock).toHaveBeenCalledWith(
       expect.objectContaining({
         authorizationCode: "AUTH_123",
         amount: 25000,
@@ -393,7 +379,10 @@ describe("OverageBillingWorkflow", () => {
     });
 
     await OverageBillingWorkflow.prototype.run.call(
-      { env: { DB: db.DB, ENCRYPTION_KEY: "key" } },
+      createWorkflowInstance(OverageBillingWorkflow, {
+        DB: db.DB,
+        ENCRYPTION_KEY: "key",
+      }),
       {
         payload: {
           organizationId: "org_1",
@@ -401,10 +390,10 @@ describe("OverageBillingWorkflow", () => {
           trigger: "threshold",
         },
       },
-      createStepMock(),
+      createWorkflowStepMock(),
     );
 
-    expect(mockChargeAuthorization).not.toHaveBeenCalled();
+    expect(chargeAuthorizationMock).not.toHaveBeenCalled();
     expect(db.state.invoices[0]).toEqual(
       expect.objectContaining({
         status: "open",
@@ -423,7 +412,7 @@ describe("OverageBillingWorkflow", () => {
   });
 
   it("records a failed attempt when the provider account is missing", async () => {
-    mockResolveProviderAccount.mockResolvedValueOnce(null);
+    resolveProviderAccountMock.mockResolvedValueOnce(null);
     const db = createDbMock({
       paymentMethodForMinimumCheck: { provider_id: "paystack" },
       defaultPaymentMethod: { token: "AUTH_123", provider_id: "paystack" },
@@ -431,7 +420,10 @@ describe("OverageBillingWorkflow", () => {
     });
 
     await OverageBillingWorkflow.prototype.run.call(
-      { env: { DB: db.DB, ENCRYPTION_KEY: "key" } },
+      createWorkflowInstance(OverageBillingWorkflow, {
+        DB: db.DB,
+        ENCRYPTION_KEY: "key",
+      }),
       {
         payload: {
           organizationId: "org_1",
@@ -439,10 +431,10 @@ describe("OverageBillingWorkflow", () => {
           trigger: "threshold",
         },
       },
-      createStepMock(),
+      createWorkflowStepMock(),
     );
 
-    expect(mockChargeAuthorization).not.toHaveBeenCalled();
+    expect(chargeAuthorizationMock).not.toHaveBeenCalled();
     expect(db.state.invoices[0]).toEqual(
       expect.objectContaining({
         status: "open",
@@ -459,14 +451,14 @@ describe("OverageBillingWorkflow", () => {
   });
 
   it("keeps the provider error on failed charge attempts", async () => {
-    mockChargeAuthorization.mockResolvedValueOnce(
+    chargeAuthorizationMock.mockResolvedValueOnce(
       Result.err({
         code: "invalid_request",
         message: "authorization expired",
         providerId: "paystack",
       }),
     );
-    const step = createStepMock();
+    const step = createWorkflowStepMock();
     const db = createDbMock({
       paymentMethodForMinimumCheck: { provider_id: "paystack" },
       defaultPaymentMethod: { token: "AUTH_123", provider_id: "paystack" },
@@ -474,7 +466,10 @@ describe("OverageBillingWorkflow", () => {
     });
 
     await OverageBillingWorkflow.prototype.run.call(
-      { env: { DB: db.DB, ENCRYPTION_KEY: "key" } },
+      createWorkflowInstance(OverageBillingWorkflow, {
+        DB: db.DB,
+        ENCRYPTION_KEY: "key",
+      }),
       {
         payload: {
           organizationId: "org_1",
