@@ -448,6 +448,8 @@ app.patch("/:id", async (c) => {
       (f) => parsed.data[f] !== undefined,
     );
 
+    let responsePlan = updated;
+
     if (hasProviderChange && updated.providerPlanId && updated.providerId) {
       // Validate minimum charge amount if price is being updated
       if (parsed.data.price !== undefined) {
@@ -496,8 +498,31 @@ app.patch("/:id", async (c) => {
           });
 
           if (result.isOk()) {
+            const nextPlanId = result.value.nextPlanId;
+            if (
+              typeof nextPlanId === "string" &&
+              nextPlanId.length > 0 &&
+              nextPlanId !== updated.providerPlanId
+            ) {
+              const [providerSynced] = await db
+                .update(schema.plans)
+                .set({
+                  providerPlanId: nextPlanId,
+                  ...(updated.providerId === "paystack"
+                    ? { paystackPlanId: nextPlanId }
+                    : {}),
+                  updatedAt: Date.now(),
+                })
+                .where(eq(schema.plans.id, updated.id))
+                .returning();
+
+              if (providerSynced) {
+                responsePlan = providerSynced;
+              }
+            }
+
             console.log(
-              `[plans] Updated plan on ${updated.providerId}: ${updated.providerPlanId}`,
+              `[plans] Updated plan on ${updated.providerId}: ${result.value.nextPlanId || updated.providerPlanId}`,
             );
           } else {
             console.warn(
@@ -511,7 +536,7 @@ app.patch("/:id", async (c) => {
       }
     }
 
-    return c.json({ success: true, data: updated });
+    return c.json({ success: true, data: responsePlan });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
   }

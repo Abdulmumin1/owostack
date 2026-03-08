@@ -553,7 +553,7 @@ app.post("/", async (c) => {
             );
 
             if (adapter?.updatePlan && account) {
-              await adapter.updatePlan({
+              const result = await adapter.updatePlan({
                 planId: existing.providerPlanId,
                 name: planDef.name,
                 amount: planDef.price,
@@ -563,6 +563,24 @@ app.post("/", async (c) => {
                 environment: providerEnv,
                 account,
               });
+
+              if (
+                result.isOk() &&
+                typeof result.value.nextPlanId === "string" &&
+                result.value.nextPlanId.length > 0 &&
+                result.value.nextPlanId !== existing.providerPlanId
+              ) {
+                await db
+                  .update(schema.plans)
+                  .set({
+                    providerPlanId: result.value.nextPlanId,
+                    ...(existing.providerId === "paystack"
+                      ? { paystackPlanId: result.value.nextPlanId }
+                      : {}),
+                    updatedAt: Date.now(),
+                  })
+                  .where(eq(schema.plans.id, existing.id));
+              }
             }
           } catch (e) {
             console.warn("[sync] Provider sync error:", e);

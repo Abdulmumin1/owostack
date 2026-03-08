@@ -12,7 +12,6 @@
   import { apiFetch } from "$lib/auth-client";
   import { getActiveEnvironment, getApiUrl } from "$lib/env";
   import { SUPPORTED_PROVIDERS } from "$lib/providers";
-  import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import type { ProviderAccount } from "./types";
 
@@ -160,10 +159,10 @@
             >
               Select Provider
             </div>
-            <div class="grid grid-cols-1 gap-3">
+            <div class="grid grid-cols-2 gap-2">
               {#each availableProviders as provider (provider.id)}
                 <button
-                  class="p-4 border rounded text-left transition-all {formProviderId ===
+                  class="p-3 border rounded text-left flex flex-col items-center gap-2 transition-all relative {formProviderId ===
                   provider.id
                     ? 'border-accent bg-accent/5'
                     : 'border-border hover:border-text-dim'}"
@@ -172,12 +171,31 @@
                     formCredentials = {};
                   }}
                 >
-                  <div class="flex items-center gap-2 mb-2">
-                    <ProviderBadge providerId={provider.id} size="xs" />
-                    <span class="text-xs font-bold text-text-primary"
+                  <div
+                    class="w-10 h-10 flex items-center justify-center bg-bg-card border border-border rounded-sm shrink-0 overflow-hidden p-1"
+                  >
+                    <img
+                      src={provider.logoUrl}
+                      alt={provider.name}
+                      class="w-full h-full object-contain"
+                      onerror={(e) => {
+                        const target = e.currentTarget as HTMLImageElement;
+                        target.style.display = "none";
+                      }}
+                    />
+                  </div>
+                  <div class="text-center min-w-0">
+                    <span class="text-xs font-bold text-text-primary block truncate"
                       >{provider.name}</span
                     >
                   </div>
+                  {#if formProviderId === provider.id}
+                    <CheckCircle
+                      size={16}
+                      weight="fill"
+                      class="text-accent absolute top-2 right-2"
+                    />
+                  {/if}
                 </button>
               {/each}
             </div>
@@ -195,7 +213,7 @@
             id="displayName"
             bind:value={formDisplayName}
             class="input w-full"
-            placeholder="e.g. Paystack Live"
+            placeholder={selectedProviderConfig ? `e.g. ${selectedProviderConfig.name} Live` : "e.g. Paystack Live"}
           />
         </div>
 

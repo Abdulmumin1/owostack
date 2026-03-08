@@ -117,6 +117,17 @@ describe("/wallet/setup behavior", () => {
     ),
   };
 
+  const stripeAdapter = {
+    id: "stripe",
+    defaultCurrency: "USD",
+    createCheckoutSession: vi.fn(async () =>
+      ok({
+        url: "https://checkout.stripe.com/c/pay/cs_test_wallet_1",
+        reference: "cs_test_wallet_1",
+      }),
+    ),
+  };
+
   const app = createRouteTestApp(createWalletRoute(deps), {
     db: mockDb,
     authDb: mockAuthDb,
@@ -132,7 +143,11 @@ describe("/wallet/setup behavior", () => {
 
     getProviderRegistryMock.mockReturnValue({
       get: vi.fn((providerId: string) =>
-        providerId === "polar" ? polarAdapter : undefined,
+        providerId === "polar"
+          ? polarAdapter
+          : providerId === "stripe"
+            ? stripeAdapter
+            : undefined,
       ),
     });
 
@@ -187,5 +202,46 @@ describe("/wallet/setup behavior", () => {
     expect(polarAdapter.createCheckoutSession).not.toHaveBeenCalled();
 
     expect(dbUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a $1.00 setup authorization for Stripe instead of $100.00", async () => {
+    loadProviderAccountsMock.mockResolvedValueOnce([
+      {
+        id: "acct_stripe_1",
+        organizationId: "org_1",
+        providerId: "stripe",
+        environment: "test",
+        credentials: { secretKey: "sk_test_123" },
+      },
+    ]);
+
+    const res = await app.request(
+      "/wallet/setup",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer owo_sk_test",
+        },
+        body: JSON.stringify({
+          customer: "alice@example.com",
+          provider: "stripe",
+          callbackUrl: "https://example.com/return",
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(stripeAdapter.createCheckoutSession).toHaveBeenCalledTimes(1);
+    expect(stripeAdapter.createCheckoutSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 100,
+        currency: "USD",
+        metadata: expect.objectContaining({
+          type: "card_setup",
+        }),
+      }),
+    );
   });
 });

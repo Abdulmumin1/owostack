@@ -359,12 +359,8 @@ export class Owostack {
     });
 
     if (!response.ok) {
-      const resp = await response.json();
-      const errorData = resp.error || resp;
-      throw new OwostackError(
-        errorData.code || "unknown_error",
-        errorData.message || errorData.error || "Request failed",
-      );
+      const errorData = extractErrorDetails(await readErrorResponse(response));
+      throw new OwostackError(errorData.code, errorData.message);
     }
 
     return response.json();
@@ -394,16 +390,80 @@ export class Owostack {
     });
 
     if (!response.ok) {
-      const resp = await response.json();
-      const errorData = resp.error || resp;
-      throw new OwostackError(
-        errorData.code || "unknown_error",
-        errorData.message || errorData.error || "Request failed",
-      );
+      const errorData = extractErrorDetails(await readErrorResponse(response));
+      throw new OwostackError(errorData.code, errorData.message);
     }
 
     return response.json();
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+async function readErrorResponse(response: Response): Promise<unknown> {
+  const raw = await response.text().catch(() => "");
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function extractErrorDetails(payload: unknown): {
+  code: string;
+  message: string;
+} {
+  if (typeof payload === "string") {
+    return {
+      code: "unknown_error",
+      message: payload,
+    };
+  }
+
+  if (!isRecord(payload)) {
+    return {
+      code: "unknown_error",
+      message: "Request failed",
+    };
+  }
+
+  const directCode = asNonEmptyString(payload.code);
+  const directMessage = asNonEmptyString(payload.message);
+  const directError = payload.error;
+
+  if (typeof directError === "string") {
+    return {
+      code: directCode || "unknown_error",
+      message: directError,
+    };
+  }
+
+  if (isRecord(directError)) {
+    const nestedCode = asNonEmptyString(directError.code);
+    const nestedMessage =
+      asNonEmptyString(directError.message) ||
+      asNonEmptyString(directError.error);
+
+    if (nestedMessage) {
+      return {
+        code: nestedCode || directCode || "unknown_error",
+        message: nestedMessage,
+      };
+    }
+  }
+
+  return {
+    code: directCode || "unknown_error",
+    message: directMessage || "Request failed",
+  };
 }
 
 // ---------------------------------------------------------------------------

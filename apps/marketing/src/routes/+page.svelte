@@ -14,6 +14,7 @@
   import Logo from "$lib/components/ui/Logo.svelte";
   import InteractiveDemo from "$lib/components/marketing/InteractiveDemo.svelte";
   import PricingTemplatesSection from "$lib/components/marketing/PricingTemplatesSection.svelte";
+  import Footer from "$lib/components/marketing/Footer.svelte";
   import { onMount } from "svelte";
 
   const phrases: { text: string; icons: (typeof CreditCard)[] }[] = [
@@ -408,8 +409,7 @@
       <p
         class="text-text-secondary max-w-lg mx-auto text-sm md:text-base leading-relaxed mb-10 text-balance"
       >
-        Owostack is Provider Agnostic, Bring the provider of your choice.
-        combine multiple to achive true regional experience for your customers
+        Owostack is Provider Agnostic. Bring the provider of your choice.
       </p>
 
       <div class="flex flex-wrap justify-center items-center gap-3 md:gap-4">
@@ -417,17 +417,27 @@
           class="px-4 py-2 rounded-full border border-border/40 bg-bg-secondary/30 text-xs font-medium flex items-center gap-2 hover:border-[#0BA4DB]/40 transition-colors cursor-default"
         >
           <img
-            src="/paystack_logo.png"
+            src="https://cdn.brandfetch.io/paystack.com?c=1iduQCu8CNcitTrpDvi"
             alt="Paystack logo"
             class="w-4 h-4 object-contain"
           />
           Paystack
         </div>
         <div
+          class="px-4 py-2 rounded-full border border-border/40 bg-bg-secondary/30 text-xs font-medium flex items-center gap-2 hover:border-[#635BFF]/40 transition-colors cursor-default"
+        >
+          <img
+            src="https://cdn.brandfetch.io/stripe.com?c=1iduQCu8CNcitTrpDvi"
+            alt="Stripe logo"
+            class="w-4 h-4 object-contain"
+          />
+          Stripe
+        </div>
+        <div
           class="px-4 py-2 rounded-full border border-border/40 bg-bg-secondary/30 text-xs font-medium flex items-center gap-2 hover:border-[#1264FF]/40 transition-colors cursor-default"
         >
           <img
-            src="/dodo_logo.jpeg"
+            src="https://cdn.brandfetch.io/dodopayments.com?c=1iduQCu8CNcitTrpDvi"
             alt="Dodo Payments logo"
             class="w-4 h-4 rounded-sm object-contain"
           />
@@ -437,9 +447,9 @@
           class="px-4 py-2 rounded-full border border-border/40 bg-bg-secondary/30 text-xs font-medium flex items-center gap-2 hover:border-[#e41d34]/40 transition-colors cursor-default"
         >
           <img
-            src="/polar_logo.png"
+            src="/polar.png"
             alt="Polar logo"
-            class="w-4 h-4 object-contain"
+            class="w-4 h-4 object-contain dark:invert"
           />
           Polar
         </div>
@@ -484,46 +494,7 @@
     </div>
   </section>
 
-  <!-- Footer -->
-  <footer class="px-6 py-8 border-t border-border/30">
-    <div
-      class="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4"
-    >
-      <span class="text-xs text-text-secondary"
-        >A product of The Thirdpen Company</span
-      >
-      <div class="flex items-center gap-6 text-xs text-text-secondary">
-        <a
-          href="/pricing-templates"
-          class="hover:text-text-primary transition-colors">Templates</a
-        >
-        <a
-          href={import.meta.env.DOCS_URL}
-          class="hover:text-text-primary transition-colors">Docs</a
-        >
-        <a
-          href={import.meta.env.GITHUB_URL}
-          class="hover:text-text-primary transition-colors">GitHub</a
-        >
-        <a
-          href="https://discord.gg/jQ3TyEn6WR"
-          class="hover:text-text-primary transition-colors"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Discord
-        </a>
-        <a
-          href="/blog"
-          class="hover:text-text-primary transition-colors"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Blog
-        </a>
-      </div>
-    </div>
-  </footer>
+  <Footer />
 </div>
 
 <style>

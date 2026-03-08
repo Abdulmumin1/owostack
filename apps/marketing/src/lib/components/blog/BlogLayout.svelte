@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ArrowLeft } from "phosphor-svelte";
   import Logo from "$lib/components/ui/Logo.svelte";
+  import Footer from "$lib/components/marketing/Footer.svelte";
 
   let { children, thumbnail, title } = $props();
 </script>
@@ -43,14 +44,7 @@
     </div>
   </main>
 
-  <!-- Footer -->
-  <footer class="px-6 py-8 border-t border-border/30 mt-auto">
-    <div class="max-w-4xl mx-auto text-center">
-      <span class="text-xs text-text-secondary"
-        >© {new Date().getFullYear()} Owostack. A product of The Thirdpen Company.</span
-      >
-    </div>
-  </footer>
+  <Footer />
 </div>
 
 <style>

@@ -39,7 +39,7 @@
     if (normalizedName.includes("aws")) {
       return {
         alt: "AWS logo",
-        src: "https://cdn.brandfetch.io/domain/aws.amazon.com?c=1iduQCu8CNcitTrpDvi",
+        src: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR2xQcwKitRgXfqdi34DYlocPSEXD2G2zZipg&s",
         fallback: "A",
       };
     }

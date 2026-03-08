@@ -366,7 +366,11 @@ app.post("/invoice/:id/pay", async (c) => {
       customerId: customer.id,
     });
     return c.json(
-      { success: false, error: "No payment provider configured for this customer or environment" },
+      {
+        success: false,
+        error:
+          "No payment provider configured for this customer or environment",
+      },
       400,
     );
   }
@@ -426,6 +430,8 @@ app.post("/invoice/:id/pay", async (c) => {
           type: "invoice_payment",
           invoice_id: invoice.id,
           invoice_number: invoice.number,
+          customer_id: customer.id,
+          customer_email: customer.email,
         },
         environment: providerEnv,
         account,
@@ -511,6 +517,8 @@ app.post("/invoice/:id/pay", async (c) => {
       type: "invoice_payment",
       invoice_id: invoice.id,
       invoice_number: invoice.number,
+      customer_id: customer.id,
+      customer_email: customer.email,
     },
     environment: providerEnv,
     account,

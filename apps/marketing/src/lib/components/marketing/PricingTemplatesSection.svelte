@@ -47,8 +47,8 @@
           <article class="card card-elevated card-interactive group flex h-150 w-[320px] shrink-0 flex-col !rounded-lg !p-0">
             <div class="border-b border-border/50 p-6">
               <div class="flex items-center justify-between mb-4">
-                <div class="flex h-12 w-12 items-center justify-center rounded-sm border border-border bg-bg-secondary text-text-muted transition-colors group-hover:border-accent/30 group-hover:text-accent">
-                  <InspiredLogo name={template.inspiredBy} size={24} />
+                <div class="flex  items-center justify-center rounded-sm overflow-hidden border border-border bg-bg-secondary text-text-muted transition-colors group-hover:border-accent/30 group-hover:text-accent">
+                  <InspiredLogo name={template.inspiredBy} size={34} />
                 </div>
                 <div class="rounded-full border border-border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-dim">
                   {template.category}
