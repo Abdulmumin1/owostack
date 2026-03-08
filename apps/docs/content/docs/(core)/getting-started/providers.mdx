@@ -8,9 +8,9 @@ icon: Plug
 
 Owostack is designed to work with multiple payment providers through a single interface. This page explains the abstraction layer and how provider differences are handled.
 
-## Why multiple providers?
+## Supported providers
 
-Different payment providers serve different markets and have different strengths. Paystack dominates in Nigeria and West Africa. Dodo Payments and Polar handle global billing flows. Rather than lock you into one provider, Owostack abstracts the differences so your application code stays the same regardless of which provider processes the payment.
+Different payment providers serve different markets and have different strengths. Paystack dominates in Nigeria and West Africa. Stripe is the global standard for online payments. Dodo Payments and Polar handle global billing flows. Owostack abstracts the differences so your application code stays the same regardless of which provider you choose.
 
 Your app calls `attach()`, `check()`, and `track()`. Owostack figures out which provider to use, translates the request into the provider's API format, and normalizes the webhooks back into a common event model.
 
@@ -32,6 +32,7 @@ The adapter interface is designed so that core billing logic (plan switching, tr
 | Provider      | ID             | Markets                             | Key differences                                                                                                                  |
 | ------------- | -------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Paystack      | `paystack`     | Nigeria, Ghana, South Africa, Kenya | Card authorization codes for recurring charges; webhook verification via HMAC-SHA512                                             |
+| Stripe        | `stripe`       | Global                              | Industry-standard checkout flows; native subscription management with Stripe Billing; comprehensive webhook events               |
 | Dodo Payments | `dodopayments` | Global (USD, EUR, GBP)              | Product-centric checkout (requires product ID); on-demand subscriptions for card-on-file; Standard Webhooks spec                 |
 | Polar         | `polar`        | Global                              | Product-centric checkout (supports multiple products); native subscription lifecycle webhooks; Standard Webhooks signature model |
 
@@ -43,7 +44,7 @@ A **provider account** stores the credentials for a specific provider within you
 - **Webhook secret** — used to verify incoming webhook payloads
 - **Environment** — test or live
 
-Each organization can have multiple provider accounts — for example, a Paystack test account, a Paystack live account, and a Polar live account.
+Each organization can configure one or more provider accounts for different environments (test or live).
 
 ## How providers are selected
 
@@ -54,7 +55,7 @@ When a customer starts a checkout, Owostack picks a provider using this priority
 3. **Customer's existing provider** — if they've paid before, use the same provider
 4. **Fallback** — the first configured provider account
 
-This means you can run multiple providers side by side and control routing at the plan level, the request level, or let Owostack pick automatically.
+Owostack routes requests based on the plan's provider, explicit provider parameter, or customer history.
 
 ## Provider-specific behavior
 
@@ -63,18 +64,21 @@ Some billing features work differently depending on the provider:
 **Trials:**
 
 - Paystack — small verification charge (auto-refunded), Owostack manages trial billing
+- Stripe — native trial support via Stripe Billing subscription schedules
 - Dodo — native trial period, provider defers first charge automatically
 - Polar — native trial support via provider-side subscription lifecycle
 
 **Card on file:**
 
 - Paystack — stores a reusable authorization code from the first charge
+- Stripe — stores customer payment methods; supports off-session payments with SetupIntents
 - Dodo — creates an on-demand subscription that can be charged with arbitrary amounts
 - Polar — stores provider-managed subscription IDs for recurring lifecycle events
 
 **Checkout:**
 
 - Paystack — raw amount checkout, no pre-created product needed
+- Stripe — flexible checkout with PaymentIntents; supports one-time and subscription payments
 - Dodo — product-centric, requires a synced product ID for every checkout
 - Polar — product-centric checkout with support for single- or multi-product sessions
 

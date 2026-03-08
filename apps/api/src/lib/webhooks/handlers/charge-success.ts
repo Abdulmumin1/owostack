@@ -19,66 +19,132 @@ export const chargeSuccessDependencies: ChargeSuccessDependencies = {
   upsertPaymentMethod,
 };
 
+async function resolveChargeSuccessCustomer(
+  ctx: WebhookContext,
+): Promise<any | null> {
+  const { db, organizationId, event } = ctx;
+  const providerCustomerId = event.customer.providerCustomerId || null;
+  const email = event.customer.email?.toLowerCase() || null;
+  const metadataCustomerId =
+    typeof event.metadata.customer_id === "string"
+      ? event.metadata.customer_id
+      : null;
+  const metadataInvoiceId =
+    typeof event.metadata.invoice_id === "string"
+      ? event.metadata.invoice_id
+      : null;
+
+  if (metadataCustomerId) {
+    const customerById = await db.query.customers.findFirst({
+      where: and(
+        eq(schema.customers.id, metadataCustomerId),
+        eq(schema.customers.organizationId, organizationId),
+      ),
+    });
+    if (customerById) return customerById;
+  }
+
+  if (metadataInvoiceId) {
+    const invoice = await db.query.invoices.findFirst({
+      where: and(
+        eq(schema.invoices.id, metadataInvoiceId),
+        eq(schema.invoices.organizationId, organizationId),
+      ),
+    });
+    if (invoice?.customerId) {
+      const customerByInvoice = await db.query.customers.findFirst({
+        where: and(
+          eq(schema.customers.id, invoice.customerId),
+          eq(schema.customers.organizationId, organizationId),
+        ),
+      });
+      if (customerByInvoice) return customerByInvoice;
+    }
+  }
+
+  if (providerCustomerId) {
+    const customerByProvider = await db.query.customers.findFirst({
+      where: and(
+        eq(schema.customers.organizationId, organizationId),
+        or(
+          eq(schema.customers.providerCustomerId, providerCustomerId),
+          eq(schema.customers.paystackCustomerId, providerCustomerId),
+        ),
+      ),
+    });
+    if (customerByProvider) return customerByProvider;
+  }
+
+  if (!email) return null;
+
+  const customerByEmail = await db.query.customers.findFirst({
+    where: and(
+      eq(schema.customers.email, email),
+      eq(schema.customers.organizationId, organizationId),
+    ),
+  });
+  if (customerByEmail) return customerByEmail;
+
+  const [newCustomer] = await db
+    .insert(schema.customers)
+    .values({
+      id: crypto.randomUUID(),
+      organizationId,
+      email,
+      providerId: event.provider,
+      providerCustomerId,
+      providerAuthorizationCode: event.authorization?.reusable
+        ? event.authorization.code
+        : null,
+      paystackCustomerId:
+        event.provider === "paystack" ? providerCustomerId : null,
+      paystackAuthorizationCode:
+        event.provider === "paystack" && event.authorization?.reusable
+          ? event.authorization.code
+          : null,
+    })
+    .returning();
+
+  return newCustomer;
+}
+
 export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
   const { db, organizationId, event } = ctx;
   const { metadata } = event;
   const reference = event.payment?.reference || "";
   console.log(`[WEBHOOK] handleChargeSuccess called, reference=${reference}`);
 
-  // Guard: cannot process without a customer email
-  if (!event.customer.email) {
+  let dbCustomer = await resolveChargeSuccessCustomer(ctx);
+  if (!dbCustomer) {
     console.warn(
-      `[WEBHOOK] charge.success with no customer email — skipping. ref=${reference}, provider=${event.provider}`,
+      `[WEBHOOK] charge.success could not resolve customer — skipping. ref=${reference}, provider=${event.provider}`,
     );
     return;
   }
 
-  // 1. Find or Create Customer
-  let dbCustomer = await db.query.customers.findFirst({
-    where: and(
-      eq(schema.customers.email, event.customer.email.toLowerCase()),
-      eq(schema.customers.organizationId, organizationId),
-    ),
-  });
-
-  if (!dbCustomer) {
-    const [newCustomer] = await db
-      .insert(schema.customers)
-      .values({
-        id: crypto.randomUUID(),
-        organizationId,
-        email: event.customer.email.toLowerCase(),
-        providerId: event.provider,
-        providerCustomerId: event.customer.providerCustomerId,
-        providerAuthorizationCode: event.authorization?.reusable
-          ? event.authorization.code
-          : null,
-        paystackCustomerId:
-          event.provider === "paystack"
-            ? event.customer.providerCustomerId
-            : null,
-        paystackAuthorizationCode:
-          event.provider === "paystack" && event.authorization?.reusable
-            ? event.authorization.code
-            : null,
-      })
-      .returning();
-    dbCustomer = newCustomer;
-  } else if (event.authorization?.reusable && event.authorization.code) {
-    // Update authorization code if we got a new reusable one
+  const shouldUpdateProviderDetails =
+    !!event.customer.providerCustomerId ||
+    (event.authorization?.reusable && !!event.authorization.code);
+  if (shouldUpdateProviderDetails) {
     await db
       .update(schema.customers)
       .set({
         providerId: event.provider,
-        providerCustomerId: event.customer.providerCustomerId,
-        providerAuthorizationCode: event.authorization.code,
+        providerCustomerId:
+          event.customer.providerCustomerId || dbCustomer.providerCustomerId,
+        providerAuthorizationCode:
+          event.authorization?.reusable && event.authorization.code
+            ? event.authorization.code
+            : dbCustomer.providerAuthorizationCode,
         paystackAuthorizationCode:
-          event.provider === "paystack"
+          event.provider === "paystack" &&
+          event.authorization?.reusable &&
+          event.authorization.code
             ? event.authorization.code
             : dbCustomer.paystackAuthorizationCode,
         paystackCustomerId:
           event.provider === "paystack"
-            ? event.customer.providerCustomerId
+            ? event.customer.providerCustomerId || dbCustomer.paystackCustomerId
             : dbCustomer.paystackCustomerId,
         updatedAt: Date.now(),
       })
@@ -119,21 +185,27 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
   }
 
   // 1b. Upsert payment method if we have a chargeable token.
-  // Only save as "card" when actual card details (last4) are present (Paystack).
-  // For Dodo the authorization code is a subscription_id — those are stored as
-  // "provider_managed" by the subscription.created handler instead.
-  if (
+  // Save rich "card" methods when card details are present. For Stripe card_setup
+  // webhooks, PaymentIntent payloads often omit charge-expanded card details, so
+  // fall back to a provider-managed token row to make the wallet usable.
+  const shouldStoreCardMethod =
     event.authorization?.reusable &&
     event.authorization.code &&
-    event.authorization.last4
-  ) {
+    !!event.authorization.last4;
+  const shouldStoreProviderManagedMethod =
+    event.provider === "stripe" &&
+    metadata.type === "card_setup" &&
+    event.authorization?.reusable &&
+    !!event.authorization.code;
+
+  if (shouldStoreCardMethod || shouldStoreProviderManagedMethod) {
     try {
       await chargeSuccessDependencies.upsertPaymentMethod(db, {
         customerId: dbCustomer.id,
         organizationId,
         providerId: event.provider,
         token: event.authorization.code,
-        type: "card",
+        type: shouldStoreCardMethod ? "card" : "provider_managed",
         cardLast4: event.authorization.last4,
         cardBrand: event.authorization.cardType,
         cardExpMonth: event.authorization.expMonth,
@@ -1123,7 +1195,10 @@ async function handleAutoRenewalByCustomerPlan(
 
   if (cache) {
     try {
-      await cache.invalidateSubscriptions(organizationId, existingSub.customerId);
+      await cache.invalidateSubscriptions(
+        organizationId,
+        existingSub.customerId,
+      );
     } catch (e) {
       console.warn(
         `[WEBHOOK] Auto-renewal customer+plan cache invalidation failed:`,

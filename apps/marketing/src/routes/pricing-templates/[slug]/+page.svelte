@@ -11,6 +11,7 @@
   } from "phosphor-svelte";
   import Logo from "$lib/components/ui/Logo.svelte";
   import InspiredLogo from "$lib/components/marketing/InspiredLogo.svelte";
+  import Footer from "$lib/components/marketing/Footer.svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -191,18 +192,5 @@
     </div>
   </section>
 
-  <footer class="border-t border-border/40 px-6 py-12">
-    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 sm:flex-row">
-      <div class="flex items-center gap-2">
-        <Logo size={16} class="text-accent/60" />
-        <span class="text-xs text-text-dim">© 2026 Owostack</span>
-      </div>
-      <div class="flex items-center gap-8">
-        <a href="/pricing-templates" class="text-xs text-text-muted hover:text-text-primary">Library</a>
-        <a href="https://github.com/owostack" class="text-xs text-text-muted hover:text-text-primary">GitHub</a>
-        <a href="https://discord.gg/jQ3TyEn6WR" class="text-xs text-text-muted hover:text-text-primary" target="_blank" rel="noopener noreferrer">Discord</a>
-        <a href="https://cal.com/yaqeen/30min" class="text-xs text-text-muted hover:text-text-primary" target="_blank" rel="noopener noreferrer">Contact</a>
-      </div>
-    </div>
-  </footer>
+  <Footer />
 </div>

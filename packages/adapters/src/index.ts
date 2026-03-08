@@ -238,7 +238,13 @@ export interface ProviderAdapter {
     description?: string | null;
     environment: ProviderEnvironment;
     account: ProviderAccount;
-  }): Promise<ProviderResult<{ updated: boolean }>>;
+  }): Promise<
+    ProviderResult<{
+      updated: boolean;
+      nextPlanId?: string;
+      metadata?: Record<string, unknown>;
+    }>
+  >;
 
   createSubscription(params: {
     customer: ProviderCustomerRef;
@@ -341,6 +347,7 @@ export function createProviderRegistry(): ProviderRegistry {
 export { paystackAdapter } from "./paystack";
 export { dodoAdapter } from "./dodo";
 export { polarAdapter } from "./polar";
+export { stripeAdapter } from "./stripe";
 export { selectProvider } from "./selector";
 export { resolveProvider } from "./provider-factory";
 

@@ -12,9 +12,10 @@
     Plus,
     CaretLeft,
     Rocket,
+    Copy,
   } from "phosphor-svelte";
   import { organization, apiFetch } from "$lib/auth-client";
-  import { getActiveEnvironment } from "$lib/env";
+  import { getActiveEnvironment, getApiUrl } from "$lib/env";
   import { SUPPORTED_PROVIDERS } from "$lib/providers";
   import { goto } from "$app/navigation";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
@@ -122,6 +123,9 @@
     if (currentStep > 1) currentStep--;
   }
 
+  // API base URL derived from environment
+  let apiBase = $derived(getApiUrl());
+
   async function finishOnboarding() {
     if (!orgName || !orgSlug) return;
 
@@ -164,6 +168,10 @@
       error = err?.message || "Something went wrong. Please try again.";
       isCreating = false;
     }
+  }
+
+  function copyUrl(url: string) {
+    navigator.clipboard.writeText(url);
   }
 
   // Update slug automatically from name
@@ -378,7 +386,7 @@
               </div>
 
               <div
-                class="space-y-3 max-h-[280px] overflow-y-auto pr-2 custom-scrollbar"
+                class="space-y-3 max-h-100 overflow-y-auto pr-2 custom-scrollbar"
               >
                 {#each availableProviders as provider}
                   <button
@@ -393,7 +401,7 @@
                         class="w-12 h-12 flex items-center justify-center bg-bg-card border border-border rounded-sm group-hover:scale-105 transition-transform overflow-hidden p-1.5"
                       >
                         <img
-                          src="/images/{provider.id}.png"
+                          src={provider.logoUrl}
                           alt={provider.name}
                           class="w-full h-full object-contain"
                           onerror={(e) => {
@@ -465,6 +473,7 @@
               <div class="space-y-6">
                 {#if selectedProviderConfig}
                   {#each selectedProviderConfig.fields as field}
+                    {@const isWebhookSecret = field.key === "webhookSecret"}
                     <div>
                       <label
                         for={field.key}
@@ -506,6 +515,23 @@
                           </button>
                         {/if}
                       </div>
+                      {#if isWebhookSecret}
+                        {@const webhookUrl = `${apiBase}/webhooks/${orgSlug || "your-org"}/${selectedProviderId}`}
+                        <div class="mt-2 bg-info-bg/50 border border-info/30 p-2.5 flex items-start gap-2">
+                          <div class="flex-1 min-w-0">
+                            <p class="text-[10px] font-bold text-info uppercase tracking-widest mb-1">Webhook URL</p>
+                            <code class="font-mono text-[10px] text-info break-all">{webhookUrl}</code>
+                          </div>
+                          <button
+                            type="button"
+                            class="text-info hover:text-info/80 transition-colors shrink-0 mt-0.5"
+                            onclick={() => copyUrl(webhookUrl)}
+                            title="Copy webhook URL"
+                          >
+                            <Copy size={12} weight="fill" />
+                          </button>
+                        </div>
+                      {/if}
                     </div>
                   {/each}
                 {/if}

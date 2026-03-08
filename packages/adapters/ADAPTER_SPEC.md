@@ -14,11 +14,11 @@ This document describes how to build a new payment provider adapter for Owostack
 
 **Key files to touch when adding a new adapter:**
 
-| File | Purpose |
-|------|---------|
-| `packages/adapters/src/<provider>.ts` | Adapter implementation (create this) |
-| `packages/adapters/src/index.ts` | Export your adapter |
-| `apps/api/src/lib/providers.ts` | Register adapter in the provider registry |
+| File                                  | Purpose                                            |
+| ------------------------------------- | -------------------------------------------------- |
+| `packages/adapters/src/<provider>.ts` | Adapter implementation (create this)               |
+| `packages/adapters/src/index.ts`      | Export your adapter                                |
+| `apps/api/src/lib/providers.ts`       | Register adapter in the provider registry          |
 | `apps/dashboard/src/lib/providers.ts` | Dashboard UI config (credentials form, currencies) |
 
 ## Step 1: Create the Provider Client
@@ -47,7 +47,12 @@ class MyProviderClient {
   private timeout: number;
   private maxRetries: number;
 
-  constructor(config: { apiKey: string; baseUrl: string; timeout?: number; maxRetries?: number }) {
+  constructor(config: {
+    apiKey: string;
+    baseUrl: string;
+    timeout?: number;
+    maxRetries?: number;
+  }) {
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl;
     this.timeout = config.timeout ?? 10000;
@@ -67,7 +72,10 @@ class MyProviderClient {
         for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+            const timeoutId = setTimeout(
+              () => controller.abort(),
+              this.timeout,
+            );
 
             const response = await fetch(`${this.baseUrl}${path}`, {
               method,
@@ -92,7 +100,9 @@ class MyProviderClient {
           } catch (error) {
             lastError = error as Error;
             if (attempt < this.maxRetries) {
-              await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 100));
+              await new Promise((r) =>
+                setTimeout(r, Math.pow(2, attempt) * 100),
+              );
             }
           }
         }
@@ -118,7 +128,9 @@ class MyProviderClient {
 Each adapter needs a helper to extract credentials from the `ProviderAccount` and instantiate the client:
 
 ```ts
-function resolveClient(account: ProviderAccount): ProviderResult<MyProviderClient> {
+function resolveClient(
+  account: ProviderAccount,
+): ProviderResult<MyProviderClient> {
   const secretKey = account.credentials.secretKey;
   if (typeof secretKey !== "string" || !secretKey) {
     return Result.err({
@@ -129,9 +141,10 @@ function resolveClient(account: ProviderAccount): ProviderResult<MyProviderClien
   }
 
   // If your provider has test/live base URLs, select based on environment:
-  const baseUrl = account.environment === "live"
-    ? "https://api.myprovider.com"
-    : "https://sandbox.myprovider.com";
+  const baseUrl =
+    account.environment === "live"
+      ? "https://api.myprovider.com"
+      : "https://sandbox.myprovider.com";
 
   return Result.ok(new MyProviderClient({ apiKey: secretKey, baseUrl }));
 }
@@ -329,18 +342,18 @@ parseWebhookEvent(params: {
 
 Your adapter must map the provider's event types to these normalized types:
 
-| Normalized Type | When to emit |
-|---|---|
-| `subscription.created` | Subscription created (not yet active) |
-| `subscription.active` | Subscription activated / renewed |
-| `subscription.canceled` | Subscription canceled / expired |
+| Normalized Type          | When to emit                              |
+| ------------------------ | ----------------------------------------- |
+| `subscription.created`   | Subscription created (not yet active)     |
+| `subscription.active`    | Subscription activated / renewed          |
+| `subscription.canceled`  | Subscription canceled / expired           |
 | `subscription.not_renew` | Subscription won't renew at end of period |
-| `subscription.past_due` | Payment failed, subscription at risk |
-| `charge.success` | Payment succeeded |
-| `charge.failed` | Payment failed |
-| `refund.success` | Refund processed |
-| `refund.failed` | Refund failed |
-| `customer.identified` | Customer identity verified (optional) |
+| `subscription.past_due`  | Payment failed, subscription at risk      |
+| `charge.success`         | Payment succeeded                         |
+| `charge.failed`          | Payment failed                            |
+| `refund.success`         | Refund processed                          |
+| `refund.failed`          | Refund failed                             |
+| `customer.identified`    | Customer identity verified (optional)     |
 
 ### NormalizedWebhookEvent Structure
 
@@ -404,8 +417,19 @@ async updatePlan(params: {
   description?: string | null;
   environment: ProviderEnvironment;
   account: ProviderAccount;
-}): Promise<ProviderResult<{ updated: boolean }>>
+}): Promise<
+  ProviderResult<{
+    updated: boolean;
+    nextPlanId?: string;    // Return when provider requires creating a replacement price/plan
+    metadata?: Record<string, unknown>;
+  }>
+>
 ```
+
+If the provider's pricing objects are immutable (for example Stripe Prices),
+`updatePlan` should create the replacement provider object and return its new ID
+in `nextPlanId`. Callers will persist that new provider plan ID for future
+checkouts instead of assuming in-place mutation.
 
 #### `createProduct?`
 
@@ -474,7 +498,7 @@ export function getProviderRegistry() {
   const registry = createProviderRegistry();
   registry.register(paystackAdapter);
   registry.register(dodoAdapter);
-  registry.register(myProviderAdapter);  // ← add here
+  registry.register(myProviderAdapter); // ← add here
   return registry;
 }
 ```
@@ -488,13 +512,18 @@ Also update `providerCredentialsNeedingDecrypt()` if your provider uses differen
 export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
   // ... existing providers ...
   {
-    id: "my_provider",                  // Must match adapter.id
+    id: "my_provider", // Must match adapter.id
     name: "My Provider",
     description: "Description for the settings page",
-    color: "blue",                      // Tailwind color for UI accents
+    color: "blue", // Tailwind color for UI accents
     docsUrl: "https://docs.myprovider.com/api-keys",
     fields: [
-      { key: "secretKey", label: "Secret Key", placeholder: "sk_xxx", secret: true },
+      {
+        key: "secretKey",
+        label: "Secret Key",
+        placeholder: "sk_xxx",
+        secret: true,
+      },
       // Add any extra credential fields your provider needs:
       // { key: "webhookSecret", label: "Webhook Secret", placeholder: "whsec_xxx", secret: true },
       // { key: "publicKey", label: "Public Key", placeholder: "pk_xxx", secret: false },
@@ -574,12 +603,12 @@ interface ProviderError {
 }
 
 type ProviderErrorCode =
-  | "configuration_missing"  // Credentials not set or invalid
-  | "request_failed"         // API call failed (network, 4xx, 5xx)
-  | "unsupported"           // Operation not supported by this provider
-  | "invalid_request"       // Bad input params
-  | "invalid_payload"       // Webhook payload can't be parsed
-  | "unknown_event";        // Webhook event type not recognized
+  | "configuration_missing" // Credentials not set or invalid
+  | "request_failed" // API call failed (network, 4xx, 5xx)
+  | "unsupported" // Operation not supported by this provider
+  | "invalid_request" // Bad input params
+  | "invalid_payload" // Webhook payload can't be parsed
+  | "unknown_event"; // Webhook event type not recognized
 ```
 
 Use `Result.ok(value)` for success and `Result.err({ code, message, providerId })` for errors.

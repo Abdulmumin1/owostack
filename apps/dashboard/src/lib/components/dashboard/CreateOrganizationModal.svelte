@@ -338,7 +338,7 @@
                     class="w-10 h-10 flex items-center justify-center bg-bg-card border border-border rounded-sm group-hover:scale-105 transition-transform overflow-hidden p-1"
                   >
                     <img
-                      src="/images/{provider.id}.png"
+                      src={provider.logoUrl}
                       alt={provider.name}
                       class="w-full h-full object-contain"
                       onerror={(e) => {

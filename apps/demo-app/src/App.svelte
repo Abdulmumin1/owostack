@@ -49,6 +49,7 @@
       const res = await owo.attach({
         customer: customerId,
         product: planId, // SDK maps product -> feature/plan
+        callbackUrl: window.location.href,
         metadata: { source: "simulation_demo" },
       });
       attachResult = res;
@@ -263,7 +264,10 @@
     log(`Paying invoice ${invoiceId}...`);
 
     try {
-      const res = await owo.billing.pay({ invoiceId });
+      const res = await owo.billing.pay({
+        invoiceId,
+        callbackUrl: window.location.href,
+      });
       if (res.paid) {
         log("Invoice paid (auto-charged):", res);
         if (invoiceResult?.invoice?.id === invoiceId) {

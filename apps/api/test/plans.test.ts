@@ -123,7 +123,12 @@ describe("Plans API", () => {
   const paystackAdapter = {
     id: "paystack",
     createPlan: vi.fn(async () => ok({ id: "prov_plan_paystack_1" })),
-    updatePlan: vi.fn(async () => ok({ id: "prov_plan_paystack_1" })),
+    updatePlan: vi.fn(async () => ok({ updated: true })),
+  };
+  const stripeAdapter = {
+    id: "stripe",
+    createPlan: vi.fn(async () => ok({ id: "price_stripe_1" })),
+    updatePlan: vi.fn(async () => ok({ updated: true })),
   };
   const dodoAdapter = {
     id: "dodopayments",
@@ -139,6 +144,7 @@ describe("Plans API", () => {
     getProviderRegistryMock.mockReturnValue(
       new Map([
         ["paystack", paystackAdapter],
+        ["stripe", stripeAdapter],
         ["dodopayments", dodoAdapter],
       ]),
     );
@@ -146,6 +152,11 @@ describe("Plans API", () => {
       {
         id: "acct_paystack",
         providerId: "paystack",
+        environment: "test",
+      },
+      {
+        id: "acct_stripe",
+        providerId: "stripe",
         environment: "test",
       },
       {
@@ -162,7 +173,8 @@ describe("Plans API", () => {
     insertValuesMock.mockClear();
     insertReturningMock.mockClear();
 
-    const { default: plansRoute } = await import("../src/routes/dashboard/plans");
+    const { default: plansRoute } =
+      await import("../src/routes/dashboard/plans");
     app = createRouteTestApp(plansRoute, { db: mockDb });
   });
 
@@ -504,6 +516,89 @@ describe("Plans API", () => {
 
     expect(res.status).toBe(200);
     expect(paystackAdapter.updatePlan).not.toHaveBeenCalled();
+  });
+
+  it("PATCH persists a rotated provider plan id when adapter.updatePlan returns nextPlanId", async () => {
+    const localUpdateReturningMock = vi.fn(async () => [
+      {
+        id: "plan_patch_stripe_1",
+        organizationId: "org_123",
+        name: "Pro",
+        price: 5000,
+        interval: "monthly",
+        currency: "USD",
+        description: "Updated plan",
+        providerId: "stripe",
+        providerPlanId: "price_old_1",
+        paystackPlanId: null,
+      },
+    ]);
+    const providerIdUpdateReturningMock = vi.fn(async () => [
+      {
+        id: "plan_patch_stripe_1",
+        organizationId: "org_123",
+        name: "Pro",
+        price: 5000,
+        interval: "monthly",
+        currency: "USD",
+        description: "Updated plan",
+        providerId: "stripe",
+        providerPlanId: "price_new_1",
+        paystackPlanId: null,
+      },
+    ]);
+
+    const firstSetMock = vi.fn(() => ({
+      where: vi.fn(() => ({
+        returning: localUpdateReturningMock,
+      })),
+    }));
+    const secondSetMock = vi.fn(() => ({
+      where: vi.fn(() => ({
+        returning: providerIdUpdateReturningMock,
+      })),
+    }));
+
+    mockDb.update = vi
+      .fn()
+      .mockImplementationOnce(() => ({
+        set: firstSetMock,
+      }))
+      .mockImplementationOnce(() => ({
+        set: secondSetMock,
+      }));
+
+    stripeAdapter.updatePlan.mockResolvedValueOnce(
+      ok({ updated: true, nextPlanId: "price_new_1" }),
+    );
+
+    mockDb.query.plans.findFirst.mockResolvedValueOnce({
+      id: "plan_patch_stripe_1",
+      metadata: {},
+    });
+
+    const res = await app.request(
+      "/plan_patch_stripe_1",
+      {
+        method: "PATCH",
+        body: JSON.stringify({ description: "Updated plan" }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(stripeAdapter.updatePlan).toHaveBeenCalledTimes(1);
+    expect(mockDb.update).toHaveBeenCalledTimes(2);
+
+    const providerIdUpdatePayload = secondSetMock.mock.calls[0]?.[0] as {
+      providerPlanId: string;
+      updatedAt: number;
+    };
+    expect(providerIdUpdatePayload.providerPlanId).toBe("price_new_1");
+
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.providerPlanId).toBe("price_new_1");
   });
 
   it("should create a plan with trial", async () => {

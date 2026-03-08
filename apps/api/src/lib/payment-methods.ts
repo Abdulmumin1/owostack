@@ -50,6 +50,10 @@ export async function upsertPaymentMethod(
         ON CONFLICT (customer_id, provider_id, token) DO UPDATE SET
           is_valid = 1,
           is_default = ${isDefault ? 1 : 0},
+          type = CASE
+            WHEN excluded.type = 'provider_managed' AND type = 'card' THEN type
+            ELSE excluded.type
+          END,
           card_last4 = COALESCE(${params.cardLast4 || null}, card_last4),
           card_brand = COALESCE(${params.cardBrand || null}, card_brand),
           card_exp_month = COALESCE(${params.cardExpMonth || null}, card_exp_month),

@@ -8,7 +8,10 @@ import {
   subscriptionCreatedDependencies,
 } from "./subscription-created";
 import { handleRefund } from "./refund";
-import { handleCustomerIdentified } from "./customer-identified";
+import {
+  customerIdentifiedDependencies,
+  handleCustomerIdentified,
+} from "./customer-identified";
 import {
   handleSubscriptionStatus,
   subscriptionStatusDependencies,
@@ -19,6 +22,7 @@ interface MockDb {
     customers: { findFirst: Mock };
     subscriptions: { findFirst: Mock; findMany: Mock };
     plans: { findFirst: Mock };
+    invoices: { findFirst: Mock };
     credits: { findFirst: Mock };
     creditPurchases: { findFirst: Mock };
   };
@@ -53,6 +57,7 @@ function createDbMock() {
       customers: { findFirst: vi.fn() },
       subscriptions: { findFirst: vi.fn(), findMany: vi.fn() },
       plans: { findFirst: vi.fn() },
+      invoices: { findFirst: vi.fn() },
       credits: { findFirst: vi.fn() },
       creditPurchases: { findFirst: vi.fn() },
     },
@@ -147,6 +152,8 @@ describe("Webhook handlers behavior", () => {
       provisionEntitlementsMock as unknown as typeof subscriptionStatusDependencies.provisionEntitlements;
     subscriptionStatusDependencies.upsertPaymentMethod =
       upsertPaymentMethodMock as unknown as typeof subscriptionStatusDependencies.upsertPaymentMethod;
+    customerIdentifiedDependencies.upsertPaymentMethod =
+      upsertPaymentMethodMock as unknown as typeof customerIdentifiedDependencies.upsertPaymentMethod;
   });
 
   it("charge.success credit purchase recalculates quantity from checkout line items and tops up scoped balance", async () => {
@@ -361,7 +368,9 @@ describe("Webhook handlers behavior", () => {
 
     await handleSubscriptionStatus("active")(makeCtx(db, event));
 
-    const updatePayload = updateSetMock.mock.calls[0]?.[0];
+    const updatePayload = updateSetMock.mock.calls.find(
+      (call) => call[0].status === "active",
+    )?.[0];
     expect(updatePayload.status).toBe("active");
     expect(updatePayload.currentPeriodStart).toBe(
       new Date("2026-03-06T17:00:15.000Z").getTime(),
@@ -475,13 +484,127 @@ describe("Webhook handlers behavior", () => {
 
     await handleChargeSuccess(makeCtx(db, event));
 
-    const updatePayload = updateSetMock.mock.calls[0]?.[0];
+    const updatePayload = updateSetMock.mock.calls.find(
+      (call) => call[0].status === "active",
+    )?.[0];
     expect(updatePayload.status).toBe("active");
     expect(updatePayload.currentPeriodStart).toBe(
       new Date("2026-03-06T17:00:15.000Z").getTime(),
     );
     expect(updatePayload.currentPeriodEnd).toBe(
       new Date("2026-04-05T17:00:15.000Z").getTime(),
+    );
+  });
+
+  it("charge.success invoice payment without email resolves customer from invoice metadata and marks invoice paid", async () => {
+    const { db, updateSetMock } = createDbMock();
+
+    db.query.invoices.findFirst.mockResolvedValue({
+      id: "inv_1",
+      organizationId: "org_1",
+      customerId: "cus_1",
+    });
+    db.query.customers.findFirst.mockResolvedValue({
+      id: "cus_1",
+      email: "buyer@example.com",
+      organizationId: "org_1",
+      providerId: null,
+      providerCustomerId: null,
+      providerAuthorizationCode: null,
+      paystackCustomerId: null,
+      paystackAuthorizationCode: null,
+    });
+
+    const event = {
+      type: "charge.success",
+      provider: "stripe",
+      customer: {
+        email: "",
+        providerCustomerId: "cus_stripe_123",
+      },
+      payment: {
+        amount: 1000,
+        currency: "USD",
+        reference: "pi_test_123",
+      },
+      authorization: {
+        code: "pm_test_123",
+        reusable: true,
+      },
+      metadata: {
+        type: "invoice_payment",
+        invoice_id: "inv_1",
+        invoice_number: "INV-001",
+      },
+      raw: { event: "charge.success" },
+    };
+
+    await handleChargeSuccess(makeCtx(db, event as any));
+
+    expect(
+      updateSetMock.mock.calls.some(
+        (call) =>
+          call[0].providerCustomerId === "cus_stripe_123" &&
+          call[0].providerAuthorizationCode === "pm_test_123",
+      ),
+    ).toBe(true);
+    expect(
+      updateSetMock.mock.calls.some(
+        (call) =>
+          call[0].status === "paid" &&
+          call[0].amountPaid === 1000 &&
+          call[0].amountDue === 0,
+      ),
+    ).toBe(true);
+  });
+
+  it("charge.success Stripe card setup stores a provider-managed wallet method when card details are absent", async () => {
+    const { db } = createDbMock();
+
+    db.query.customers.findFirst.mockResolvedValue({
+      id: "cus_1",
+      email: "buyer@example.com",
+      organizationId: "org_1",
+      providerId: null,
+      providerCustomerId: null,
+      providerAuthorizationCode: null,
+      paystackCustomerId: null,
+      paystackAuthorizationCode: null,
+    });
+
+    const event = {
+      type: "charge.success",
+      provider: "stripe",
+      customer: {
+        email: "buyer@example.com",
+        providerCustomerId: "cus_stripe_123",
+      },
+      payment: {
+        amount: 100,
+        currency: "USD",
+        reference: "pi_card_setup_1",
+      },
+      authorization: {
+        code: "pm_test_123",
+        reusable: true,
+      },
+      metadata: {
+        type: "card_setup",
+        customer_id: "cus_1",
+      },
+      raw: { event: "charge.success" },
+    };
+
+    await handleChargeSuccess(makeCtx(db, event as any));
+
+    expect(upsertPaymentMethodMock).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        customerId: "cus_1",
+        providerId: "stripe",
+        token: "pm_test_123",
+        type: "provider_managed",
+      }),
     );
   });
 
@@ -594,5 +717,63 @@ describe("Webhook handlers behavior", () => {
     expect(updatePayload.metadata.tier).toBe("pro");
     expect(updatePayload.metadata.verified).toBe(true);
     expect(typeof updatePayload.metadata.verifiedAt).toBe("string");
+  });
+
+  it("customer.identified resolves Stripe customers by provider customer id and stores full card metadata", async () => {
+    const { db, updateSetMock } = createDbMock();
+
+    db.query.customers.findFirst.mockResolvedValue({
+      id: "cus_6",
+      email: "verify@example.com",
+      organizationId: "org_1",
+      providerId: "stripe",
+      providerCustomerId: "cus_stripe_123",
+      providerAuthorizationCode: null,
+      paystackCustomerId: null,
+      paystackAuthorizationCode: null,
+      metadata: { tier: "pro" },
+    });
+
+    const event = {
+      type: "customer.identified",
+      provider: "stripe",
+      customer: {
+        email: "",
+        providerCustomerId: "cus_stripe_123",
+      },
+      authorization: {
+        code: "pm_test_card_123",
+        reusable: true,
+        cardType: "visa",
+        last4: "4242",
+        expMonth: "12",
+        expYear: "2030",
+      },
+      metadata: {
+        type: "payment_method_attached",
+      },
+      raw: { event: "customer.identified" },
+    };
+
+    await handleCustomerIdentified(makeCtx(db, event as any));
+
+    expect(
+      updateSetMock.mock.calls.some(
+        (call) =>
+          call[0].providerCustomerId === "cus_stripe_123" &&
+          call[0].providerAuthorizationCode === "pm_test_card_123",
+      ),
+    ).toBe(true);
+    expect(upsertPaymentMethodMock).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        customerId: "cus_6",
+        providerId: "stripe",
+        token: "pm_test_card_123",
+        type: "card",
+        cardLast4: "4242",
+        cardBrand: "visa",
+      }),
+    );
   });
 });

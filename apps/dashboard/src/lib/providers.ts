@@ -18,6 +18,7 @@ export interface ProviderConfig {
   name: string;
   description: string;
   color: string;
+  logoUrl: string;
   docsUrl: string;
   fields: ProviderField[];
   supportedCurrencies?: string[];
@@ -29,6 +30,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     name: "Paystack",
     description: "Accept payments across Africa",
     color: "teal",
+    logoUrl: "https://cdn.brandfetch.io/paystack.com?c=1iduQCu8CNcitTrpDvi",
     docsUrl: "https://dashboard.paystack.com/#/settings/developers",
     fields: [
       {
@@ -60,6 +62,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     name: "Stripe",
     description: "Global payment infrastructure",
     color: "indigo",
+    logoUrl: "https://cdn.brandfetch.io/stripe.com?c=1iduQCu8CNcitTrpDvi",
     docsUrl: "https://dashboard.stripe.com/apikeys",
     fields: [
       {
@@ -74,6 +77,12 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
         placeholder: "pk_test_xxxxxxxxxxxxxxx",
         secret: false,
       },
+      {
+        key: "webhookSecret",
+        label: "Webhook Secret",
+        placeholder: "whsec_xxxxxxxxxxxxxxx",
+        secret: true,
+      },
     ],
   },
   {
@@ -81,6 +90,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     name: "Dodo Payments",
     description: "Global payment processing for digital products",
     color: "violet",
+    logoUrl: "https://cdn.brandfetch.io/dodopayments.com?c=1iduQCu8CNcitTrpDvi",
     docsUrl: "https://app.dodopayments.com/developers/api-keys",
     fields: [
       {
@@ -103,6 +113,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     name: "Polar",
     description: "Global billing and subscriptions for digital products",
     color: "rose",
+    logoUrl: "/images/polar.png",
     docsUrl: "https://polar.sh/dashboard",
     fields: [
       {
