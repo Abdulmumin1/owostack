@@ -1,5 +1,15 @@
 # owostack
 
+## 0.3.1
+
+### Patch Changes
+
+- [#78](https://github.com/Abdulmumin1/owostack/pull/78) [`2947418`](https://github.com/Abdulmumin1/owostack/commit/2947418d4b72b971672ee84f42da4578e16882b4) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Publish a linked patch release for the public packages. The SDK now preserves
+  string and nested API error messages instead of collapsing them to a generic
+  request failure.
+- Updated dependencies [[`2947418`](https://github.com/Abdulmumin1/owostack/commit/2947418d4b72b971672ee84f42da4578e16882b4)]:
+  - @owostack/types@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes
