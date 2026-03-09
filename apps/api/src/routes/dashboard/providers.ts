@@ -80,7 +80,7 @@ app.get("/accounts", async (c) => {
 
 // Helper: parse enabled providers from env
 function getEnabledProviders(env: any): string[] {
-  const raw = env.ENABLED_PROVIDERS || "paystack,stripe,dodopayments,polar";
+  const raw = env.ENABLED_PROVIDERS || "paystack,stripe,dodopayments";
   return raw
     .split(",")
     .map((s: string) => s.trim().toLowerCase())
