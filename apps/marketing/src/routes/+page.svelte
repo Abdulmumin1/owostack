@@ -15,6 +15,7 @@
   import InteractiveDemo from "$lib/components/marketing/InteractiveDemo.svelte";
   import PricingTemplatesSection from "$lib/components/marketing/PricingTemplatesSection.svelte";
   import Footer from "$lib/components/marketing/Footer.svelte";
+  import Header from "$lib/components/marketing/Header.svelte";
   import { onMount } from "svelte";
 
   const phrases: { text: string; icons: (typeof CreditCard)[] }[] = [
@@ -185,51 +186,7 @@
     <div class="particle particle-5"></div>
   </div>
 
-  <!-- Header -->
-  <header class="px-6 py-5">
-    <div class="max-w-4xl mx-auto flex items-center justify-between">
-      <a href="/" class="flex items-center gap-2">
-        <Logo size={24} class="text-accent" />
-        <span class="text-sm font-bold tracking-tight">Owostack</span>
-      </a>
-      <nav class="flex items-center gap-6 text-xs text-text-secondary">
-        <a
-          href="/blog"
-          class="hidden sm:inline hover:text-text-primary transition-colors"
-          >Blog</a
-        >
-        <a
-          href="/docs"
-          class="hidden sm:inline hover:text-text-primary transition-colors"
-          >Docs</a
-        >
-        <a
-          href="/pricing-templates"
-          class="hidden sm:inline hover:text-text-primary transition-colors"
-          >Templates</a
-        >
-        <a
-          href={import.meta.env.VITE_GITHUB_URL}
-          class="hidden sm:flex items-center gap-1.5 hover:text-text-primary transition-colors"
-        >
-          <GithubLogo size={13} weight="duotone" />
-          GitHub
-        </a>
-        <a
-          href="https://discord.gg/jQ3TyEn6WR"
-          class="hidden sm:flex items-center gap-1.5 hover:text-text-primary transition-colors"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <DiscordLogo size={13} weight="duotone" />
-          Discord
-        </a>
-        <a href="https://app.owostack.com" class="btn btn-primary"
-          >Dashboard</a
-        >
-      </nav>
-    </div>
-  </header>
+  <Header variant="home" showBorder={false} />
 
   <!-- Hero -->
   <section class="px-6 pt-28 pb-20 md:pt-40 md:pb-28 relative">

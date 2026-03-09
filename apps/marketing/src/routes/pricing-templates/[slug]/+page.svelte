@@ -1,17 +1,17 @@
 <script lang="ts">
   import {
     ArrowLeft,
-    ArrowRight,
+    ArrowUpRight,
     CheckCircle,
     Copy,
-    Square,
-    Terminal,
     DiscordLogo,
     Calendar,
   } from "phosphor-svelte";
   import Logo from "$lib/components/ui/Logo.svelte";
   import InspiredLogo from "$lib/components/marketing/InspiredLogo.svelte";
   import Footer from "$lib/components/marketing/Footer.svelte";
+  import Header from "$lib/components/marketing/Header.svelte";
+  import { PRICING_TEMPLATES_LAST_VERIFIED_AT } from "$lib/content/pricing-templates";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -39,18 +39,7 @@
 </svelte:head>
 
 <div class="min-h-screen bg-bg-primary text-text-primary">
-  <header class="border-b border-border/40 px-6 py-5">
-    <div class="mx-auto flex max-w-6xl items-center justify-between">
-      <a href="/" class="flex items-center gap-2">
-        <Logo size={20} class="text-accent" />
-        <span class="text-sm font-bold tracking-tight">Owostack</span>
-      </a>
-      <div class="flex items-center gap-6">
-        <a href="/pricing-templates" class="text-xs text-text-muted hover:text-text-primary">Templates</a>
-        <a href="https://app.owostack.com" class="btn btn-secondary">Dashboard</a>
-      </div>
-    </div>
-  </header>
+  <Header variant="page" showBorder={true} />
 
   <main class="mx-auto max-w-5xl px-6 py-12">
     <!-- Hero -->
@@ -60,8 +49,24 @@
         class="mb-8 inline-flex items-center gap-2 text-xs text-text-muted hover:text-text-primary"
       >
         <ArrowLeft size={12} />
-        Templates
+        All patterns
       </a>
+
+      <!-- Company attribution -->
+      <div class="mb-6 flex items-center gap-3">
+        <div class="flex items-center justify-center rounded-sm">
+          <InspiredLogo logoUrl={template.logoUrl} alt={template.inspiredBy} size={38} />
+        </div>
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+            Snapshot from {template.inspiredBy}
+          </div>
+          <div class="mt-0.5 flex items-center gap-1.5 text-xs text-text-dim">
+            <CheckCircle size={10} class="text-secondary" weight="fill" />
+            <span>Verified on {PRICING_TEMPLATES_LAST_VERIFIED_AT}</span>
+          </div>
+        </div>
+      </div>
 
       <h1 class="mb-4 text-4xl font-bold tracking-tight md:text-5xl">
         {template.title}
@@ -69,6 +74,17 @@
       <p class="text-lg text-text-secondary">
         {template.headline}
       </p>
+      <div class="mt-6">
+        <a
+          href={template.pricingUrl}
+          target="_blank"
+          rel="noreferrer"
+          class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted transition-colors hover:text-accent"
+        >
+          View {template.inspiredBy} pricing
+          <ArrowUpRight size={14} weight="bold" />
+        </a>
+      </div>
     </div>
 
     <!-- Content -->
@@ -104,6 +120,9 @@
               </button>
             </div>
             <div class="bg-bg-secondary/50 p-6">
+              <p class="mb-4 text-xs leading-relaxed text-text-dim">
+                This snippet is the closest Owostack implementation of the live pricing shape above. It is not a literal copy of the vendor's internal billing system.
+              </p>
               <pre class="overflow-x-auto text-[13px] leading-relaxed"><code>{template.builderSnippet}</code></pre>
             </div>
           </div>
@@ -136,6 +155,21 @@
             </div>
           </div>
 
+          <div>
+            <h4 class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim">Source</h4>
+            <a
+              href={template.pricingUrl}
+              target="_blank"
+              rel="noreferrer"
+              class="card block !rounded-md px-4 py-3 text-sm text-text-secondary transition-colors hover:text-text-primary"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <span>{template.inspiredBy} pricing page</span>
+                <ArrowUpRight size={14} weight="bold" class="shrink-0 text-text-muted" />
+              </div>
+            </a>
+          </div>
+
           <!-- Highlights -->
           <div>
             <h4 class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim">Benefits</h4>
@@ -156,16 +190,16 @@
   <!-- CTA Section -->
   <section class="border-t border-border/40 px-6 py-16">
     <div class="mx-auto max-w-5xl">
-      <div class="flex flex-col items-center justify-center gap-6 rounded-lg  p-10 md:p-14 text-center">
+      <div class="flex flex-col items-center justify-center gap-6 rounded-lg p-10 md:p-14 text-center">
         <div class="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
           <DiscordLogo size={24} weight="duotone" />
         </div>
         <div>
           <h3 class="text-xl font-bold tracking-tight text-text-primary md:text-2xl">
-            Questions about this template?
+            Ready to implement this pattern?
           </h3>
           <p class="mt-2 max-w-md text-sm text-text-secondary">
-            Get help from the community on Discord, or book a call to discuss adapting this for your product.
+            Join our Discord for implementation help, or book a call to discuss how {template.inspiredBy}'s pricing model fits your product.
           </p>
         </div>
         <div class="flex flex-wrap justify-center gap-3">

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowRight, CheckCircle, Copy, Square, Info, DiscordLogo, Calendar } from "phosphor-svelte";
+  import { ArrowRight, CheckCircle, Copy, Info, DiscordLogo, Calendar } from "phosphor-svelte";
   import {
     getPricingTemplates,
     type PricingTemplate,
@@ -7,6 +7,7 @@
   import Logo from "$lib/components/ui/Logo.svelte";
   import InspiredLogo from "$lib/components/marketing/InspiredLogo.svelte";
   import Footer from "$lib/components/marketing/Footer.svelte";
+  import Header from "$lib/components/marketing/Header.svelte";
 
   const templates = getPricingTemplates();
 
@@ -48,38 +49,26 @@
   <title>Pricing Templates | Owostack</title>
   <meta
     name="description"
-    content="Recognizable SaaS and API pricing models translated into copyable Owostack templates."
+    content="Battle-tested pricing models from OpenAI Codex, Clerk, Pinecone, and other companies developers trust. Copy-paste ready for your AI SaaS."
   />
 </svelte:head>
 
 <div class="min-h-screen bg-bg-primary text-text-primary">
-  <header class="border-b border-border/40 px-6 py-5">
-    <div class="mx-auto flex max-w-6xl items-center justify-between">
-      <a href="/" class="flex items-center gap-2">
-        <Logo size={20} class="text-accent" />
-        <span class="text-sm font-bold tracking-tight">Owostack</span>
-      </a>
-      <div class="flex items-center gap-6">
-        <a href="/" class="text-xs text-text-muted hover:text-text-primary">Home</a>
-        <a href="https://app.owostack.com" class="btn btn-secondary">Dashboard</a>
-      </div>
-    </div>
-  </header>
+  <Header variant="page" showBorder={true} />
 
   <main class="mx-auto max-w-6xl px-6 py-20 md:py-28">
+    <!-- Hero Section -->
     <section class="mb-24">
-      <div class="mb-6 inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.24em] text-text-muted">
-        <Square size={10} class="fill-accent" />
-        The Library
-      </div>
       <h1 class="max-w-3xl text-3xl font-bold leading-[0.9] tracking-tighter md:text-5xl">
-        Pricing models that actually work.
+        The same pricing models used by Codex, Notion, and Figma.
       </h1>
-      <p class="mt-8 max-w-xl text-base leading-relaxed text-text-secondary md:text-lg">
-        Steal pricing models from Stripe, OpenAI, and others—translated directly into your product.
+      <p class="mt-8 max-w-2xl text-base leading-relaxed text-text-secondary md:text-lg">
+        These aren't theoretical. These are the exact patterns powering the AI infrastructure
+        you use every day—Cursor, Pinecone, Replicate, Clerk. Copy them in one click.
       </p>
     </section>
 
+    <!-- Templates Grid -->
     <div class="space-y-32">
       {#each groupedTemplates as group}
         <section>
@@ -91,18 +80,27 @@
           <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {#each group.items as template}
               <article class="card card-elevated card-interactive flex flex-col p-8">
-                <div class="mb-10 flex items-start justify-between">
-                  <div class="flex h-10 w-10 items-center justify-center rounded-sm border border-border bg-bg-secondary text-text-muted">
-                    <InspiredLogo name={template.inspiredBy} size={20} />
+                <div class="mb-6 flex items-start justify-between">
+                  <div class="flex items-center justify-center rounded-sm overflow-hidden text-text-muted">
+                    <InspiredLogo logoUrl={template.logoUrl} alt={template.inspiredBy} size={40} />
                   </div>
                   <div class="rounded-full border border-border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-dim">
                     {template.category}
                   </div>
                 </div>
 
-                <div class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                  Inspired by {template.inspiredBy.split("-")[0]}
+                <!-- Company attribution with social proof -->
+                <div class="mb-3 flex items-center gap-2">
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                    Used by {template.inspiredBy}
+                  </span>
                 </div>
+                
+                <div class="mb-4 flex items-center gap-1.5 text-[10px] text-text-dim">
+                  <CheckCircle size={10} class="text-secondary" weight="fill" />
+                  <span>{template.socialProof}</span>
+                </div>
+
                 <h3 class="mb-4 text-2xl font-bold tracking-tight text-text-primary">
                   {template.title}
                 </h3>
@@ -139,7 +137,7 @@
                       href={`/pricing-templates/${template.slug}`}
                       class="inline-flex items-center gap-1.5 text-xs font-semibold text-text-primary transition-colors hover:text-accent"
                     >
-                      Details
+                      View pattern
                       <ArrowRight size={14} weight="bold" />
                     </a>
                   </div>
@@ -151,6 +149,7 @@
       {/each}
     </div>
 
+    <!-- Custom pricing section -->
     <section class="mt-40 border border-border/40 bg-bg-card p-10 md:p-16">
       <div class="grid gap-12 lg:grid-cols-2 lg:items-center">
         <div>
@@ -176,12 +175,12 @@
   <!-- CTA Section -->
   <section class="border-t border-border/40 px-6 py-16">
     <div class="mx-auto max-w-6xl">
-      <div class="flex flex-col items-center justify-center gap-6 rounded-lg  p-10 md:p-16 text-center">
+      <div class="flex flex-col items-center justify-center gap-6 rounded-lg p-10 md:p-16 text-center">
         <div class="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
           <DiscordLogo size={24} weight="duotone" />
         </div>
         <div>
-        
+          <h3 class="text-xl font-bold text-text-primary">Building something ambitious?</h3>
           <p class="mt-2 max-w-md text-sm text-text-secondary">
             Join our Discord community for support, or book a 30-min call to discuss your specific billing needs.
           </p>
