@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and, or, inArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
 import { BillingService } from "../../lib/billing";
@@ -10,6 +10,10 @@ import {
   loadProviderAccounts,
 } from "../../lib/providers";
 import { trackBusinessEvent } from "../../lib/analytics-engine";
+import {
+  isCustomerResolutionConflictError,
+  resolveCustomerByIdentifier,
+} from "../../lib/customer-resolution";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 
@@ -47,17 +51,12 @@ async function resolveCustomer(
   organizationId: string,
   customerId: string,
 ) {
-  const customerIdLower = customerId.toLowerCase();
-  return await db.query.customers.findFirst({
-    where: and(
-      eq(schema.customers.organizationId, organizationId),
-      or(
-        eq(schema.customers.id, customerId),
-        eq(schema.customers.externalId, customerId),
-        eq(schema.customers.email, customerIdLower),
-      ),
-    ),
+  const resolved = await resolveCustomerByIdentifier({
+    db,
+    organizationId,
+    customerId,
   });
+  return resolved?.customer ?? null;
 }
 
 /**
@@ -83,7 +82,15 @@ app.get("/usage", async (c) => {
     );
   }
 
-  const customer = await resolveCustomer(db, organizationId, customerId);
+  let customer;
+  try {
+    customer = await resolveCustomer(db, organizationId, customerId);
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      return c.json({ success: false, error: error.message }, 409);
+    }
+    throw error;
+  }
   if (!customer) {
     return c.json({ success: false, error: "Customer not found" }, 404);
   }
@@ -127,11 +134,15 @@ app.post("/invoice", async (c) => {
     );
   }
 
-  const customer = await resolveCustomer(
-    db,
-    organizationId,
-    parsed.data.customer,
-  );
+  let customer;
+  try {
+    customer = await resolveCustomer(db, organizationId, parsed.data.customer);
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      return c.json({ success: false, error: error.message }, 409);
+    }
+    throw error;
+  }
   if (!customer) {
     return c.json({ success: false, error: "Customer not found" }, 404);
   }
@@ -200,7 +211,15 @@ app.get("/invoices", async (c) => {
     );
   }
 
-  const customer = await resolveCustomer(db, organizationId, customerId);
+  let customer;
+  try {
+    customer = await resolveCustomer(db, organizationId, customerId);
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      return c.json({ success: false, error: error.message }, 409);
+    }
+    throw error;
+  }
   if (!customer) {
     return c.json({ success: false, error: "Customer not found" }, 404);
   }

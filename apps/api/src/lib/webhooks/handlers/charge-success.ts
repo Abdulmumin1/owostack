@@ -4,6 +4,11 @@ import { provisionEntitlements } from "../../plan-switch";
 import { topUpScopedBalance } from "../../addon-credits";
 import { upsertPaymentMethod } from "../../payment-methods";
 import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
+import {
+  isCustomerResolutionConflictError,
+  resolveCustomerByEmail,
+  resolveCustomerByProviderReference,
+} from "../../customer-resolution";
 import type { WebhookContext } from "../types";
 import { safeParseDate, intervalToMs } from "../types";
 
@@ -63,27 +68,42 @@ async function resolveChargeSuccessCustomer(
   }
 
   if (providerCustomerId) {
-    const customerByProvider = await db.query.customers.findFirst({
-      where: and(
-        eq(schema.customers.organizationId, organizationId),
-        or(
-          eq(schema.customers.providerCustomerId, providerCustomerId),
-          eq(schema.customers.paystackCustomerId, providerCustomerId),
-        ),
-      ),
-    });
-    if (customerByProvider) return customerByProvider;
+    try {
+      const customerByProvider = await resolveCustomerByProviderReference({
+        db,
+        organizationId,
+        providerCustomerId,
+      });
+      if (customerByProvider) return customerByProvider.customer;
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        console.warn(
+          `[WEBHOOK] charge.success customer resolution conflict: ${error.message}`,
+        );
+        return null;
+      }
+      throw error;
+    }
   }
 
   if (!email) return null;
 
-  const customerByEmail = await db.query.customers.findFirst({
-    where: and(
-      eq(schema.customers.email, email),
-      eq(schema.customers.organizationId, organizationId),
-    ),
-  });
-  if (customerByEmail) return customerByEmail;
+  try {
+    const customerByEmail = await resolveCustomerByEmail({
+      db,
+      organizationId,
+      email,
+    });
+    if (customerByEmail) return customerByEmail.customer;
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      console.warn(
+        `[WEBHOOK] charge.success customer resolution conflict: ${error.message}`,
+      );
+      return null;
+    }
+    throw error;
+  }
 
   const [newCustomer] = await db
     .insert(schema.customers)
@@ -188,28 +208,29 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
   // Save rich "card" methods when card details are present. For Stripe card_setup
   // webhooks, PaymentIntent payloads often omit charge-expanded card details, so
   // fall back to a provider-managed token row to make the wallet usable.
+  const authorization = event.authorization;
   const shouldStoreCardMethod =
-    event.authorization?.reusable &&
-    event.authorization.code &&
-    !!event.authorization.last4;
+    authorization?.reusable &&
+    authorization.code &&
+    !!authorization.last4;
   const shouldStoreProviderManagedMethod =
     event.provider === "stripe" &&
     metadata.type === "card_setup" &&
-    event.authorization?.reusable &&
-    !!event.authorization.code;
+    authorization?.reusable &&
+    !!authorization.code;
 
-  if (shouldStoreCardMethod || shouldStoreProviderManagedMethod) {
+  if ((shouldStoreCardMethod || shouldStoreProviderManagedMethod) && authorization) {
     try {
       await chargeSuccessDependencies.upsertPaymentMethod(db, {
         customerId: dbCustomer.id,
         organizationId,
         providerId: event.provider,
-        token: event.authorization.code,
+        token: authorization.code,
         type: shouldStoreCardMethod ? "card" : "provider_managed",
-        cardLast4: event.authorization.last4,
-        cardBrand: event.authorization.cardType,
-        cardExpMonth: event.authorization.expMonth,
-        cardExpYear: event.authorization.expYear,
+        cardLast4: authorization.last4,
+        cardBrand: authorization.cardType,
+        cardExpMonth: authorization.expMonth,
+        cardExpYear: authorization.expYear,
       });
     } catch (pmErr) {
       console.warn(`[WEBHOOK] Failed to upsert payment method: ${pmErr}`);

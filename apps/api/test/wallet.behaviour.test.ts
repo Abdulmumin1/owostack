@@ -244,4 +244,43 @@ describe("/wallet/setup behavior", () => {
       }),
     );
   });
+
+  it("returns 409 when a customer email matches multiple customers", async () => {
+    mockDb.query.customers.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "cust_1",
+        email: "alice@example.com",
+        name: "Alice",
+        providerId: null,
+        providerCustomerId: null,
+        paystackCustomerId: null,
+      })
+      .mockResolvedValueOnce({
+        id: "cust_2",
+        email: "alice@example.com",
+        name: "Alice Clone",
+        providerId: null,
+        providerCustomerId: null,
+        paystackCustomerId: null,
+      });
+
+    const res = await app.request(
+      "/wallet?customer=alice@example.com",
+      {
+        method: "GET",
+        headers: {
+          Authorization: "Bearer owo_sk_test",
+        },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { success: boolean; error: string };
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Multiple customers");
+    expect(body.error).toContain("alice@example.com");
+  });
 });

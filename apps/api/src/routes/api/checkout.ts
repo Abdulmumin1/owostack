@@ -19,6 +19,7 @@ import {
 } from "../../lib/providers";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
+import { isCustomerResolutionConflictError } from "../../lib/customer-resolution";
 
 export type CheckoutDependencies = {
   verifyApiKey: typeof verifyApiKey;
@@ -241,14 +242,22 @@ export function createCheckoutRoute(
 
       // 2. Resolve or create customer
       const email = customer.toLowerCase();
-      let customerRecord = await deps.resolveOrCreateCustomer({
-        db,
-        organizationId: keyRecord.organizationId,
-        customerId: customer,
-        customerData: { email, metadata },
-        providerId: selectedProviderId || undefined,
-        waitUntil: (p) => c.executionCtx.waitUntil(p),
-      });
+      let customerRecord;
+      try {
+        customerRecord = await deps.resolveOrCreateCustomer({
+          db,
+          organizationId: keyRecord.organizationId,
+          customerId: customer,
+          customerData: { email, metadata },
+          providerId: selectedProviderId || undefined,
+          waitUntil: (p) => c.executionCtx.waitUntil(p),
+        });
+      } catch (error) {
+        if (isCustomerResolutionConflictError(error)) {
+          return c.json({ success: false, error: error.message }, 409);
+        }
+        throw error;
+      }
 
     if (!customerRecord) {
       return c.json(

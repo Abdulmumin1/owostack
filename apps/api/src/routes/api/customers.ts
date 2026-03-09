@@ -4,6 +4,10 @@ import { eq, and, or, count } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
 import { resolveOrCreateCustomer } from "../../lib/customers";
+import {
+  isCustomerResolutionConflictError,
+  resolveCustomerByIdentifier,
+} from "../../lib/customer-resolution";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 
@@ -56,6 +60,19 @@ const listEntitiesSchema = z.object({
   feature: z.string().optional(),
 });
 
+async function resolveCustomer(
+  db: any,
+  organizationId: string,
+  customerId: string,
+) {
+  const resolved = await resolveCustomerByIdentifier({
+    db,
+    organizationId,
+    customerId,
+  });
+  return resolved?.customer ?? null;
+}
+
 // POST /v1/customers - Create or resolve a customer
 app.post("/customers", async (c) => {
   const db = c.get("db");
@@ -77,12 +94,20 @@ app.post("/customers", async (c) => {
 
     // Try to resolve existing customer
     const customerId: string = id || customerEmail;
-    let customer = await resolveOrCreateCustomer({
-      db,
-      organizationId,
-      customerId,
-      customerData: { email: customerEmail, name, metadata },
-    });
+    let customer;
+    try {
+      customer = await resolveOrCreateCustomer({
+        db,
+        organizationId,
+        customerId,
+        customerData: { email: customerEmail, name, metadata },
+      });
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
+      throw error;
+    }
 
     if (!customer) {
       // If we couldn't resolve/create, create with explicit ID
@@ -149,6 +174,9 @@ app.post("/customers", async (c) => {
       updatedAt: customer.updatedAt,
     });
   } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      return c.json({ success: false, error: error.message }, 409);
+    }
     console.error("[customers] error:", error);
     return c.json({ success: false, error: "Failed to create customer" }, 500);
   }
@@ -212,11 +240,19 @@ app.post("/entities", async (c) => {
     const entityMetadata = parsed.data.metadata;
 
     // Resolve customer
-    const customer = await resolveOrCreateCustomer({
-      db,
-      organizationId,
-      customerId: customerId as string,
-    });
+    let customer;
+    try {
+      customer = await resolveOrCreateCustomer({
+        db,
+        organizationId,
+        customerId: customerId as string,
+      });
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
+      throw error;
+    }
 
     if (!customer) {
       return c.json({ success: false, error: "Customer not found" }, 404);
@@ -420,6 +456,9 @@ app.post("/entities", async (c) => {
       remaining: limit !== null ? limit - finalCount : null,
     });
   } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      return c.json({ success: false, error: error.message }, 409);
+    }
     console.error("[entities] error:", error);
     return c.json({ success: false, error: "Failed to add entity" }, 500);
   }
@@ -448,15 +487,7 @@ app.post("/entities/remove", async (c) => {
     } = parsed.data;
 
     // Resolve customer (supports ID or email)
-    const customer = await db.query.customers.findFirst({
-      where: and(
-        eq(schema.customers.organizationId, organizationId),
-        or(
-          eq(schema.customers.id, customerId),
-          eq(schema.customers.email, customerId.toLowerCase()),
-        ),
-      ),
-    });
+    const customer = await resolveCustomer(db, organizationId, customerId);
 
     if (!customer) {
       return c.json({ success: false, error: "Customer not found" }, 404);
@@ -518,6 +549,9 @@ app.post("/entities/remove", async (c) => {
       count: entityCount[0]?.count || 0,
     });
   } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      return c.json({ success: false, error: error.message }, 409);
+    }
     console.error("[entities] error:", error);
     return c.json({ success: false, error: "Failed to remove entity" }, 500);
   }
@@ -551,15 +585,7 @@ app.get("/entities", async (c) => {
     }
 
     // Resolve customer
-    const customer = await db.query.customers.findFirst({
-      where: and(
-        eq(schema.customers.organizationId, organizationId),
-        or(
-          eq(schema.customers.id, customerId),
-          eq(schema.customers.email, customerId.toLowerCase()),
-        ),
-      ),
-    });
+    const customer = await resolveCustomer(db, organizationId, customerId);
 
     if (!customer) {
       return c.json({ success: false, error: "Customer not found" }, 404);
@@ -619,6 +645,9 @@ app.get("/entities", async (c) => {
       total: result.length,
     });
   } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      return c.json({ success: false, error: error.message }, 409);
+    }
     console.error("[entities] error:", error);
     return c.json({ success: false, error: "Failed to list entities" }, 500);
   }
