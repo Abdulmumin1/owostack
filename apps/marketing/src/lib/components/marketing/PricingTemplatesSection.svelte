@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { ArrowRight, CheckCircle, Copy, Square } from "phosphor-svelte";
+  import { ArrowRight, CheckCircle, Copy, Square, Users, Sparkle, ArrowUpRight } from "phosphor-svelte";
   import {
     getPricingTemplates,
+    PRICING_TEMPLATES_LAST_VERIFIED_AT,
     type PricingTemplate,
   } from "$lib/content/pricing-templates";
   import InspiredLogo from "./InspiredLogo.svelte";
@@ -26,16 +27,14 @@
 <section class="overflow-hidden border-y border-border/40 bg-bg-primary py-24 md:py-32">
   <div class="mx-auto max-w-6xl px-6">
     <div class="mb-16">
-      <div class="mb-4 inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.24em] text-text-muted">
-        <Square size={10} class="fill-accent" />
-        Pricing Templates
-      </div>
+      
       <h2 class="max-w-2xl text-4xl font-bold tracking-tight text-text-primary md:text-5xl">
-        Proven shapes for modern SaaS.
+       Steal Pricing models from companies you trust.
       </h2>
       <p class="mt-4 max-w-xl text-sm leading-relaxed text-text-secondary md:text-base">
-        A small, sharp collection of pricing models translated into Owostack. 
+        Copy the exact billing patterns used by OpenAI Codex, Clerk, Cursor, Resend and other companies.
       </p>
+     
     </div>
   </div>
 
@@ -44,23 +43,39 @@
     <div class="marquee-container flex gap-6 px-6">
       <div class="marquee-content flex gap-6">
         {#each [...templates, ...templates] as template}
-          <article class="card card-elevated card-interactive group flex h-150 w-[320px] shrink-0 flex-col !rounded-lg !p-0">
+          <article class="card card-elevated card-interactive group flex h-130 w-[320px] shrink-0 flex-col !rounded-lg !p-0">
             <div class="border-b border-border/50 p-6">
-              <div class="flex items-center justify-between mb-4">
-                <div class="flex  items-center justify-center rounded-sm overflow-hidden border border-border bg-bg-secondary text-text-muted transition-colors group-hover:border-accent/30 group-hover:text-accent">
-                  <InspiredLogo name={template.inspiredBy} size={34} />
+               <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center justify-center rounded-sm overflow-hidden border border-border bg-bg-secondary text-text-muted transition-colors group-hover:border-accent/30 group-hover:text-accent">
+                  <InspiredLogo logoUrl={template.logoUrl} alt={template.inspiredBy} size={34} />
                 </div>
                 <div class="rounded-full border border-border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-dim">
                   {template.category}
                 </div>
               </div>
               
-              <div class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                Inspired by {template.inspiredBy.split("-")[0]}
+              <div class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                Snapshot from {template.inspiredBy}
               </div>
-              <h3 class="text-2xl font-bold tracking-tight text-text-primary leading-none">
-                {template.shortTitle}
-              </h3>
+              <div class="mb-3 flex items-center gap-1.5 text-[10px] text-text-dim">
+                <CheckCircle size={10} class="text-secondary" weight="fill" />
+                <span>Verified on {PRICING_TEMPLATES_LAST_VERIFIED_AT}</span>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <h3 class="text-2xl font-bold tracking-tight text-text-primary leading-none">
+                  {template.shortTitle}
+                </h3>
+
+                <a
+                  href={template.pricingUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  class="mt-0.5 inline-flex shrink-0 items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-muted transition-colors hover:text-accent"
+                >
+                  
+                  <ArrowUpRight size={12} weight="bold" />
+                </a>
+              </div>
             </div>
 
             <div class="flex-1 bg-bg-secondary/30 px-6 py-5">
@@ -88,11 +103,8 @@
             </div>
 
             <div class="border-t border-border/50 bg-bg-card px-6 py-5">
-               <p class="text-sm leading-relaxed text-text-secondary line-clamp-2">
-                {template.summary}
-               </p>
-
-               <div class="mt-6 flex items-center justify-between pt-2">
+            
+               <div class="flex items-center justify-between pt-2">
                  <button 
                   type="button"
                   class="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-text-muted transition-colors hover:text-text-primary"
