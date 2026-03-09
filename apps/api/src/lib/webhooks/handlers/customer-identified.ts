@@ -1,7 +1,12 @@
 import { schema } from "@owostack/db";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import type { WebhookContext } from "../types";
 import { upsertPaymentMethod } from "../../payment-methods";
+import {
+  isCustomerResolutionConflictError,
+  resolveCustomerByEmail,
+  resolveCustomerByProviderReference,
+} from "../../customer-resolution";
 
 export type CustomerIdentifiedDependencies = {
   upsertPaymentMethod: typeof upsertPaymentMethod;
@@ -31,28 +36,42 @@ async function resolveCustomer(ctx: WebhookContext): Promise<any | null> {
   }
 
   if (providerCustomerId) {
-    const customerByProvider = await db.query.customers.findFirst({
-      where: and(
-        eq(schema.customers.organizationId, organizationId),
-        or(
-          eq(schema.customers.providerCustomerId, providerCustomerId),
-          eq(schema.customers.paystackCustomerId, providerCustomerId),
-        ),
-      ),
-    });
-    if (customerByProvider) return customerByProvider;
+    try {
+      const customerByProvider = await resolveCustomerByProviderReference({
+        db,
+        organizationId,
+        providerCustomerId,
+      });
+      if (customerByProvider) return customerByProvider.customer;
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        console.warn(
+          `[WEBHOOK] customer.identified resolution conflict: ${error.message}`,
+        );
+        return null;
+      }
+      throw error;
+    }
   }
 
   if (!email) return null;
 
-  return (
-    (await db.query.customers.findFirst({
-      where: and(
-        eq(schema.customers.email, email),
-        eq(schema.customers.organizationId, organizationId),
-      ),
-    })) ?? null
-  );
+  try {
+    const customerByEmail = await resolveCustomerByEmail({
+      db,
+      organizationId,
+      email,
+    });
+    return customerByEmail?.customer ?? null;
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      console.warn(
+        `[WEBHOOK] customer.identified resolution conflict: ${error.message}`,
+      );
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function handleCustomerIdentified(
@@ -68,9 +87,10 @@ export async function handleCustomerIdentified(
     typeof existing.metadata === "object" && existing.metadata
       ? (existing.metadata as Record<string, unknown>)
       : {};
+  const authorization = event.authorization;
 
   const hasReusableAuth =
-    event.authorization?.reusable && !!event.authorization.code;
+    authorization?.reusable && !!authorization.code;
 
   await db
     .update(schema.customers)
@@ -79,7 +99,7 @@ export async function handleCustomerIdentified(
       providerCustomerId:
         event.customer.providerCustomerId || existing.providerCustomerId,
       providerAuthorizationCode: hasReusableAuth
-        ? event.authorization.code
+        ? authorization!.code
         : existing.providerAuthorizationCode,
       paystackCustomerId:
         event.provider === "paystack"
@@ -87,7 +107,7 @@ export async function handleCustomerIdentified(
           : existing.paystackCustomerId,
       paystackAuthorizationCode:
         event.provider === "paystack" && hasReusableAuth
-          ? event.authorization.code
+          ? authorization!.code
           : existing.paystackAuthorizationCode,
       metadata: {
         ...existingMeta,
@@ -104,12 +124,12 @@ export async function handleCustomerIdentified(
         customerId: existing.id,
         organizationId,
         providerId: event.provider,
-        token: event.authorization.code,
-        type: event.authorization.last4 ? "card" : "provider_managed",
-        cardLast4: event.authorization.last4,
-        cardBrand: event.authorization.cardType,
-        cardExpMonth: event.authorization.expMonth,
-        cardExpYear: event.authorization.expYear,
+        token: authorization!.code,
+        type: authorization!.last4 ? "card" : "provider_managed",
+        cardLast4: authorization!.last4,
+        cardBrand: authorization!.cardType,
+        cardExpMonth: authorization!.expMonth,
+        cardExpYear: authorization!.expYear,
       });
     } catch (pmErr) {
       console.warn(

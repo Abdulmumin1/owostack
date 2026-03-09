@@ -244,6 +244,49 @@ describe("Webhook handlers behavior", () => {
     expect(insertValuesMock).not.toHaveBeenCalled();
   });
 
+  it("charge.success skips processing when customer email is ambiguous", async () => {
+    const { db, insertValuesMock, updateSetMock } = createDbMock();
+
+    db.query.customers.findFirst
+      .mockResolvedValueOnce({
+        id: "cus_1",
+        email: "customer@example.com",
+        organizationId: "org_1",
+      })
+      .mockResolvedValueOnce({
+        id: "cus_2",
+        email: "customer@example.com",
+        organizationId: "org_1",
+      });
+
+    const event = {
+      type: "charge.success",
+      provider: "paystack",
+      customer: {
+        email: "customer@example.com",
+        providerCustomerId: "",
+      },
+      payment: {
+        amount: 7500,
+        currency: "USD",
+        reference: "ref_credit_ambiguous",
+      },
+      metadata: {
+        type: "credit_purchase",
+        credit_pack_id: "pack_1",
+        credit_system_id: "cs_1",
+        credits: "20",
+      },
+      raw: { event: "charge.success" },
+    };
+
+    await handleChargeSuccess(makeCtx(db, event));
+
+    expect(updateSetMock).not.toHaveBeenCalled();
+    expect(topUpScopedBalanceMock).not.toHaveBeenCalled();
+    expect(insertValuesMock).not.toHaveBeenCalled();
+  });
+
   it("subscription.created without plan code links provider subscription code to an existing active sub", async () => {
     const { db, updateSetMock } = createDbMock();
 

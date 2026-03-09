@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createDb, schema } from "@owostack/db";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { type User } from "better-auth";
 import { auth } from "./lib/auth";
 import { trackHttpMetric } from "./lib/analytics-engine";

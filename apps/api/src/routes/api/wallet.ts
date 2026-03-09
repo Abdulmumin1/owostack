@@ -9,6 +9,10 @@ import {
   deriveProviderEnvironment,
 } from "../../lib/providers";
 import type { ProviderAccount } from "@owostack/adapters";
+import {
+  isCustomerResolutionConflictError,
+  resolveCustomerByIdentifier,
+} from "../../lib/customer-resolution";
 import type { Env, Variables } from "../../index";
 
 export type WalletDependencies = {
@@ -59,14 +63,12 @@ async function resolveCustomer(
   organizationId: string,
   customer: string,
 ) {
-  return db.query.customers.findFirst({
-    where: and(
-      eq(schema.customers.organizationId, organizationId),
-      customer.includes("@")
-        ? eq(schema.customers.email, customer.toLowerCase())
-        : eq(schema.customers.id, customer),
-    ),
+  const resolved = await resolveCustomerByIdentifier({
+    db,
+    organizationId,
+    customerId: customer,
   });
+  return resolved?.customer ?? null;
 }
 
 export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
@@ -111,7 +113,15 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
     const db = c.get("db");
     const organizationId = keyRecord.organizationId;
 
-    const dbCustomer = await resolveCustomer(db, organizationId, customer);
+    let dbCustomer;
+    try {
+      dbCustomer = await resolveCustomer(db, organizationId, customer);
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
+      throw error;
+    }
     if (!dbCustomer) {
       return c.json({ hasCard: false, card: null, methods: [] });
     }
@@ -182,7 +192,15 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
     const db = c.get("db");
     const organizationId = keyRecord.organizationId;
 
-    const dbCustomer = await resolveCustomer(db, organizationId, customer);
+    let dbCustomer;
+    try {
+      dbCustomer = await resolveCustomer(db, organizationId, customer);
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
+      throw error;
+    }
     if (!dbCustomer) {
       return c.json({ success: false, error: "Customer not found" }, 404);
     }
@@ -440,7 +458,15 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
     const db = c.get("db");
     const organizationId = keyRecord.organizationId;
 
-    const dbCustomer = await resolveCustomer(db, organizationId, customer);
+    let dbCustomer;
+    try {
+      dbCustomer = await resolveCustomer(db, organizationId, customer);
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
+      throw error;
+    }
     if (!dbCustomer) {
       return c.json({ success: false, error: "Customer not found" }, 404);
     }

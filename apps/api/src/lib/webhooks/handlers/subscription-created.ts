@@ -3,6 +3,10 @@ import { eq, and, or } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
 import { upsertPaymentMethod } from "../../payment-methods";
 import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
+import {
+  isCustomerResolutionConflictError,
+  resolveCustomerByEmail,
+} from "../../customer-resolution";
 import type { WebhookContext } from "../types";
 import { safeParseDate } from "../types";
 
@@ -45,12 +49,23 @@ export async function handleSubscriptionCreated(
 
   // Find or create customer scoped to this organization
   const email = event.customer.email.toLowerCase();
-  let dbCustomer = await db.query.customers.findFirst({
-    where: and(
-      eq(schema.customers.email, email),
-      eq(schema.customers.organizationId, organizationId),
-    ),
-  });
+  let dbCustomer = null;
+  try {
+    const resolvedCustomer = await resolveCustomerByEmail({
+      db,
+      organizationId,
+      email,
+    });
+    dbCustomer = resolvedCustomer?.customer ?? null;
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      console.warn(
+        `[WEBHOOK] subscription.created resolution conflict: ${error.message}`,
+      );
+      return;
+    }
+    throw error;
+  }
 
   if (!dbCustomer) {
     const [newCustomer] = await db

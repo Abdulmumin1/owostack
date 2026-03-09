@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { createAddonRoute, type AddonDependencies } from "../src/routes/api/addon";
+import { CustomerResolutionConflictError } from "../src/lib/customer-resolution";
 import { createRouteTestApp } from "./helpers/route-harness";
 import { err, ok } from "./helpers/result";
 
@@ -358,5 +359,59 @@ describe("POST /v1/addon behavior", () => {
       }),
     );
     expect(paystackAdapter.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when customer resolution is ambiguous", async () => {
+    mockDb.query.creditPacks.findFirst.mockResolvedValue({
+      id: "pack_1",
+      organizationId: "org_1",
+      slug: "credits-100",
+      name: "100 Credits",
+      credits: 100,
+      price: 2500,
+      currency: "USD",
+      providerId: "paystack",
+      creditSystemId: "cs_1",
+      isActive: true,
+    });
+
+    loadProviderAccountsMock.mockResolvedValue([
+      {
+        id: "acct_paystack",
+        providerId: "paystack",
+        environment: "test",
+        credentials: { secretKey: "sk_test" },
+      },
+    ]);
+
+    resolveOrCreateCustomerMock.mockRejectedValueOnce(
+      new CustomerResolutionConflictError(
+        "org_1",
+        "customer@example.com",
+        "email",
+      ),
+    );
+
+    const res = await app.request(
+      "/addon",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer owo_sk_test",
+        },
+        body: JSON.stringify({
+          customer: "customer@example.com",
+          pack: "credits-100",
+          quantity: 1,
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { success: boolean; error: string };
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Multiple customers");
   });
 });

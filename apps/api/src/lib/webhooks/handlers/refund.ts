@@ -1,5 +1,9 @@
 import { schema } from "@owostack/db";
 import { eq, and, or, sql } from "drizzle-orm";
+import {
+  isCustomerResolutionConflictError,
+  resolveCustomerByEmail,
+} from "../../customer-resolution";
 import type { WebhookContext } from "../types";
 
 export async function handleRefund(ctx: WebhookContext): Promise<void> {
@@ -18,12 +22,21 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
   );
 
   // 1. Find customer
-  const dbCustomer = await db.query.customers.findFirst({
-    where: and(
-      eq(schema.customers.email, email),
-      eq(schema.customers.organizationId, organizationId),
-    ),
-  });
+  let dbCustomer = null;
+  try {
+    const resolvedCustomer = await resolveCustomerByEmail({
+      db,
+      organizationId,
+      email,
+    });
+    dbCustomer = resolvedCustomer?.customer ?? null;
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      console.warn(`[WEBHOOK] refund.success resolution conflict: ${error.message}`);
+      return;
+    }
+    throw error;
+  }
 
   if (!dbCustomer) {
     console.warn(

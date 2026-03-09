@@ -1,6 +1,7 @@
-import { eq, and, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { schema, createDb } from "@owostack/db";
 import { EntitlementCache } from "./cache";
+import { resolveCustomerByIdentifier } from "./customer-resolution";
 
 type DB = ReturnType<typeof createDb>;
 
@@ -24,6 +25,7 @@ export interface ResolveCustomerOptions {
  * Resolve an existing customer or auto-create one.
  *
  * Lookup order: id → externalId → email (lowercased).
+ * Non-ID matches must be unique within the organization or resolution fails.
  * If no match and enough data to create (either customerData.email or customerId looks like an email),
  * a new record is inserted with consistent fields across all call sites.
  *
@@ -34,47 +36,25 @@ export async function resolveOrCreateCustomer(
 ): Promise<typeof schema.customers.$inferSelect | null> {
   const { db, organizationId, customerId, customerData, providerId, cache } = opts;
   const customerIdLower = customerId.toLowerCase();
+  const resolved = await resolveCustomerByIdentifier({
+    db,
+    organizationId,
+    customerId,
+    cache,
+    waitUntil: opts.waitUntil,
+  });
 
-  // 1. Check cache
-  let customer = cache
-    ? await cache.getCustomer<typeof schema.customers.$inferSelect>(organizationId, customerIdLower)
-    : null;
-
-  // 2. DB lookup by id, externalId, or email
-  if (!customer) {
-    customer = (await db.query.customers.findFirst({
-      where: and(
-        eq(schema.customers.organizationId, organizationId),
-        or(
-          eq(schema.customers.id, customerId),
-          eq(schema.customers.externalId, customerId),
-          eq(schema.customers.email, customerIdLower),
-        ),
-      ),
-    })) ?? null;
-
-    if (customer && cache) {
-      const setAliasesPromise = cache.setCustomerAliases(
-        organizationId,
-        {
-          id: customer.id,
-          email: customer.email,
-          externalId: customer.externalId,
-        },
-        customer,
-      );
-      if (opts.waitUntil) {
-        opts.waitUntil(setAliasesPromise);
-      } else {
-        await setAliasesPromise;
-      }
-    }
-  }
+  let customer = resolved?.customer ?? null;
 
   if (customer) {
     // Backfill missing fields on existing customers (fire-and-forget)
     const patches: Record<string, unknown> = {};
-    if (!customer.externalId && customerId !== customer.id) {
+    if (
+      !customer.externalId &&
+      resolved?.matchedBy !== "email" &&
+      !customerId.includes("@") &&
+      customerId !== customer.id
+    ) {
       patches.externalId = customerId;
     }
     if ((!customer.name || customer.name === "Anonymous") && customerData?.name) {
@@ -134,7 +114,7 @@ export async function resolveOrCreateCustomer(
     id: crypto.randomUUID(),
     organizationId,
     providerId: providerId || null,
-    externalId: customerId,
+    externalId: customerId.includes("@") ? null : customerId,
     email,
     name: customerData?.name || email.split("@")[0],
     metadata: customerData?.metadata || null,

@@ -25,6 +25,7 @@ import {
   getCurrentPricingTier,
   normalizeRatingModel,
 } from "../../lib/usage-rating";
+import { isCustomerResolutionConflictError } from "../../lib/customer-resolution";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -617,54 +618,74 @@ app.post("/check", async (c) => {
   }
 
   // 1 & 2. Resolve Customer and Feature in parallel
-  const [customer, featureResult] = await Promise.all([
-    deps.resolveOrCreateCustomer({
-      db,
-      organizationId,
-      customerId,
-      customerData,
-      cache,
-      waitUntil: (p) => c.executionCtx.waitUntil(p),
-    }),
-    (async () => {
-      let f = cache
-        ? await cache.getFeature<typeof schema.features.$inferSelect>(
-            organizationId,
-            featureId,
-          )
-        : null;
+  let customer;
+  let featureResult;
+  try {
+    [customer, featureResult] = await Promise.all([
+      deps.resolveOrCreateCustomer({
+        db,
+        organizationId,
+        customerId,
+        customerData,
+        cache,
+        waitUntil: (p) => c.executionCtx.waitUntil(p),
+      }),
+      (async () => {
+        let f = cache
+          ? await cache.getFeature<typeof schema.features.$inferSelect>(
+              organizationId,
+              featureId,
+            )
+          : null;
 
-      if (!f) {
-        f =
-          (await db.query.features.findFirst({
-            where: and(
-              eq(schema.features.organizationId, organizationId),
-              or(
-                eq(schema.features.id, featureId),
-                eq(schema.features.slug, featureId),
+        if (!f) {
+          f =
+            (await db.query.features.findFirst({
+              where: and(
+                eq(schema.features.organizationId, organizationId),
+                or(
+                  eq(schema.features.id, featureId),
+                  eq(schema.features.slug, featureId),
+                ),
               ),
-            ),
-          })) ?? null;
+            })) ?? null;
 
-        if (f && cache) {
-          const featureCacheKeys = [featureId, f.id, f.slug].filter(
-            (key): key is string => !!key && key.length > 0,
-          );
-          const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
-          scheduleCacheOp(
-            c,
-            Promise.all(
-              uniqueFeatureCacheKeys.map((key) =>
-                cache.setFeature(organizationId, key, f),
+          if (f && cache) {
+            const featureCacheKeys = [featureId, f.id, f.slug].filter(
+              (key): key is string => !!key && key.length > 0,
+            );
+            const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
+            scheduleCacheOp(
+              c,
+              Promise.all(
+                uniqueFeatureCacheKeys.map((key) =>
+                  cache.setFeature(organizationId, key, f),
+                ),
               ),
-            ),
-            "setFeature(/check)",
-          );
+              "setFeature(/check)",
+            );
+          }
         }
-      }
-      return f;
-    })(),
-  ]);
+        return f;
+      })(),
+    ]);
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      return c.json({
+        allowed: false,
+        code: "customer_ambiguous",
+        usage: null,
+        limit: null,
+        balance: null,
+        resetsAt: null,
+        resetInterval: null,
+        details: {
+          message: error.message,
+        },
+      });
+    }
+    throw error;
+  }
 
   if (!customer) {
     return c.json({
@@ -1840,54 +1861,78 @@ app.post("/track", async (c) => {
   }
 
   // 1 & 2. Resolve Customer and Feature in parallel
-  const [trackCustomer, trackFeatureResult] = await Promise.all([
-    deps.resolveOrCreateCustomer({
-      db,
-      organizationId,
-      customerId,
-      customerData,
-      cache,
-      waitUntil: (p) => c.executionCtx.waitUntil(p),
-    }),
-    (async () => {
-      let f = cache
-        ? await cache.getFeature<typeof schema.features.$inferSelect>(
-            organizationId,
-            featureId,
-          )
-        : null;
+  let trackCustomer;
+  let trackFeatureResult;
+  try {
+    [trackCustomer, trackFeatureResult] = await Promise.all([
+      deps.resolveOrCreateCustomer({
+        db,
+        organizationId,
+        customerId,
+        customerData,
+        cache,
+        waitUntil: (p) => c.executionCtx.waitUntil(p),
+      }),
+      (async () => {
+        let f = cache
+          ? await cache.getFeature<typeof schema.features.$inferSelect>(
+              organizationId,
+              featureId,
+            )
+          : null;
 
-      if (!f) {
-        f =
-          (await db.query.features.findFirst({
-            where: and(
-              eq(schema.features.organizationId, organizationId),
-              or(
-                eq(schema.features.id, featureId),
-                eq(schema.features.slug, featureId),
+        if (!f) {
+          f =
+            (await db.query.features.findFirst({
+              where: and(
+                eq(schema.features.organizationId, organizationId),
+                or(
+                  eq(schema.features.id, featureId),
+                  eq(schema.features.slug, featureId),
+                ),
               ),
-            ),
-          })) ?? null;
+            })) ?? null;
 
-        if (f && cache) {
-          const featureCacheKeys = [featureId, f.id, f.slug].filter(
-            (key): key is string => !!key && key.length > 0,
-          );
-          const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
-          scheduleCacheOp(
-            c,
-            Promise.all(
-              uniqueFeatureCacheKeys.map((key) =>
-                cache.setFeature(organizationId, key, f),
+          if (f && cache) {
+            const featureCacheKeys = [featureId, f.id, f.slug].filter(
+              (key): key is string => !!key && key.length > 0,
+            );
+            const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
+            scheduleCacheOp(
+              c,
+              Promise.all(
+                uniqueFeatureCacheKeys.map((key) =>
+                  cache.setFeature(organizationId, key, f),
+                ),
               ),
-            ),
-            "setFeature(/track)",
-          );
+              "setFeature(/track)",
+            );
+          }
         }
-      }
-      return f;
-    })(),
-  ]);
+        return f;
+      })(),
+    ]);
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      return c.json(
+        {
+          success: false,
+          allowed: false,
+          code: "customer_ambiguous",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message: error.message,
+          },
+        },
+        409,
+      );
+    }
+    throw error;
+  }
 
   const customer = trackCustomer;
 

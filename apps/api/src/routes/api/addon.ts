@@ -16,6 +16,7 @@ import {
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 import { ensureCreditPackSynced } from "../../lib/credit-pack-sync";
+import { isCustomerResolutionConflictError } from "../../lib/customer-resolution";
 
 export type AddonDependencies = {
   resolveOrCreateCustomer: typeof resolveOrCreateCustomer;
@@ -319,14 +320,22 @@ async function handleAddonPurchase(
     ? { email: normalizedCustomer.toLowerCase(), metadata }
     : undefined;
 
-  const customerRecord = await deps.resolveOrCreateCustomer({
-    db,
-    organizationId: keyRecord.organizationId,
-    customerId: normalizedCustomer,
-    customerData,
-    providerId: selectedProviderId,
-    waitUntil: (p: Promise<any>) => c.executionCtx.waitUntil(p),
-  });
+  let customerRecord;
+  try {
+    customerRecord = await deps.resolveOrCreateCustomer({
+      db,
+      organizationId: keyRecord.organizationId,
+      customerId: normalizedCustomer,
+      customerData,
+      providerId: selectedProviderId,
+      waitUntil: (p: Promise<any>) => c.executionCtx.waitUntil(p),
+    });
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      return c.json({ success: false, error: error.message }, 409);
+    }
+    throw error;
+  }
 
   if (!customerRecord) {
     return c.json(
