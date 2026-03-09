@@ -85,7 +85,7 @@ export type Env = {
   CF_ACCOUNT_ID?: string; // Cloudflare account ID — used for Analytics Engine & R2 SQL
   CF_ANALYTICS_READ_TOKEN?: string; // API token with Analytics:Read for SQL queries
   ANALYTICS_DATASET?: string; // Optional override dataset name for SQL reads
-  ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack,dodopayments,polar"
+  ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack,stripe,dodopayments"
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID?: string;

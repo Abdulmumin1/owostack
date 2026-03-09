@@ -443,7 +443,7 @@
           />
           Dodo Payments
         </div>
-        <div
+        <!-- <div
           class="px-4 py-2 rounded-full border border-border/40 bg-bg-secondary/30 text-xs font-medium flex items-center gap-2 hover:border-[#e41d34]/40 transition-colors cursor-default"
         >
           <img
@@ -452,7 +452,7 @@
             class="w-4 h-4 object-contain dark:invert"
           />
           Polar
-        </div>
+        </div> -->
         <div
           class="px-4 py-2 rounded-full border border-dashed border-border/30 bg-bg-secondary/10 text-xs font-medium flex items-center gap-2 text-text-muted cursor-default"
         >
