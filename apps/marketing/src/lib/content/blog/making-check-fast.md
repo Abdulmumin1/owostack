@@ -1,7 +1,7 @@
 ---
 title: "Thoughts on making our /check endpoint fast"
 excerpt: "Engineering efforts we've been making to make our /check endpoint fast"
-date: "2026-02-15"
+date: "2026-03-01"
 readTime: "5 min read"
 category: "Engineering"
 layout: blog

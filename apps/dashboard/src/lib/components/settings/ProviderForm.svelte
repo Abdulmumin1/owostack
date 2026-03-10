@@ -97,7 +97,7 @@
       }
 
       if (editingAccount) {
-        await apiFetch(
+        const result = await apiFetch(
           `/api/dashboard/providers/accounts/${editingAccount.id}`,
           {
             method: "PATCH",
@@ -109,12 +109,15 @@
             }),
           },
         );
+        if (result.error) {
+          throw new Error(result.error.message || "Failed to update provider");
+        }
         onSaved();
         onClose();
       } else {
         if (Object.keys(credentials).length === 0)
           throw new Error("Credentials required");
-        await apiFetch("/api/dashboard/providers/accounts", {
+        const result = await apiFetch("/api/dashboard/providers/accounts", {
           method: "POST",
           body: JSON.stringify({
             organizationId: projectId,
@@ -124,6 +127,9 @@
             credentials,
           }),
         });
+        if (result.error) {
+          throw new Error(result.error.message || "Failed to connect provider");
+        }
         lastCreatedProviderId = formProviderId;
         formStep = "webhook";
         onSaved();
@@ -185,7 +191,8 @@
                     />
                   </div>
                   <div class="text-center min-w-0">
-                    <span class="text-xs font-bold text-text-primary block truncate"
+                    <span
+                      class="text-xs font-bold text-text-primary block truncate"
                       >{provider.name}</span
                     >
                   </div>
@@ -213,7 +220,9 @@
             id="displayName"
             bind:value={formDisplayName}
             class="input w-full"
-            placeholder={selectedProviderConfig ? `e.g. ${selectedProviderConfig.name} Live` : "e.g. Paystack Live"}
+            placeholder={selectedProviderConfig
+              ? `e.g. ${selectedProviderConfig.name} Live`
+              : "e.g. Paystack Live"}
           />
         </div>
 
@@ -254,10 +263,18 @@
                 </div>
                 {#if isWebhookSecret}
                   {@const webhookUrl = `${apiBase}/webhooks/${projectId}/${formProviderId}`}
-                  <div class="bg-info-bg border border-info p-2 flex items-start gap-2">
+                  <div
+                    class="bg-info-bg border border-info p-2 flex items-start gap-2"
+                  >
                     <div class="flex-1 min-w-0">
-                      <p class="text-[10px] font-bold text-info uppercase tracking-widest mb-1">Webhook URL</p>
-                      <code class="font-mono text-[10px] text-info break-all">{webhookUrl}</code>
+                      <p
+                        class="text-[10px] font-bold text-info uppercase tracking-widest mb-1"
+                      >
+                        Webhook URL
+                      </p>
+                      <code class="font-mono text-[10px] text-info break-all"
+                        >{webhookUrl}</code
+                      >
                     </div>
                     <button
                       type="button"

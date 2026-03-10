@@ -167,7 +167,9 @@
         });
 
         if (configRes.error) {
-          console.error("Provider config failed:", configRes.error);
+          throw new Error(
+            configRes.error.message || "Failed to connect provider",
+          );
         }
       }
 
@@ -410,15 +412,24 @@
                   </div>
                   {#if isWebhookSecret && newOrgSlug}
                     {@const webhookUrl = `${apiBase}/webhooks/${newOrgSlug}/${selectedProviderId}`}
-                    <div class="bg-info-bg border border-info p-2 flex items-start gap-2">
+                    <div
+                      class="bg-info-bg border border-info p-2 flex items-start gap-2"
+                    >
                       <div class="flex-1 min-w-0">
-                        <p class="text-[10px] font-bold text-info uppercase tracking-widest mb-1">Webhook URL</p>
-                        <code class="font-mono text-[10px] text-info break-all">{webhookUrl}</code>
+                        <p
+                          class="text-[10px] font-bold text-info uppercase tracking-widest mb-1"
+                        >
+                          Webhook URL
+                        </p>
+                        <code class="font-mono text-[10px] text-info break-all"
+                          >{webhookUrl}</code
+                        >
                       </div>
                       <button
                         type="button"
                         class="text-info hover:text-info/80 transition-colors shrink-0 mt-0.5"
-                        onclick={() => navigator.clipboard.writeText(webhookUrl)}
+                        onclick={() =>
+                          navigator.clipboard.writeText(webhookUrl)}
                         title="Copy webhook URL"
                       >
                         <Copy size={12} weight="fill" />

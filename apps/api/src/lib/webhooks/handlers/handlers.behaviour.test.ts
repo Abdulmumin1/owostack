@@ -287,6 +287,92 @@ describe("Webhook handlers behavior", () => {
     expect(insertValuesMock).not.toHaveBeenCalled();
   });
 
+  it("charge.success resolves subscription plan by provider plan code when metadata.plan_id is stale", async () => {
+    const { db, insertValuesMock } = createDbMock();
+
+    db.query.customers.findFirst.mockResolvedValue({
+      id: "cus_1",
+      email: "customer@example.com",
+      organizationId: "org_1",
+    });
+    db.query.plans.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "plan_db_1",
+        organizationId: "org_1",
+        interval: "monthly",
+      });
+    db.query.subscriptions.findFirst.mockResolvedValue(null);
+
+    const event = {
+      type: "charge.success",
+      provider: "paystack",
+      customer: {
+        email: "customer@example.com",
+        providerCustomerId: "prov_cus_1",
+      },
+      payment: {
+        amount: 1500,
+        currency: "USD",
+        reference: "ref_sub_1",
+      },
+      plan: {
+        providerPlanCode: "provider_plan_1",
+      },
+      metadata: {
+        plan_id: "stale_plan_id",
+      },
+      raw: { event: "charge.success" },
+    };
+
+    await handleChargeSuccess(makeCtx(db, event));
+
+    const subInsert = insertValuesMock.mock.calls[0]?.[0]?.[0];
+    expect(subInsert.planId).toBe("plan_db_1");
+    expect(provisionEntitlementsMock).toHaveBeenCalledWith(
+      db,
+      "cus_1",
+      "plan_db_1",
+    );
+  });
+
+  it("charge.success skips subscription insert when plan cannot be resolved", async () => {
+    const { db, insertValuesMock } = createDbMock();
+
+    db.query.customers.findFirst.mockResolvedValue({
+      id: "cus_1",
+      email: "customer@example.com",
+      organizationId: "org_1",
+    });
+    db.query.plans.findFirst.mockResolvedValue(null);
+
+    const event = {
+      type: "charge.success",
+      provider: "paystack",
+      customer: {
+        email: "customer@example.com",
+        providerCustomerId: "prov_cus_1",
+      },
+      payment: {
+        amount: 1500,
+        currency: "USD",
+        reference: "ref_sub_2",
+      },
+      plan: {
+        providerPlanCode: "unknown_provider_plan",
+      },
+      metadata: {
+        plan_id: "unknown_plan_id",
+      },
+      raw: { event: "charge.success" },
+    };
+
+    await handleChargeSuccess(makeCtx(db, event));
+
+    expect(insertValuesMock).not.toHaveBeenCalled();
+    expect(provisionEntitlementsMock).not.toHaveBeenCalled();
+  });
+
   it("subscription.created without plan code links provider subscription code to an existing active sub", async () => {
     const { db, updateSetMock } = createDbMock();
 
