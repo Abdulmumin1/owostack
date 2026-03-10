@@ -638,34 +638,6 @@
                     />
                   </div>
                 </div>
-
-                <div>
-                  <label
-                    class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3"
-                    >Initialize Client</label
-                  >
-                  <div
-                    class="bg-bg-secondary border border-border overflow-hidden"
-                  >
-                    <div
-                      class="bg-bg-tertiary px-3 py-1.5 flex items-center justify-between border-b border-border"
-                    >
-                      <span
-                        class="text-[9px] font-bold text-text-dim uppercase tracking-wider"
-                        >JavaScript / TypeScript</span
-                      >
-                    </div>
-                    <pre
-                      class="p-4 text-[11px] font-mono text-text-secondary leading-relaxed overflow-x-auto"><code
-                        >import &#123; Owostack &#125; from 'owostack';
-
-const client = new Owostack(&#123; 
-  organizationId: "{orgSlug || "..."}",
-  environment: "test" 
-&#125;);</code
-                      ></pre>
-                  </div>
-                </div>
               </div>
             </div>
           {/if}

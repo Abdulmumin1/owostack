@@ -26,7 +26,7 @@ resend.emails
         <p>Hey,</p>
         <p>Thanks for joining Owostack beta!</p>
         <p>
-          <a href="https://owostack.com" style="display:inline-block;background:#e8a855;color:#1a1a1a;padding:12px 24px;border:1px solid #c07515;border-radius:4px;text-decoration:none;font-weight:700;">
+          <a href="https://app.owostack.com/join/29c20124-5b29-464a-b443-c9ead32b8128" style="display:inline-block;background:#e8a855;color:#1a1a1a;padding:12px 24px;border:1px solid #c07515;border-radius:4px;text-decoration:none;font-weight:700;">
             Get started
           </a>
         </p>
@@ -41,7 +41,7 @@ resend.emails
       </div>
     </div>
   `,
-    text: "Hey,\n\nThanks for joining Owostack beta!\n\nGet started: https://owostack.com\n\nFeel free to join our Discord community if you want to hang out or ask questions:\nhttps://discord.gg/JMXr4EKmtf",
+    text: "Hey,\n\nThanks for joining Owostack beta!\n\nGet started: https://app.owostack.com/join/29c20124-5b29-464a-b443-c9ead32b8128\n\nFeel free to join our Discord community if you want to hang out or ask questions:\nhttps://discord.gg/JMXr4EKmtf",
   })
   .then(({ data, error }) => {
     if (error) {
