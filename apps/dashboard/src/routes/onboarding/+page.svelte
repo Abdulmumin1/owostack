@@ -133,16 +133,7 @@
     error = null;
 
     try {
-      // 1. Create Organization
-      const { data: orgData, error: orgError } = await organization.create({
-        name: orgName,
-        slug: orgSlug,
-      });
-
-      if (orgError) throw new Error(orgError.message);
-      if (!orgData?.id) throw new Error("Failed to create organization");
-
-      // 2. Connect Provider
+      // 1. Validate provider credentials before creating the organization
       const credentials: Record<string, unknown> = {};
       if (selectedProviderConfig) {
         for (const field of selectedProviderConfig.fields) {
@@ -151,6 +142,33 @@
         }
       }
 
+      const validationRes = await apiFetch(
+        "/api/dashboard/providers/validate",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            providerId: selectedProviderId,
+            environment: getActiveEnvironment(),
+            credentials,
+          }),
+        },
+      );
+      if (validationRes.error) {
+        throw new Error(
+          validationRes.error.message || "Failed to validate provider",
+        );
+      }
+
+      // 2. Create Organization
+      const { data: orgData, error: orgError } = await organization.create({
+        name: orgName,
+        slug: orgSlug,
+      });
+
+      if (orgError) throw new Error(orgError.message);
+      if (!orgData?.id) throw new Error("Failed to create organization");
+
+      // 3. Connect Provider
       const providerRes = await apiFetch("/api/dashboard/providers/accounts", {
         method: "POST",
         body: JSON.stringify({

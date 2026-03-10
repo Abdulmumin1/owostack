@@ -50,6 +50,12 @@ const providerAccountSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+const providerValidationSchema = z.object({
+  providerId: z.string(),
+  environment: z.enum(["test", "live"]),
+  credentials: z.record(z.string(), z.unknown()),
+});
+
 const providerRuleSchema = z.object({
   organizationId: z.string(),
   providerId: z.string(),
@@ -97,6 +103,47 @@ function getEnabledProviders(env: any): string[] {
 app.get("/enabled", async (c) => {
   const enabled = getEnabledProviders(c.env);
   return c.json({ success: true, data: enabled });
+});
+
+app.post("/validate", async (c) => {
+  const body = await c.req.json();
+  const parsed = providerValidationSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(zodErrorToResponse(parsed.error), 400);
+  }
+
+  const { providerId, environment, credentials } = parsed.data;
+  const enabled = getEnabledProviders(c.env);
+  if (!enabled.includes(providerId)) {
+    return c.json(
+      {
+        success: false,
+        error: `Provider "${providerId}" is not enabled. Enabled providers: ${enabled.join(", ")}`,
+      },
+      400,
+    );
+  }
+
+  const normalizedCredentials = normalizeProviderCredentials(credentials);
+  const validationResult = await validateProviderCredentials({
+    providerId,
+    environment,
+    credentials: normalizedCredentials,
+  });
+
+  if (!validationResult.ok) {
+    return c.json({ success: false, error: validationResult.message }, 400);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      providerId,
+      environment,
+      validation: validationResult.validation,
+    },
+  });
 });
 
 app.post("/accounts", async (c) => {
