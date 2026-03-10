@@ -598,6 +598,32 @@
                 <div>
                   <label
                     class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3"
+                    >Use CLI</label
+                  >
+                  <div
+                    class="bg-bg-secondary border border-border overflow-hidden"
+                  >
+                    <div
+                      class="bg-bg-tertiary px-3 py-1.5 flex items-center justify-between border-b border-border"
+                    >
+                      <span
+                        class="text-[9px] font-bold text-text-dim uppercase tracking-wider"
+                        >Terminal</span
+                      >
+                    </div>
+                    <pre
+                      class="p-4 text-[11px] font-mono text-text-secondary leading-relaxed overflow-x-auto"><code
+                        >npx owosk init</code
+                      ></pre>
+                  </div>
+                  <p class="mt-2 text-[11px] text-text-dim leading-relaxed">
+                    Initialize `owo.config.ts` directly from your dashboard setup.
+                  </p>
+                </div>
+
+                <div>
+                  <label
+                    class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3"
                     >Install SDK</label
                   >
                   <div
