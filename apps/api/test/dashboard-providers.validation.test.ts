@@ -152,6 +152,31 @@ describe("Dashboard provider validation", () => {
     expect(insertMock).not.toHaveBeenCalled();
   });
 
+  it("preflights provider validation without creating a provider account", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ livemode: false }), { status: 200 }),
+    );
+
+    const response = await app.request(
+      "/validate",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          providerId: "stripe",
+          environment: "test",
+          credentials: { secretKey: "sk_test_123" },
+        }),
+      },
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data.validation.status).toBe("verified");
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
   it("creates a Stripe account only after a successful authenticated verification", async () => {
     mockDb.query.providerAccounts.findFirst.mockResolvedValueOnce(null);
     vi.mocked(fetch).mockResolvedValueOnce(

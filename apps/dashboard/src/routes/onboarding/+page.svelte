@@ -133,16 +133,7 @@
     error = null;
 
     try {
-      // 1. Create Organization
-      const { data: orgData, error: orgError } = await organization.create({
-        name: orgName,
-        slug: orgSlug,
-      });
-
-      if (orgError) throw new Error(orgError.message);
-      if (!orgData?.id) throw new Error("Failed to create organization");
-
-      // 2. Connect Provider
+      // 1. Validate provider credentials before creating the organization
       const credentials: Record<string, unknown> = {};
       if (selectedProviderConfig) {
         for (const field of selectedProviderConfig.fields) {
@@ -151,6 +142,33 @@
         }
       }
 
+      const validationRes = await apiFetch(
+        "/api/dashboard/providers/validate",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            providerId: selectedProviderId,
+            environment: getActiveEnvironment(),
+            credentials,
+          }),
+        },
+      );
+      if (validationRes.error) {
+        throw new Error(
+          validationRes.error.message || "Failed to validate provider",
+        );
+      }
+
+      // 2. Create Organization
+      const { data: orgData, error: orgError } = await organization.create({
+        name: orgName,
+        slug: orgSlug,
+      });
+
+      if (orgError) throw new Error(orgError.message);
+      if (!orgData?.id) throw new Error("Failed to create organization");
+
+      // 3. Connect Provider
       const providerRes = await apiFetch("/api/dashboard/providers/accounts", {
         method: "POST",
         body: JSON.stringify({
@@ -577,6 +595,32 @@
               </div>
 
               <div class="space-y-6">
+                <div>
+                  <label
+                    class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3"
+                    >Use CLI</label
+                  >
+                  <div
+                    class="bg-bg-secondary border border-border overflow-hidden"
+                  >
+                    <div
+                      class="bg-bg-tertiary px-3 py-1.5 flex items-center justify-between border-b border-border"
+                    >
+                      <span
+                        class="text-[9px] font-bold text-text-dim uppercase tracking-wider"
+                        >Terminal</span
+                      >
+                    </div>
+                    <pre
+                      class="p-4 text-[11px] font-mono text-text-secondary leading-relaxed overflow-x-auto"><code
+                        >npx owosk init</code
+                      ></pre>
+                  </div>
+                  <p class="mt-2 text-[11px] text-text-dim leading-relaxed">
+                    Initialize `owo.config.ts` directly from your dashboard setup.
+                  </p>
+                </div>
+
                 <div>
                   <label
                     class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3"
