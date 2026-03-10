@@ -7,6 +7,12 @@ import { encrypt, decrypt } from "../../lib/encryption";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 import { syncPlansToProvider } from "../../lib/plan-sync";
 import { getProviderRegistry } from "../../lib/providers";
+import {
+  buildProviderValidationMetadata,
+  hydratePlaintextProviderCredentials,
+  normalizeProviderCredentials,
+  validateProviderCredentials,
+} from "../../lib/provider-validation";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -138,9 +144,24 @@ app.post("/accounts", async (c) => {
     );
   }
 
-  const secretKey = credentials.secretKey;
-  const webhookSecret = credentials.webhookSecret;
-  let storedCredentials: Record<string, unknown> = credentials;
+  const normalizedCredentials = normalizeProviderCredentials(credentials);
+  const validationResult = await validateProviderCredentials({
+    providerId,
+    environment,
+    credentials: normalizedCredentials,
+  });
+
+  if (!validationResult.ok) {
+    return c.json({ success: false, error: validationResult.message }, 400);
+  }
+
+  const secretKey = normalizedCredentials.secretKey;
+  const webhookSecret = normalizedCredentials.webhookSecret;
+  let storedCredentials: Record<string, unknown> = normalizedCredentials;
+  const storedMetadata = buildProviderValidationMetadata(
+    validationResult.validation,
+    metadata,
+  );
 
   if (!c.env.ENCRYPTION_KEY && (secretKey || webhookSecret)) {
     return c.json({ success: false, error: "Encryption not configured" }, 500);
@@ -171,7 +192,7 @@ app.post("/accounts", async (c) => {
         environment,
         displayName: displayName || null,
         credentials: storedCredentials,
-        metadata: metadata || null,
+        metadata: storedMetadata,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       })
@@ -194,7 +215,7 @@ app.post("/accounts", async (c) => {
   const registry = getProviderRegistry();
   const adapter = registry.get(providerId);
   if (adapter) {
-    const decryptedCreds = { ...credentials };
+    const decryptedCreds = { ...normalizedCredentials };
     if (typeof secretKey === "string" && secretKey.length > 0) {
       decryptedCreds.secretKey = secretKey;
     }
@@ -220,7 +241,12 @@ app.post("/accounts", async (c) => {
     );
   }
 
-  return c.json({ success: true, data: account, planSyncStarted: !!adapter });
+  return c.json({
+    success: true,
+    data: account,
+    planSyncStarted: !!adapter,
+    validation: validationResult.validation,
+  });
 });
 
 app.get("/rules", async (c) => {
@@ -314,9 +340,35 @@ app.patch("/accounts/:id", async (c) => {
   }
 
   if (credentials) {
-    let storedCredentials = credentials;
-    const secretKey = credentials.secretKey;
-    const webhookSecret = credentials.webhookSecret;
+    const normalizedCredentials = normalizeProviderCredentials(credentials);
+    const existingStoredCredentials = {
+      ...((existing.credentials || {}) as Record<string, unknown>),
+    };
+    const existingPlaintextCredentials =
+      await hydratePlaintextProviderCredentials({
+        credentials: existingStoredCredentials,
+        encryptionKey: c.env.ENCRYPTION_KEY,
+      });
+    const mergedPlaintextCredentials = {
+      ...existingPlaintextCredentials,
+      ...normalizedCredentials,
+    };
+    const validationResult = await validateProviderCredentials({
+      providerId: existing.providerId,
+      environment: existing.environment as "test" | "live",
+      credentials: mergedPlaintextCredentials,
+    });
+
+    if (!validationResult.ok) {
+      return c.json({ success: false, error: validationResult.message }, 400);
+    }
+
+    let storedCredentials = {
+      ...existingStoredCredentials,
+      ...normalizedCredentials,
+    };
+    const secretKey = normalizedCredentials.secretKey;
+    const webhookSecret = normalizedCredentials.webhookSecret;
 
     if ((secretKey || webhookSecret) && !c.env.ENCRYPTION_KEY) {
       return c.json(
@@ -340,6 +392,14 @@ app.patch("/accounts/:id", async (c) => {
     }
 
     updates.credentials = storedCredentials;
+    updates.metadata = buildProviderValidationMetadata(
+      validationResult.validation,
+      metadata !== undefined
+        ? metadata
+        : ((existing.metadata as Record<string, unknown> | null) ?? null),
+    );
+  } else if (metadata !== undefined) {
+    updates.metadata = metadata;
   }
 
   const [updated] = await db

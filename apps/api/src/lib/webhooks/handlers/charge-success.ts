@@ -1004,7 +1004,41 @@ async function handleSubscriptionPayment(
 ): Promise<void> {
   const { db, organizationId, event, cache } = ctx;
   const { metadata } = event;
-  const planId = metadata.plan_id as string;
+  const metadataPlanId =
+    typeof metadata.plan_id === "string" ? metadata.plan_id : null;
+  const providerPlanCode = event.plan?.providerPlanCode;
+
+  // Resolve a plan that belongs to this org before writing FK-backed rows.
+  let resolvedPlan = metadataPlanId
+    ? await db.query.plans.findFirst({
+        where: and(
+          eq(schema.plans.id, metadataPlanId),
+          eq(schema.plans.organizationId, organizationId),
+        ),
+      })
+    : null;
+
+  if (!resolvedPlan && providerPlanCode) {
+    resolvedPlan = await db.query.plans.findFirst({
+      where: and(
+        or(
+          eq(schema.plans.providerPlanId, providerPlanCode),
+          eq(schema.plans.paystackPlanId, providerPlanCode),
+        ),
+        eq(schema.plans.organizationId, organizationId),
+      ),
+    });
+  }
+
+  if (!resolvedPlan) {
+    console.warn(
+      `[WEBHOOK] charge.success subscription payment skipped: plan not found for org=${organizationId}, metadata.plan_id=${metadataPlanId}, providerPlanCode=${providerPlanCode}`,
+    );
+    return;
+  }
+
+  const planId = resolvedPlan.id;
+  metadata.plan_id = planId;
 
   const existingSub = await db.query.subscriptions.findFirst({
     where: and(
@@ -1017,12 +1051,7 @@ async function handleSubscriptionPayment(
     ),
   });
 
-  const plan = await db.query.plans.findFirst({
-    where: eq(schema.plans.id, planId),
-  });
-  const periodMs = plan
-    ? intervalToMs(plan.interval)
-    : 30 * 24 * 60 * 60 * 1000;
+  const periodMs = intervalToMs(resolvedPlan.interval);
   const startMs = safeParseDate(event.payment?.paidAt) || Date.now();
 
   if (!existingSub) {

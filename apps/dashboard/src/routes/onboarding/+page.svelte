@@ -151,7 +151,7 @@
         }
       }
 
-      await apiFetch("/api/dashboard/providers/accounts", {
+      const providerRes = await apiFetch("/api/dashboard/providers/accounts", {
         method: "POST",
         body: JSON.stringify({
           organizationId: orgData.id,
@@ -160,6 +160,11 @@
           credentials,
         }),
       });
+      if (providerRes.error) {
+        throw new Error(
+          providerRes.error.message || "Failed to connect provider",
+        );
+      }
 
       // Success - Transition to step 4
       isCreating = false;
@@ -433,9 +438,7 @@
               </div>
             </div>
           {:else if currentStep === 3}
-            <div
-              in:fly={{ x: 20, duration: 400 }}
-            >
+            <div in:fly={{ x: 20, duration: 400 }}>
               <div class="mb-8 flex items-end justify-between">
                 <div>
                   <h2 class="text-xl font-bold text-text-primary mb-1">
@@ -517,10 +520,19 @@
                       </div>
                       {#if isWebhookSecret}
                         {@const webhookUrl = `${apiBase}/webhooks/${orgSlug || "your-org"}/${selectedProviderId}`}
-                        <div class="mt-2 bg-info-bg/50 border border-info/30 p-2.5 flex items-start gap-2">
+                        <div
+                          class="mt-2 bg-info-bg/50 border border-info/30 p-2.5 flex items-start gap-2"
+                        >
                           <div class="flex-1 min-w-0">
-                            <p class="text-[10px] font-bold text-info uppercase tracking-widest mb-1">Webhook URL</p>
-                            <code class="font-mono text-[10px] text-info break-all">{webhookUrl}</code>
+                            <p
+                              class="text-[10px] font-bold text-info uppercase tracking-widest mb-1"
+                            >
+                              Webhook URL
+                            </p>
+                            <code
+                              class="font-mono text-[10px] text-info break-all"
+                              >{webhookUrl}</code
+                            >
                           </div>
                           <button
                             type="button"
