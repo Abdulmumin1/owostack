@@ -10,6 +10,7 @@
     Cube,
     Minus,
     Plus,
+    PlusIcon,
     X,
   } from "phosphor-svelte";
   import { fade, fly } from "svelte/transition";
@@ -908,18 +909,16 @@
 
     <!-- Footer -->
     <div
-      class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card"
+      class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-secondary"
     >
       <button
-        class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
+        class="btn btn-ghost disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={close}
       >
-        Cancel <span class="text-text-dim/60 ml-1 font-normal uppercase"
-          >Esc</span
-        >
+        Cancel 
       </button>
       <button
-        class="px-6 py-2 bg-accent hover:bg-accent-hover text-accent-contrast text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
+        class="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={handleSubmit}
         disabled={!planName || (planType === "paid" && !price) || isCreating}
       >
@@ -927,7 +926,8 @@
           <CircleNotchIcon size={12} class="animate-spin" />
           Creating...
         {:else}
-          Create plan <span class=" px-1 rounded ml-1 text-[10px]"> ⌘↵ </span>
+        <PlusIcon size={14} />
+          Create plan
         {/if}
       </button>
     </div>

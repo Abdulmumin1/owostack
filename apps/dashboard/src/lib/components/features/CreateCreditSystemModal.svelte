@@ -244,16 +244,16 @@
 
     <!-- Footer -->
     <div
-      class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card"
+      class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-secondary"
     >
       <button
-        class="px-4 py-2 text-[11px] font-bold text-text-dim hover:text-text-primary uppercase tracking-widest transition-colors"
+        class="btn btn-ghost disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={close}
       >
         Cancel
       </button>
       <button
-        class="bg-accent hover:bg-accent-hover text-accent-contrast text-[11px] font-bold px-6 py-2 rounded uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-2"
+        class="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         disabled={isCreating}
         onclick={handleSubmit}
       >

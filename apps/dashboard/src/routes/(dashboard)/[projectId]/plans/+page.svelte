@@ -160,7 +160,7 @@
           class="btn btn-primary"
           onclick={() => (showCreateModal = true)}
         >
-          <Plus size={14} weight="fill" />
+          <Plus size={14} />
           Create Plan
         </button>
       </div>

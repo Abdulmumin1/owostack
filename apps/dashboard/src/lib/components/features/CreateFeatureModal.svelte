@@ -203,9 +203,9 @@
     </div>
 
     <!-- Footer -->
-    <div class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-card mt-auto">
+    <div class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-secondary mt-auto">
       <button
-        class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
+          class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors "
         onclick={close}
       >
         Cancel
@@ -219,7 +219,7 @@
           <CircleNotch   size={14} class="animate-spin"  weight="duotone" />
           Creating...
         {:else}
-          <Check   size={14}  weight="fill" />
+          <Check   size={14}  />
           Create Feature
         {/if}
       </button>

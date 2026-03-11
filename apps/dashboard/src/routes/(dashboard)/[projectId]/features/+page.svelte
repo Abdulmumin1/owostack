@@ -25,6 +25,7 @@
     ToggleLeft,
     Trash,
     Storefront,
+    PlusIcon,
   } from "phosphor-svelte";
   import { getActiveEnvironment } from "$lib/env";
   import { copyItemToProd } from "$lib/utils/catalog";
@@ -170,6 +171,7 @@
           onclick={() => (showCreateModal = true)}
           class="btn btn-primary"
         >
+        <PlusIcon size={14} />
           Create Feature
         </button>
       </div>
@@ -342,6 +344,7 @@
         onclick={() => (showCreateCSModal = true)}
         class="btn btn-secondary"
       >
+      <PlusIcon size={14} />
         Create Credit System
       </button>
     </div>

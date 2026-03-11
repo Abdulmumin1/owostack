@@ -3,7 +3,8 @@
 
   let secretKey = $state("");
   let apiUrl = $state("http://localhost:8787/api/v1");
-  let customerId = $state("");
+  let userId = $state("");
+  let email = $state("");
   let logs = $state<string[]>([]);
 
   // Attach State
@@ -42,12 +43,12 @@
   }
 
   async function handleAttach() {
-    if (!customerId || !planId) return alert("Customer & Plan required");
-    log(`Attaching plan ${planId} to ${customerId}...`);
+    if (!userId || !planId) return alert("User ID & Plan required");
+    log(`Attaching plan ${planId} to ${userId}...`);
 
     try {
       const res = await owo.attach({
-        customer: customerId,
+        customer: userId,
         product: planId, // SDK maps product -> feature/plan
         callbackUrl: window.location.href,
         metadata: { source: "simulation_demo" },
@@ -60,11 +61,11 @@
   }
 
   async function handleGetWallet() {
-    if (!customerId) return alert("Customer required");
-    log(`Fetching wallet for ${customerId}...`);
+    if (!userId) return alert("User ID required");
+    log(`Fetching wallet for ${userId}...`);
 
     try {
-      const res = await owo.wallet(customerId);
+      const res = await owo.wallet(userId);
       walletResult = res;
       log("Wallet:", res);
     } catch (e: any) {
@@ -73,12 +74,12 @@
   }
 
   async function handleSetupCard() {
-    if (!customerId) return alert("Customer required");
-    log(`Setting up payment method for ${customerId}...`);
+    if (!userId) return alert("User ID required");
+    log(`Setting up payment method for ${userId}...`);
     walletSetupResult = null;
 
     try {
-      const res = await owo.wallet.setup(customerId, {
+      const res = await owo.wallet.setup(userId, {
         callbackUrl: window.location.href,
         ...(walletProvider ? { provider: walletProvider } : {}),
       });
@@ -90,11 +91,11 @@
   }
 
   async function handleRemoveCard(methodId: string) {
-    if (!customerId) return alert("Customer required");
+    if (!userId) return alert("User ID required");
     log(`Removing payment method ${methodId}...`);
 
     try {
-      const res = await owo.wallet.remove(customerId, methodId);
+      const res = await owo.wallet.remove(userId, methodId);
       log("Removed:", res);
       await handleGetWallet();
     } catch (e: any) {
@@ -103,16 +104,14 @@
   }
 
   async function handleCheck() {
-    if (!customerId || !featureId) return alert("Customer & Feature required");
+    if (!userId || !featureId) return alert("User ID & Feature required");
     log(`Checking access for ${featureId}...`);
 
     try {
       const res = await owo.check({
-        customer: customerId,
+        customer: userId,
         feature: featureId,
-        ...(customerId.includes("@")
-          ? { customerData: { email: customerId } }
-          : {}),
+        ...(email ? { customerData: { email } } : {}),
       });
       log("Check Result:", res);
     } catch (e: any) {
@@ -121,17 +120,15 @@
   }
 
   async function handleTrack() {
-    if (!customerId || !featureId) return alert("Customer & Feature required");
+    if (!userId || !featureId) return alert("User ID & Feature required");
     log(`Tracking ${trackAmount} units for ${featureId}...`);
 
     try {
       const res = await owo.track({
-        customer: customerId,
+        customer: userId,
         feature: featureId,
         value: trackAmount,
-        ...(customerId.includes("@")
-          ? { customerData: { email: customerId } }
-          : {}),
+        ...(email ? { customerData: { email } } : {}),
       });
       log("Track Result:", res);
     } catch (e: any) {
@@ -140,11 +137,11 @@
   }
 
   async function handleGetUnbilledUsage() {
-    if (!customerId) return alert("Customer required");
-    log(`Fetching unbilled usage for ${customerId}...`);
+    if (!userId) return alert("User ID required");
+    log(`Fetching unbilled usage for ${userId}...`);
 
     try {
-      const res = await owo.billing.usage({ customer: customerId });
+      const res = await owo.billing.usage({ customer: userId });
       unbilledUsage = res;
       log("Unbilled Usage:", res);
     } catch (e: any) {
@@ -153,12 +150,12 @@
   }
 
   async function handleBuyAddon() {
-    if (!customerId || !packSlug) return alert("Customer & Pack slug required");
-    log(`Buying ${packQuantity}x '${packSlug}' for ${customerId}...`);
+    if (!userId || !packSlug) return alert("User ID & Pack slug required");
+    log(`Buying ${packQuantity}x '${packSlug}' for ${userId}...`);
 
     try {
       const res = await owo.addon({
-        customer: customerId,
+        customer: userId,
         pack: packSlug,
         quantity: packQuantity,
       });
@@ -173,18 +170,16 @@
   }
 
   async function handleCheckAddonBalance() {
-    if (!customerId || !featureId) return alert("Customer & Feature required");
+    if (!userId || !featureId) return alert("User ID & Feature required");
     log(
       `Checking addon balance via /check (sendEvent=false) for ${featureId}...`,
     );
 
     try {
       const res = await owo.check({
-        customer: customerId,
+        customer: userId,
         feature: featureId,
-        ...(customerId.includes("@")
-          ? { customerData: { email: customerId } }
-          : {}),
+        ...(email ? { customerData: { email } } : {}),
       });
       addonBalanceResult = res;
       log("Check w/ Addon Info:", {
@@ -200,7 +195,7 @@
   }
 
   async function handleExhaustAndFallback() {
-    if (!customerId || !featureId) return alert("Customer & Feature required");
+    if (!userId || !featureId) return alert("User ID & Feature required");
     log(
       `--- Exhaust Test: sending check(sendEvent=true) repeatedly for '${featureId}' ---`,
     );
@@ -208,13 +203,11 @@
     for (let i = 0; i < 5; i++) {
       try {
         const res = await owo.check({
-          customer: customerId,
+          customer: userId,
           feature: featureId,
           value: 1,
           sendEvent: true,
-          ...(customerId.includes("@")
-            ? { customerData: { email: customerId } }
-            : {}),
+          ...(email ? { customerData: { email } } : {}),
         } as any);
         const code = (res as any).code;
         const addon = (res as any).addonCredits;
@@ -233,11 +226,11 @@
   }
 
   async function handleGenerateInvoice() {
-    if (!customerId) return alert("Customer required");
-    log(`Generating invoice for ${customerId}...`);
+    if (!userId) return alert("User ID required");
+    log(`Generating invoice for ${userId}...`);
 
     try {
-      const res = await owo.billing.invoice({ customer: customerId });
+      const res = await owo.billing.invoice({ customer: userId });
       invoiceResult = res;
       log("Invoice Generated:", res);
     } catch (e: any) {
@@ -246,11 +239,11 @@
   }
 
   async function handleListInvoices() {
-    if (!customerId) return alert("Customer required");
-    log(`Listing invoices for ${customerId}...`);
+    if (!userId) return alert("User ID required");
+    log(`Listing invoices for ${userId}...`);
 
     try {
-      const res = await owo.billing.invoices({ customer: customerId });
+      const res = await owo.billing.invoices({ customer: userId });
       invoicesList = res.invoices || [];
       log("Invoices:", res);
     } catch (e: any) {
@@ -330,13 +323,21 @@
         </div>
 
         <div class="space-y-2">
-          <label class="block text-xs font-semibold text-zinc-500"
-            >Customer ID / Email</label
-          >
+          <label class="block text-xs font-semibold text-zinc-500">User ID</label>
           <input
             type="text"
-            bind:value={customerId}
-            placeholder="customer@example.com"
+            bind:value={userId}
+            placeholder="user_123"
+            class="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-white focus:border-emerald-500 outline-none transition-colors"
+          />
+        </div>
+
+        <div class="space-y-2">
+          <label class="block text-xs font-semibold text-zinc-500">Email (optional)</label>
+          <input
+            type="email"
+            bind:value={email}
+            placeholder="user@example.com"
             class="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-white focus:border-emerald-500 outline-none transition-colors"
           />
         </div>
