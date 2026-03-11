@@ -136,7 +136,7 @@
       onclick={() => (showCreatePanel = true)}
       class="btn btn-primary"
     >
-      <Plus size={14} weight="fill" />
+      <Plus size={14} />
       Create Pack
     </button>
   </div>

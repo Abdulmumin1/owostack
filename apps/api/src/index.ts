@@ -130,6 +130,7 @@ app.use(
         "http://localhost:4173",
         "https://app.owostack.com",
         "https://owostack.com",
+        "https://simulator.owostack.com",
       ];
       if (origin && allowedOrigins.includes(origin)) {
         return origin;

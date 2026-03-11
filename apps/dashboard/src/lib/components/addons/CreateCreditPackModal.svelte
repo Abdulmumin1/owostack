@@ -396,13 +396,13 @@
       class="p-5 border-t border-border flex items-center justify-end gap-3 sticky bottom-0 bg-bg-secondary"
     >
       <button
-        class="px-4 py-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
+        class="btn btn-ghost disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={close}
       >
         Cancel
       </button>
       <button
-        class="px-6 py-2 bg-accent hover:bg-accent-hover text-accent-contrast text-xs font-bold rounded-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
+        class="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={handleSubmit}
         disabled={!name ||
           credits < 1 ||
@@ -414,7 +414,7 @@
           <CircleNotch size={14} class="animate-spin" weight="duotone" />
           Creating...
         {:else}
-          <Check size={14} weight="fill" />
+          <Check size={14}  />
           Create Pack
         {/if}
       </button>
