@@ -617,7 +617,8 @@
                       ></pre>
                   </div>
                   <p class="mt-2 text-[11px] text-text-dim leading-relaxed">
-                    Initialize `owo.config.ts` directly from your dashboard setup.
+                    Initialize `owo.config.ts` directly from your dashboard
+                    setup.
                   </p>
                 </div>
 

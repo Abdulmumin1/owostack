@@ -33,7 +33,7 @@
           >Blog</a
         >
         <a
-          href="/docs"
+          href="https://docs.owostack.com"
           class="hidden transition-colors hover:text-text-primary sm:inline"
           >Docs</a
         >
