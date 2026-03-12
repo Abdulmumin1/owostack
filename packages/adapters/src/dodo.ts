@@ -222,6 +222,7 @@ class DodoClient {
       status: string;
       product_id?: string;
       created_at?: string;
+      previous_billing_date?: string;
       next_billing_date?: string;
       cancel_at_next_billing_date?: boolean;
       customer?: { customer_id: string; email: string; name?: string };
@@ -353,6 +354,36 @@ function mapInterval(interval: string): {
       return { intervalType: "Day", count: 1 };
     default:
       return { intervalType: "Month", count: 1 };
+  }
+}
+
+function getDodoSubscriptionStartDate(
+  source: Record<string, any> | undefined,
+): string | undefined {
+  return source?.previous_billing_date || source?.created_at || undefined;
+}
+
+function mapDodoSubscriptionWebhookType(
+  status: string | undefined,
+  cancelAtNextBillingDate: boolean | undefined,
+):
+  | "subscription.active"
+  | "subscription.not_renew"
+  | "subscription.past_due"
+  | "subscription.canceled"
+  | "charge.failed" {
+  if (cancelAtNextBillingDate) return "subscription.not_renew";
+
+  switch ((status || "").toLowerCase()) {
+    case "on_hold":
+      return "subscription.past_due";
+    case "cancelled":
+    case "expired":
+      return "subscription.canceled";
+    case "failed":
+      return "charge.failed";
+    default:
+      return "subscription.active";
   }
 }
 
@@ -800,7 +831,7 @@ export const dodoAdapter: ProviderAdapter = {
       id: sub.subscription_id,
       status,
       planCode: sub.product_id,
-      startDate: sub.created_at,
+      startDate: sub.previous_billing_date || sub.created_at,
       nextPaymentDate: sub.next_billing_date,
       trialEndDate: undefined, // Dodo doesn't expose trial_end in their API
       cancelToken: undefined, // Dodo doesn't use cancel tokens
@@ -955,7 +986,7 @@ export const dodoAdapter: ProviderAdapter = {
             providerSubscriptionId: data.subscription_id || "",
             status: "active",
             planCode: data.product_id,
-            startDate: data.created_at,
+            startDate: getDodoSubscriptionStartDate(data),
             nextPaymentDate: data.next_billing_date,
             trialEndDate,
           },
@@ -974,6 +1005,7 @@ export const dodoAdapter: ProviderAdapter = {
             providerCode: data.subscription_id || "",
             providerSubscriptionId: data.subscription_id || "",
             status: "active",
+            startDate: getDodoSubscriptionStartDate(data),
             nextPaymentDate: data.next_billing_date,
           },
           payment: {
@@ -1042,6 +1074,7 @@ export const dodoAdapter: ProviderAdapter = {
             providerSubscriptionId: data.subscription_id || "",
             status: "active",
             planCode: data.product_id,
+            startDate: getDodoSubscriptionStartDate(data),
             nextPaymentDate: data.next_billing_date,
           },
           plan: data.product_id
@@ -1049,21 +1082,28 @@ export const dodoAdapter: ProviderAdapter = {
             : undefined,
         });
 
-      case "subscription.updated":
+      case "subscription.updated": {
+        const normalizedType = mapDodoSubscriptionWebhookType(
+          data.status,
+          data.cancel_at_next_billing_date,
+        );
+
         return Result.ok({
           ...base,
-          type: "subscription.active",
+          type: normalizedType,
           subscription: {
             providerCode: data.subscription_id || "",
             providerSubscriptionId: data.subscription_id || "",
             status: data.status || "active",
             planCode: data.product_id,
+            startDate: getDodoSubscriptionStartDate(data),
             nextPaymentDate: data.next_billing_date,
           },
           plan: data.product_id
             ? { providerPlanCode: data.product_id }
             : undefined,
         });
+      }
 
       // -----------------------------------------------------------------------
       // Payment lifecycle events (non-terminal)

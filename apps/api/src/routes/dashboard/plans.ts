@@ -97,6 +97,25 @@ function zodErrorToResponse(zodError: {
   );
 }
 
+function sanitizeOneTimePlanFlags<
+  T extends {
+    billingType?: string | null;
+    trialDays?: number;
+    trialCardRequired?: boolean;
+    autoEnable?: boolean;
+  },
+>(data: T, billingTypeOverride?: string | null): T {
+  const billingType = billingTypeOverride ?? data.billingType;
+  if (billingType !== "one_time") return data;
+
+  return {
+    ...data,
+    trialDays: 0,
+    trialCardRequired: false,
+    autoEnable: false,
+  };
+}
+
 const createPlanSchema = z.object({
   organizationId: z.string(),
   name: z.string().min(1),
@@ -147,6 +166,7 @@ app.post("/", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
+  const normalizedInput = sanitizeOneTimePlanFlags(parsed.data);
   const {
     name,
     price,
@@ -163,9 +183,9 @@ app.post("/", async (c) => {
     autoEnable,
     planGroup,
     providerId: requestedProviderId,
-  } = parsed.data;
+  } = normalizedInput;
   // Use resolved organization ID from context (middleware resolves slug to UUID)
-  const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
+  const organizationId = c.get("organizationId") ?? normalizedInput.organizationId;
   const db = c.get("db");
 
   // Generate a slug from the name
@@ -335,7 +355,11 @@ app.post("/", async (c) => {
         providerId: providerId || (paystackPlanId ? "paystack" : null),
         providerPlanId: providerPlanId || paystackPlanId,
         metadata:
-          trialUnit === "minutes" ? { trialUnit: "minutes" } : undefined,
+          billingType === "recurring" &&
+          trialDays > 0 &&
+          trialUnit === "minutes"
+            ? { trialUnit: "minutes" }
+            : undefined,
       })
       .returning();
 
@@ -366,7 +390,10 @@ app.get("/", async (c) => {
     },
   });
 
-  return c.json({ success: true, data: plans });
+  return c.json({
+    success: true,
+    data: plans.map((plan) => sanitizeOneTimePlanFlags(plan)),
+  });
 });
 
 app.get("/:id", async (c) => {
@@ -388,7 +415,7 @@ app.get("/:id", async (c) => {
     return c.json({ error: "Plan not found" }, 404);
   }
 
-  return c.json({ success: true, data: plan });
+  return c.json({ success: true, data: sanitizeOneTimePlanFlags(plan) });
 });
 
 app.patch("/:id", async (c) => {
@@ -401,19 +428,28 @@ app.patch("/:id", async (c) => {
   }
 
   const db = c.get("db");
+  const existingPlan = await db.query.plans.findFirst({
+    where: eq(schema.plans.id, id),
+  });
+  if (!existingPlan) {
+    return c.json({ error: "Plan not found" }, 404);
+  }
 
+  const finalBillingType = parsed.data.billingType ?? existingPlan.billingType;
+  const normalizedUpdate = sanitizeOneTimePlanFlags(
+    parsed.data,
+    finalBillingType,
+  );
   // trialUnit is not a DB column — store in metadata
-  const { trialUnit, ...dbFields } = parsed.data;
+  const { trialUnit, ...dbFields } = normalizedUpdate;
 
   try {
     // If trialUnit was provided, merge it into existing metadata
     let metadataUpdate: Record<string, unknown> | undefined;
-    if (trialUnit !== undefined) {
-      const existing = await db.query.plans.findFirst({
-        where: eq(schema.plans.id, id),
-      });
-      const existingMeta =
-        (existing?.metadata as Record<string, unknown>) || {};
+    const existingMeta = (existingPlan.metadata as Record<string, unknown>) || {};
+    if (finalBillingType === "one_time") {
+      metadataUpdate = { ...existingMeta, trialUnit: undefined };
+    } else if (trialUnit !== undefined) {
       metadataUpdate =
         trialUnit === "minutes"
           ? { ...existingMeta, trialUnit: "minutes" }
@@ -445,26 +481,26 @@ app.patch("/:id", async (c) => {
       "description",
     ] as const;
     const hasProviderChange = providerFields.some(
-      (f) => parsed.data[f] !== undefined,
+      (f) => normalizedUpdate[f] !== undefined,
     );
 
     let responsePlan = updated;
 
     if (hasProviderChange && updated.providerPlanId && updated.providerId) {
       // Validate minimum charge amount if price is being updated
-      if (parsed.data.price !== undefined) {
+      if (normalizedUpdate.price !== undefined) {
         const minimumAmount = getMinimumChargeAmount(
           updated.providerId,
-          parsed.data.currency || updated.currency,
+          normalizedUpdate.currency || updated.currency,
         );
 
-        if (minimumAmount > 0 && parsed.data.price < minimumAmount) {
+        if (minimumAmount > 0 && normalizedUpdate.price < minimumAmount) {
           const minDisplay = minimumAmount / 100;
-          const currency = parsed.data.currency || updated.currency;
+          const currency = normalizedUpdate.currency || updated.currency;
           return c.json(
             {
               success: false,
-              error: `Plan price ${parsed.data.price / 100} ${currency} is below the minimum charge amount of ${minDisplay} ${currency} for ${updated.providerId}. Please increase the price or choose a different currency.`,
+              error: `Plan price ${normalizedUpdate.price / 100} ${currency} is below the minimum charge amount of ${minDisplay} ${currency} for ${updated.providerId}. Please increase the price or choose a different currency.`,
             },
             400,
           );

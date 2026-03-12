@@ -17,6 +17,17 @@ const defaultDependencies: ApiPlansDependencies = {
   verifyApiKey,
 };
 
+function normalizeOneTimePlan<T extends { billingType?: string | null }>(
+  plan: T & { trialDays?: number | null; autoEnable?: boolean | null },
+) {
+  const isOneTime = plan.billingType === "one_time";
+  return {
+    ...plan,
+    trialDays: isOneTime ? 0 : (plan.trialDays ?? 0),
+    autoEnable: isOneTime ? false : (plan.autoEnable ?? false),
+  };
+}
+
 export function createApiPlansRoute(
   overrides: Partial<ApiPlansDependencies> = {},
 ) {
@@ -83,55 +94,58 @@ export function createApiPlansRoute(
       );
     }
 
-    const plans = filtered.map((p: any) => ({
-      id: p.id,
-      slug: p.slug,
-      name: p.name,
-      description: p.description || null,
-      price: p.price,
-      currency: p.currency,
-      interval: p.interval,
-      type: p.type,
-      billingType: p.billingType,
-      isAddon: p.isAddon ?? false,
-      planGroup: p.planGroup || null,
-      trialDays: p.trialDays ?? 0,
-      provider: p.providerId || null,
-      autoEnable: p.autoEnable ?? false,
-      features: (p.planFeatures || []).map((pf: any) => {
-        const featureType = pf.feature?.type ?? "metered";
-        const isBoolean = featureType === "boolean";
-        const usageModel = isBoolean ? undefined : pf.usageModel || "included";
-        const overage = isBoolean
-          ? undefined
-          : normalizePlanFeatureOverage(usageModel, pf.overage);
+    const plans = filtered.map((rawPlan: any) => {
+      const p = normalizeOneTimePlan(rawPlan);
+      return {
+        id: p.id,
+        slug: p.slug,
+        name: p.name,
+        description: p.description || null,
+        price: p.price,
+        currency: p.currency,
+        interval: p.interval,
+        type: p.type,
+        billingType: p.billingType,
+        isAddon: p.isAddon ?? false,
+        planGroup: p.planGroup || null,
+        trialDays: p.trialDays,
+        provider: p.providerId || null,
+        autoEnable: p.autoEnable,
+        features: (p.planFeatures || []).map((pf: any) => {
+          const featureType = pf.feature?.type ?? "metered";
+          const isBoolean = featureType === "boolean";
+          const usageModel = isBoolean ? undefined : pf.usageModel || "included";
+          const overage = isBoolean
+            ? undefined
+            : normalizePlanFeatureOverage(usageModel, pf.overage);
 
-        return {
-          slug: pf.feature?.slug ?? pf.featureId,
-          name: pf.feature?.name ?? pf.featureId,
-          type: featureType,
-          meterType: pf.feature?.meterType || "consumable",
-          enabled: isBoolean ? pf.limitValue !== 0 : true,
-          limit: isBoolean
-            ? null
-            : (normalizePlanFeatureLimitValue(
-                usageModel,
-                pf.limitValue ?? null,
-              ) ?? null),
-          resetInterval: isBoolean
-            ? null
-            : normalizePlanFeatureResetInterval(pf.resetInterval || null),
-          unit: pf.feature?.unit || null,
-          usageModel,
-          pricePerUnit: pf.pricePerUnit ?? undefined,
-          billingUnits: pf.billingUnits ?? undefined,
-          ratingModel: pf.ratingModel ?? undefined,
-          tiers: pf.tiers ?? undefined,
-          overage: overage !== "block" ? overage : undefined,
-          overagePrice: pf.overagePrice ?? undefined,
-        };
-      }),
-    }));
+          return {
+            slug: pf.feature?.slug ?? pf.featureId,
+            name: pf.feature?.name ?? pf.featureId,
+            type: featureType,
+            meterType: pf.feature?.meterType || "consumable",
+            enabled: isBoolean ? pf.limitValue !== 0 : true,
+            limit: isBoolean
+              ? null
+              : (normalizePlanFeatureLimitValue(
+                  usageModel,
+                  pf.limitValue ?? null,
+                ) ?? null),
+            resetInterval: isBoolean
+              ? null
+              : normalizePlanFeatureResetInterval(pf.resetInterval || null),
+            unit: pf.feature?.unit || null,
+            usageModel,
+            pricePerUnit: pf.pricePerUnit ?? undefined,
+            billingUnits: pf.billingUnits ?? undefined,
+            ratingModel: pf.ratingModel ?? undefined,
+            tiers: pf.tiers ?? undefined,
+            overage: overage !== "block" ? overage : undefined,
+            overagePrice: pf.overagePrice ?? undefined,
+          };
+        }),
+      };
+    });
 
     return c.json({ success: true, plans });
   });
@@ -159,7 +173,7 @@ export function createApiPlansRoute(
       return c.json({ success: false, error: "Plan not found" }, 404);
     }
 
-    const p = plan as any;
+    const p = normalizeOneTimePlan(plan as any);
     const publicPlan = {
       id: p.id,
       slug: p.slug,
@@ -172,7 +186,7 @@ export function createApiPlansRoute(
       billingType: p.billingType,
       isAddon: p.isAddon ?? false,
       planGroup: p.planGroup || null,
-      trialDays: p.trialDays ?? 0,
+      trialDays: p.trialDays,
       features: (p.planFeatures || []).map((pf: any) => {
         const featureType = pf.feature?.type ?? "metered";
         const isBoolean = featureType === "boolean";

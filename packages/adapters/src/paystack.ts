@@ -65,8 +65,9 @@ function getPaystackSubscriptionSnapshot(data: Record<string, any>) {
     providerCode: invoiceSub?.subscription_code || data.subscription_code || "",
     startDate:
       invoiceSub?.current_period_start ||
-      invoiceSub?.createdAt ||
       data.current_period_start ||
+      data.period_start ||
+      invoiceSub?.createdAt ||
       data.createdAt,
     nextPaymentDate:
       invoiceSub?.next_payment_date ||

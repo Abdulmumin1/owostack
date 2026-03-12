@@ -287,7 +287,16 @@
     open = false;
     if (onClose) onClose();
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && open && !showProviderForm) {
+      e.preventDefault();
+      handleClose();
+    }
+  }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 {#if open}
   <div

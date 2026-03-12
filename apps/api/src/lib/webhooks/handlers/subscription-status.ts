@@ -6,6 +6,10 @@ import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
 import type { WebhookContext } from "../types";
 import { handleSubscriptionCreated } from "./subscription-created";
 import { safeParseDate } from "../types";
+import {
+  resolveSubscriptionEventCustomer,
+  resolveSubscriptionEventPlan,
+} from "./subscription-resolution";
 
 export type SubscriptionStatusDependencies = {
   provisionEntitlements: typeof provisionEntitlements;
@@ -19,6 +23,57 @@ export const subscriptionStatusDependencies: SubscriptionStatusDependencies = {
 
 // Note: We no longer enforce a maximum trial duration here.
 // Trial dates are validated at creation time in charge-success.ts.
+
+async function recoverSubscriptionForStatusEvent(
+  ctx: WebhookContext,
+): Promise<any | null> {
+  const { db, organizationId, event } = ctx;
+  const metadataSubscriptionId =
+    typeof event.metadata.subscription_id === "string"
+      ? event.metadata.subscription_id
+      : null;
+
+  if (metadataSubscriptionId) {
+    const subById = await db.query.subscriptions.findFirst({
+      where: eq(schema.subscriptions.id, metadataSubscriptionId),
+    });
+    if (subById) {
+      console.log(
+        `[WEBHOOK] Recovered sub ${subById.id} via metadata.subscription_id=${metadataSubscriptionId}`,
+      );
+      return subById;
+    }
+  }
+
+  const dbCustomer = await resolveSubscriptionEventCustomer(ctx, {
+    logContext: `subscription.${event.subscription?.status || "status"}`,
+  });
+  if (!dbCustomer) return null;
+
+  const dbPlan = await resolveSubscriptionEventPlan(ctx);
+  if (!dbPlan) return null;
+
+  const recoveredSub = await db.query.subscriptions.findFirst({
+    where: and(
+      eq(schema.subscriptions.customerId, dbCustomer.id),
+      eq(schema.subscriptions.planId, dbPlan.id),
+      or(
+        eq(schema.subscriptions.status, "trialing"),
+        eq(schema.subscriptions.status, "active"),
+        eq(schema.subscriptions.status, "pending"),
+        eq(schema.subscriptions.status, "pending_cancel"),
+        eq(schema.subscriptions.status, "past_due"),
+      ),
+    ),
+  });
+
+  if (!recoveredSub) return null;
+
+  console.log(
+    `[WEBHOOK] Recovered sub ${recoveredSub.id} via customer=${dbCustomer.id}, plan=${dbPlan.id}, org=${organizationId}`,
+  );
+  return recoveredSub;
+}
 
 export function handleSubscriptionStatus(status: string) {
   return async (ctx: WebhookContext): Promise<void> => {
@@ -54,12 +109,16 @@ export function handleSubscriptionStatus(status: string) {
     }
 
     // Fetch sub once — needed for cancelAt (pending_cancel) and cache invalidation
-    const sub = await db.query.subscriptions.findFirst({
+    let sub = await db.query.subscriptions.findFirst({
       where: or(
         eq(schema.subscriptions.paystackSubscriptionCode, subscriptionCode),
         eq(schema.subscriptions.providerSubscriptionCode, subscriptionCode),
       ),
     });
+
+    if (!sub) {
+      sub = await recoverSubscriptionForStatusEvent(ctx);
+    }
 
     if (!sub) {
       // For providers like Dodo where subscriptions are created via checkout,
@@ -76,6 +135,21 @@ export function handleSubscriptionStatus(status: string) {
     }
 
     const now = Date.now();
+    const providerCodeUpdates: Record<string, unknown> = subscriptionCode
+      ? {
+          providerSubscriptionId:
+            event.subscription?.providerSubscriptionId || subscriptionCode,
+          providerSubscriptionCode: subscriptionCode,
+          paystackSubscriptionId:
+            event.provider === "paystack"
+              ? event.subscription?.providerSubscriptionId || subscriptionCode
+              : sub.paystackSubscriptionId,
+          paystackSubscriptionCode:
+            event.provider === "paystack"
+              ? subscriptionCode
+              : sub.paystackSubscriptionCode,
+        }
+      : {};
 
     // Guard: if the subscription is currently trialing and the provider reports
     // "active" (e.g. Dodo sends subscription.active even during trial period),
@@ -88,6 +162,23 @@ export function handleSubscriptionStatus(status: string) {
       // Check if trial end date is valid (positive number) and in the future
       const trialEndValid = typeof trialEnd === "number" && trialEnd > 0;
       if (trialEndValid && trialEnd > now) {
+        await db
+          .update(schema.subscriptions)
+          .set({
+            ...providerCodeUpdates,
+            providerId: event.provider,
+            updatedAt: now,
+          })
+          .where(eq(schema.subscriptions.id, sub.id));
+
+        if (cache) {
+          try {
+            await cache.invalidateSubscriptions(organizationId, sub.customerId);
+          } catch (e) {
+            console.warn(`[WEBHOOK] Status change cache invalidation failed:`, e);
+          }
+        }
+
         console.log(
           `[WEBHOOK] Preserving trialing status for sub=${sub.id} (trial ends ${new Date(trialEnd).toISOString()})`,
         );
@@ -102,6 +193,7 @@ export function handleSubscriptionStatus(status: string) {
       status,
       providerId: event.provider,
       updatedAt: now,
+      ...providerCodeUpdates,
     };
     const renewalSetupRecovery =
       status === "active"

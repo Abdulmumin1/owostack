@@ -149,4 +149,74 @@ describe("GET /api/v1/plans", () => {
       }),
     ]);
   });
+
+  it("normalizes one-time plans to hide trial and auto-enable flags", async () => {
+    mockDb.query.plans.findMany.mockResolvedValue([
+      {
+        id: "plan_one_time_1",
+        slug: "credit-pack",
+        name: "Credit Pack",
+        description: null,
+        price: 5000,
+        currency: "USD",
+        interval: "monthly",
+        type: "paid",
+        billingType: "one_time",
+        isAddon: false,
+        planGroup: null,
+        trialDays: 14,
+        providerId: "stripe",
+        autoEnable: true,
+        planFeatures: [],
+      },
+    ]);
+
+    const res = await app.request("/", {
+      method: "GET",
+      headers: {
+        Authorization: "Bearer owo_sk_test",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.plans[0].billingType).toBe("one_time");
+    expect(body.plans[0].trialDays).toBe(0);
+    expect(body.plans[0].autoEnable).toBe(false);
+  });
+
+  it("normalizes one-time plan flags on slug lookup", async () => {
+    mockDb.query.plans.findFirst.mockResolvedValue({
+      id: "plan_one_time_2",
+      slug: "credit-pack",
+      name: "Credit Pack",
+      description: null,
+      price: 5000,
+      currency: "USD",
+      interval: "monthly",
+      type: "paid",
+      billingType: "one_time",
+      isAddon: false,
+      planGroup: null,
+      trialDays: 30,
+      providerId: "stripe",
+      autoEnable: true,
+      planFeatures: [],
+    });
+
+    const res = await app.request("/credit-pack", {
+      method: "GET",
+      headers: {
+        Authorization: "Bearer owo_sk_test",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.plan.billingType).toBe("one_time");
+    expect(body.plan.trialDays).toBe(0);
+    expect(body.plan.autoEnable).toBeUndefined();
+  });
 });

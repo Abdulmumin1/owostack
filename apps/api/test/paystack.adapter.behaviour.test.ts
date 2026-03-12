@@ -68,4 +68,41 @@ describe("Paystack adapter behavior", () => {
     expect(parsed.value.type).toBe("charge.failed");
     expect(parsed.value.subscription?.providerCode).toBe("SUB_fail_1");
   });
+
+  it("uses invoice period_start when Paystack omits current_period_start in renewal payloads", () => {
+    const parsed = paystackAdapter.parseWebhookEvent({
+      payload: {
+        event: "charge.success",
+        data: {
+          amount: 3000000,
+          currency: "NGN",
+          reference: "renew_ref_2",
+          paid_at: "2026-03-06T17:00:15.000Z",
+          period_start: "2026-03-06T00:00:00.000Z",
+          customer: {
+            email: "customerx12@example.com",
+            customer_code: "CUS_41uuf7daarvgkkw",
+          },
+          subscription: {
+            subscription_code: "SUB_renew_2",
+            next_payment_date: "2026-04-06T17:00:15.000Z",
+            plan: {
+              plan_code: "PLN_mfm3iy6fyattbda",
+            },
+          },
+        },
+      },
+    });
+
+    expect(parsed.isOk()).toBe(true);
+    if (parsed.isErr()) return;
+
+    expect(parsed.value.subscription?.providerCode).toBe("SUB_renew_2");
+    expect(parsed.value.subscription?.startDate).toBe(
+      "2026-03-06T00:00:00.000Z",
+    );
+    expect(parsed.value.subscription?.nextPaymentDate).toBe(
+      "2026-04-06T17:00:15.000Z",
+    );
+  });
 });

@@ -163,7 +163,7 @@
         Cancel
       </button>
       <button
-        class="bg-accent hover:bg-accent-hover text-accent-contrast text-xs font-bold px-6 py-2 rounded-md uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-2"
+        class="btn btn-primary"
         onclick={handleSubmit}
         disabled={!name || isSaving}
       >

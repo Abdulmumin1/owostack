@@ -3,12 +3,13 @@ import { eq, and, or } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
 import { upsertPaymentMethod } from "../../payment-methods";
 import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
-import {
-  isCustomerResolutionConflictError,
-  resolveCustomerByEmail,
-} from "../../customer-resolution";
 import type { WebhookContext } from "../types";
 import { safeParseDate } from "../types";
+import {
+  getSubscriptionEventPlanCode,
+  resolveSubscriptionEventCustomer,
+  resolveSubscriptionEventPlan,
+} from "./subscription-resolution";
 
 export type SubscriptionCreatedDependencies = {
   provisionEntitlements: typeof provisionEntitlements;
@@ -38,51 +39,51 @@ export async function handleSubscriptionCreated(
 ): Promise<void> {
   const { db, organizationId, event } = ctx;
   const providerCode = event.subscription?.providerCode;
-  const planCode = event.plan?.providerPlanCode;
+  const planCode = getSubscriptionEventPlanCode(ctx);
 
-  if (!event.customer.email) {
+  // Find or create customer scoped to this organization
+  let dbCustomer = await resolveSubscriptionEventCustomer(ctx, {
+    allowCreate: true,
+    logContext: "subscription.created",
+  });
+  if (!dbCustomer) {
     console.warn(
-      `[WEBHOOK] subscription.created/active with no customer email — skipping. provider=${event.provider}`,
+      `[WEBHOOK] subscription.created/active could not resolve customer — skipping. provider=${event.provider}`,
     );
     return;
   }
 
-  // Find or create customer scoped to this organization
-  const email = event.customer.email.toLowerCase();
-  let dbCustomer = null;
-  try {
-    const resolvedCustomer = await resolveCustomerByEmail({
-      db,
-      organizationId,
-      email,
-    });
-    dbCustomer = resolvedCustomer?.customer ?? null;
-  } catch (error) {
-    if (isCustomerResolutionConflictError(error)) {
-      console.warn(
-        `[WEBHOOK] subscription.created resolution conflict: ${error.message}`,
-      );
-      return;
-    }
-    throw error;
-  }
-
-  if (!dbCustomer) {
-    const [newCustomer] = await db
-      .insert(schema.customers)
-      .values({
-        id: crypto.randomUUID(),
-        organizationId,
-        email,
+  const shouldSyncProviderCustomer =
+    !!event.customer.providerCustomerId &&
+    (dbCustomer.providerId !== event.provider ||
+      dbCustomer.providerCustomerId !== event.customer.providerCustomerId ||
+      (event.provider === "paystack" &&
+        dbCustomer.paystackCustomerId !== event.customer.providerCustomerId));
+  if (shouldSyncProviderCustomer) {
+    await db
+      .update(schema.customers)
+      .set({
         providerId: event.provider,
-        providerCustomerId: event.customer.providerCustomerId,
+        providerCustomerId:
+          event.customer.providerCustomerId || dbCustomer.providerCustomerId,
         paystackCustomerId:
           event.provider === "paystack"
-            ? event.customer.providerCustomerId
-            : null,
+            ? event.customer.providerCustomerId || dbCustomer.paystackCustomerId
+            : dbCustomer.paystackCustomerId,
+        updatedAt: Date.now(),
       })
-      .returning();
-    dbCustomer = newCustomer;
+      .where(eq(schema.customers.id, dbCustomer.id));
+
+    dbCustomer = {
+      ...dbCustomer,
+      providerId: event.provider,
+      providerCustomerId:
+        event.customer.providerCustomerId || dbCustomer.providerCustomerId,
+      paystackCustomerId:
+        event.provider === "paystack"
+          ? event.customer.providerCustomerId || dbCustomer.paystackCustomerId
+          : dbCustomer.paystackCustomerId,
+    };
   }
 
   if (ctx.cache) {
@@ -127,7 +128,12 @@ export async function handleSubscriptionCreated(
       const existingSubForCustomer = await db.query.subscriptions.findFirst({
         where: and(
           eq(schema.subscriptions.customerId, dbCustomer.id),
-          eq(schema.subscriptions.status, "active"),
+          or(
+            eq(schema.subscriptions.status, "active"),
+            eq(schema.subscriptions.status, "trialing"),
+            eq(schema.subscriptions.status, "pending_cancel"),
+            eq(schema.subscriptions.status, "past_due"),
+          ),
         ),
       });
       if (existingSubForCustomer) {
@@ -162,15 +168,7 @@ export async function handleSubscriptionCreated(
     return;
   }
 
-  const dbPlan = await db.query.plans.findFirst({
-    where: and(
-      or(
-        eq(schema.plans.paystackPlanId, planCode),
-        eq(schema.plans.providerPlanId, planCode),
-      ),
-      eq(schema.plans.organizationId, organizationId),
-    ),
-  });
+  const dbPlan = await resolveSubscriptionEventPlan(ctx);
 
   if (!dbPlan) {
     // Plan not found — try to link to existing active sub
@@ -178,7 +176,12 @@ export async function handleSubscriptionCreated(
       const existingSubForCustomer = await db.query.subscriptions.findFirst({
         where: and(
           eq(schema.subscriptions.customerId, dbCustomer.id),
-          eq(schema.subscriptions.status, "active"),
+          or(
+            eq(schema.subscriptions.status, "active"),
+            eq(schema.subscriptions.status, "trialing"),
+            eq(schema.subscriptions.status, "pending_cancel"),
+            eq(schema.subscriptions.status, "past_due"),
+          ),
         ),
       });
       if (existingSubForCustomer) {

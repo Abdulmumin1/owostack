@@ -383,6 +383,50 @@ describe("Stripe adapter behavior", () => {
     expect(parsed.value.plan?.providerPlanCode).toBe("price_monthly_123");
   });
 
+  it("maps subscription renewal dates from subscription items when Stripe omits top-level current_period_* fields", () => {
+    const parsed = stripeAdapter.parseWebhookEvent({
+      payload: {
+        type: "customer.subscription.updated",
+        data: {
+          object: {
+            id: "sub_stripe_trial_123",
+            customer: "cus_stripe_123",
+            status: "active",
+            trial_end: 1773246029,
+            billing_cycle_anchor: 1773246029,
+            items: {
+              data: [
+                {
+                  id: "si_123",
+                  current_period_start: 1773246029,
+                  current_period_end: 1775924429,
+                  price: { id: "price_monthly_123" },
+                },
+              ],
+            },
+            metadata: {
+              plan_id: "plan_local_1",
+            },
+          },
+        },
+      },
+    });
+
+    expect(parsed.isOk()).toBe(true);
+    if (parsed.isErr()) return;
+
+    expect(parsed.value.type).toBe("subscription.active");
+    expect(parsed.value.subscription?.startDate).toBe(
+      "2026-03-11T16:20:29.000Z",
+    );
+    expect(parsed.value.subscription?.nextPaymentDate).toBe(
+      "2026-04-11T16:20:29.000Z",
+    );
+    expect(parsed.value.subscription?.trialEndDate).toBe(
+      "2026-03-11T16:20:29.000Z",
+    );
+  });
+
   it("maps payment_method.attached to customer.identified with reusable card metadata", () => {
     const parsed = stripeAdapter.parseWebhookEvent({
       payload: {

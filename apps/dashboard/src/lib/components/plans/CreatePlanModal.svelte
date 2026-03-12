@@ -152,6 +152,14 @@
       .replace(/^-|-$/g, ""),
   );
 
+  $effect(() => {
+    if (planType === "paid" && billingType === "one_time") {
+      hasTrial = false;
+      trialCardRequired = false;
+      autoEnable = false;
+    }
+  });
+
   async function handleSubmit() {
     if (!planName) {
       error = "Plan name is required";
@@ -184,6 +192,9 @@
         }
       }
 
+      const isOneTimePlan =
+        planType === "paid" && billingType === "one_time";
+
       const planRes = await apiFetch("/api/dashboard/plans", {
         method: "POST",
         body: JSON.stringify({
@@ -195,11 +206,13 @@
           type: planType,
           billingModel,
           billingType,
-          trialDays: finalTrialDays,
+          trialDays: isOneTimePlan ? 0 : finalTrialDays,
           trialUnit: finalTrialUnit,
-          trialCardRequired: hasTrial && trialCardRequired,
+          trialCardRequired: isOneTimePlan
+            ? false
+            : hasTrial && trialCardRequired,
           isAddon,
-          autoEnable,
+          autoEnable: isOneTimePlan ? false : autoEnable,
           planGroup: planGroup || undefined,
           providerId: selectedProviderId || undefined,
         }),
@@ -366,7 +379,7 @@
             </div>
             {#if planType === "free"}
               <div class="absolute top-3 right-3" transition:fade={{ duration: 150 }}>
-                <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast shadow-sm">
+                <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast">
                   <Check size={10} weight="bold" />
                 </div>
               </div>
@@ -397,7 +410,7 @@
             </div>
             {#if planType === "paid"}
               <div class="absolute top-3 right-3" transition:fade={{ duration: 150 }}>
-                <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast shadow-sm">
+                <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast">
                   <Check size={10} weight="bold" />
                 </div>
               </div>
@@ -562,9 +575,9 @@
       {/if}
 
       <!-- Options -->
-      <div class="space-y-3 pt-2">
+      <div class="space-y-3">
         <!-- Free Trial (only for paid plans) -->
-        {#if planType === "paid"}
+        {#if planType === "paid" && billingType === "recurring"}
           <div>
             <label
               class="flex items-center gap-2 cursor-pointer group select-none"
@@ -645,7 +658,7 @@
         {/if}
 
         <!-- Plan Group -->
-        <div class="mt-4">
+        <div class="">
           <label
             class="block text-xs font-medium text-text-dim mb-1.5"
             for="planGroup"
@@ -673,33 +686,35 @@
         </div>
 
         <!-- Auto-enable Plan -->
-        <div class="mt-4">
-          <label
-            class="flex items-center gap-2 cursor-pointer group select-none"
-          >
-            <div
-              class="relative w-4 h-4 rounded border flex items-center justify-center transition-colors {autoEnable
-                ? 'bg-accent border-accent'
-                : 'border-border group-hover:border-text-dim'}"
+        {#if planType !== "paid" || billingType === "recurring"}
+          <div class="mt-4">
+            <label
+              class="flex items-center gap-2 cursor-pointer group select-none"
             >
-              {#if autoEnable}
-                <Check size={10} class="text-accent-contrast" weight="fill" />
-              {/if}
-            </div>
-            <input type="checkbox" bind:checked={autoEnable} class="hidden" />
-            <span class="text-xs text-text-primary font-medium"
-              >Auto-enable plan</span
-            >
-          </label>
-          <p class="text-[10px] text-text-dim pl-6">
-            {planType === "free"
-              ? "New customers will be subscribed to this plan automatically"
-              : "New customers will receive a pending subscription awaiting payment"}
-          </p>
-        </div>
+              <div
+                class="relative w-4 h-4 rounded border flex items-center justify-center transition-colors {autoEnable
+                  ? 'bg-accent border-accent'
+                  : 'border-border group-hover:border-text-dim'}"
+              >
+                {#if autoEnable}
+                  <Check size={10} class="text-accent-contrast" weight="fill" />
+                {/if}
+              </div>
+              <input type="checkbox" bind:checked={autoEnable} class="hidden" />
+              <span class="text-xs text-text-primary font-medium"
+                >Auto-enable plan</span
+              >
+            </label>
+            <p class="text-[10px] text-text-dim pl-6">
+              {planType === "free"
+                ? "New customers will be subscribed to this plan automatically"
+                : "New customers will receive a pending subscription awaiting payment"}
+            </p>
+          </div>
+        {/if}
 
         <!-- Feature Selection -->
-        <div class="pt-4 border-t border-border">
+        <div class="pt-4">
           <button
             class="w-full flex items-center justify-between text-left focus:outline-none mb-2"
             onclick={() => (isFeaturesExpanded = !isFeaturesExpanded)}

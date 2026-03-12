@@ -86,8 +86,12 @@ interface WebhookEventData {
   };
   subscription?: {
     providerCode: string;
+    providerSubscriptionId?: string;
+    status?: string;
     startDate?: string;
     nextPaymentDate?: string;
+    trialEndDate?: string;
+    planCode?: string;
   };
   plan?: { providerPlanCode: string };
   checkout?: { lineItems: { quantity: number }[] };
@@ -403,7 +407,9 @@ describe("Webhook handlers behavior", () => {
 
     await handleSubscriptionCreated(makeCtx(db, event));
 
-    const updatePayload = updateSetMock.mock.calls[0]?.[0];
+    const updatePayload = updateSetMock.mock.calls.find(
+      (call) => call[0].providerSubscriptionCode === "sub_provider_1",
+    )?.[0];
     expect(updatePayload.providerSubscriptionCode).toBe("sub_provider_1");
     expect(updatePayload.paystackSubscriptionCode).toBe("sub_provider_1");
     expect(provisionEntitlementsMock).not.toHaveBeenCalled();
@@ -507,6 +513,194 @@ describe("Webhook handlers behavior", () => {
     expect(updatePayload.currentPeriodEnd).toBe(
       new Date("2026-04-06T17:00:15.000Z").getTime(),
     );
+  });
+
+  it("subscription.active recovers a trial subscription by customer and plan when the provider code changed", async () => {
+    const { db, insertValuesMock, updateSetMock } = createDbMock();
+
+    db.query.subscriptions.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "sub_trial_1",
+        customerId: "cus_1",
+        planId: "plan_1",
+        status: "trialing",
+        currentPeriodEnd: Date.now() - 60_000,
+        metadata: {},
+      });
+    db.query.customers.findFirst
+      .mockResolvedValueOnce({
+        id: "cus_1",
+        email: "recover@example.com",
+        organizationId: "org_1",
+        providerCustomerId: "cus_stripe_123",
+      })
+      .mockResolvedValueOnce(null);
+    db.query.plans.findFirst.mockResolvedValue({
+      id: "plan_1",
+      organizationId: "org_1",
+      providerPlanId: "price_trial_1",
+    });
+
+    const event = {
+      type: "subscription.active",
+      provider: "stripe",
+      customer: {
+        email: "",
+        providerCustomerId: "cus_stripe_123",
+      },
+      subscription: {
+        providerCode: "sub_live_123",
+        providerSubscriptionId: "sub_live_123",
+        status: "active",
+        startDate: "2026-03-11T16:20:29.000Z",
+        nextPaymentDate: "2026-04-11T16:20:29.000Z",
+        trialEndDate: "2026-03-11T16:20:29.000Z",
+      },
+      plan: {
+        providerPlanCode: "price_trial_1",
+      },
+      metadata: {
+        customer_email: "recover@example.com",
+      },
+      raw: { event: "customer.subscription.updated" },
+    };
+
+    await handleSubscriptionStatus("active")(makeCtx(db, event));
+
+    expect(insertValuesMock).not.toHaveBeenCalled();
+    const updatePayload = updateSetMock.mock.calls.find(
+      (call) => call[0].status === "active",
+    )?.[0];
+    expect(updatePayload.providerSubscriptionCode).toBe("sub_live_123");
+    expect(updatePayload.currentPeriodStart).toBe(
+      new Date("2026-03-11T16:20:29.000Z").getTime(),
+    );
+    expect(updatePayload.currentPeriodEnd).toBe(
+      new Date("2026-04-11T16:20:29.000Z").getTime(),
+    );
+  });
+
+  it("subscription.active preserves trialing during an active trial but still links the provider code", async () => {
+    const { db, insertValuesMock, updateSetMock } = createDbMock();
+
+    db.query.subscriptions.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "sub_trial_2",
+        customerId: "cus_1",
+        planId: "plan_1",
+        status: "trialing",
+        currentPeriodEnd: Date.now() + 60_000,
+        providerSubscriptionCode: "trial-temp-1",
+        metadata: {},
+      });
+    db.query.customers.findFirst
+      .mockResolvedValueOnce({
+        id: "cus_1",
+        email: "recover@example.com",
+        organizationId: "org_1",
+        providerCustomerId: "cus_stripe_123",
+      })
+      .mockResolvedValueOnce(null);
+    db.query.plans.findFirst.mockResolvedValue({
+      id: "plan_1",
+      organizationId: "org_1",
+      providerPlanId: "price_trial_1",
+    });
+
+    const event = {
+      type: "subscription.active",
+      provider: "stripe",
+      customer: {
+        email: "",
+        providerCustomerId: "cus_stripe_123",
+      },
+      subscription: {
+        providerCode: "sub_live_456",
+        providerSubscriptionId: "sub_live_456",
+        status: "active",
+        startDate: "2026-03-11T16:20:29.000Z",
+        nextPaymentDate: "2026-04-11T16:20:29.000Z",
+      },
+      plan: {
+        providerPlanCode: "price_trial_1",
+      },
+      metadata: {
+        customer_email: "recover@example.com",
+      },
+      raw: { event: "customer.subscription.updated" },
+    };
+
+    await handleSubscriptionStatus("active")(makeCtx(db, event));
+
+    expect(insertValuesMock).not.toHaveBeenCalled();
+    const updatePayload = updateSetMock.mock.calls[0]?.[0];
+    expect(updatePayload.providerSubscriptionCode).toBe("sub_live_456");
+    expect(updatePayload.status).toBeUndefined();
+    expect(updatePayload.currentPeriodEnd).toBeUndefined();
+  });
+
+  it("subscription.created resolves customers from metadata when customer.email is missing", async () => {
+    const { db, insertValuesMock, updateSetMock } = createDbMock();
+
+    db.query.customers.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "cus_2",
+        email: "buyer@example.com",
+        organizationId: "org_1",
+        providerId: null,
+        providerCustomerId: null,
+        paystackCustomerId: null,
+      })
+      .mockResolvedValueOnce(null);
+    db.query.plans.findFirst.mockResolvedValue({
+      id: "plan_db_2",
+      organizationId: "org_1",
+      providerPlanId: "price_live_1",
+    });
+    db.query.subscriptions.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+
+    const event = {
+      type: "subscription.created",
+      provider: "stripe",
+      customer: {
+        email: "",
+        providerCustomerId: "cus_stripe_123",
+      },
+      subscription: {
+        providerCode: "sub_created_1",
+        providerSubscriptionId: "sub_created_1",
+        startDate: "2026-03-12T10:00:00.000Z",
+        nextPaymentDate: "2026-04-12T10:00:00.000Z",
+      },
+      plan: {
+        providerPlanCode: "price_live_1",
+      },
+      metadata: {
+        customer_email: "buyer@example.com",
+      },
+      raw: { event: "customer.subscription.created" },
+    };
+
+    await handleSubscriptionCreated(makeCtx(db, event));
+
+    expect(
+      updateSetMock.mock.calls.some(
+        (call) =>
+          call[0].providerCustomerId === "cus_stripe_123" &&
+          call[0].providerId === "stripe",
+      ),
+    ).toBe(true);
+
+    const insertPayload = insertValuesMock.mock.calls[0]?.[0]?.[0];
+    expect(insertPayload.customerId).toBe("cus_2");
+    expect(insertPayload.planId).toBe("plan_db_2");
+    expect(insertPayload.providerSubscriptionCode).toBe("sub_created_1");
+    expect(insertPayload.status).toBe("active");
   });
 
   it("refund.success partial refund records refund metadata without revoking access", async () => {
