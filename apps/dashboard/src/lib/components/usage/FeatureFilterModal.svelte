@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MagnifyingGlass, Check, CaretDown, Cube } from "phosphor-svelte";
+  import { MagnifyingGlass, Check, Cube, Lightning } from "phosphor-svelte";
   import Modal from "$lib/components/ui/Modal.svelte";
 
   let {
@@ -7,16 +7,16 @@
     features = [],
     selectedId = $bindable(""),
     onSelect,
-  } = $props<{
+  }: {
     open: boolean;
-    features: Array<{ id: string; name: string }>;
+    features: Array<{ id: string; name: string; type?: string }>;
     selectedId: string;
-    onSelect?: (id: string) => void;
-  }>();
+    onSelect?: (id: string, name: string) => void;
+  } = $props();
 
   let searchQuery = $state("");
-
   let wasOpen = $state(false);
+
   $effect(() => {
     if (open && !wasOpen) {
       searchQuery = "";
@@ -28,7 +28,7 @@
     features.filter((f) => {
       const q = searchQuery.toLowerCase();
       return f.name.toLowerCase().includes(q) || f.id.toLowerCase().includes(q);
-    }),
+    })
   );
 
   function selectFeature(feature: { id: string; name: string } | null) {
@@ -41,89 +41,100 @@
     }
     open = false;
   }
+
+  function getFeatureIcon(type?: string) {
+    return type === "metered" ? Lightning : Cube;
+  }
 </script>
 
 <Modal
   bind:open
   title="Select Feature"
-  width="max-w-md"
+  width="max-w-sm"
   onclose={() => (open = false)}
 >
-  <div class="px-5 py-3 border-b border-border bg-bg-card sticky top-0 z-10">
-    <div class="input-icon-wrapper w-full">
-      <MagnifyingGlass size={14} class="input-icon-left text-text-dim" />
+  <div class="p-3 border-b border-border bg-bg-secondary/30">
+    <div class="relative">
+      <MagnifyingGlass
+        size={14}
+        class="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim"
+      />
       <input
         type="text"
-        placeholder="Filter features..."
+        placeholder="Search features..."
         bind:value={searchQuery}
-        class="input input-has-icon-left"
+        class="w-full bg-bg-card border border-border rounded-lg pl-9 pr-3 py-2 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors"
       />
     </div>
   </div>
 
-  <div class="flex flex-col min-h-[360px] max-h-[50vh] overflow-y-auto">
-    <!-- All Features -->
+  <div class="flex flex-col max-h-[60vh] overflow-y-auto">
+    <!-- All Features Option -->
     <button
-      class="w-full flex items-center gap-3 px-5 py-3 border-b border-border border-b-2 hover:bg-bg-secondary transition-colors text-left {selectedId ===
+      class="group flex items-center gap-2.5 px-3 py-2.5 hover:bg-bg-secondary/50 transition-all text-left border-b border-border/50 {selectedId ===
       ''
-        ? 'bg-bg-secondary sticky top-0 z-20 shadow-sm'
+        ? 'bg-accent/5'
         : ''}"
       onclick={() => selectFeature(null)}
     >
       <div
-        class="w-8 h-8 rounded-md bg-bg-tertiary flex items-center justify-center border border-border"
+        class="w-7 h-7 rounded-lg bg-bg-tertiary border border-border flex items-center justify-center shrink-0 transition-colors group-hover:border-accent/30"
       >
-        <Cube size={16} class="text-text-dim" weight="duotone" />
+        <Cube size={14} class="text-text-dim" weight="duotone" />
       </div>
-      <div class="flex-1">
-        <div class="text-sm font-bold text-text-primary">All Features</div>
-        <div
-          class="text-[10px] text-text-dim font-mono uppercase tracking-widest"
-        >
-          Aggregate usage
-        </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-xs font-semibold text-text-primary">All Features</div>
+        <div class="text-[10px] text-text-dim">Aggregate view</div>
       </div>
       {#if selectedId === ""}
-        <Check size={16} class="text-accent" weight="bold" />
+        <div
+          class="w-5 h-5 rounded-full bg-accent flex items-center justify-center shrink-0"
+        >
+          <Check size={10} class="text-accent-contrast" weight="bold" />
+        </div>
       {/if}
     </button>
 
     {#if filteredFeatures.length === 0}
-      <div
-        class="p-12 flex flex-col items-center justify-center text-center flex-1"
-      >
+      <div class="p-8 flex flex-col items-center justify-center text-center">
         <div
-          class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4 rounded-md"
+          class="w-10 h-10 bg-bg-secondary rounded-xl flex items-center justify-center mb-3"
         >
-          <Cube size={24} class="text-text-dim" weight="duotone" />
+          <Cube size={20} class="text-text-dim" weight="duotone" />
         </div>
-        <h3
-          class="text-xs font-bold text-text-primary uppercase tracking-widest mb-1"
-        >
-          No matching features
-        </h3>
-        <p class="text-[10px] text-text-dim uppercase tracking-widest max-w-sm">
-          Try a different search term
+        <p class="text-xs font-medium text-text-primary mb-1">
+          No features found
+        </p>
+        <p class="text-[10px] text-text-dim">
+          {searchQuery ? "Try a different search" : "No features available"}
         </p>
       </div>
     {:else}
-      <div class="flex-1">
-        {#each filteredFeatures as feat}
+      <div class="py-1">
+        {#each filteredFeatures as feat, i (feat.id)}
+          {@const Icon = getFeatureIcon(feat.type)}
           <button
-            class="w-full flex items-center gap-3 px-5 py-3 border-b border-border hover:bg-bg-card-hover transition-colors text-left {selectedId ===
+            class="group flex items-center gap-2.5 px-3 py-2 hover:bg-bg-secondary/50 transition-all text-left w-full {selectedId ===
             feat.id
-              ? 'bg-bg-card-hover'
+              ? 'bg-accent/5'
               : ''}"
             onclick={() => selectFeature(feat)}
           >
-            <!-- Custom feature icon or just cube -->
             <div
-              class="w-8 h-8 rounded-md bg-bg-secondary flex items-center justify-center border border-border shrink-0"
+              class="w-7 h-7 rounded-lg bg-bg-secondary border border-border flex items-center justify-center shrink-0 transition-all group-hover:border-accent/30 group-hover:bg-bg-tertiary"
             >
-              <Cube size={14} class="text-text-secondary" weight="fill" />
+              <Icon
+                size={13}
+                class={selectedId === feat.id
+                  ? "text-accent"
+                  : "text-text-secondary"}
+                weight="fill"
+              />
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-sm font-bold text-text-primary truncate">
+              <div
+                class="text-xs font-medium text-text-primary truncate group-hover:text-accent transition-colors"
+              >
                 {feat.name}
               </div>
               <div class="text-[10px] text-text-dim font-mono truncate">
@@ -131,11 +142,27 @@
               </div>
             </div>
             {#if selectedId === feat.id}
-              <Check size={16} class="text-accent shrink-0" weight="bold" />
+              <div
+                class="w-5 h-5 rounded-full bg-accent flex items-center justify-center shrink-0"
+              >
+                <Check size={10} class="text-accent-contrast" weight="bold" />
+              </div>
+            {:else}
+              <div
+                class="w-5 h-5 rounded-full border border-border shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              ></div>
             {/if}
           </button>
         {/each}
       </div>
     {/if}
+  </div>
+
+  <!-- Quick Stats Footer -->
+  <div class="px-3 py-2 border-t border-border bg-bg-secondary/30">
+    <div class="flex items-center justify-between text-[10px] text-text-dim">
+      <span>{filteredFeatures.length} feature{filteredFeatures.length !== 1 ? 's' : ''}</span>
+      <span class="font-mono">{selectedId ? '1 selected' : 'All selected'}</span>
+    </div>
   </div>
 </Modal>

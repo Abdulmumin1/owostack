@@ -175,7 +175,10 @@ describe("Plans API", () => {
 
     const { default: plansRoute } =
       await import("../src/routes/dashboard/plans");
-    app = createRouteTestApp(plansRoute, { db: mockDb });
+    app = createRouteTestApp(plansRoute, {
+      db: mockDb,
+      organizationId: "org_123",
+    });
   });
 
   it("should create a basic paid plan", async () => {
@@ -504,6 +507,11 @@ describe("Plans API", () => {
     mockDb.update = vi.fn(() => ({
       set: updateSetMock,
     }));
+    mockDb.query.plans.findFirst.mockResolvedValueOnce({
+      id: "plan_patch_2",
+      billingType: "recurring",
+      metadata: {},
+    });
 
     const res = await app.request(
       "/plan_patch_2",
@@ -516,6 +524,69 @@ describe("Plans API", () => {
 
     expect(res.status).toBe(200);
     expect(paystackAdapter.updatePlan).not.toHaveBeenCalled();
+  });
+
+  it("GET normalizes one-time plans to hide trial and auto-enable flags", async () => {
+    mockDb.query.plans.findMany.mockResolvedValueOnce([
+      {
+        id: "plan_one_time_dashboard_1",
+        organizationId: "org_123",
+        name: "Credit Pack",
+        price: 5000,
+        interval: "monthly",
+        currency: "USD",
+        type: "paid",
+        billingModel: "base",
+        billingType: "one_time",
+        slug: "credit-pack",
+        trialDays: 14,
+        trialCardRequired: true,
+        autoEnable: true,
+        subscriptions: [],
+        planFeatures: [],
+      },
+    ]);
+
+    const res = await app.request("/", { method: "GET" }, env);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data[0].billingType).toBe("one_time");
+    expect(body.data[0].trialDays).toBe(0);
+    expect(body.data[0].trialCardRequired).toBe(false);
+    expect(body.data[0].autoEnable).toBe(false);
+  });
+
+  it("GET /:id normalizes one-time plan flags", async () => {
+    mockDb.query.plans.findFirst.mockResolvedValueOnce({
+      id: "plan_one_time_dashboard_2",
+      organizationId: "org_123",
+      name: "Credit Pack",
+      price: 5000,
+      interval: "monthly",
+      currency: "USD",
+      type: "paid",
+      billingModel: "base",
+      billingType: "one_time",
+      slug: "credit-pack",
+      trialDays: 7,
+      trialCardRequired: true,
+      autoEnable: true,
+      planFeatures: [],
+    });
+
+    const res = await app.request("/plan_one_time_dashboard_2", {
+      method: "GET",
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.billingType).toBe("one_time");
+    expect(body.data.trialDays).toBe(0);
+    expect(body.data.trialCardRequired).toBe(false);
+    expect(body.data.autoEnable).toBe(false);
   });
 
   it("PATCH persists a rotated provider plan id when adapter.updatePlan returns nextPlanId", async () => {
@@ -639,6 +710,121 @@ describe("Plans API", () => {
     expect(body.success).toBe(true);
     expect(body.data.trialDays).toBe(14);
     expect(body.data.trialCardRequired).toBe(true);
+  });
+
+  it("should clear trial and auto-enable flags for one-time plans on create", async () => {
+    mockReturningPlan = {
+      id: "plan_one_time_1",
+      organizationId: "org_123",
+      name: "One-off Plan",
+      price: 2500,
+      interval: "monthly",
+      currency: "USD",
+      type: "paid",
+      billingModel: "base",
+      billingType: "one_time",
+      slug: "one-off-plan",
+      trialDays: 0,
+      trialCardRequired: false,
+      autoEnable: false,
+    };
+
+    const res = await app.request(
+      "/",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organizationId: "org_123",
+          name: "One-off Plan",
+          price: 2500,
+          currency: "USD",
+          type: "paid",
+          billingModel: "base",
+          billingType: "one_time",
+          trialDays: 14,
+          trialCardRequired: true,
+          autoEnable: true,
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const inserted = insertValuesMock.mock.calls[0]?.[0] as {
+      trialDays: number;
+      trialCardRequired: boolean;
+      autoEnable: boolean;
+    };
+    expect(inserted.trialDays).toBe(0);
+    expect(inserted.trialCardRequired).toBe(false);
+    expect(inserted.autoEnable).toBe(false);
+
+    const body = await res.json();
+    expect(body.data.trialDays).toBe(0);
+    expect(body.data.trialCardRequired).toBe(false);
+    expect(body.data.autoEnable).toBe(false);
+  });
+
+  it("PATCH clears trial metadata and auto-enable when a plan becomes one-time", async () => {
+    const updateReturningMock = vi.fn(async () => [
+      {
+        id: "plan_patch_one_time_1",
+        organizationId: "org_123",
+        name: "One-off Plan",
+        price: 2500,
+        interval: "monthly",
+        currency: "USD",
+        description: null,
+        billingType: "one_time",
+        trialDays: 0,
+        trialCardRequired: false,
+        autoEnable: false,
+        providerId: null,
+        providerPlanId: null,
+      },
+    ]);
+    const updateSetMock = vi.fn(() => ({
+      where: vi.fn(() => ({
+        returning: updateReturningMock,
+      })),
+    }));
+    mockDb.update = vi.fn(() => ({
+      set: updateSetMock,
+    }));
+
+    mockDb.query.plans.findFirst.mockResolvedValueOnce({
+      id: "plan_patch_one_time_1",
+      billingType: "recurring",
+      metadata: { trialUnit: "minutes" },
+    });
+
+    const res = await app.request(
+      "/plan_patch_one_time_1",
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          billingType: "one_time",
+          trialDays: 10,
+          trialCardRequired: true,
+          autoEnable: true,
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const updatePayload = updateSetMock.mock.calls[0]?.[0] as {
+      billingType: string;
+      trialDays: number;
+      trialCardRequired: boolean;
+      autoEnable: boolean;
+      metadata: Record<string, unknown>;
+    };
+    expect(updatePayload.billingType).toBe("one_time");
+    expect(updatePayload.trialDays).toBe(0);
+    expect(updatePayload.trialCardRequired).toBe(false);
+    expect(updatePayload.autoEnable).toBe(false);
+    expect(updatePayload.metadata.trialUnit).toBeUndefined();
   });
 
   it("should fail with invalid data", async () => {

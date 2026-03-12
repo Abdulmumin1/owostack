@@ -73,6 +73,8 @@ interface StripeCheckoutSessionResponse {
 
 interface StripeSubscriptionItemResponse {
   id?: string;
+  current_period_start?: number | null;
+  current_period_end?: number | null;
   price?: { id?: string | null } | null;
 }
 
@@ -400,6 +402,28 @@ function extractSubscriptionItemId(
     subscription?.items?.data,
   );
   return asString(items[0]?.id);
+}
+
+function extractSubscriptionPeriod(
+  subscription: Record<string, any> | undefined,
+): {
+  startDate?: string;
+  endDate?: string;
+} {
+  const items = asArray<Record<string, any>>(
+    asRecord(asRecord(subscription)?.items)?.data,
+  );
+  const firstItem = asRecord(items[0]);
+
+  return {
+    startDate:
+      fromUnixTimestamp(subscription?.current_period_start) ||
+      fromUnixTimestamp(firstItem?.current_period_start) ||
+      fromUnixTimestamp(subscription?.billing_cycle_anchor),
+    endDate:
+      fromUnixTimestamp(subscription?.current_period_end) ||
+      fromUnixTimestamp(firstItem?.current_period_end),
+  };
 }
 
 function extractInvoiceLine(
@@ -1522,6 +1546,7 @@ export const stripeAdapter: ProviderAdapter = {
         }
 
         const planCode = extractSubscriptionPriceId(data);
+        const period = extractSubscriptionPeriod(data);
         return Result.ok({
           type: normalizedType,
           provider: PROVIDER_ID,
@@ -1539,8 +1564,8 @@ export const stripeAdapter: ProviderAdapter = {
                   ? "canceled"
                   : status || "active",
             planCode,
-            startDate: fromUnixTimestamp(data.current_period_start),
-            nextPaymentDate: fromUnixTimestamp(data.current_period_end),
+            startDate: period.startDate,
+            nextPaymentDate: period.endDate,
             trialEndDate: fromUnixTimestamp(data.trial_end),
           },
           plan: planCode ? { providerPlanCode: planCode } : undefined,

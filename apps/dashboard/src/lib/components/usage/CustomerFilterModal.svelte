@@ -108,100 +108,99 @@
 <Modal
   bind:open
   title="Select Customer"
-  width="max-w-md"
+  width="max-w-sm"
   onclose={() => (open = false)}
 >
-  <div
-    class="px-5 py-3 border-b border-border flex items-center justify-between gap-4 sticky top-0 bg-bg-card z-10"
-  >
-    <div class="input-icon-wrapper w-full">
-      <MagnifyingGlass size={14} class="input-icon-left text-text-dim" />
+  <div class="p-3 border-b border-border bg-bg-secondary/30">
+    <div class="relative">
+      <MagnifyingGlass
+        size={14}
+        class="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim"
+      />
       <input
         type="text"
-        placeholder="Search by email, name or ID..."
+        placeholder="Search customers..."
         bind:value={searchQuery}
         oninput={onSearchInput}
-        class="input input-has-icon-left"
+        class="w-full bg-bg-card border border-border rounded-lg pl-9 pr-3 py-2 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors"
       />
     </div>
   </div>
 
-  <div class="flex flex-col min-h-[360px] max-h-[50vh] overflow-y-auto">
-    <!-- All Customers Sticky Option -->
+  <div class="flex flex-col max-h-[60vh] overflow-y-auto">
+    <!-- All Customers Option -->
     <button
-      class="w-full flex items-center gap-3 px-5 py-3 border-b border-border border-b-2 hover:bg-bg-secondary transition-colors text-left {selectedId ===
+      class="group flex items-center gap-2.5 px-3 py-2.5 hover:bg-bg-secondary/50 transition-all text-left border-b border-border/50 {selectedId ===
       ''
-        ? 'bg-bg-secondary sticky top-0 z-20 shadow-sm'
+        ? 'bg-accent/5'
         : ''}"
       onclick={() => selectCustomer(null)}
     >
       <div
-        class="w-8 h-8 rounded-full bg-bg-tertiary flex items-center justify-center border border-border"
+        class="w-7 h-7 rounded-full bg-bg-tertiary border border-border flex items-center justify-center shrink-0 transition-colors group-hover:border-accent/30"
       >
-        <Users size={16} class="text-text-dim" weight="duotone" />
+        <Users size={14} class="text-text-dim" weight="duotone" />
       </div>
-      <div class="flex-1">
-        <div class="text-sm font-bold text-text-primary">All Customers</div>
-        <div
-          class="text-[10px] text-text-dim font-mono uppercase tracking-widest"
-        >
-          Aggregate usage
-        </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-xs font-semibold text-text-primary">All Customers</div>
+        <div class="text-[10px] text-text-dim">Aggregate view</div>
       </div>
       {#if selectedId === ""}
-        <Check size={16} class="text-accent" weight="bold" />
+        <div
+          class="w-5 h-5 rounded-full bg-accent flex items-center justify-center shrink-0"
+        >
+          <Check size={10} class="text-accent-contrast" weight="bold" />
+        </div>
       {/if}
     </button>
 
     {#if isLoading && customers.length === 0}
-      <div class="p-5 space-y-4">
+      <div class="p-3 space-y-2">
         {#each Array(4) as _}
-          <div class="flex items-center gap-3 py-2 border-b border-border/50">
-            <Skeleton class="w-8 h-8 rounded-full" />
-            <div class="space-y-2">
-              <Skeleton class="h-4 w-32" />
-              <Skeleton class="h-3 w-48" />
+          <div class="flex items-center gap-2.5 py-2">
+            <Skeleton class="w-7 h-7 rounded-full" />
+            <div class="space-y-1.5 flex-1">
+              <Skeleton class="h-3 w-28" />
+              <Skeleton class="h-2.5 w-40" />
             </div>
           </div>
         {/each}
       </div>
     {:else if customers.length === 0}
-      <div
-        class="p-12 flex flex-col items-center justify-center text-center flex-1"
-      >
+      <div class="p-8 flex flex-col items-center justify-center text-center">
         <div
-          class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4 rounded-full"
+          class="w-10 h-10 bg-bg-secondary rounded-full flex items-center justify-center mb-3"
         >
-          <Users size={24} class="text-text-dim" weight="duotone" />
+          <Users size={20} class="text-text-dim" weight="duotone" />
         </div>
-        <h3
-          class="text-xs font-bold text-text-primary uppercase tracking-widest mb-1"
-        >
-          {searchQuery ? "No matching customers" : "No customers"}
-        </h3>
-        <p class="text-[10px] text-text-dim uppercase tracking-widest max-w-sm">
+        <p class="text-xs font-medium text-text-primary mb-1">
+          {searchQuery ? "No matches found" : "No customers"}
+        </p>
+        <p class="text-[10px] text-text-dim">
           {searchQuery
-            ? "Try a different search term"
-            : "No customers found for this organization"}
+            ? "Try a different search"
+            : "No customers in this organization"}
         </p>
       </div>
     {:else}
-      <div class="flex-1">
-        {#each customers as customer}
+      <div class="py-1">
+        {#each customers as customer (customer.id)}
           <button
-            class="w-full flex items-center gap-3 px-5 py-3 border-b border-border hover:bg-bg-card-hover transition-colors text-left {selectedId ===
+            class="group flex items-center gap-2.5 px-3 py-2 hover:bg-bg-secondary/50 transition-all text-left w-full {selectedId ===
             customer.id
-              ? 'bg-bg-card-hover'
+              ? 'bg-accent/5'
               : ''}"
             onclick={() => selectCustomer(customer)}
           >
             <div
-              class="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-border"
+              class="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-border transition-all group-hover:border-accent/30"
             >
-              <Avatar name={customer.email} size={32} />
+              <Avatar name={customer.email} size={28} />
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-sm font-bold text-text-primary truncate">
+              <div
+                class="text-xs font-medium text-text-primary truncate group-hover:text-accent transition-colors"
+              >
                 {customer.name || customer.email}
               </div>
               <div class="text-[10px] text-text-dim font-mono truncate">
@@ -209,7 +208,15 @@
               </div>
             </div>
             {#if selectedId === customer.id}
-              <Check size={16} class="text-accent shrink-0" weight="bold" />
+              <div
+                class="w-5 h-5 rounded-full bg-accent flex items-center justify-center shrink-0"
+              >
+                <Check size={10} class="text-accent-contrast" weight="bold" />
+              </div>
+            {:else}
+              <div
+                class="w-5 h-5 rounded-full border border-border shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              ></div>
             {/if}
           </button>
         {/each}
@@ -220,29 +227,29 @@
   {#if customers.length > 0}
     <!-- Pagination Footer -->
     <div
-      class="flex items-center justify-between px-5 py-3 border-t border-border mt-auto bg-bg-secondary/50 shrink-0"
+      class="flex items-center justify-between px-3 py-2 border-t border-border bg-bg-secondary/30 shrink-0"
     >
-      <div
-        class="text-[10px] text-text-dim uppercase font-bold tracking-widest"
-      >
+      <div class="text-[10px] text-text-dim">
         {startItem}-{endItem} of {totalCount}
       </div>
-      <div class="flex items-center gap-1">
+      <div class="flex items-center gap-0.5">
         <button
-          class="btn btn-secondary !p-1 border border-border disabled:opacity-50"
+          class="p-1.5 rounded hover:bg-bg-card disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           disabled={!hasPrevious}
           onclick={() => goToPage(currentPage - 1)}
+          aria-label="Previous page"
         >
-          <CaretLeft size={14} weight="bold" />
+          <CaretLeft size={14} weight="bold" class="text-text-dim" />
         </button>
         {#each getPageNumbers(currentPage, totalPages) as pageNum}
           {#if pageNum === "..."}
-            <span class="text-xs text-text-dim px-1 font-bold">...</span>
+            <span class="text-[10px] text-text-dim px-1">...</span>
           {:else}
             <button
-              class="btn {currentPage === pageNum
-                ? 'btn-primary'
-                : 'bg-bg-card hover:bg-bg-secondary text-text-primary border border-border'} !px-2 !py-0.5 text-[10px] font-bold"
+              class="min-w-[24px] h-6 px-1.5 rounded text-[10px] font-medium transition-colors {currentPage ===
+              pageNum
+                ? 'bg-accent text-accent-contrast'
+                : 'text-text-dim hover:bg-bg-card hover:text-text-primary'}"
               onclick={() => goToPage(pageNum as number)}
             >
               {pageNum}
@@ -250,11 +257,12 @@
           {/if}
         {/each}
         <button
-          class="btn btn-secondary !p-1 border border-border disabled:opacity-50"
+          class="p-1.5 rounded hover:bg-bg-card disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           disabled={!hasNext}
           onclick={() => goToPage(currentPage + 1)}
+          aria-label="Next page"
         >
-          <CaretRight size={14} weight="bold" />
+          <CaretRight size={14} weight="bold" class="text-text-dim" />
         </button>
       </div>
     </div>

@@ -223,7 +223,7 @@ h6 {
 }
 
 .btn-primary:active {
-  box-shadow: 1px 1px 0 0 var(--color-accent-border);
+  box-shadow: 0px 0px 0 0 var(--color-accent-border);
 }
 
 /* Secondary — Outline */
@@ -238,7 +238,7 @@ h6 {
 }
 
 .btn-secondary:active {
-  box-shadow: 0px 2px 0 0 var(--color-border-strong);
+  box-shadow: 0px 0px 0 0 var(--color-border-strong);
 }
 
 /* Ghost — No shadow */
