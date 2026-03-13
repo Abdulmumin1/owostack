@@ -1,5 +1,5 @@
 import { createDb, schema } from "@owostack/db";
-import { and, eq, ne, or } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { EntitlementCache } from "./cache";
 
 type DB = ReturnType<typeof createDb>;
@@ -78,6 +78,34 @@ function scheduleCacheWrite(
   return promise.then(() => undefined);
 }
 
+function getCustomerCacheKeys(customerId: string): string[] {
+  return customerId.includes("@")
+    ? [...new Set([customerId, customerId.toLowerCase()])]
+    : [customerId];
+}
+
+function inferCustomerMatchField(
+  customer: Customer,
+  customerId: string,
+): CustomerMatchField | null {
+  if (customer.id === customerId) {
+    return "id";
+  }
+
+  if (customer.externalId === customerId) {
+    return "externalId";
+  }
+
+  if (
+    customerId.includes("@") &&
+    customer.email?.toLowerCase() === customerId.toLowerCase()
+  ) {
+    return "email";
+  }
+
+  return null;
+}
+
 async function cacheResolvedCustomer(
   organizationId: string,
   customer: Customer,
@@ -99,6 +127,38 @@ async function cacheResolvedCustomer(
   );
 }
 
+async function getCachedResolvedCustomer(
+  opts: ResolveByIdentifierOptions,
+  matchField?: CustomerMatchField,
+): Promise<ResolvedCustomer | null> {
+  if (!opts.cache) return null;
+
+  for (const key of getCustomerCacheKeys(opts.customerId)) {
+    const cached =
+      await opts.cache.getCustomer<typeof schema.customers.$inferSelect>(
+        opts.organizationId,
+        key,
+      );
+
+    if (!cached) {
+      continue;
+    }
+
+    const matchedBy = inferCustomerMatchField(cached, opts.customerId);
+    if (!matchedBy) {
+      continue;
+    }
+
+    if (matchField && matchedBy !== matchField) {
+      continue;
+    }
+
+    return { customer: cached, matchedBy };
+  }
+
+  return null;
+}
+
 async function resolveUniqueCustomerMatch(opts: {
   db: DB;
   organizationId: string;
@@ -106,20 +166,15 @@ async function resolveUniqueCustomerMatch(opts: {
   matchedBy: Exclude<CustomerMatchField, "id">;
   where: unknown;
 }): Promise<Customer | null> {
-  const first = await opts.db.query.customers.findFirst({
+  const matches = await opts.db.query.customers.findMany({
     where: opts.where as never,
+    limit: 2,
   });
 
+  const [first, second] = matches;
   if (!first) {
     return null;
   }
-
-  const second = await opts.db.query.customers.findFirst({
-    where: and(
-      opts.where as never,
-      ne(schema.customers.id, first.id),
-    ) as never,
-  });
 
   if (second && second.id !== first.id) {
     throw new CustomerResolutionConflictError(
@@ -132,42 +187,12 @@ async function resolveUniqueCustomerMatch(opts: {
   return first;
 }
 
-async function getSafeCachedCustomer(
-  organizationId: string,
-  customerId: string,
-  opts: CacheOptions,
-): Promise<Customer | null> {
-  if (!opts.cache) return null;
-
-  const cacheKeys = customerId.includes("@")
-    ? [...new Set([customerId, customerId.toLowerCase()])]
-    : [customerId];
-
-  for (const key of cacheKeys) {
-    const cached =
-      await opts.cache.getCustomer<typeof schema.customers.$inferSelect>(
-        organizationId,
-        key,
-      );
-
-    if (cached?.id === customerId) {
-      return cached;
-    }
-  }
-
-  return null;
-}
-
 export async function resolveCustomerById(
   opts: ResolveByIdentifierOptions,
 ): Promise<ResolvedCustomer | null> {
-  const cached = await getSafeCachedCustomer(
-    opts.organizationId,
-    opts.customerId,
-    opts,
-  );
+  const cached = await getCachedResolvedCustomer(opts, "id");
   if (cached) {
-    return { customer: cached, matchedBy: "id" };
+    return cached;
   }
 
   const customer = await opts.db.query.customers.findFirst({
@@ -188,6 +213,11 @@ export async function resolveCustomerById(
 export async function resolveCustomerByExternalId(
   opts: ResolveByIdentifierOptions,
 ): Promise<ResolvedCustomer | null> {
+  const cached = await getCachedResolvedCustomer(opts, "externalId");
+  if (cached) {
+    return cached;
+  }
+
   const customer = await resolveUniqueCustomerMatch({
     db: opts.db,
     organizationId: opts.organizationId,
@@ -210,6 +240,20 @@ export async function resolveCustomerByExternalId(
 export async function resolveCustomerByEmail(
   opts: ResolveByEmailOptions,
 ): Promise<ResolvedCustomer | null> {
+  const cached = await getCachedResolvedCustomer(
+    {
+      db: opts.db,
+      organizationId: opts.organizationId,
+      customerId: opts.email,
+      cache: opts.cache,
+      waitUntil: opts.waitUntil,
+    },
+    "email",
+  );
+  if (cached) {
+    return cached;
+  }
+
   const normalizedEmail = opts.email.toLowerCase();
   const customer = await resolveUniqueCustomerMatch({
     db: opts.db,
@@ -257,13 +301,29 @@ export async function resolveCustomerByProviderReference(
 export async function resolveCustomerByIdentifier(
   opts: ResolveByIdentifierOptions,
 ): Promise<ResolvedCustomer | null> {
-  const byId = await resolveCustomerById(opts);
+  const cached = await getCachedResolvedCustomer(opts);
+  if (cached) {
+    return cached;
+  }
+
+  const dbLookupOpts = {
+    ...opts,
+    cache: null,
+  };
+
+  const byId = await resolveCustomerById(dbLookupOpts);
   if (byId) {
+    await cacheResolvedCustomer(opts.organizationId, byId.customer, opts);
     return byId;
   }
 
-  const byExternalId = await resolveCustomerByExternalId(opts);
+  const byExternalId = await resolveCustomerByExternalId(dbLookupOpts);
   if (byExternalId) {
+    await cacheResolvedCustomer(
+      opts.organizationId,
+      byExternalId.customer,
+      opts,
+    );
     return byExternalId;
   }
 
@@ -271,8 +331,13 @@ export async function resolveCustomerByIdentifier(
     return null;
   }
 
-  return resolveCustomerByEmail({
-    ...opts,
+  const byEmail = await resolveCustomerByEmail({
+    ...dbLookupOpts,
     email: opts.customerId,
   });
+  if (byEmail) {
+    await cacheResolvedCustomer(opts.organizationId, byEmail.customer, opts);
+  }
+
+  return byEmail;
 }

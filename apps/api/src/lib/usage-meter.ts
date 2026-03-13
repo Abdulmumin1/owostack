@@ -165,33 +165,12 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
     if (!state || !config || config.resetInterval === "none") return;
 
     const intervalMs = this.getIntervalMs(config.resetInterval);
-    console.log(
-      `[UsageMeter] maybeReset(${featureId}): interval=${config.resetInterval}, intervalMs=${intervalMs}, lastReset=${new Date(state.lastReset).toISOString()}, nextReset=${new Date(state.lastReset + intervalMs).toISOString()}, now=${new Date().toISOString()}, usage=${state.usage}, balance=${state.balance}`,
-    );
-
     if (intervalMs === 0) return;
-
-    const currentAlarm = await this.ctx.storage.getAlarm();
-
-    if (currentAlarm !== null) {
-      console.log(
-        "current alarm (s)",
-        Math.round((currentAlarm - Date.now()) / 1000),
-        "s",
-      );
-    }
 
     const nextReset = state.lastReset + intervalMs;
     if (Date.now() >= nextReset) {
-      console.log(
-        `[UsageMeter] Period elapsed for ${featureId}, resetting now...`,
-      );
       await this.resetFeature(featureId);
       await this.scheduleResetAlarm();
-    } else {
-      console.log(
-        `[UsageMeter] Period NOT elapsed for ${featureId}, ${Math.round((nextReset - Date.now()) / 1000)}s remaining`,
-      );
     }
   }
 
