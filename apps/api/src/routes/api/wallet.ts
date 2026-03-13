@@ -13,6 +13,7 @@ import {
   isCustomerResolutionConflictError,
   resolveCustomerByIdentifier,
 } from "../../lib/customer-resolution";
+import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
 
 export type WalletDependencies = {
@@ -62,11 +63,15 @@ async function resolveCustomer(
   db: any,
   organizationId: string,
   customer: string,
+  cache?: EntitlementCache | null,
+  waitUntil?: (promise: Promise<unknown>) => void,
 ) {
   const resolved = await resolveCustomerByIdentifier({
     db,
     organizationId,
     customerId: customer,
+    cache,
+    waitUntil,
   });
   return resolved?.customer ?? null;
 }
@@ -84,7 +89,10 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
     }
     const apiKey = authHeader.split(" ")[1];
     const authDb = c.get("authDb");
-    const keyRecord = await deps.verifyApiKey(authDb, apiKey);
+    const keyRecord = await deps.verifyApiKey(authDb, apiKey, {
+      cache: c.env.CACHE_SHARED ?? c.env.CACHE,
+      waitUntil: (promise) => c.executionCtx.waitUntil(promise),
+    });
     if (!keyRecord) {
       return {
         error: c.json({ success: false, error: "Invalid API Key" }, 401),
@@ -112,10 +120,17 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
 
     const db = c.get("db");
     const organizationId = keyRecord.organizationId;
+    const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
 
     let dbCustomer;
     try {
-      dbCustomer = await resolveCustomer(db, organizationId, customer);
+      dbCustomer = await resolveCustomer(
+        db,
+        organizationId,
+        customer,
+        cache,
+        (promise) => c.executionCtx.waitUntil(promise),
+      );
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);
@@ -191,10 +206,17 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
     const { customer, callbackUrl, provider } = parsed.data;
     const db = c.get("db");
     const organizationId = keyRecord.organizationId;
+    const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
 
     let dbCustomer;
     try {
-      dbCustomer = await resolveCustomer(db, organizationId, customer);
+      dbCustomer = await resolveCustomer(
+        db,
+        organizationId,
+        customer,
+        cache,
+        (promise) => c.executionCtx.waitUntil(promise),
+      );
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);
@@ -457,10 +479,17 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
     const { customer, id } = parsed.data;
     const db = c.get("db");
     const organizationId = keyRecord.organizationId;
+    const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
 
     let dbCustomer;
     try {
-      dbCustomer = await resolveCustomer(db, organizationId, customer);
+      dbCustomer = await resolveCustomer(
+        db,
+        organizationId,
+        customer,
+        cache,
+        (promise) => c.executionCtx.waitUntil(promise),
+      );
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);
