@@ -4,6 +4,11 @@
  */
 
 export const PROVIDER_MINIMUMS: Record<string, Record<string, number>> = {
+  stripe: {
+    USD: 50, // $0.50 - https://docs.stripe.com/api/payment_intents/create
+    EUR: 50, // ~€0.50 equivalent floor for common two-decimal Stripe charges
+    GBP: 50, // ~£0.50 equivalent floor for common two-decimal Stripe charges
+  },
   paystack: {
     NGN: 5000, // ₦50.00 (5,000 kobo) - https://docs-v2.paystack.com/payments/recurring-charges/
     GHS: 10, // GH₵0.10 (10 pesewas) - https://docs-v2.paystack.com/payments/recurring-charges/

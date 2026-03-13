@@ -690,6 +690,7 @@ export const invoices = sqliteTable(
 
     // Invoice details
     number: text("number"), // Human-readable invoice number (INV-001)
+    idempotencyKey: text("idempotency_key"),
     status: text("status").notNull().default("draft"), // draft, open, paid, void, uncollectible
     currency: text("currency").notNull().default("NGN"),
 
@@ -703,6 +704,8 @@ export const invoices = sqliteTable(
     // Period this invoice covers
     periodStart: integer("period_start").notNull(),
     periodEnd: integer("period_end").notNull(),
+    usageWindowStart: integer("usage_window_start"),
+    usageWindowEnd: integer("usage_window_end"),
     usageCutoffAt: integer("usage_cutoff_at"), // Usage before this timestamp is included
 
     // Payment details
@@ -726,6 +729,7 @@ export const invoices = sqliteTable(
     index("invoices_org_idx").on(table.organizationId),
     index("invoices_customer_idx").on(table.customerId),
     index("invoices_status_idx").on(table.status),
+    uniqueIndex("invoices_idempotency_key_idx").on(table.idempotencyKey),
   ],
 );
 
@@ -795,6 +799,81 @@ export const paymentAttempts = sqliteTable(
   ],
 );
 
+export const billingRuns = sqliteTable(
+  "billing_runs",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    trigger: text("trigger").notNull().default("threshold"), // threshold, manual, period_end
+    status: text("status").notNull().default("pending"), // pending, processing, completed, blocked, failed, deferred
+    idempotencyKey: text("idempotency_key").notNull(),
+    activeLockKey: text("active_lock_key"),
+    thresholdAmount: integer("threshold_amount"),
+    usageWindowStart: integer("usage_window_start"),
+    usageWindowEnd: integer("usage_window_end").notNull(),
+    invoiceId: text("invoice_id").references(() => invoices.id, {
+      onDelete: "set null",
+    }),
+    failureReason: text("failure_reason"),
+    metadata: text("metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("billing_runs_org_idx").on(table.organizationId),
+    index("billing_runs_customer_idx").on(table.customerId),
+    index("billing_runs_status_idx").on(table.status),
+    uniqueIndex("billing_runs_idempotency_key_idx").on(table.idempotencyKey),
+    uniqueIndex("billing_runs_active_lock_key_idx").on(table.activeLockKey),
+  ],
+);
+
+export const customerOverageBlocks = sqliteTable(
+  "customer_overage_blocks",
+  {
+    id: text("id").primaryKey(),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    billingRunId: text("billing_run_id").references(() => billingRuns.id, {
+      onDelete: "set null",
+    }),
+    invoiceId: text("invoice_id").references(() => invoices.id, {
+      onDelete: "set null",
+    }),
+    reason: text("reason").notNull(),
+    metadata: text("metadata", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("customer_overage_blocks_customer_idx").on(table.customerId),
+    index("customer_overage_blocks_org_idx").on(table.organizationId),
+    index("customer_overage_blocks_invoice_idx").on(table.invoiceId),
+    index("customer_overage_blocks_run_idx").on(table.billingRunId),
+  ],
+);
+
 // =============================================================================
 // Overage Billing Settings
 // =============================================================================
@@ -807,11 +886,12 @@ export const overageSettings = sqliteTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
 
-    // Billing interval: when to generate overage invoices
+    // Legacy storage field. Canonical behavior is always period-end true-up;
+    // threshold_amount enables optional mid-cycle threshold collection.
     billingInterval: text("billing_interval")
       .notNull()
-      .default("end_of_period"), // end_of_period, daily, weekly, monthly, threshold
-    thresholdAmount: integer("threshold_amount"), // Minor units — triggers invoice when unbilled hits this
+      .default("end_of_period"),
+    thresholdAmount: integer("threshold_amount"), // Minor units — optional early-collection trigger
     autoCollect: integer("auto_collect", { mode: "boolean" })
       .notNull()
       .default(false), // Charge card automatically

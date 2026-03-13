@@ -23,6 +23,7 @@ interface MockDb {
     subscriptions: { findFirst: Mock; findMany: Mock };
     plans: { findFirst: Mock };
     invoices: { findFirst: Mock };
+    customerOverageBlocks: { findFirst: Mock };
     credits: { findFirst: Mock };
     creditPurchases: { findFirst: Mock };
   };
@@ -58,6 +59,7 @@ function createDbMock() {
       subscriptions: { findFirst: vi.fn(), findMany: vi.fn() },
       plans: { findFirst: vi.fn() },
       invoices: { findFirst: vi.fn() },
+      customerOverageBlocks: { findFirst: vi.fn() },
       credits: { findFirst: vi.fn() },
       creditPurchases: { findFirst: vi.fn() },
     },
@@ -820,7 +822,7 @@ describe("Webhook handlers behavior", () => {
   });
 
   it("charge.success invoice payment without email resolves customer from invoice metadata and marks invoice paid", async () => {
-    const { db, updateSetMock } = createDbMock();
+    const { db, updateSetMock, deleteMock } = createDbMock();
 
     db.query.invoices.findFirst.mockResolvedValue({
       id: "inv_1",
@@ -836,6 +838,11 @@ describe("Webhook handlers behavior", () => {
       providerAuthorizationCode: null,
       paystackCustomerId: null,
       paystackAuthorizationCode: null,
+    });
+    db.query.customerOverageBlocks.findFirst.mockResolvedValue({
+      id: "block_1",
+      invoiceId: "inv_1",
+      billingRunId: "run_1",
     });
 
     const event = {
@@ -879,6 +886,17 @@ describe("Webhook handlers behavior", () => {
           call[0].amountDue === 0,
       ),
     ).toBe(true);
+    expect(
+      updateSetMock.mock.calls.some(
+        (call) =>
+          call[0].status === "completed" &&
+          call[0].invoiceId === "inv_1" &&
+          call[0].activeLockKey === null &&
+          call[0].failureReason === null &&
+          call[0].metadata?.recovery === "invoice_paid",
+      ),
+    ).toBe(true);
+    expect(deleteMock).toHaveBeenCalledTimes(1);
   });
 
   it("charge.success Stripe card setup stores a provider-managed wallet method when card details are absent", async () => {

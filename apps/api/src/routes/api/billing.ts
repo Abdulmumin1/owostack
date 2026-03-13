@@ -9,6 +9,8 @@ import {
   deriveProviderEnvironment,
   loadProviderAccounts,
 } from "../../lib/providers";
+import { clearCustomerOverageBlockForInvoice } from "../../lib/overage-blocks";
+import { getMinimumChargeAmount } from "../../lib/provider-minimums";
 import { trackBusinessEvent } from "../../lib/analytics-engine";
 import {
   isCustomerResolutionConflictError,
@@ -156,17 +158,30 @@ app.post("/invoice", async (c) => {
   );
 
   if (result.isErr()) {
-    const noUsage = result.error.message.includes("Unbilled usage");
+    const noUsage = result.error._tag === "NotFoundError";
+    const belowMinimum =
+      result.error._tag === "ValidationError" &&
+      result.error.field === "invoice_amount";
     trackBusinessEvent(c.env, {
       event: "billing.invoice.generate",
-      outcome: noUsage ? "empty" : "error",
+      outcome: noUsage ? "empty" : belowMinimum ? "below_provider_minimum" : "error",
       organizationId,
       customerId: customer.id,
     });
 
-    if (result.error.message.includes("Unbilled usage")) {
+    if (noUsage) {
       return c.json(
         { success: false, error: "No unbilled usage to invoice" },
+        400,
+      );
+    }
+    if (belowMinimum) {
+      return c.json(
+        {
+          success: false,
+          code: "invoice_below_provider_minimum",
+          message: result.error.message,
+        },
         400,
       );
     }
@@ -279,6 +294,7 @@ app.post("/invoice/:id/pay", async (c) => {
   }
 
   if (invoice.status === "paid") {
+    await clearCustomerOverageBlockForInvoice(db, invoice.id);
     trackBusinessEvent(c.env, {
       event: "billing.invoice.pay",
       outcome: "already_paid",
@@ -338,6 +354,10 @@ app.post("/invoice/:id/pay", async (c) => {
     return c.json({ success: false, error: "Customer not found" }, 404);
   }
 
+  const billingService = new BillingService(db, {
+    usageLedger: c.env.USAGE_LEDGER,
+  });
+
   // 3. Resolve provider
   const subscription = await db.query.subscriptions.findFirst({
     where: and(
@@ -394,6 +414,71 @@ app.post("/invoice/:id/pay", async (c) => {
     );
   }
 
+  const minimumAmount = getMinimumChargeAmount(
+    selectedProviderId,
+    invoice.currency,
+  );
+  if (minimumAmount > 0 && invoice.amountDue < minimumAmount) {
+    const releaseResult = await billingService.releaseInvoiceToUnbilledUsage(
+      invoice.id,
+      organizationId,
+      {
+        reason: "below_provider_minimum",
+        metadata: {
+          providerId: selectedProviderId,
+          minimumAmount,
+          amountDue: invoice.amountDue,
+          currency: invoice.currency,
+        },
+      },
+    );
+
+    if (releaseResult.isErr()) {
+      trackBusinessEvent(c.env, {
+        event: "billing.invoice.pay",
+        outcome: "below_provider_minimum_release_failed",
+        organizationId,
+        customerId: customer.id,
+        providerId: selectedProviderId,
+        value: Number(invoice.amountDue || 0),
+        currency: invoice.currency || null,
+      });
+      return c.json(
+        { success: false, error: releaseResult.error.message },
+        releaseResult.error._tag === "ValidationError" ? 400 : 500,
+      );
+    }
+
+    trackBusinessEvent(c.env, {
+      event: "billing.invoice.pay",
+      outcome: "below_provider_minimum_released",
+      organizationId,
+      customerId: customer.id,
+      providerId: selectedProviderId,
+      value: Number(invoice.amountDue || 0),
+      currency: invoice.currency || null,
+    });
+
+    return c.json(
+      {
+        success: false,
+        code: "invoice_below_provider_minimum",
+        message:
+          `Invoice amount ${invoice.amountDue} ${invoice.currency} is below the ` +
+          `${selectedProviderId} minimum charge of ${minimumAmount}. ` +
+          `The invoice was voided and its usage was returned to the unbilled pool.`,
+        invoice: {
+          id: invoice.id,
+          number: invoice.number,
+          total: invoice.total,
+          currency: invoice.currency,
+          status: "void",
+        },
+      },
+      409,
+    );
+  }
+
   const adapter = registry.get(selectedProviderId);
 
   if (!adapter) {
@@ -422,6 +507,7 @@ app.post("/invoice/:id/pay", async (c) => {
         ),
       });
       if (!freshInvoice) {
+        await clearCustomerOverageBlockForInvoice(db, invoice.id);
         return c.json({
           success: true,
           paid: true,
@@ -469,6 +555,7 @@ app.post("/invoice/:id/pay", async (c) => {
             updatedAt: now,
           })
           .where(eq(schema.invoices.id, invoice.id));
+        await clearCustomerOverageBlockForInvoice(db, invoice.id);
 
         trackBusinessEvent(c.env, {
           event: "billing.invoice.pay",

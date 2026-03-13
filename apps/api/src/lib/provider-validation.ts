@@ -392,9 +392,12 @@ async function validateDodoCredentials(
     });
 
     if (!response.ok) {
+      const message = extractMessage(response);
+      const envLabel = environment === "live" ? "live" : "test";
       return fail(
         "secretKey",
-        `Dodo Payments rejected the API key: ${extractMessage(response)}`,
+        `Dodo Payments rejected the ${envLabel} API key: ${message}. ` +
+          `Make sure the key belongs to the ${envLabel} environment selected in Owostack.`,
       );
     }
 

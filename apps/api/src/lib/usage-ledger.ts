@@ -4,8 +4,6 @@ import type {
   UnbilledUsagePeriodRow,
   UsageSumQuery,
 } from "./usage-ledger-do";
-import { schema } from "@owostack/db";
-import { eq, gte, and } from "drizzle-orm";
 
 interface UsageLedgerOptions {
   usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
@@ -18,74 +16,6 @@ function getStub(
   if (!opts.usageLedger || !opts.organizationId) return null;
   const id = opts.usageLedger.idFromName(`org:${opts.organizationId}`);
   return opts.usageLedger.get(id);
-}
-
-/**
- * Rehydrate UsageLedgerDO from D1 daily aggregates
- * Call this when DO returns empty/no data to backfill from D1
- */
-export async function rehydrateUsageLedger(
-  opts: UsageLedgerOptions,
-  db: any,
-  customerIds?: string[], // Optional: specific customers, otherwise all in org
-  daysBack = 30, // How many days of history to load
-): Promise<{ inserted: number; success: boolean }> {
-  const stub = getStub(opts);
-  if (!stub) return { inserted: 0, success: false };
-
-  try {
-    // Calculate date range
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - daysBack);
-
-    // Build query
-    let query = db
-      .select({
-        customerId: schema.usageDailySummaries.customerId,
-        featureId: schema.usageDailySummaries.featureId,
-        date: schema.usageDailySummaries.date,
-        amount: schema.usageDailySummaries.amount,
-        updatedAt: schema.usageDailySummaries.updatedAt,
-      })
-      .from(schema.usageDailySummaries)
-      .where(
-        and(
-          eq(
-            schema.usageDailySummaries.organizationId,
-            opts.organizationId || "",
-          ),
-          gte(
-            schema.usageDailySummaries.date,
-            startDate.toISOString().split("T")[0],
-          ),
-        ),
-      );
-
-    // Filter to specific customers if provided
-    if (customerIds && customerIds.length > 0) {
-      // Note: This would need sql`IN (${...}) syntax, simplified here
-      // In production, use proper parameterized IN clause
-    }
-
-    const aggregates = await query;
-
-    if (aggregates.length === 0) {
-      console.log("[usage-ledger] No aggregates found for rehydration");
-      return { inserted: 0, success: true };
-    }
-
-    // Call DO rehydration method
-    const result = await stub.rehydrateFromAggregates(aggregates);
-
-    console.log(
-      `[usage-ledger] Rehydrated ${result.inserted} records from ${aggregates.length} aggregates`,
-    );
-
-    return { inserted: result.inserted, success: true };
-  } catch (error) {
-    console.error("[usage-ledger] Rehydration failed:", error);
-    return { inserted: 0, success: false };
-  }
 }
 
 export async function appendUsageRecord(
@@ -162,6 +92,22 @@ export async function markUsageInvoiced(
   }
 }
 
+export async function releaseUsageInvoice(
+  opts: UsageLedgerOptions,
+  invoiceId: string,
+): Promise<number | null> {
+  const stub = getStub(opts);
+  if (!stub) return null;
+
+  try {
+    const result = await stub.releaseInvoice({ invoiceId });
+    return Number(result?.updated || 0);
+  } catch (error) {
+    console.error("[usage-ledger] releaseUsageInvoice failed:", error);
+    return null;
+  }
+}
+
 export async function sumUnbilledByFeature(
   opts: UsageLedgerOptions,
   customerId: string,
@@ -180,12 +126,13 @@ export async function sumUnbilledByFeature(
 export async function sumUnbilledByFeaturePeriod(
   opts: UsageLedgerOptions,
   customerId: string,
+  usageCutoffAt?: number,
 ): Promise<UnbilledUsagePeriodRow[] | null> {
   const stub = getStub(opts);
   if (!stub) return null;
 
   try {
-    return await stub.sumUnbilledByFeaturePeriod(customerId);
+    return await stub.sumUnbilledByFeaturePeriod(customerId, usageCutoffAt);
   } catch (error) {
     console.error("[usage-ledger] sumUnbilledByFeaturePeriod failed:", error);
     return null;

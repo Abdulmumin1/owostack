@@ -1,13 +1,12 @@
 <script lang="ts">
-  import { Check, CheckCircle, CircleNotch, Copy, Key, Trash, X } from "phosphor-svelte";
+  import { CheckCircle, CircleNotch, Copy, Key, Trash, X } from "phosphor-svelte";
   import { fade } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
-  import { getActiveEnvironment } from "$lib/env";
   import type { ApiKey } from "./types";
 
   let { 
     projectId,
-    apiKeys: initialKeys = [],
+    apiKeys: apiKeysProp = [],
     formatDate
   }: {
     projectId: string;
@@ -15,11 +14,15 @@
     formatDate: (date: string | number) => string;
   } = $props();
 
-  let apiKeys = $state(initialKeys);
+  let apiKeys = $state<ApiKey[]>([]);
   let showKeyModal = $state(false);
   let newKeyName = $state("");
   let generatedKey = $state("");
   let isCreatingKey = $state(false);
+
+  $effect(() => {
+    apiKeys = apiKeysProp;
+  });
 
   async function loadApiKeys() {
     const res = await apiFetch(`/api/dashboard/keys?organizationId=${projectId}`);

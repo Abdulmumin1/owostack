@@ -116,7 +116,7 @@
 
   // Cron triggers for periodic overage billing
   "triggers": {
-    "crons": ["0 0 * * *", "0 0 * * 1"],
+    "crons": ["0 0 * * *"],
   },
 
   // Migrations for Durable Objects

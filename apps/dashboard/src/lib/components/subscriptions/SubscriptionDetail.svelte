@@ -336,6 +336,10 @@
     return "Subscription needs billing review.";
   }
 
+  function formatFeatureNames(features: Array<{ featureName: string }>) {
+    return features.map((feature) => feature.featureName).join(", ");
+  }
+
   const renewalSetup = $derived(data?.subscription?.health?.renewalSetup || null);
   const hasRenewalSetupIssue = $derived(
     Array.isArray(data?.subscription?.health?.reasons) &&
@@ -736,14 +740,54 @@
       </div>
     {/if}
 
-    <!-- Entitlements -->
+    {#if data.entitlementDiagnostics?.hasDrift}
+      <div class="bg-warning-bg/40 border border-warning/20 rounded p-3">
+        <div class="flex items-start gap-2">
+          <Warning size={14} class="text-warning mt-0.5" weight="fill" />
+          <div class="space-y-1">
+            <p class="text-[10px] font-bold text-warning uppercase tracking-widest">
+              Provisioning Drift
+            </p>
+            <p class="text-[10px] text-text-dim">
+              The customer's provisioned entitlement rows do not match the active plan.
+              `/check` uses the current plan access shown below.
+            </p>
+            {#if data.entitlementDiagnostics.orphanedProvisionedEntitlements?.length > 0}
+              <p class="text-[10px] text-text-dim">
+                Provisioned only:
+                <span class="text-text-primary">
+                  {formatFeatureNames(
+                    data.entitlementDiagnostics.orphanedProvisionedEntitlements,
+                  )}
+                </span>
+              </p>
+            {/if}
+            {#if data.entitlementDiagnostics.missingProvisionedEntitlements?.length > 0}
+              <p class="text-[10px] text-text-dim">
+                Missing provisioned rows:
+                <span class="text-text-primary">
+                  {formatFeatureNames(
+                    data.entitlementDiagnostics.missingProvisionedEntitlements,
+                  )}
+                </span>
+              </p>
+            {/if}
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Current Plan Access -->
     {#if data.entitlements?.length > 0}
       <div>
         <h4
           class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-3"
         >
-          Entitlements
+          Current Plan Access
         </h4>
+        <p class="text-[10px] text-text-dim mb-3">
+          This reflects the active plan features used by `/check`. Manual overrides are managed separately.
+        </p>
         <div class="space-y-2">
           {#each data.entitlements as ent}
             <div
@@ -775,6 +819,17 @@
             </div>
           {/each}
         </div>
+      </div>
+    {:else}
+      <div>
+        <h4
+          class="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-3"
+        >
+          Current Plan Access
+        </h4>
+        <p class="text-xs text-text-dim">
+          No features are attached to this plan.
+        </p>
       </div>
     {/if}
 

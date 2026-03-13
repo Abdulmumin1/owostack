@@ -43,6 +43,7 @@
 
   // API base URL derived from environment
   let apiBase = $derived(getApiUrl());
+  let activeEnvironment = $derived(getActiveEnvironment());
 
   // Reset state when open changes or editingAccount changes
   $effect(() => {
@@ -156,6 +157,27 @@
           {providerError}
         </div>
       {/if}
+
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <div
+            class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-1"
+          >
+            Target Environment
+          </div>
+          <p class="text-xs text-text-secondary">
+            This provider key will be validated and saved for the current app
+            environment.
+          </p>
+        </div>
+        <span
+          class="text-[10px] px-2 py-0.5 border {activeEnvironment === 'live'
+            ? 'border-success text-success bg-success-bg'
+            : 'border-warning text-warning bg-warning-bg'} uppercase tracking-widest font-bold rounded-sm"
+        >
+          {activeEnvironment} Mode
+        </span>
+      </div>
 
       {#if formStep === "configure"}
         {#if !editingAccount}

@@ -28,6 +28,7 @@
     ApiKey,
     TeamMember,
     WebhookUrl,
+    OverageSettings,
   } from "./types";
 
   let {
@@ -111,8 +112,9 @@
   let apiKeys = $state<ApiKey[]>([]);
   let providerAccounts = $state<ProviderAccount[]>([]);
   let enabledProviderIds = $state<string[]>([]);
-  let overageSettings = $state({
-    billingInterval: "end_of_period",
+  let overageSettings = $state<OverageSettings>({
+    billingMode: "end_of_period",
+    thresholdEnabled: false,
     thresholdAmount: null as number | null,
     autoCollect: false,
     gracePeriodHours: 0,
@@ -245,7 +247,8 @@
     );
     if (res.data?.data) {
       overageSettings = {
-        billingInterval: res.data.data.billingInterval || "end_of_period",
+        billingMode: res.data.data.billingMode || "end_of_period",
+        thresholdEnabled: !!res.data.data.thresholdEnabled,
         thresholdAmount: res.data.data.thresholdAmount,
         autoCollect: !!res.data.data.autoCollect,
         gracePeriodHours: res.data.data.gracePeriodHours || 0,
@@ -315,6 +318,10 @@
     <div
       class="relative bg-bg-primary border border-border rounded-xl shadow-lg flex w-full max-w-5xl h-[85vh] overflow-hidden"
       onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
       transition:scale={{ duration: 150, start: 0.95 }}
     >
       <!-- Sidebar -->
@@ -338,7 +345,7 @@
         </div>
 
         <nav class="flex-1 space-y-1 px-3 overflow-y-auto">
-          {#each tabs as tab}
+          {#each tabs as tab (tab.id)}
             <button
               class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors duration-200 {activeTab ===
               tab.id

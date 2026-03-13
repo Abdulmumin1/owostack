@@ -108,6 +108,8 @@
   ];
 
   let hasMounted = $state(false);
+  let lastLoadedUsageDays = $state(30);
+  let lastLoadedTimeseriesKey = $state("30::");
 
   onMount(() => {
     loadUsage(timeseriesDays);
@@ -117,25 +119,36 @@
   });
 
   // Reload timeseries when filters change (skip initial mount)
-  let prevDays = timeseriesDays;
-  let prevFeature = timeseriesFeatureId;
-  let prevCustomer = timeseriesCustomerId;
   $effect(() => {
-    const d = timeseriesDays;
-    const f = timeseriesFeatureId;
-    const c = timeseriesCustomerId;
-    if (hasMounted) {
-      if (d !== prevDays) {
-        prevDays = d;
-        loadTimeseries();
-        loadUsage(d);
-      } else if (f !== prevFeature || c !== prevCustomer) {
-        prevFeature = f;
-        prevCustomer = c;
-        loadTimeseries();
-      }
+    const currentDays = timeseriesDays;
+    const currentFeatureId = timeseriesFeatureId;
+    const currentCustomerId = timeseriesCustomerId;
+    const currentTimeseriesKey = `${currentDays}:${currentFeatureId}:${currentCustomerId}`;
+
+    if (!hasMounted) {
+      return;
+    }
+
+    if (currentDays !== lastLoadedUsageDays) {
+      lastLoadedUsageDays = currentDays;
+      loadUsage(currentDays);
+    }
+
+    if (currentTimeseriesKey !== lastLoadedTimeseriesKey) {
+      lastLoadedTimeseriesKey = currentTimeseriesKey;
+      loadTimeseries();
     }
   });
+
+  function handleCustomerSelect(id: string, name: string) {
+    timeseriesCustomerId = id;
+    timeseriesCustomerName = name;
+  }
+
+  function handleFeatureSelect(id: string, name: string) {
+    timeseriesFeatureId = id;
+    timeseriesFeatureName = name;
+  }
 
   function formatNumber(n: number) {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -294,20 +307,14 @@
     bind:open={isCustomerModalOpen}
     {organizationId}
     bind:selectedId={timeseriesCustomerId}
-    onSelect={(id, name) => {
-      timeseriesCustomerId = id;
-      timeseriesCustomerName = name;
-    }}
+    onSelect={handleCustomerSelect}
   />
 
   <FeatureFilterModal
     bind:open={isFeatureModalOpen}
     features={featureOptions}
     bind:selectedId={timeseriesFeatureId}
-    onSelect={(id, name) => {
-      timeseriesFeatureId = id;
-      timeseriesFeatureName = name;
-    }}
+    onSelect={handleFeatureSelect}
   />
 
   <!-- ================================================================= -->

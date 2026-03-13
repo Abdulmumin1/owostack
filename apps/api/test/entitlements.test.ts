@@ -42,6 +42,7 @@ describe("Entitlements Engine (Check & Track)", () => {
   const mockEnv: {
     CACHE: unknown;
     USAGE_METER: unknown;
+    USAGE_LEDGER?: unknown;
   } = {
     CACHE: undefined,
     USAGE_METER: undefined,
@@ -291,6 +292,55 @@ describe("Entitlements Engine (Check & Track)", () => {
     const body = await res.json();
     expect(body.allowed).toBe(true);
     expect(body.balance).toBe(100);
+  });
+
+  it("fails closed when the authoritative billing ledger is configured but unavailable", async () => {
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: featureIdMetered,
+      organizationId: "org_test",
+      slug: "api-calls",
+      type: "metered",
+    });
+    mockDb.query.planFeatures.findMany.mockResolvedValueOnce([
+      {
+        planId: "plan_test",
+        featureId: featureIdMetered,
+        limitValue: 100,
+        creditCost: null,
+        resetInterval: "monthly",
+      },
+    ]);
+
+    const envWithFailingLedger = {
+      ...mockEnv,
+      USAGE_LEDGER: {
+        idFromName: vi.fn(() => "ledger_1"),
+        get: vi.fn(() => ({
+          sumUsage: vi.fn(async () => {
+            throw new Error("ledger down");
+          }),
+        })),
+      },
+    };
+
+    const res = await app.request(
+      "/check",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: featureIdMetered,
+        }),
+      },
+      envWithFailingLedger,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.allowed).toBe(false);
+    expect(body.code).toBe("billing_unavailable");
   });
 
   it("checks usage-based pricing through billing guardrails", async () => {

@@ -8,6 +8,7 @@ import {
   normalizePlanFeatureResetInterval,
   validatePlanFeaturePricingConfig,
 } from "../../lib/plan-feature-normalization";
+import { normalizeOverageSettings } from "../../lib/overage-billing-interval";
 import type { Env, Variables } from "../../index";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -133,12 +134,7 @@ app.get("/export", async (c) => {
         metadata: cp.metadata,
       })),
       overageSettings: overageSettingsRow
-        ? {
-            billingInterval: (overageSettingsRow as any).billingInterval,
-            thresholdAmount: (overageSettingsRow as any).thresholdAmount,
-            autoCollect: (overageSettingsRow as any).autoCollect,
-            gracePeriodHours: (overageSettingsRow as any).gracePeriodHours,
-          }
+        ? normalizeOverageSettings(overageSettingsRow as any)
         : null,
     },
   });
@@ -528,14 +524,18 @@ app.post("/import", async (c) => {
       if (existingOverage) {
         result.overageSettings.skipped++;
       } else {
+        const normalizedOverageSettings = normalizeOverageSettings(
+          catalog.overageSettings,
+        );
         await db.insert(schema.overageSettings).values({
           id: crypto.randomUUID(),
           organizationId,
-          billingInterval:
-            catalog.overageSettings.billingInterval || "end_of_period",
-          thresholdAmount: catalog.overageSettings.thresholdAmount,
-          autoCollect: catalog.overageSettings.autoCollect ?? false,
-          gracePeriodHours: catalog.overageSettings.gracePeriodHours ?? 0,
+          billingInterval: "end_of_period",
+          thresholdAmount: normalizedOverageSettings.thresholdEnabled
+            ? normalizedOverageSettings.thresholdAmount
+            : null,
+          autoCollect: normalizedOverageSettings.autoCollect,
+          gracePeriodHours: normalizedOverageSettings.gracePeriodHours,
         });
         result.overageSettings.created++;
       }

@@ -13,18 +13,19 @@ import { trackUsageEvent } from "../../lib/analytics-engine";
 import {
   appendUsageRecord,
   sumUsageAmount,
-  rehydrateUsageLedger,
 } from "../../lib/usage-ledger";
 import {
   checkOverageAllowed,
   getOrgOverageSettings,
   getUnbilledOverageAmount,
 } from "../../lib/overage-guards";
+import { evaluateThresholdBillingCandidate } from "../../lib/threshold-billing";
 import { isPaidActivePastGracePeriod } from "../../lib/subscription-health";
 import {
   getCurrentPricingTier,
   normalizeRatingModel,
 } from "../../lib/usage-rating";
+import { buildUsagePricingSnapshot } from "../../lib/usage-pricing-snapshot";
 import { isCustomerResolutionConflictError } from "../../lib/customer-resolution";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -140,6 +141,25 @@ function buildPricingDetails(
   return pricing;
 }
 
+function buildUsageLedgerContext(params: {
+  featureId: string;
+  featureSlug?: string | null;
+  featureName?: string | null;
+  subscription?: { id?: string | null; planId?: string | null } | null;
+  planFeature?: any;
+}) {
+  return {
+    featureId: params.featureId,
+    featureSlug: params.featureSlug ?? null,
+    featureName: params.featureName ?? null,
+    subscriptionId: params.subscription?.id ?? null,
+    planId: params.subscription?.planId ?? null,
+    pricingSnapshot: params.planFeature
+      ? buildUsagePricingSnapshot(params.planFeature)
+      : null,
+  };
+}
+
 function scheduleCacheOp(c: any, op: Promise<unknown>, label: string) {
   c.executionCtx.waitUntil(
     op.catch((error) => {
@@ -155,14 +175,20 @@ async function persistUsageRecord(
   record: {
     customerId: string;
     featureId: string;
+    featureSlug?: string | null;
+    featureName?: string | null;
     entityId?: string | null;
     amount: number;
     periodStart: number;
     periodEnd: number;
+    subscriptionId?: string | null;
+    planId?: string | null;
+    pricingSnapshot?: ReturnType<typeof buildUsagePricingSnapshot> | null;
   },
 ) {
   const orgId = organizationId || "unknown";
   const dateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  const requireAuthoritativeLedger = Boolean(c.env.USAGE_LEDGER && organizationId);
 
   // Dispatch all logging tasks in parallel for maximum background efficiency
   const [d1Result, doResult, aeResult] = await Promise.allSettled([
@@ -198,10 +224,15 @@ async function persistUsageRecord(
       {
         customerId: record.customerId,
         featureId: record.featureId,
+        featureSlug: record.featureSlug ?? null,
+        featureName: record.featureName ?? null,
         entityId: record.entityId ?? null,
         amount: record.amount,
         periodStart: record.periodStart,
         periodEnd: record.periodEnd,
+        subscriptionId: record.subscriptionId ?? null,
+        planId: record.planId ?? null,
+        pricingSnapshot: record.pricingSnapshot ?? null,
         createdAt: Date.now(),
       },
     ),
@@ -243,6 +274,13 @@ async function persistUsageRecord(
     );
     throw new Error(`UsageLedgerDO persist failed: ${doResult.reason}`);
   }
+  if (requireAuthoritativeLedger && doResult.value !== true) {
+    console.error(
+      `[persist] UsageLedgerDO persist returned a failed result for customer=${record.customerId}, ` +
+        `feature=${record.featureId}.`,
+    );
+    throw new Error("UsageLedgerDO persist returned false");
+  }
 
   // Analytics Engine failure - log but not critical
   if (aeResult.status === "rejected") {
@@ -262,13 +300,18 @@ function scheduleUsagePersist(
   record: {
     customerId: string;
     featureId: string;
+    featureSlug?: string | null;
+    featureName?: string | null;
     entityId?: string | null;
     amount: number;
     periodStart: number;
     periodEnd: number;
+    subscriptionId?: string | null;
+    planId?: string | null;
+    pricingSnapshot?: ReturnType<typeof buildUsagePricingSnapshot> | null;
   },
   label: string,
-) {
+): Promise<void> {
   // Retry configuration
   const MAX_RETRIES = 3;
   const INITIAL_DELAY_MS = 1000; // 1 second
@@ -306,7 +349,16 @@ function scheduleUsagePersist(
     }
   }
 
-  c.executionCtx.waitUntil(persistWithRetry(1));
+  const persistPromise = persistWithRetry(1);
+  c.executionCtx.waitUntil(persistPromise);
+  return persistPromise;
+}
+
+function hasAuthoritativeUsageLedger(
+  c: any,
+  organizationId: string | null | undefined,
+): boolean {
+  return Boolean(c.env.USAGE_LEDGER && organizationId);
 }
 
 // Middleware for API Key Auth
@@ -1102,7 +1154,7 @@ app.post("/check", async (c) => {
           resetPeriod;
 
         // Query UsageLedgerDO for historical usage (not D1 - DO is source of truth)
-        let ledgerUsage = await sumUsageAmount(
+        const ledgerUsage = await sumUsageAmount(
           {
             usageLedger: c.env.USAGE_LEDGER,
             organizationId: organizationId || null,
@@ -1115,41 +1167,26 @@ app.post("/check", async (c) => {
             createdAtTo: migPeriodEnd,
           },
         );
-
-        // If UsageLedgerDO is empty, try to rehydrate from D1 aggregates
-        if ((ledgerUsage === null || ledgerUsage === 0) && c.env.USAGE_LEDGER) {
-          console.log(
-            `[entitlements] UsageLedgerDO empty for ${customer.id}/${effectiveFeatureId}, attempting rehydration`,
-          );
-          const rehydrated = await rehydrateUsageLedger(
+        if (
+          ledgerUsage === null &&
+          hasAuthoritativeUsageLedger(c, organizationId)
+        ) {
+          return c.json(
             {
-              usageLedger: c.env.USAGE_LEDGER,
-              organizationId: organizationId || null,
+              allowed: false,
+              code: "billing_unavailable",
+              usage: null,
+              limit: null,
+              balance: null,
+              resetsAt,
+              resetInterval: planFeature.resetInterval,
+              details: {
+                message:
+                  "Billing ledger unavailable. Cannot safely initialize metered usage right now.",
+              },
             },
-            db,
-            [customer.id],
-            30, // Last 30 days
+            503,
           );
-
-          if (rehydrated.success && rehydrated.inserted > 0) {
-            // Retry sum after rehydration
-            ledgerUsage = await sumUsageAmount(
-              {
-                usageLedger: c.env.USAGE_LEDGER,
-                organizationId: organizationId || null,
-              },
-              {
-                customerId: customer.id,
-                featureId: effectiveFeatureId,
-                entityId: entity || undefined,
-                createdAtFrom: migPeriodStart,
-                createdAtTo: migPeriodEnd,
-              },
-            );
-            console.log(
-              `[entitlements] Rehydrated ${rehydrated.inserted} records, new usage: ${ledgerUsage}`,
-            );
-          }
         }
 
         const currentUsage = ledgerUsage ?? 0;
@@ -1225,7 +1262,15 @@ app.post("/check", async (c) => {
                 organizationId,
                 {
                   customerId: customer.id,
-                  featureId: effectiveFeatureId,
+                  ...buildUsageLedgerContext({
+                    featureId: effectiveFeatureId,
+                    featureSlug: effectiveFeatureSlug,
+                    featureName: creditMapping
+                      ? effectiveFeatureSlug
+                      : (feature.name ?? effectiveFeatureSlug),
+                    subscription,
+                    planFeature,
+                  }),
                   entityId: entity || null,
                   amount: effectiveValue,
                   periodStart: resetPeriod.periodStart,
@@ -1363,7 +1408,15 @@ app.post("/check", async (c) => {
                 organizationId,
                 {
                   customerId: customer.id,
-                  featureId: effectiveFeatureId,
+                  ...buildUsageLedgerContext({
+                    featureId: effectiveFeatureId,
+                    featureSlug: effectiveFeatureSlug,
+                    featureName: creditMapping
+                      ? effectiveFeatureSlug
+                      : (feature.name ?? effectiveFeatureSlug),
+                    subscription,
+                    planFeature,
+                  }),
                   entityId: entity || null,
                   amount: effectiveValue,
                   periodStart: resetPeriod.periodStart,
@@ -1434,7 +1487,15 @@ app.post("/check", async (c) => {
           organizationId,
           {
             customerId: customer.id,
-            featureId: effectiveFeatureId,
+            ...buildUsageLedgerContext({
+              featureId: effectiveFeatureId,
+              featureSlug: effectiveFeatureSlug,
+              featureName: creditMapping
+                ? effectiveFeatureSlug
+                : (feature.name ?? effectiveFeatureSlug),
+              subscription,
+              planFeature,
+            }),
             entityId: entity || null,
             amount: effectiveValue,
             periodStart: resetPeriod.periodStart,
@@ -1510,7 +1571,7 @@ app.post("/check", async (c) => {
       );
 
     // Sum usage from UsageLedgerDO (source of truth) - not D1
-    let ledgerUsage = await sumUsageAmount(
+    const ledgerUsage = await sumUsageAmount(
       {
         usageLedger: c.env.USAGE_LEDGER,
         organizationId: organizationId || null,
@@ -1523,41 +1584,26 @@ app.post("/check", async (c) => {
         createdAtTo: currentPeriodEnd,
       },
     );
-
-    // If UsageLedgerDO is empty, try to rehydrate from D1 aggregates
-    if ((ledgerUsage === null || ledgerUsage === 0) && c.env.USAGE_LEDGER) {
-      console.log(
-        `[entitlements/check] UsageLedgerDO empty for ${customer.id}/${effectiveFeatureId}, attempting rehydration`,
-      );
-      const rehydrated = await rehydrateUsageLedger(
+    if (
+      ledgerUsage === null &&
+      hasAuthoritativeUsageLedger(c, organizationId)
+    ) {
+      return c.json(
         {
-          usageLedger: c.env.USAGE_LEDGER,
-          organizationId: organizationId || null,
+          allowed: false,
+          code: "billing_unavailable",
+          usage: null,
+          limit: planFeature.limitValue,
+          balance: null,
+          resetsAt,
+          resetInterval: planFeature.resetInterval,
+          details: {
+            message:
+              "Billing ledger unavailable. Cannot safely evaluate current metered usage right now.",
+          },
         },
-        db,
-        [customer.id],
-        30,
+        503,
       );
-
-      if (rehydrated.success && rehydrated.inserted > 0) {
-        // Retry sum after rehydration
-        ledgerUsage = await sumUsageAmount(
-          {
-            usageLedger: c.env.USAGE_LEDGER,
-            organizationId: organizationId || null,
-          },
-          {
-            customerId: customer.id,
-            featureId: effectiveFeatureId,
-            entityId: entity || undefined,
-            createdAtFrom: currentPeriodStart,
-            createdAtTo: currentPeriodEnd,
-          },
-        );
-        console.log(
-          `[entitlements/check] Rehydrated ${rehydrated.inserted} records, new usage: ${ledgerUsage}`,
-        );
-      }
     }
 
     const currentUsage = ledgerUsage ?? 0;
@@ -1777,7 +1823,15 @@ app.post("/check", async (c) => {
         organizationId,
         {
           customerId: customer.id,
-          featureId: effectiveFeatureId,
+          ...buildUsageLedgerContext({
+            featureId: effectiveFeatureId,
+            featureSlug: effectiveFeatureSlug,
+            featureName: creditMapping
+              ? effectiveFeatureSlug
+              : (feature.name ?? effectiveFeatureSlug),
+            subscription,
+            planFeature,
+          }),
           entityId: entity || null,
           amount: effectiveValue,
           periodStart: currentPeriodStart,
@@ -2346,7 +2400,7 @@ app.post("/track", async (c) => {
       // If DO has no state yet (fresh/restart), migrate usage from UsageLedgerDO and configure
       if (doResult.code === "feature_not_found") {
         // Query UsageLedgerDO for historical usage (source of truth)
-        let ledgerUsage = await sumUsageAmount(
+        const ledgerUsage = await sumUsageAmount(
           {
             usageLedger: c.env.USAGE_LEDGER,
             organizationId: organizationId || null,
@@ -2359,41 +2413,26 @@ app.post("/track", async (c) => {
             createdAtTo: periodEnd,
           },
         );
-
-        // If UsageLedgerDO is empty, try to rehydrate from D1 aggregates
-        if ((ledgerUsage === null || ledgerUsage === 0) && c.env.USAGE_LEDGER) {
-          console.log(
-            `[entitlements/track] UsageLedgerDO empty for ${customer.id}/${trackEffectiveFeatureId}, attempting rehydration`,
-          );
-          const rehydrated = await rehydrateUsageLedger(
+        if (
+          ledgerUsage === null &&
+          hasAuthoritativeUsageLedger(c, organizationId)
+        ) {
+          return c.json(
             {
-              usageLedger: c.env.USAGE_LEDGER,
-              organizationId: organizationId || null,
+              success: false,
+              allowed: false,
+              code: "billing_unavailable",
+              usage: null,
+              limit: planFeature.limitValue,
+              balance: null,
+              resetsAt: new Date(periodEnd).toISOString(),
+              resetInterval: planFeature.resetInterval,
+              details: buildTrackDetails(
+                "Billing ledger unavailable. Cannot safely initialize tracked usage right now.",
+              ),
             },
-            db,
-            [customer.id],
-            30,
+            503,
           );
-
-          if (rehydrated.success && rehydrated.inserted > 0) {
-            // Retry sum after rehydration
-            ledgerUsage = await sumUsageAmount(
-              {
-                usageLedger: c.env.USAGE_LEDGER,
-                organizationId: organizationId || null,
-              },
-              {
-                customerId: customer.id,
-                featureId: trackEffectiveFeatureId,
-                entityId: entity || undefined,
-                createdAtFrom: periodStart,
-                createdAtTo: periodEnd,
-              },
-            );
-            console.log(
-              `[entitlements/track] Rehydrated ${rehydrated.inserted} records, new usage: ${ledgerUsage}`,
-            );
-          }
         }
 
         const currentUsage = ledgerUsage ?? 0;
@@ -2429,7 +2468,15 @@ app.post("/track", async (c) => {
               organizationId,
               {
                 customerId: customer.id,
-                featureId: trackEffectiveFeatureId,
+                ...buildUsageLedgerContext({
+                  featureId: trackEffectiveFeatureId,
+                  featureSlug: trackEffectiveSlug,
+                  featureName: trackCreditMapping
+                    ? trackEffectiveSlug
+                    : (feature.name ?? trackEffectiveSlug),
+                  subscription,
+                  planFeature,
+                }),
                 entityId: entity || null,
                 amount: trackEffectiveValue,
                 periodStart,
@@ -2643,13 +2690,21 @@ app.post("/track", async (c) => {
     // Persist to DB asynchronously (for audit trail and backup)
     // Using waitUntil to avoid blocking the response
     // ===========================================================================
-    scheduleUsagePersist(
+    const usagePersistPromise = scheduleUsagePersist(
       c,
       db,
       organizationId,
       {
         customerId: customer.id,
-        featureId: trackEffectiveFeatureId,
+        ...buildUsageLedgerContext({
+          featureId: trackEffectiveFeatureId,
+          featureSlug: trackEffectiveSlug,
+          featureName: trackCreditMapping
+            ? trackEffectiveSlug
+            : (feature.name ?? trackEffectiveSlug),
+          subscription,
+          planFeature,
+        }),
         entityId: entity || null,
         amount: trackEffectiveValue,
         periodStart,
@@ -2689,40 +2744,19 @@ app.post("/track", async (c) => {
     // Threshold trigger: if this usage is chargeable, check if unbilled amount crosses org threshold
     if (isChargeableUsage && organizationId) {
       c.executionCtx.waitUntil(
-        (async () => {
+        usagePersistPromise.then(async () => {
           try {
-            const orgSettings = await deps.getOrgOverageSettings(
+            await evaluateThresholdBillingCandidate({
               db,
               organizationId,
-            );
-            if (
-              orgSettings?.billingInterval === "threshold" &&
-              orgSettings.thresholdAmount
-            ) {
-              const unbilledAmount = await deps.getUnbilledOverageAmount(
-                db,
-                customer.id,
-                {
-                  usageLedger: c.env.USAGE_LEDGER,
-                  organizationId: organizationId || null,
-                },
-              );
-              if (unbilledAmount >= orgSettings.thresholdAmount) {
-                const hourBucket = Math.floor(Date.now() / (3600 * 1000));
-                await c.env.OVERAGE_BILLING_WORKFLOW.create({
-                  id: `overage-threshold-${customer.id}-${hourBucket}`,
-                  params: {
-                    organizationId,
-                    customerId: customer.id,
-                    trigger: "threshold",
-                  },
-                });
-              }
-            }
+              customerId: customer.id,
+              usageLedger: c.env.USAGE_LEDGER,
+              workflow: c.env.OVERAGE_BILLING_WORKFLOW,
+            });
           } catch (e) {
             console.error("[track] Threshold check failed:", e);
           }
-        })(),
+        }),
       );
     }
 

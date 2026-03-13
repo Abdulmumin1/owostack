@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and, or, gt, isNull } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { listRecentEvents } from "../../lib/analytics-engine";
 import {
@@ -235,52 +235,134 @@ app.get("/:id", async (c) => {
       return c.json({ success: false, error: "Subscription not found" }, 404);
     }
 
+    const now = Date.now();
+
     // Run detail queries in parallel
-    const [entitlements, events, availablePlans] = await Promise.all([
-      // 2. Customer entitlements (current features)
-      db
-        .select({
-          id: schema.entitlements.id,
-          featureId: schema.features.id,
-          featureName: schema.features.name,
-          featureSlug: schema.features.slug,
-          featureType: schema.features.type,
-          unit: schema.features.unit,
-          limitValue: schema.entitlements.limitValue,
-          resetInterval: schema.entitlements.resetInterval,
-          lastResetAt: schema.entitlements.lastResetAt,
-          expiresAt: schema.entitlements.expiresAt,
-        })
-        .from(schema.entitlements)
-        .innerJoin(
-          schema.features,
-          eq(schema.entitlements.featureId, schema.features.id),
-        )
-        .where(eq(schema.entitlements.customerId, subscription.customerId)),
-
-      // 3. Recent events for this customer
-      listRecentEvents(c.env, {
-        customerId: subscription.customerId,
-        limit: 30,
-      }).then((result) => (result.success ? result.data : [])),
-
-      // 4. Available plans in the same group (for switch actions)
-      subscription.plan.planGroup
-        ? db.query.plans.findMany({
-            where: and(
-              eq(schema.plans.organizationId, subscription.plan.organizationId),
-              eq(schema.plans.planGroup, subscription.plan.planGroup),
-              eq(schema.plans.isActive, true),
-            ),
+    const [planEntitlements, provisionedEntitlements, manualOverrides, events, availablePlans] =
+      await Promise.all([
+        // 2. Active plan features for this subscription (what /check relies on)
+        db
+          .select({
+            id: schema.planFeatures.id,
+            featureId: schema.features.id,
+            featureName: schema.features.name,
+            featureSlug: schema.features.slug,
+            featureType: schema.features.type,
+            unit: schema.features.unit,
+            limitValue: schema.planFeatures.limitValue,
+            resetInterval: schema.planFeatures.resetInterval,
           })
-        : db.query.plans.findMany({
-            where: and(
-              eq(schema.plans.organizationId, subscription.plan.organizationId),
-              eq(schema.plans.isActive, true),
-              eq(schema.plans.isAddon, false),
+          .from(schema.planFeatures)
+          .innerJoin(
+            schema.features,
+            eq(schema.planFeatures.featureId, schema.features.id),
+          )
+          .where(eq(schema.planFeatures.planId, subscription.planId)),
+
+        // 3. Provisioned plan entitlements on the customer (useful for drift diagnosis)
+        db
+          .select({
+            id: schema.entitlements.id,
+            featureId: schema.features.id,
+            featureName: schema.features.name,
+            featureSlug: schema.features.slug,
+            featureType: schema.features.type,
+            unit: schema.features.unit,
+            limitValue: schema.entitlements.limitValue,
+            resetInterval: schema.entitlements.resetInterval,
+            lastResetAt: schema.entitlements.lastResetAt,
+            expiresAt: schema.entitlements.expiresAt,
+            source: schema.entitlements.source,
+          })
+          .from(schema.entitlements)
+          .innerJoin(
+            schema.features,
+            eq(schema.entitlements.featureId, schema.features.id),
+          )
+          .where(
+            and(
+              eq(schema.entitlements.customerId, subscription.customerId),
+              eq(schema.entitlements.source, "plan"),
             ),
-          }),
-    ]);
+          ),
+
+        // 4. Active manual overrides can also affect /check
+        db
+          .select({
+            id: schema.entitlements.id,
+            featureId: schema.features.id,
+            featureName: schema.features.name,
+            featureSlug: schema.features.slug,
+            featureType: schema.features.type,
+            unit: schema.features.unit,
+            limitValue: schema.entitlements.limitValue,
+            resetInterval: schema.entitlements.resetInterval,
+            lastResetAt: schema.entitlements.lastResetAt,
+            expiresAt: schema.entitlements.expiresAt,
+            source: schema.entitlements.source,
+          })
+          .from(schema.entitlements)
+          .innerJoin(
+            schema.features,
+            eq(schema.entitlements.featureId, schema.features.id),
+          )
+          .where(
+            and(
+              eq(schema.entitlements.customerId, subscription.customerId),
+              eq(schema.entitlements.source, "manual"),
+              or(
+                isNull(schema.entitlements.expiresAt),
+                gt(schema.entitlements.expiresAt, now),
+              ),
+            ),
+          ),
+
+        // 5. Recent events for this customer
+        listRecentEvents(c.env, {
+          customerId: subscription.customerId,
+          limit: 30,
+        }).then((result) => (result.success ? result.data : [])),
+
+        // 6. Available plans in the same group (for switch actions)
+        subscription.plan.planGroup
+          ? db.query.plans.findMany({
+              where: and(
+                eq(schema.plans.organizationId, subscription.plan.organizationId),
+                eq(schema.plans.planGroup, subscription.plan.planGroup),
+                eq(schema.plans.isActive, true),
+              ),
+            })
+          : db.query.plans.findMany({
+              where: and(
+                eq(schema.plans.organizationId, subscription.plan.organizationId),
+                eq(schema.plans.isActive, true),
+                eq(schema.plans.isAddon, false),
+              ),
+            }),
+      ]);
+
+    const activePlanFeatureIds = new Set(
+      planEntitlements.map((entitlement: any) => entitlement.featureId),
+    );
+    const provisionedPlanFeatureIds = new Set(
+      provisionedEntitlements.map((entitlement: any) => entitlement.featureId),
+    );
+    const missingProvisionedEntitlements = planEntitlements.filter(
+      (entitlement: any) =>
+        !provisionedPlanFeatureIds.has(entitlement.featureId),
+    );
+    const orphanedProvisionedEntitlements = provisionedEntitlements.filter(
+      (entitlement: any) => !activePlanFeatureIds.has(entitlement.featureId),
+    );
+
+    const entitlementDiagnostics = {
+      hasDrift:
+        missingProvisionedEntitlements.length > 0 ||
+        orphanedProvisionedEntitlements.length > 0,
+      missingProvisionedEntitlements,
+      orphanedProvisionedEntitlements,
+      manualOverrides,
+    };
 
     // 5. Build synthetic timeline from subscription lifecycle + events
     const timelineEntries: Array<{
@@ -384,7 +466,8 @@ app.get("/:id", async (c) => {
           email: subscription.customer.email,
           name: subscription.customer.name,
         },
-        entitlements,
+        entitlements: planEntitlements,
+        entitlementDiagnostics,
         timeline: timelineEntries,
         availablePlans: availablePlans.map((p: any) => ({
           id: p.id,
@@ -489,6 +572,13 @@ app.post("/switch-plan", async (c) => {
 
     if (!result.success) {
       return c.json({ success: false, error: result.message }, 400);
+    }
+
+    if (c.env.CACHE) {
+      const cache = new EntitlementCache(c.env.CACHE);
+      c.executionCtx.waitUntil(
+        cache.invalidateSubscriptions(organizationId, customerId),
+      );
     }
 
     return c.json({ success: true, data: result });
