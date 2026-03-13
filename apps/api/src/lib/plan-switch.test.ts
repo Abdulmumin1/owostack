@@ -2,6 +2,7 @@ import { describe, expect, it, vi, type Mock } from "vitest";
 import {
   calculateProration,
   detectSwitchType,
+  executeSwitch,
   provisionEntitlements,
 } from "./plan-switch";
 
@@ -161,5 +162,107 @@ describe("provisionEntitlements", () => {
     expect(whereMock).toHaveBeenCalledTimes(1);
     expect(insertMock).toHaveBeenCalledTimes(1);
     expect(valuesMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("executeSwitch", () => {
+  it("schedules a downgrade to a free plan at period end instead of switching immediately", async () => {
+    const now = new Date("2026-03-13T12:00:00.000Z").getTime();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const currentPeriodEnd = now + 4 * 24 * 60 * 60 * 1000;
+    const trialSub = {
+      id: "sub_trial_1",
+      customerId: "cust_1",
+      planId: "plan_paid",
+      providerId: "dodo",
+      providerSubscriptionCode: "trial-sub-123",
+      paystackSubscriptionCode: null,
+      status: "trialing",
+      currentPeriodEnd,
+      plan: {
+        id: "plan_paid",
+        name: "Paid Trial",
+        price: 1000,
+        interval: "monthly",
+        planGroup: "base",
+        isAddon: false,
+      },
+      metadata: { source: "trial" },
+    };
+
+    let updatedValues: Record<string, unknown> | undefined;
+    const whereMock = vi.fn(async () => undefined);
+    const setMock = vi.fn((values: Record<string, unknown>) => {
+      updatedValues = values;
+      return { where: whereMock };
+    });
+    const updateMock = vi.fn(() => ({ set: setMock }));
+    const downgradeWorkflow = {
+      create: vi.fn(async () => ({ id: "wf_123" })),
+    };
+
+    const db = {
+      query: {
+        plans: {
+          findFirst: vi
+            .fn()
+            .mockResolvedValueOnce({
+              id: "plan_free",
+              name: "Free",
+              slug: "free",
+              price: 0,
+              interval: "monthly",
+              billingType: "recurring",
+              planGroup: "base",
+              isAddon: false,
+            }),
+        },
+        customers: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "cust_1",
+            email: "customer@example.com",
+          }),
+        },
+        subscriptions: {
+          findMany: vi.fn().mockResolvedValue([trialSub]),
+        },
+      },
+      update: updateMock,
+    } as any;
+
+    const result = await executeSwitch(db, "cust_1", "plan_free", null, {
+      downgradeWorkflow,
+      organizationId: "org_1",
+      environment: "test",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.type).toBe("downgrade");
+    expect(result.subscriptionId).toBe("sub_trial_1");
+    expect(result.scheduledAt).toBe(currentPeriodEnd);
+    expect(updateMock).toHaveBeenCalledTimes(1);
+    expect(updatedValues).toMatchObject({
+      status: "trialing",
+      cancelAt: currentPeriodEnd,
+      metadata: {
+        source: "trial",
+        scheduled_downgrade: {
+          new_plan_id: "plan_free",
+          scheduled_at: now,
+          effective_at: currentPeriodEnd,
+        },
+      },
+    });
+    expect(downgradeWorkflow.create).toHaveBeenCalledWith({
+      params: expect.objectContaining({
+        subscriptionId: "sub_trial_1",
+        customerId: "cust_1",
+        newPlanId: "plan_free",
+        executeAt: currentPeriodEnd,
+      }),
+    });
+
+    vi.restoreAllMocks();
   });
 });
