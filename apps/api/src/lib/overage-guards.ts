@@ -2,6 +2,12 @@ import { eq, sql } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import type { PricingTier } from "@owostack/types";
 import type { UsageLedgerDO } from "./usage-ledger-do";
+import { BillingService } from "./billing";
+import {
+  normalizeOverageSettings,
+  type NormalizedOverageSettings,
+} from "./overage-billing-interval";
+import { getCustomerOverageBlock } from "./overage-blocks";
 import { sumUnbilledByFeature, sumUsageAmount } from "./usage-ledger";
 import { rateUsage } from "./usage-rating";
 
@@ -64,7 +70,10 @@ export async function getOverageUnitsUsed(
     usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
     organizationId?: string | null;
   },
-): Promise<number> {
+): Promise<number | null> {
+  const hasAuthoritativeLedger = Boolean(
+    opts?.usageLedger && opts?.organizationId,
+  );
   const ledgerTotal = await sumUsageAmount(
     {
       usageLedger: opts?.usageLedger,
@@ -79,6 +88,9 @@ export async function getOverageUnitsUsed(
   );
   if (ledgerTotal !== null) {
     return Math.max(0, ledgerTotal - (included || 0));
+  }
+  if (hasAuthoritativeLedger) {
+    return null;
   }
 
   const result = await (db as any).run(
@@ -105,7 +117,27 @@ export async function getUnbilledOverageAmount(
     usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
     organizationId?: string | null;
   },
-): Promise<number> {
+): Promise<number | null> {
+  const hasAuthoritativeLedger = Boolean(
+    opts?.usageLedger && opts?.organizationId,
+  );
+  if (opts?.organizationId) {
+    const billingService = new BillingService(db, {
+      usageLedger: opts.usageLedger,
+    });
+    const preview = await billingService.getUnbilledUsage(
+      customerId,
+      opts.organizationId,
+    );
+    if (preview.isOk()) {
+      return preview.value.totalEstimated;
+    }
+    console.warn(
+      `[overage-guards] Failed to preview unbilled overage for customer=${customerId}: ${preview.error.message}`,
+    );
+    return hasAuthoritativeLedger ? null : 0;
+  }
+
   const ledgerUsageRows = await sumUnbilledByFeature(
     {
       usageLedger: opts?.usageLedger,
@@ -177,6 +209,9 @@ export async function getUnbilledOverageAmount(
 
     return totalAmount;
   }
+  if (hasAuthoritativeLedger) {
+    return null;
+  }
 
   // Sum up all uninvoiced usage for features with overage=charge
   // This is an approximation — we sum usage * pricePerUnit for all charge-mode features
@@ -236,18 +271,14 @@ export async function getCustomerOverageLimit(
 }
 
 /**
- * Get the org's overage settings (threshold, billing interval, etc.).
+ * Get the org's overage settings.
+ * Canonical model: period-end billing with optional threshold collection.
  * Reads from overage_settings table in business database.
  */
 export async function getOrgOverageSettings(
   db: any,
   organizationId: string,
-): Promise<{
-  billingInterval: string;
-  thresholdAmount: number | null;
-  autoCollect: boolean;
-  gracePeriodHours: number;
-} | null> {
+): Promise<NormalizedOverageSettings | null> {
   try {
     if (!organizationId) return null;
 
@@ -257,12 +288,7 @@ export async function getOrgOverageSettings(
 
     if (!settings) return null;
 
-    return {
-      billingInterval: settings.billingInterval || "end_of_period",
-      thresholdAmount: settings.thresholdAmount,
-      autoCollect: settings.autoCollect,
-      gracePeriodHours: settings.gracePeriodHours || 0,
-    };
+    return normalizeOverageSettings(settings);
   } catch (e) {
     console.error("[getOrgOverageSettings] Error:", e);
     return null;
@@ -293,6 +319,20 @@ export async function checkOverageAllowed(
     organizationId?: string | null;
   },
 ): Promise<OverageGuardResult> {
+  const hasAuthoritativeLedger = Boolean(
+    opts?.usageLedger && opts?.organizationId,
+  );
+
+  const overageBlock = await getCustomerOverageBlock(db, customerId);
+  if (overageBlock) {
+    return {
+      allowed: false,
+      reason:
+        overageBlock.reason ||
+        "Overage billing is temporarily blocked pending invoice recovery.",
+    };
+  }
+
   // 1. Card on file check
   const hasCard = await hasPaymentMethod(db, customerId);
   if (!hasCard) {
@@ -318,10 +358,18 @@ export async function checkOverageAllowed(
       included,
       opts,
     );
-    if (overageUsed + requestedUnits > maxOverageUnits) {
+    if (overageUsed === null && hasAuthoritativeLedger) {
       return {
         allowed: false,
-        reason: `Overage cap reached (${overageUsed}/${maxOverageUnits} overage units used).`,
+        reason:
+          "Billing ledger unavailable. Cannot safely approve overage usage.",
+      };
+    }
+    const safeOverageUsed = overageUsed ?? 0;
+    if (safeOverageUsed + requestedUnits > maxOverageUnits) {
+      return {
+        allowed: false,
+        reason: `Overage cap reached (${safeOverageUsed}/${maxOverageUnits} overage units used).`,
       };
     }
   }
@@ -334,12 +382,20 @@ export async function checkOverageAllowed(
     customerLimit.maxOverageAmount > 0
   ) {
     const currentAmount = await getUnbilledOverageAmount(db, customerId, opts);
-    if (currentAmount >= customerLimit.maxOverageAmount) {
+    if (currentAmount === null && hasAuthoritativeLedger) {
+      return {
+        allowed: false,
+        reason:
+          "Billing ledger unavailable. Cannot safely approve overage usage.",
+      };
+    }
+    const safeCurrentAmount = currentAmount ?? 0;
+    if (safeCurrentAmount >= customerLimit.maxOverageAmount) {
       if (customerLimit.onLimitReached === "block") {
         return {
           allowed: false,
-          reason: `Overage spending cap reached (${currentAmount}/${customerLimit.maxOverageAmount} ${customerLimit.onLimitReached}).`,
-          currentOverageAmount: currentAmount,
+          reason: `Overage spending cap reached (${safeCurrentAmount}/${customerLimit.maxOverageAmount} ${customerLimit.onLimitReached}).`,
+          currentOverageAmount: safeCurrentAmount,
           customerCap: customerLimit.maxOverageAmount,
         };
       }

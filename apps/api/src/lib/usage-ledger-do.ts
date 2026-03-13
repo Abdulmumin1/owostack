@@ -1,13 +1,19 @@
 import { DurableObject } from "cloudflare:workers";
+import type { UsagePricingSnapshot } from "./usage-pricing-snapshot";
 
 export interface UsageLedgerRecord {
   id?: string;
   customerId: string;
   featureId: string;
+  featureSlug?: string | null;
+  featureName?: string | null;
   entityId?: string | null;
   amount: number;
   periodStart: number;
   periodEnd: number;
+  subscriptionId?: string | null;
+  planId?: string | null;
+  pricingSnapshot?: UsagePricingSnapshot | null;
   createdAt?: number;
   invoiceId?: string | null;
 }
@@ -32,14 +38,37 @@ export interface MarkInvoicedQuery {
   invoiceId: string;
 }
 
+export interface ReleaseInvoiceQuery {
+  invoiceId: string;
+}
+
 export interface UnbilledUsagePeriodRow {
   featureId: string;
+  featureSlug?: string | null;
+  featureName?: string | null;
   periodStart: number;
   periodEnd: number;
   totalUsage: number;
+  lastCreatedAt: number;
+  subscriptionId?: string | null;
+  planId?: string | null;
+  pricingSnapshot?: UsagePricingSnapshot | null;
 }
 
 export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
+  private parsePricingSnapshot(
+    raw: string | null,
+  ): UsagePricingSnapshot | null {
+    if (!raw) return null;
+
+    try {
+      return JSON.parse(raw) as UsagePricingSnapshot;
+    } catch (error) {
+      console.error("[UsageLedgerDO] Failed to parse pricing snapshot:", error);
+      return null;
+    }
+  }
+
   async alarm(): Promise<void> {
     // PAUSED: Pruning disabled until after prod launch
     // TODO: Re-enable prune after launch with proper retention policy
@@ -73,66 +102,6 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
   }
   */
 
-  /**
-   * Rehydrate usage records from D1 daily aggregates
-   * Called when DO starts empty to backfill recent usage data
-   */
-  async rehydrateFromAggregates(
-    aggregates: Array<{
-      customerId: string;
-      featureId: string;
-      date: string;
-      amount: number;
-      updatedAt: number;
-    }>,
-  ): Promise<{ inserted: number }> {
-    this.ensureSchema();
-
-    let inserted = 0;
-    for (const agg of aggregates) {
-      // Convert daily aggregate back to a representative usage record
-      // We use the date's timestamp (start of day) as created_at
-      const dateTimestamp = new Date(agg.date).getTime();
-
-      // Check if we already have any records for this customer/feature/date
-      const existingResult = this.ctx.storage.sql
-        .exec<{ count: number }>(
-          `SELECT COUNT(*) as count FROM usage_records 
-         WHERE customer_id = ? AND feature_id = ? AND date(created_at/1000, 'unixepoch') = ?`,
-          agg.customerId,
-          agg.featureId,
-          agg.date,
-        )
-        .one();
-
-      if (existingResult.count > 0) {
-        // Already have records for this day, skip to avoid duplicates
-        continue;
-      }
-
-      // Insert synthetic record representing the daily aggregate
-      // Using a special ID prefix to indicate this is a rehydrated aggregate
-      this.ctx.storage.sql.exec(
-        `INSERT INTO usage_records (
-          id, customer_id, feature_id, entity_id, amount,
-          period_start, period_end, invoice_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        `rehydrated-${agg.customerId}-${agg.featureId}-${agg.date}`,
-        agg.customerId,
-        agg.featureId,
-        null, // entity_id
-        agg.amount,
-        dateTimestamp, // period_start
-        dateTimestamp + 24 * 60 * 60 * 1000 - 1, // period_end (end of day)
-        null, // invoice_id - will be marked during billing workflow
-        agg.updatedAt,
-      );
-      inserted++;
-    }
-
-    return { inserted };
-  }
-
   private ensureSchema(): void {
     if (this.initialized) return;
 
@@ -141,14 +110,42 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
         id TEXT PRIMARY KEY,
         customer_id TEXT NOT NULL,
         feature_id TEXT NOT NULL,
+        feature_slug TEXT,
+        feature_name TEXT,
         entity_id TEXT,
         amount INTEGER NOT NULL,
         period_start INTEGER NOT NULL,
         period_end INTEGER NOT NULL,
+        subscription_id TEXT,
+        plan_id TEXT,
+        pricing_snapshot TEXT,
         invoice_id TEXT,
         created_at INTEGER NOT NULL
       )
     `);
+
+    const existingColumns = new Set(
+      this.ctx.storage.sql
+        .exec<{ name: string }>("PRAGMA table_info(usage_records)")
+        .toArray()
+        .map((row) => String(row.name)),
+    );
+
+    const requiredColumns: Array<[string, string]> = [
+      ["feature_slug", "TEXT"],
+      ["feature_name", "TEXT"],
+      ["subscription_id", "TEXT"],
+      ["plan_id", "TEXT"],
+      ["pricing_snapshot", "TEXT"],
+    ];
+
+    for (const [column, definition] of requiredColumns) {
+      if (!existingColumns.has(column)) {
+        this.ctx.storage.sql.exec(
+          `ALTER TABLE usage_records ADD COLUMN ${column} ${definition}`,
+        );
+      }
+    }
 
     this.ctx.storage.sql.exec(`
       CREATE INDEX IF NOT EXISTS usage_records_customer_feature_period_idx
@@ -185,15 +182,20 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
 
     this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO usage_records
-        (id, customer_id, feature_id, entity_id, amount, period_start, period_end, invoice_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, customer_id, feature_id, feature_slug, feature_name, entity_id, amount, period_start, period_end, subscription_id, plan_id, pricing_snapshot, invoice_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       record.id || crypto.randomUUID(),
       record.customerId,
       record.featureId,
+      record.featureSlug ?? null,
+      record.featureName ?? null,
       record.entityId ?? null,
       record.amount,
       record.periodStart,
       record.periodEnd,
+      record.subscriptionId ?? null,
+      record.planId ?? null,
+      record.pricingSnapshot ? JSON.stringify(record.pricingSnapshot) : null,
       record.invoiceId ?? null,
       record.createdAt ?? Date.now(),
     );
@@ -210,15 +212,20 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
     for (const record of records) {
       const cursor = this.ctx.storage.sql.exec(
         `INSERT OR IGNORE INTO usage_records
-          (id, customer_id, feature_id, entity_id, amount, period_start, period_end, invoice_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, customer_id, feature_id, feature_slug, feature_name, entity_id, amount, period_start, period_end, subscription_id, plan_id, pricing_snapshot, invoice_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         record.id || crypto.randomUUID(),
         record.customerId,
         record.featureId,
+        record.featureSlug ?? null,
+        record.featureName ?? null,
         record.entityId ?? null,
         record.amount,
         record.periodStart,
         record.periodEnd,
+        record.subscriptionId ?? null,
+        record.planId ?? null,
+        record.pricingSnapshot ? JSON.stringify(record.pricingSnapshot) : null,
         record.invoiceId ?? null,
         record.createdAt ?? Date.now(),
       );
@@ -303,6 +310,19 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
     return { updated: cursor.rowsWritten };
   }
 
+  async releaseInvoice(query: ReleaseInvoiceQuery): Promise<{ updated: number }> {
+    this.ensureSchema();
+
+    const cursor = this.ctx.storage.sql.exec(
+      `UPDATE usage_records
+       SET invoice_id = NULL
+       WHERE invoice_id = ?`,
+      query.invoiceId,
+    );
+
+    return { updated: cursor.rowsWritten };
+  }
+
   async sumUnbilledByFeature(customerId: string): Promise<
     Array<{
       featureId: string;
@@ -330,33 +350,67 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
 
   async sumUnbilledByFeaturePeriod(
     customerId: string,
+    usageCutoffAt?: number,
   ): Promise<UnbilledUsagePeriodRow[]> {
     this.ensureSchema();
+
+    const bindings: Array<string | number> = [customerId];
+    let cutoffClause = "";
+    if (typeof usageCutoffAt === "number") {
+      cutoffClause = " AND created_at <= ?";
+      bindings.push(usageCutoffAt);
+    }
 
     const rows = this.ctx.storage.sql
       .exec<{
         feature_id: string;
+        feature_slug: string | null;
+        feature_name: string | null;
         period_start: number;
         period_end: number;
+        subscription_id: string | null;
+        plan_id: string | null;
+        pricing_snapshot: string | null;
         total_usage: number;
+        last_created_at: number;
       }>(
         `SELECT feature_id,
+                feature_slug,
+                feature_name,
                 period_start,
                 period_end,
-                COALESCE(SUM(amount), 0) AS total_usage
+                subscription_id,
+                plan_id,
+                pricing_snapshot,
+                COALESCE(SUM(amount), 0) AS total_usage,
+                COALESCE(MAX(created_at), 0) AS last_created_at
          FROM usage_records
          WHERE customer_id = ?
            AND invoice_id IS NULL
-         GROUP BY feature_id, period_start, period_end`,
-        customerId,
+           ${cutoffClause}
+         GROUP BY feature_id,
+                  feature_slug,
+                  feature_name,
+                  period_start,
+                  period_end,
+                  subscription_id,
+                  plan_id,
+                  pricing_snapshot`,
+        ...bindings,
       )
       .toArray();
 
     return rows.map((row) => ({
       featureId: row.feature_id,
+      featureSlug: row.feature_slug,
+      featureName: row.feature_name,
       periodStart: Number(row.period_start || 0),
       periodEnd: Number(row.period_end || 0),
       totalUsage: Number(row.total_usage || 0),
+      lastCreatedAt: Number(row.last_created_at || 0),
+      subscriptionId: row.subscription_id,
+      planId: row.plan_id,
+      pricingSnapshot: this.parsePricingSnapshot(row.pricing_snapshot),
     }));
   }
 

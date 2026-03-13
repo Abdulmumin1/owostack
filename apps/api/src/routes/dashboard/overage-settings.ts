@@ -3,6 +3,7 @@ import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
+import { normalizeOverageSettings } from "../../lib/overage-billing-interval";
 import { zodErrorToResponse } from "../../lib/validation";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -18,36 +19,21 @@ app.get("/", async (c) => {
 
   const db = c.get("db");
 
-  console.log("organizationId", organizationId);
-
   try {
-    // Use proper schema typing
     const settings = await db.query.overageSettings.findFirst({
       where: eq(schema.overageSettings.organizationId, organizationId),
     });
 
-    console.log("settings", settings);
-
     return c.json({
       success: true,
-      data: settings || {
-        billingInterval: "end_of_period",
-        thresholdAmount: null,
-        autoCollect: false,
-        gracePeriodHours: 0,
-      },
+      data: normalizeOverageSettings(settings),
     });
   } catch (e: any) {
     console.error("[overage-settings] GET error:", e);
     if (e?.message?.includes("no such table")) {
       return c.json({
         success: true,
-        data: {
-          billingInterval: "end_of_period",
-          thresholdAmount: null,
-          autoCollect: false,
-          gracePeriodHours: 0,
-        },
+        data: normalizeOverageSettings(null),
       });
     }
     return c.json({ success: false, error: e.message }, 500);
@@ -59,9 +45,9 @@ app.get("/", async (c) => {
 // ---------------------------------------------------------------------------
 const upsertSchema = z.object({
   organizationId: z.string(),
-  billingInterval: z
-    .enum(["end_of_period", "daily", "weekly", "monthly", "threshold"])
-    .default("end_of_period"),
+  billingMode: z.enum(["end_of_period"]).optional(),
+  billingInterval: z.enum(["end_of_period", "threshold"]).optional(),
+  thresholdEnabled: z.boolean().optional(),
   thresholdAmount: z.number().nullable().optional(),
   autoCollect: z.boolean().default(false),
   gracePeriodHours: z.number().min(0).default(0),
@@ -75,8 +61,34 @@ app.put("/", async (c) => {
     return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
-  const { billingInterval, thresholdAmount, autoCollect, gracePeriodHours } =
-    parsed.data;
+  const normalized = normalizeOverageSettings(parsed.data);
+  const { thresholdEnabled, autoCollect, gracePeriodHours } = normalized;
+  const thresholdAmount = thresholdEnabled
+    ? parsed.data.thresholdAmount ?? null
+    : null;
+
+  if (thresholdEnabled && !autoCollect) {
+    return c.json(
+      {
+        success: false,
+        error: "Threshold overage billing requires auto-collect to be enabled",
+      },
+      400,
+    );
+  }
+
+  if (
+    thresholdEnabled &&
+    (thresholdAmount === null || thresholdAmount <= 0)
+  ) {
+    return c.json(
+      {
+        success: false,
+        error: "Threshold overage billing requires a positive threshold amount",
+      },
+      400,
+    );
+  }
 
   // Use resolved organization ID from context (middleware resolves slug to UUID)
   const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
@@ -91,7 +103,7 @@ app.put("/", async (c) => {
       .values({
         id: crypto.randomUUID(),
         organizationId,
-        billingInterval,
+        billingInterval: "end_of_period",
         thresholdAmount: thresholdAmount ?? null,
         autoCollect,
         gracePeriodHours,
@@ -101,7 +113,7 @@ app.put("/", async (c) => {
       .onConflictDoUpdate({
         target: schema.overageSettings.organizationId,
         set: {
-          billingInterval,
+          billingInterval: "end_of_period",
           thresholdAmount: thresholdAmount ?? null,
           autoCollect,
           gracePeriodHours,

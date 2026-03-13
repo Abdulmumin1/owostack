@@ -39,7 +39,8 @@ export interface WebhookUrl {
 }
 
 export interface OverageSettings {
-  billingInterval: string;
+  billingMode: "end_of_period";
+  thresholdEnabled: boolean;
   thresholdAmount: number | null;
   autoCollect: boolean;
   gracePeriodHours: number;

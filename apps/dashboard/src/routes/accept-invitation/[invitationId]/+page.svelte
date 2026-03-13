@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { authClient } from "$lib/auth-client";
+  import { authClient, organization } from "$lib/auth-client";
   import { CircleNotch, CheckCircle, XCircle } from "phosphor-svelte";
   import { onMount } from "svelte";
 
@@ -11,6 +11,23 @@
   let status = $state<"loading" | "success" | "error">("loading");
   let errorMessage = $state("");
   let organizationName = $state("");
+
+  async function resolveOrganizationName(organizationId?: string) {
+    if (!organizationId) {
+      return "the organization";
+    }
+
+    const { data, error } = await organization.list();
+    if (error || !data) {
+      return "the organization";
+    }
+
+    const match = data.find(
+      (org: { id: string; name?: string | null }) => org.id === organizationId,
+    );
+
+    return match?.name || "the organization";
+  }
 
   onMount(async () => {
     if (!invitationId) {
@@ -29,7 +46,9 @@
         errorMessage = result.error.message || "Failed to accept invitation";
       } else {
         status = "success";
-        organizationName = result.data?.organization?.name || "the organization";
+        organizationName = await resolveOrganizationName(
+          result.data?.invitation?.organizationId,
+        );
       }
     } catch (e: any) {
       status = "error";

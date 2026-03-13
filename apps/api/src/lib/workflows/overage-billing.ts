@@ -14,8 +14,11 @@ import type { ProviderAccount } from "@owostack/adapters";
 import { createDb } from "@owostack/db";
 import { getMinimumChargeAmount } from "../provider-minimums";
 import { BillingService } from "../billing";
-import { buildMeteredInvoiceLineData } from "../invoice-line-items";
-import { markUsageInvoiced } from "../usage-ledger";
+import { updateBillingRun, getBillingRun } from "../billing-runs";
+import {
+  blockCustomerOverage,
+  clearCustomerOverageBlock,
+} from "../overage-blocks";
 import {
   PAID_SUBSCRIPTION_PERIOD_GRACE_MS,
   isPaidActivePastGracePeriod,
@@ -31,8 +34,7 @@ export type OverageBillingWorkflowDependencies = {
   createBillingService: (
     db: ReturnType<typeof createDb>,
     options: { usageLedger: WorkflowEnv["USAGE_LEDGER"] },
-  ) => Pick<BillingService, "getUnbilledUsage">;
-  markUsageInvoiced: typeof markUsageInvoiced;
+  ) => Pick<BillingService, "getUnbilledUsage" | "createInvoiceFromUsage">;
 };
 
 const defaultDependencies: OverageBillingWorkflowDependencies = {
@@ -42,7 +44,6 @@ const defaultDependencies: OverageBillingWorkflowDependencies = {
   resolveProviderAccount,
   createDb,
   createBillingService: (db, options) => new BillingService(db, options),
-  markUsageInvoiced,
 };
 
 // Serializable snapshot of ProviderAccount
@@ -150,6 +151,7 @@ export interface OverageBillingParams {
   customerId: string;
   /** Trigger reason: scheduled cron, threshold crossed, or period end */
   trigger: "cron" | "threshold" | "period_end" | "reconcile_only";
+  billingRunId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -513,12 +515,139 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
   }
 
   async run(event: WorkflowEvent<OverageBillingParams>, step: WorkflowStep) {
-    const { organizationId, customerId, trigger } = event.payload;
-    let deferPaidReconcile = false;
+    const { organizationId, customerId, trigger, billingRunId } = event.payload;
 
     console.log(
       `[OverageBilling] Starting: customer=${customerId}, org=${organizationId}, trigger=${trigger}`,
     );
+
+    let thresholdRun: Awaited<ReturnType<typeof getBillingRun>> | null = null;
+    let thresholdRunInvoiceId: string | null = null;
+
+    const mergeThresholdMetadata = (
+      extra?: Record<string, unknown> | null,
+    ): Record<string, unknown> | null => {
+      if (extra === null) return null;
+
+      const base =
+        thresholdRun?.metadata &&
+        typeof thresholdRun.metadata === "object" &&
+        !Array.isArray(thresholdRun.metadata)
+          ? (thresholdRun.metadata as Record<string, unknown>)
+          : {};
+
+      return {
+        ...base,
+        ...(extra || {}),
+      };
+    };
+
+    const updateThresholdRunState = async (
+      stepName: string,
+      updates: Parameters<typeof updateBillingRun>[2],
+    ) => {
+      if (!thresholdRun) return;
+
+      const refreshedRun = await step.do(stepName, async () => {
+        const db = this.deps.createDb(this.env.DB);
+        await updateBillingRun(db, thresholdRun!.id, {
+          ...updates,
+          ...(updates.metadata !== undefined
+            ? { metadata: mergeThresholdMetadata(updates.metadata) }
+            : {}),
+        });
+        return await getBillingRun(db, thresholdRun!.id);
+      });
+
+      thresholdRun = refreshedRun ?? thresholdRun;
+      thresholdRunInvoiceId = thresholdRun?.invoiceId ?? thresholdRunInvoiceId;
+    };
+
+    const completeThresholdRun = async (
+      stepName: string,
+      metadata?: Record<string, unknown>,
+    ) => {
+      if (!thresholdRun) return;
+      await updateThresholdRunState(stepName, {
+        status: "completed",
+        invoiceId: thresholdRunInvoiceId,
+        activeLockKey: null,
+        failureReason: null,
+        metadata,
+      });
+    };
+
+    const deferThresholdRun = async (
+      stepName: string,
+      reason: string,
+      metadata?: Record<string, unknown>,
+    ) => {
+      if (!thresholdRun) return;
+      await updateThresholdRunState(stepName, {
+        status: "deferred",
+        invoiceId: thresholdRunInvoiceId,
+        activeLockKey: null,
+        failureReason: reason,
+        metadata,
+      });
+    };
+
+    const clearThresholdBlockAndComplete = async (
+      stepName: string,
+      metadata?: Record<string, unknown>,
+    ) => {
+      if (!thresholdRun) return;
+
+      const refreshedRun = await step.do(stepName, async () => {
+        const db = this.deps.createDb(this.env.DB);
+        await clearCustomerOverageBlock(db, customerId);
+        await updateBillingRun(db, thresholdRun!.id, {
+          status: "completed",
+          invoiceId: thresholdRunInvoiceId,
+          activeLockKey: null,
+          failureReason: null,
+          metadata: mergeThresholdMetadata(metadata),
+        });
+        return await getBillingRun(db, thresholdRun!.id);
+      });
+
+      thresholdRun = refreshedRun ?? thresholdRun;
+      thresholdRunInvoiceId = thresholdRun?.invoiceId ?? thresholdRunInvoiceId;
+    };
+
+    const blockThresholdRun = async (
+      stepName: string,
+      reason: string,
+      metadata?: Record<string, unknown>,
+    ) => {
+      if (!thresholdRun) return;
+
+      const refreshedRun = await step.do(stepName, async () => {
+        const db = this.deps.createDb(this.env.DB);
+        const mergedMetadata = mergeThresholdMetadata(metadata);
+
+        await blockCustomerOverage(db, {
+          customerId,
+          organizationId,
+          billingRunId: thresholdRun!.id,
+          invoiceId: thresholdRunInvoiceId,
+          reason,
+          metadata: mergedMetadata,
+        });
+        await updateBillingRun(db, thresholdRun!.id, {
+          status: "blocked",
+          invoiceId: thresholdRunInvoiceId,
+          activeLockKey: null,
+          failureReason: reason,
+          metadata: mergedMetadata,
+        });
+
+        return await getBillingRun(db, thresholdRun!.id);
+      });
+
+      thresholdRun = refreshedRun ?? thresholdRun;
+      thresholdRunInvoiceId = thresholdRun?.invoiceId ?? thresholdRunInvoiceId;
+    };
 
     try {
       // Step 1: Load overage settings for this org
@@ -549,6 +678,62 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
         return;
       }
 
+      if (trigger === "threshold") {
+        if (!billingRunId) {
+          console.warn(
+            `[OverageBilling] Threshold trigger missing billingRunId for customer=${customerId}.`,
+          );
+          return;
+        }
+
+        thresholdRun = await step.do("load-threshold-billing-run", async () => {
+          const db = this.deps.createDb(this.env.DB);
+          return await getBillingRun(db, billingRunId);
+        });
+
+        if (!thresholdRun) {
+          console.warn(
+            `[OverageBilling] Threshold billing run ${billingRunId} not found for customer=${customerId}.`,
+          );
+          return;
+        }
+
+        thresholdRunInvoiceId = thresholdRun.invoiceId ?? null;
+
+        if (
+          thresholdRun.status === "completed" ||
+          thresholdRun.status === "blocked" ||
+          thresholdRun.status === "failed" ||
+          thresholdRun.status === "deferred"
+        ) {
+          console.log(
+            `[OverageBilling] Threshold billing run ${thresholdRun.id} already ${thresholdRun.status}.`,
+          );
+          return;
+        }
+
+        if (thresholdRun.status !== "processing") {
+          await updateThresholdRunState("mark-threshold-run-processing", {
+            status: "processing",
+            invoiceId: thresholdRunInvoiceId,
+            failureReason: null,
+          });
+        }
+
+        if (!settings.auto_collect) {
+          await updateThresholdRunState("fail-threshold-run-auto-collect", {
+            status: "failed",
+            invoiceId: thresholdRunInvoiceId,
+            activeLockKey: null,
+            failureReason: "threshold_requires_auto_collect",
+            metadata: {
+              outcome: "threshold_requires_auto_collect",
+            },
+          });
+          return;
+        }
+      }
+
       // Step 2: Grace delay is only for recurring/threshold billing triggers.
       // Period-end renewal/reconciliation should not be delayed by grace windows.
       if (
@@ -571,12 +756,16 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
         const result = await billingService.getUnbilledUsage(
           customerId,
           organizationId,
+          thresholdRun
+            ? {
+                usageCutoffAt: thresholdRun.usageWindowEnd,
+              }
+            : undefined,
         );
         if (result.isErr()) {
-          console.warn(
+          throw new Error(
             `[OverageBilling] Failed to calculate unbilled usage: ${result.error.message}`,
           );
-          return { features: [], totalEstimated: 0, currency: "USD" };
         }
 
         return result.value;
@@ -586,6 +775,12 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
         console.log(
           `[OverageBilling] No unbilled usage for customer=${customerId}. Done.`,
         );
+        if (thresholdRun) {
+          await completeThresholdRun("complete-threshold-run-empty", {
+            outcome: "no_billable_usage",
+            usageWindowEnd: thresholdRun.usageWindowEnd,
+          });
+        }
         return;
       }
 
@@ -617,175 +812,68 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
       );
 
       if (minimumAmount > 0 && unbilled.totalEstimated < minimumAmount) {
-        deferPaidReconcile = true;
         console.log(
-          `[OverageBilling] Invoice amount ${unbilled.totalEstimated} ${unbilled.currency} below provider minimum ${minimumAmount}. Accumulating for next billing cycle.`,
+          `[OverageBilling] Invoice amount ${unbilled.totalEstimated} ${unbilled.currency} below provider minimum ${minimumAmount}. Leaving usage unbilled so it can accumulate across future periods.`,
         );
-        // Usage records remain unstamped - they will accumulate for next billing cycle
+        if (thresholdRun) {
+          await deferThresholdRun("defer-threshold-run-below-minimum", "below_provider_minimum", {
+            outcome: "below_provider_minimum",
+            invoiceAmount: unbilled.totalEstimated,
+            minimumAmount,
+            currency: unbilled.currency,
+            usageWindowEnd: unbilled.usageWindowEnd,
+          });
+        }
+        // Usage remains unstamped, but period reconciliation still runs so future
+        // usage keeps the correct billing window instead of collapsing into the
+        // expired period.
         return;
       }
 
       // Step 4: Generate invoice (idempotent — safe to retry)
       const invoice = await step.do("generate-invoice", async () => {
-        const now = Date.now();
-        const periodStart = Math.min(
-          ...unbilled.features.map((f) => f.periodStart),
+        const db = this.deps.createDb(this.env.DB);
+        const billingService = this.deps.createBillingService(db, {
+          usageLedger: this.env.USAGE_LEDGER,
+        });
+        const sourceTrigger = trigger === "threshold" ? "threshold" : "period_end";
+        const idempotencyKey =
+          thresholdRun?.idempotencyKey ||
+          `${sourceTrigger}:${organizationId}:${customerId}:${unbilled.usageWindowEnd}`;
+
+        return await billingService.createInvoiceFromUsage(
+          customerId,
+          organizationId,
+          unbilled,
+          {
+            idempotencyKey,
+            sourceTrigger,
+            usageWindowStart: thresholdRun?.usageWindowStart ?? null,
+          },
         );
-        const periodEnd = Math.max(
-          ...unbilled.features.map((f) => f.periodEnd),
-        );
-
-        // Idempotency: check if an invoice already exists for this customer/period
-        // This prevents duplicate invoices if the workflow retries after a crash.
-        const existing = await this.env.DB.prepare(
-          `SELECT id, number, total, currency FROM invoices
-         WHERE customer_id = ? AND organization_id = ? AND period_start = ? AND period_end = ?
-           AND status IN ('open', 'paid')
-         LIMIT 1`,
-        )
-          .bind(customerId, organizationId, periodStart, periodEnd)
-          .first<{
-            id: string;
-            number: string;
-            total: number;
-            currency: string;
-          }>();
-
-        let invoiceId: string;
-        let invoiceNumber: string;
-
-        if (existing) {
-          console.log(
-            `[OverageBilling] Existing invoice found: ${existing.number} — completing any missing line items`,
-          );
-          invoiceId = existing.id;
-          invoiceNumber = existing.number;
-        } else {
-          // Get invoice count for numbering
-          const countResult = await this.env.DB.prepare(
-            "SELECT COUNT(*) as count FROM invoices WHERE organization_id = ?",
-          )
-            .bind(organizationId)
-            .first<{ count: number }>();
-          const seq = String((countResult?.count || 0) + 1).padStart(5, "0");
-          const suffix = crypto.randomUUID().slice(0, 4).toUpperCase();
-          invoiceNumber = `INV-${seq}-${suffix}`;
-
-          invoiceId = crypto.randomUUID();
-
-          // Create invoice
-          await this.env.DB.prepare(
-            `INSERT INTO invoices (id, organization_id, customer_id, number, status, currency, subtotal, tax, total, amount_paid, amount_due, period_start, period_end, usage_cutoff_at, due_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'open', ?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
-          )
-            .bind(
-              invoiceId,
-              organizationId,
-              customerId,
-              invoiceNumber,
-              unbilled.currency,
-              unbilled.totalEstimated,
-              unbilled.totalEstimated,
-              unbilled.totalEstimated,
-              periodStart,
-              periodEnd,
-              now,
-              now + 7 * 24 * 60 * 60 * 1000, // due in 7 days
-              now,
-              now,
-            )
-            .run();
-        }
-
-        // Create line items + stamp usage records (idempotent on retry)
-        // On retry after crash, some line items may already exist. Check each before inserting.
-        // Usage stamping is naturally idempotent (WHERE invoice_id IS NULL).
-        for (const f of unbilled.features) {
-          const existingItem = await this.env.DB.prepare(
-            "SELECT id FROM invoice_items WHERE invoice_id = ? AND feature_id = ? LIMIT 1",
-          )
-            .bind(invoiceId, f.featureId)
-            .first();
-
-          if (!existingItem) {
-            const itemId = crypto.randomUUID();
-            const line = buildMeteredInvoiceLineData({
-              featureName: f.featureName,
-              billableQuantity: f.billableQuantity,
-              pricePerUnit: f.pricePerUnit,
-              billingUnits: f.billingUnits,
-              ratingModel: f.ratingModel,
-              tierBreakdown: f.tierBreakdown,
-            });
-
-            await this.env.DB.prepare(
-              `INSERT INTO invoice_items (id, invoice_id, feature_id, description, quantity, unit_price, amount, period_start, period_end, metadata, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            )
-              .bind(
-                itemId,
-                invoiceId,
-                f.featureId,
-                line.description,
-                f.billableQuantity,
-                line.unitPrice,
-                f.estimatedAmount,
-                f.periodStart,
-                f.periodEnd,
-                line.metadata ? JSON.stringify(line.metadata) : null,
-                now,
-              )
-              .run();
-          }
-
-          const ledgerStamped = await this.deps.markUsageInvoiced(
-            {
-              usageLedger: this.env.USAGE_LEDGER,
-              organizationId,
-            },
-            {
-              customerId,
-              featureId: f.featureId,
-              periodStart: f.periodStart,
-              periodEnd: f.periodEnd,
-              usageCutoffAt: now,
-              invoiceId,
-            },
-          );
-
-          if (ledgerStamped === null) {
-            await this.env.DB.prepare(
-              `UPDATE usage_records SET invoice_id = ?
-             WHERE customer_id = ? AND feature_id = ? AND period_start >= ? AND period_end <= ? AND invoice_id IS NULL AND created_at <= ?`,
-            )
-              .bind(
-                invoiceId,
-                customerId,
-                f.featureId,
-                f.periodStart,
-                f.periodEnd,
-                now,
-              )
-              .run();
-          }
-        }
-
-        return {
-          invoiceId,
-          invoiceNumber,
-          total: unbilled.totalEstimated,
-          currency: unbilled.currency,
-        };
       });
 
+      thresholdRunInvoiceId = invoice.invoiceId;
+
+      if (thresholdRun) {
+        await updateThresholdRunState("attach-threshold-run-invoice", {
+          invoiceId: invoice.invoiceId,
+          metadata: {
+            outcome: "invoice_created",
+            invoiceNumber: invoice.number,
+            usageWindowEnd: invoice.usageWindowEnd,
+          },
+        });
+      }
+
       console.log(
-        `[OverageBilling] Invoice ${invoice.invoiceNumber} created: ${invoice.currency} ${invoice.total}`,
+        `[OverageBilling] Invoice ${invoice.number} created: ${invoice.currency} ${invoice.total}`,
       );
 
       // Step 5: Auto-collect if enabled
       if (!settings.auto_collect) {
         console.log(
-          `[OverageBilling] Auto-collect disabled. Invoice ${invoice.invoiceNumber} left as open.`,
+          `[OverageBilling] Auto-collect disabled. Invoice ${invoice.number} left as open.`,
         );
         return;
       }
@@ -801,21 +889,30 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             .first<{ token: string; provider_id: string }>();
 
           const customer = await this.env.DB.prepare(
-            "SELECT email FROM customers WHERE id = ? LIMIT 1",
+            "SELECT email, provider_customer_id, paystack_customer_id FROM customers WHERE id = ? LIMIT 1",
           )
             .bind(customerId)
-            .first<{ email: string | null }>();
+            .first<{
+              email: string | null;
+              provider_customer_id: string | null;
+              paystack_customer_id: string | null;
+            }>();
 
           return {
             email: customer?.email || null,
             providerId: pm?.provider_id || null,
             authCode: pm?.token || null,
+            providerCustomerId:
+              customer?.provider_customer_id ||
+              customer?.paystack_customer_id ||
+              null,
           };
         },
       );
 
       const authCode = customerPayment?.authCode;
       const providerId = customerPayment?.providerId || "unknown";
+      const providerCustomerId = customerPayment?.providerCustomerId || customerId;
 
       if (!authCode || !customerPayment?.email) {
         console.log(
@@ -837,6 +934,14 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             )
             .run();
         });
+
+        if (thresholdRun) {
+          await blockThresholdRun("block-threshold-run-no-card", "no_payment_method_on_file", {
+            outcome: "no_payment_method_on_file",
+            invoiceId: invoice.invoiceId,
+            invoiceNumber: invoice.number,
+          });
+        }
         return;
       }
 
@@ -881,6 +986,19 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             )
             .run();
         });
+
+        if (thresholdRun) {
+          await blockThresholdRun(
+            "block-threshold-run-no-provider-account",
+            "no_provider_account_configured",
+            {
+              outcome: "no_provider_account_configured",
+              invoiceId: invoice.invoiceId,
+              invoiceNumber: invoice.number,
+              providerId,
+            },
+          );
+        }
         return;
       }
 
@@ -894,14 +1012,85 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
           )
             .bind(invoice.invoiceId)
             .first<{ status: string }>();
-          return row?.status === "open";
+          if (row?.status === "paid") {
+            return {
+              shouldCharge: false,
+              reason: "invoice_already_paid" as const,
+              status: row.status,
+            };
+          }
+          if (row?.status !== "open") {
+            return {
+              shouldCharge: false,
+              reason: "invoice_not_open" as const,
+              status: row?.status || null,
+            };
+          }
+
+          const successfulAttempt = await this.env.DB.prepare(
+            `SELECT provider_reference
+             FROM payment_attempts
+             WHERE invoice_id = ? AND status = 'succeeded'
+             ORDER BY created_at DESC
+             LIMIT 1`,
+          )
+            .bind(invoice.invoiceId)
+            .first<{ provider_reference: string | null }>();
+
+          if (successfulAttempt) {
+            await this.env.DB.prepare(
+              `UPDATE invoices
+               SET status = 'paid',
+                   amount_paid = ?,
+                   amount_due = 0,
+                   paid_at = COALESCE(paid_at, ?),
+                   updated_at = ?
+               WHERE id = ? AND status = 'open'`,
+            )
+              .bind(
+                invoice.total,
+                Date.now(),
+                Date.now(),
+                invoice.invoiceId,
+              )
+              .run();
+
+            return {
+              shouldCharge: false,
+              reason: "payment_attempt_already_succeeded" as const,
+              status: "paid",
+            };
+          }
+
+          return { shouldCharge: true, reason: null, status: "open" };
         },
       );
 
-      if (!invoiceStillOpen) {
+      if (!invoiceStillOpen.shouldCharge) {
         console.log(
-          `[OverageBilling] Invoice ${invoice.invoiceNumber} already paid/void. Skipping charge.`,
+          `[OverageBilling] Invoice ${invoice.number} charge skipped (${invoiceStillOpen.reason}).`,
         );
+        if (
+          thresholdRun &&
+          (invoiceStillOpen.reason === "invoice_already_paid" ||
+            invoiceStillOpen.reason === "payment_attempt_already_succeeded")
+        ) {
+          await clearThresholdBlockAndComplete(
+            "complete-threshold-run-paid-before-charge",
+            {
+              outcome: invoiceStillOpen.reason,
+              invoiceId: invoice.invoiceId,
+              invoiceNumber: invoice.number,
+            },
+          );
+        } else if (thresholdRun) {
+          await completeThresholdRun("complete-threshold-run-non-open-invoice", {
+            outcome: invoiceStillOpen.reason,
+            invoiceId: invoice.invoiceId,
+            invoiceNumber: invoice.number,
+            invoiceStatus: invoiceStillOpen.status,
+          });
+        }
         return;
       }
 
@@ -930,31 +1119,40 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
 
             try {
               const chargeResult = await adapter.chargeAuthorization({
-                customer: { id: customerId, email: customerPayment!.email! },
+                customer: {
+                  id: providerCustomerId,
+                  email: customerPayment!.email!,
+                },
                 authorizationCode: authCode!,
                 amount: invoice.total,
                 currency: invoice.currency,
+                reference: invoice.invoiceId,
                 metadata: {
                   invoice_id: invoice.invoiceId,
-                  invoice_number: invoice.invoiceNumber,
+                  invoice_number: invoice.number,
                   type: "overage_billing",
                   organization_id: organizationId,
                   customer_id: customerId,
+                  billing_run_id: thresholdRun?.id ?? null,
                 },
                 environment: accountData.environment as "test" | "live",
                 account: accountData as unknown as ProviderAccount,
               });
 
               if (chargeResult.isErr()) {
+                const errCode = chargeResult.error.code || "";
                 const errMsg =
                   chargeResult.error.message ||
                   JSON.stringify(chargeResult.error);
                 const permanent =
-                  /invalid_authorization|validation_error|invalid_request|authorization.*(invalid|expired|not found)/i.test(
+                  /invalid_authorization|validation_error|invalid_request/.test(
+                    errCode,
+                  ) ||
+                  /invalid_authorization|validation_error|invalid_request|authorization.*(invalid|expired|not found)|customer id/i.test(
                     errMsg,
                   );
                 console.error(
-                  `[OverageBilling] Charge attempt ${attempt} failed: ${errMsg} (permanent=${permanent})`,
+                  `[OverageBilling] Charge attempt ${attempt} failed: ${errMsg} (code=${errCode || "unknown"}, permanent=${permanent})`,
                 );
                 return {
                   success: false as const,
@@ -1004,7 +1202,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
 
       if (!chargeSucceeded) {
         console.error(
-          `[OverageBilling] All charge attempts failed for invoice=${invoice.invoiceNumber}: ${lastError}`,
+          `[OverageBilling] All charge attempts failed for invoice=${invoice.number}: ${lastError}`,
         );
       }
 
@@ -1037,15 +1235,53 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             .bind(invoice.total, now, invoice.invoiceId)
             .run();
           console.log(
-            `[OverageBilling] Invoice ${invoice.invoiceNumber} marked as paid.`,
+            `[OverageBilling] Invoice ${invoice.number} marked as paid.`,
           );
         } else {
           // Leave as open — can be retried or paid manually
           console.log(
-            `[OverageBilling] Invoice ${invoice.invoiceNumber} remains open (charge failed).`,
+            `[OverageBilling] Invoice ${invoice.number} remains open (charge failed).`,
           );
         }
       });
+
+      if (chargeSucceeded) {
+        if (thresholdRun) {
+          await clearThresholdBlockAndComplete(
+            "complete-threshold-run-charge-succeeded",
+            {
+              outcome: "charge_succeeded",
+              invoiceId: invoice.invoiceId,
+              invoiceNumber: invoice.number,
+              providerReference: chargeRef,
+            },
+          );
+        }
+      } else if (thresholdRun) {
+        await blockThresholdRun(
+          "block-threshold-run-charge-failed",
+          "threshold_charge_failed",
+          {
+            outcome: "threshold_charge_failed",
+            invoiceId: invoice.invoiceId,
+            invoiceNumber: invoice.number,
+            lastError: lastError || "Charge failed after retries",
+          },
+        );
+      }
+    } catch (error) {
+      if (thresholdRun) {
+        const failureReason =
+          error instanceof Error ? error.message : "threshold_billing_failed";
+
+        await blockThresholdRun("block-threshold-run-unexpected-error", failureReason, {
+          outcome: "threshold_billing_failed",
+          invoiceId: thresholdRunInvoiceId,
+          error: failureReason,
+        });
+      }
+
+      throw error;
     } finally {
       if (trigger === "period_end") {
         await this.advanceDueFreeSubscriptionPeriods(
@@ -1053,44 +1289,22 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
           organizationId,
           customerId,
         );
-        if (!deferPaidReconcile) {
-          await this.reconcileDuePaidSubscriptionPeriods(
-            step,
-            organizationId,
-            customerId,
-          );
-        } else {
-          await this.reconcileDuePaidSubscriptionPeriods(
-            step,
-            organizationId,
-            customerId,
-            { allowPeriodAdvance: false },
-          );
-          console.log(
-            `[OverageBilling] Deferred paid period advancement for customer=${customerId} due to below-minimum carry-forward.`,
-          );
-        }
+        await this.reconcileDuePaidSubscriptionPeriods(
+          step,
+          organizationId,
+          customerId,
+        );
       } else if (trigger === "reconcile_only") {
         await this.reconcileDuePaidSubscriptionPeriods(
           step,
           organizationId,
           customerId,
         );
-      } else if (trigger === "cron" && !deferPaidReconcile) {
+      } else if (trigger === "cron") {
         await this.reconcileDuePaidSubscriptionPeriods(
           step,
           organizationId,
           customerId,
-        );
-      } else if (trigger === "cron" && deferPaidReconcile) {
-        await this.reconcileDuePaidSubscriptionPeriods(
-          step,
-          organizationId,
-          customerId,
-          { allowPeriodAdvance: false },
-        );
-        console.log(
-          `[OverageBilling] Deferred paid period advancement for customer=${customerId} due to below-minimum carry-forward.`,
         );
       }
     }

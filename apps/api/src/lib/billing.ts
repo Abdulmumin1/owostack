@@ -1,11 +1,17 @@
 import { Result } from "better-result";
 import type { createDb } from "@owostack/db";
 import { schema } from "@owostack/db";
-import { eq, and, gte, lte, sql, desc, inArray } from "drizzle-orm";
-import { DatabaseError, NotFoundError } from "./errors";
+import { eq, and, sql, desc, inArray } from "drizzle-orm";
+import { DatabaseError, NotFoundError, ValidationError } from "./errors";
 import { getMinimumChargeAmount } from "./provider-minimums";
 import type { UsageLedgerDO } from "./usage-ledger-do";
-import { markUsageInvoiced, sumUnbilledByFeaturePeriod } from "./usage-ledger";
+import {
+  markUsageInvoiced,
+  releaseUsageInvoice,
+  sumUnbilledByFeaturePeriod,
+} from "./usage-ledger";
+import { releaseCustomerOverageBlockForInvoice } from "./overage-blocks";
+import type { UsagePricingSnapshot } from "./usage-pricing-snapshot";
 import { rateUsage } from "./usage-rating";
 import { buildMeteredInvoiceLineData } from "./invoice-line-items";
 import type {
@@ -18,11 +24,15 @@ type DB = ReturnType<typeof createDb>;
 
 export type BillingServiceDependencies = {
   markUsageInvoiced: typeof markUsageInvoiced;
+  releaseUsageInvoice: typeof releaseUsageInvoice;
+  releaseCustomerOverageBlockForInvoice: typeof releaseCustomerOverageBlockForInvoice;
   sumUnbilledByFeaturePeriod: typeof sumUnbilledByFeaturePeriod;
 };
 
 const defaultDependencies: BillingServiceDependencies = {
   markUsageInvoiced,
+  releaseUsageInvoice,
+  releaseCustomerOverageBlockForInvoice,
   sumUnbilledByFeaturePeriod,
 };
 
@@ -49,14 +59,18 @@ export interface GenerateInvoiceResult {
   items: InvoiceLineItem[];
   periodStart: number;
   periodEnd: number;
+  usageWindowEnd: number;
 }
 
 export interface UnbilledUsageResult {
   customerId: string;
+  usageWindowEnd: number;
   features: {
     featureId: string;
     featureSlug: string;
     featureName: string;
+    subscriptionId?: string | null;
+    planId?: string | null;
     usageModel: string;
     usage: number;
     included: number | null;
@@ -71,6 +85,23 @@ export interface UnbilledUsageResult {
   }[];
   totalEstimated: number;
   currency: string;
+}
+
+export interface GetUnbilledUsageOptions {
+  usageCutoffAt?: number;
+}
+
+export interface GenerateInvoiceOptions {
+  idempotencyKey?: string;
+  sourceTrigger?: "manual" | "threshold" | "period_end";
+  usageCutoffAt?: number;
+  usageWindowStart?: number | null;
+}
+
+export interface ReleaseInvoiceResult {
+  invoiceId: string;
+  status: "void";
+  releasedUsageRecords: number;
 }
 
 export class BillingService {
@@ -92,6 +123,7 @@ export class BillingService {
   async getUnbilledUsage(
     customerId: string,
     organizationId: string,
+    options?: GetUnbilledUsageOptions,
   ): Promise<Result<UnbilledUsageResult, NotFoundError | DatabaseError>> {
     return Result.tryPromise({
       try: async () => {
@@ -132,6 +164,7 @@ export class BillingService {
         if (!subscription) {
           return {
             customerId,
+            usageWindowEnd: options?.usageCutoffAt ?? Date.now(),
             features: [],
             totalEstimated: 0,
             currency: "USD",
@@ -171,53 +204,77 @@ export class BillingService {
             organizationId,
           },
           customerId,
+          options?.usageCutoffAt,
         );
 
         // CRITICAL: Do NOT fall back to D1 usageRecords - it has stale data
         // If UsageLedgerDO is unavailable, skip billing to prevent under-billing.
         if (unbilledUsageRows === null) {
-          console.warn(
-            `[billing] UsageLedgerDO unavailable for customer=${customerId}. ` +
-              `Skipping billing to prevent under-billing. Please investigate DO health.`,
-          );
-          return {
-            customerId,
-            features: [],
-            totalEstimated: 0,
-            currency: subscription.plan.currency || "USD",
-          };
+          throw new DatabaseError({
+            operation: "getUnbilledUsage",
+            cause: new Error(
+              `[billing] UsageLedgerDO unavailable for customer=${customerId}. ` +
+                `Billing preview cannot continue safely.`,
+            ),
+          });
         }
 
         const features: UnbilledUsageResult["features"] = [];
         let totalEstimated = 0;
+        let usageWindowEnd = options?.usageCutoffAt ?? 0;
 
         for (const row of unbilledUsageRows) {
+          const snapshot = row.pricingSnapshot as UsagePricingSnapshot | null;
           const pf = planFeatureById.get(row.featureId);
-          if (!pf) continue;
+          if (!snapshot && !pf) {
+            console.warn(
+              `[billing] Missing pricing snapshot and current plan feature for customer=${customerId}, feature=${row.featureId}. Skipping usage row.`,
+            );
+            continue;
+          }
 
           const usage = Number(row.totalUsage || 0);
           if (usage === 0) continue;
 
-          const rated = rateUsage({
-            usageModel: pf.usageModel || "included",
-            ratingModel: pf.ratingModel || "package",
-            usage,
-            included: pf.limitValue,
-            pricePerUnit: pf.pricePerUnit,
-            billingUnits: pf.billingUnits,
-            overagePrice: pf.overagePrice,
-            tiers: pf.tiers,
-          });
+          const rated = rateUsage(
+            snapshot
+              ? {
+                  usageModel: snapshot.usageModel,
+                  ratingModel: snapshot.ratingModel,
+                  usage,
+                  included: snapshot.included,
+                  pricePerUnit: snapshot.pricePerUnit,
+                  billingUnits: snapshot.billingUnits,
+                  overagePrice: snapshot.overagePrice,
+                  tiers: snapshot.tiers,
+                }
+              : {
+                  usageModel: pf!.usageModel || "included",
+                  ratingModel: pf!.ratingModel || "package",
+                  usage,
+                  included: pf!.limitValue,
+                  pricePerUnit: pf!.pricePerUnit,
+                  billingUnits: pf!.billingUnits,
+                  overagePrice: pf!.overagePrice,
+                  tiers: pf!.tiers,
+                },
+          );
 
           if (rated.billableQuantity === 0) continue;
 
           features.push({
-            featureId: pf.featureId,
-            featureSlug: pf.feature.slug,
-            featureName: pf.feature.name,
+            featureId: row.featureId,
+            featureSlug: row.featureSlug || pf?.feature.slug || row.featureId,
+            featureName:
+              row.featureName ||
+              pf?.feature.name ||
+              row.featureSlug ||
+              row.featureId,
+            ...(row.subscriptionId ? { subscriptionId: row.subscriptionId } : {}),
+            ...(row.planId ? { planId: row.planId } : {}),
             usageModel: rated.usageModel,
             usage,
-            included: pf.limitValue,
+            included: rated.included,
             billableQuantity: rated.billableQuantity,
             pricePerUnit: rated.pricePerUnit,
             billingUnits: rated.billingUnits,
@@ -231,17 +288,19 @@ export class BillingService {
           });
 
           totalEstimated += rated.amount;
+          usageWindowEnd = Math.max(usageWindowEnd, row.lastCreatedAt || 0);
         }
 
         return {
           customerId,
+          usageWindowEnd: usageWindowEnd || options?.usageCutoffAt || Date.now(),
           features,
           totalEstimated,
           currency: subscription.plan.currency || "USD",
         };
       },
       catch: (e) => {
-        if (e instanceof NotFoundError) return e;
+        if (e instanceof NotFoundError || e instanceof DatabaseError) return e;
         return new DatabaseError({ operation: "getUnbilledUsage", cause: e });
       },
     });
@@ -250,12 +309,18 @@ export class BillingService {
   async generateInvoice(
     customerId: string,
     organizationId: string,
-  ): Promise<Result<GenerateInvoiceResult, NotFoundError | DatabaseError>> {
+    options?: GenerateInvoiceOptions,
+  ): Promise<
+    Result<GenerateInvoiceResult, NotFoundError | ValidationError | DatabaseError>
+  > {
     return Result.tryPromise({
       try: async () => {
         const unbilledResult = await this.getUnbilledUsage(
           customerId,
           organizationId,
+          {
+            usageCutoffAt: options?.usageCutoffAt,
+          },
         );
         if (unbilledResult.isErr()) {
           throw unbilledResult.error;
@@ -268,241 +333,373 @@ export class BillingService {
             id: customerId,
           });
         }
+        const idempotencyKey =
+          options?.idempotencyKey ||
+          `${options?.sourceTrigger || "manual"}:${organizationId}:${customerId}:${unbilled.usageWindowEnd}`;
 
-        // Check minimum charge amount for provider/currency
-        const paymentMethod = await this.db.query.paymentMethods.findFirst({
-          where: and(
-            eq(schema.paymentMethods.customerId, customerId),
-            eq(schema.paymentMethods.isValid, 1),
-            eq(schema.paymentMethods.isDefault, 1),
-          ),
-        });
-
-        const providerId = paymentMethod?.providerId || "unknown";
-        const minimumAmount = getMinimumChargeAmount(
-          providerId,
-          unbilled.currency,
+        return await this.createInvoiceFromUsage(
+          customerId,
+          organizationId,
+          unbilled,
+          {
+            idempotencyKey,
+            sourceTrigger: options?.sourceTrigger || "manual",
+            usageWindowStart: options?.usageWindowStart ?? null,
+          },
         );
+      },
+      catch: (e) => {
+        if (
+          e instanceof NotFoundError ||
+          e instanceof ValidationError ||
+          e instanceof DatabaseError
+        )
+          return e;
+        return new DatabaseError({ operation: "generateInvoice", cause: e });
+      },
+    });
+  }
 
-        if (minimumAmount > 0 && unbilled.totalEstimated < minimumAmount) {
-          throw new NotFoundError({
-            resource: `Invoice amount ${unbilled.totalEstimated} ${unbilled.currency} below provider minimum ${minimumAmount}`,
-            id: customerId,
-          });
-        }
+  async createInvoiceFromUsage(
+    customerId: string,
+    organizationId: string,
+    unbilled: UnbilledUsageResult,
+    options: {
+      idempotencyKey: string;
+      sourceTrigger: "manual" | "threshold" | "period_end";
+      usageWindowStart?: number | null;
+    },
+  ): Promise<GenerateInvoiceResult> {
+    const paymentMethod = await this.db.query.paymentMethods.findFirst({
+      where: and(
+        eq(schema.paymentMethods.customerId, customerId),
+        eq(schema.paymentMethods.isValid, 1),
+        eq(schema.paymentMethods.isDefault, 1),
+      ),
+    });
 
-        // Generate unique invoice number with random suffix to prevent race conditions
-        const invoiceCount = await this.db
-          .select({ count: sql<number>`COUNT(*)` })
-          .from(schema.invoices)
-          .where(eq(schema.invoices.organizationId, organizationId));
+    const providerId = paymentMethod?.providerId || "unknown";
+    const minimumAmount = getMinimumChargeAmount(providerId, unbilled.currency);
 
-        const seq = (invoiceCount[0]?.count || 0) + 1;
-        const suffix = crypto.randomUUID().slice(0, 4).toUpperCase();
-        const invoiceNumber = `INV-${String(seq).padStart(5, "0")}-${suffix}`;
+    if (minimumAmount > 0 && unbilled.totalEstimated < minimumAmount) {
+      throw new ValidationError({
+        field: "invoice_amount",
+        details:
+          `${unbilled.totalEstimated} ${unbilled.currency} is below the ` +
+          `${providerId} minimum charge of ${minimumAmount}`,
+      });
+    }
 
-        const periodStart = Math.min(
-          ...unbilled.features.map((f) => f.periodStart),
-        );
-        const periodEnd = Math.max(
-          ...unbilled.features.map((f) => f.periodEnd),
-        );
-        const usageCutoffAt = Date.now();
+    const periodStart = Math.min(...unbilled.features.map((f) => f.periodStart));
+    const periodEnd = Math.max(...unbilled.features.map((f) => f.periodEnd));
+    const usageWindowEnd = unbilled.usageWindowEnd;
 
-        // IDEMPOTENCY CHECK: Prevent duplicate invoices
-        // Check if invoice already exists for this customer/period
-        const existingInvoice = await this.db.query.invoices.findFirst({
-          where: and(
-            eq(schema.invoices.customerId, customerId),
-            eq(schema.invoices.organizationId, organizationId),
-            eq(schema.invoices.periodStart, periodStart),
-            eq(schema.invoices.periodEnd, periodEnd),
-            eq(schema.invoices.status, "open"),
-          ),
-        });
+    const existingInvoice = await this.db.query.invoices.findFirst({
+      where: and(
+        eq(schema.invoices.customerId, customerId),
+        eq(schema.invoices.organizationId, organizationId),
+        eq(schema.invoices.idempotencyKey, options.idempotencyKey),
+      ),
+      with: {
+        items: true,
+      },
+    });
 
-        if (existingInvoice) {
-          console.warn(
-            `[billing] Invoice already exists for customer=${customerId} ` +
-              `period=${periodStart}-${periodEnd}: ${existingInvoice.number}. ` +
-              `Skipping duplicate creation.`,
-          );
-          throw new NotFoundError({
-            resource: "Invoice already exists",
-            id: existingInvoice.id,
-          });
-        }
+    const invoiceCount = await this.db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(schema.invoices)
+      .where(eq(schema.invoices.organizationId, organizationId));
 
-        const invoiceId = crypto.randomUUID();
-        const now = Date.now();
+    const seq = (invoiceCount[0]?.count || 0) + 1;
+    const suffix = crypto.randomUUID().slice(0, 4).toUpperCase();
+    const invoiceNumber = `INV-${String(seq).padStart(5, "0")}-${suffix}`;
+    const invoiceId = existingInvoice?.id || crypto.randomUUID();
+    const now = Date.now();
+    const uniqueSubscriptionIds = [
+      ...new Set(
+        unbilled.features
+          .map((feature) => feature.subscriptionId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    const existingItemKeys = new Set(
+      (existingInvoice?.items || []).map(
+        (item: NonNullable<typeof existingInvoice>["items"][number]) =>
+          `${item.featureId || "feature"}:${item.periodStart || 0}:${item.periodEnd || 0}`,
+      ),
+    );
 
-        const items: InvoiceLineItem[] = [];
-        const applyInvoiceWrites = async (executor: any) => {
-          await executor.insert(schema.invoices).values({
-            id: invoiceId,
-            organizationId,
-            customerId,
-            number: invoiceNumber,
-            status: "open",
-            currency: unbilled.currency,
-            subtotal: unbilled.totalEstimated,
-            tax: 0,
-            total: unbilled.totalEstimated,
-            amountPaid: 0,
-            amountDue: unbilled.totalEstimated,
-            periodStart,
-            periodEnd,
-            usageCutoffAt,
-            dueAt: now + 7 * 24 * 60 * 60 * 1000,
-            createdAt: now,
-            updatedAt: now,
-          });
-
-          for (const f of unbilled.features) {
-            const itemId = crypto.randomUUID();
-            const line = buildMeteredInvoiceLineData({
-              featureName: f.featureName,
-              billableQuantity: f.billableQuantity,
-              pricePerUnit: f.pricePerUnit,
-              billingUnits: f.billingUnits,
-              ratingModel: f.ratingModel,
-              tierBreakdown: f.tierBreakdown,
-            });
-
-            await executor.insert(schema.invoiceItems).values({
-              id: itemId,
-              invoiceId,
-              featureId: f.featureId,
-              description: line.description,
-              quantity: f.billableQuantity,
-              unitPrice: line.unitPrice,
-              amount: f.estimatedAmount,
-              periodStart: f.periodStart,
-              periodEnd: f.periodEnd,
-              metadata: line.metadata ?? null,
-              createdAt: now,
-            });
-
-            items.push({
-              featureId: f.featureId,
-              featureSlug: f.featureSlug,
-              description: line.description,
-              quantity: f.billableQuantity,
-              unitPrice: line.unitPrice,
-              amount: f.estimatedAmount,
-              periodStart: f.periodStart,
-              periodEnd: f.periodEnd,
-              ratingModel: f.ratingModel,
-              ...(f.tierBreakdown ? { tierBreakdown: f.tierBreakdown } : {}),
-            });
-
-            const ledgerMarked = await this.deps.markUsageInvoiced(
-              {
-                usageLedger: this.opts?.usageLedger,
-                organizationId,
-              },
-              {
-                customerId,
-                featureId: f.featureId,
-                periodStart: f.periodStart,
-                periodEnd: f.periodEnd,
-                usageCutoffAt,
-                invoiceId,
-              },
-            );
-
-            // CRITICAL: If UsageLedgerDO marking failed, we have a serious issue
-            // The invoice was created but usage wasn't marked as invoiced
-            // This could lead to double-billing next cycle
-            // We must ensure usageDailySummaries is updated as backup
-            if (ledgerMarked === null) {
-              console.error(
-                `[billing] CRITICAL: Failed to mark usage as invoiced in DO for ` +
-                  `customer=${customerId}, feature=${f.featureId}, invoice=${invoiceId}. ` +
-                  `Attempting D1 aggregate update as backup.`,
-              );
-
-              // Update D1 daily aggregates as backup source of truth
-              // This ensures we don't double-bill next cycle
-              const startDate = new Date(f.periodStart)
-                .toISOString()
-                .split("T")[0];
-              const endDate = new Date(f.periodEnd).toISOString().split("T")[0];
-
-              try {
-                await executor
-                  .update(schema.usageDailySummaries)
-                  .set({
-                    updatedAt: Date.now(),
-                    // Add metadata to track this was invoiced
-                    // Note: We don't have invoice_id column in aggregates
-                    // This is a limitation - we rely on invoice period matching
-                  })
-                  .where(
-                    and(
-                      eq(schema.usageDailySummaries.customerId, customerId),
-                      eq(schema.usageDailySummaries.featureId, f.featureId),
-                      gte(schema.usageDailySummaries.date, startDate),
-                      lte(schema.usageDailySummaries.date, endDate),
-                    ),
-                  );
-
-                console.warn(
-                  `[billing] Updated D1 aggregates as backup for invoiced usage. ` +
-                    `Period: ${startDate} to ${endDate}`,
-                );
-              } catch (d1Error) {
-                console.error(
-                  `[billing] CRITICAL: Failed to update D1 aggregates too. ` +
-                    `Risk of double-billing on next cycle. Error:`,
-                  d1Error,
-                );
-                // Don't throw - invoice already created, we can't roll back
-                // But log prominently for manual intervention
-              }
-            }
-          }
-        };
-
-        // Prefer transaction for atomicity, but fallback for D1 environments that
-        // disallow SQL BEGIN/SAVEPOINT from ORM transaction wrappers.
-        try {
-          await this.db.transaction(async (tx: any) => {
-            await applyInvoiceWrites(tx);
-          });
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          const isD1TransactionUnsupported =
-            message.includes("state.storage.transaction") ||
-            message.includes("BEGIN TRANSACTION") ||
-            message.includes("SAVEPOINT");
-
-          if (!isD1TransactionUnsupported) {
-            throw error;
-          }
-
-          console.warn(
-            "[billing] DB transaction unsupported; generating invoice without transaction",
-          );
-          await applyInvoiceWrites(this.db);
-        }
-
-        return {
-          invoiceId,
+    const applyInvoiceWrites = async (executor: any) => {
+      if (!existingInvoice) {
+        await executor.insert(schema.invoices).values({
+          id: invoiceId,
+          organizationId,
+          customerId,
+          subscriptionId:
+            uniqueSubscriptionIds.length === 1 ? uniqueSubscriptionIds[0] : null,
           number: invoiceNumber,
+          idempotencyKey: options.idempotencyKey,
           status: "open",
           currency: unbilled.currency,
           subtotal: unbilled.totalEstimated,
+          tax: 0,
           total: unbilled.totalEstimated,
-          items,
+          amountPaid: 0,
+          amountDue: unbilled.totalEstimated,
           periodStart,
           periodEnd,
+          usageWindowStart: options.usageWindowStart ?? null,
+          usageWindowEnd,
+          usageCutoffAt: usageWindowEnd,
+          dueAt: now + 7 * 24 * 60 * 60 * 1000,
+          metadata: {
+            sourceTrigger: options.sourceTrigger,
+          },
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      for (const f of unbilled.features) {
+        const itemKey = `${f.featureId}:${f.periodStart}:${f.periodEnd}`;
+        const line = buildMeteredInvoiceLineData({
+          featureName: f.featureName,
+          billableQuantity: f.billableQuantity,
+          pricePerUnit: f.pricePerUnit,
+          billingUnits: f.billingUnits,
+          ratingModel: f.ratingModel,
+          tierBreakdown: f.tierBreakdown,
+        });
+
+        if (!existingItemKeys.has(itemKey)) {
+          await executor.insert(schema.invoiceItems).values({
+            id: crypto.randomUUID(),
+            invoiceId,
+            featureId: f.featureId,
+            description: line.description,
+            quantity: f.billableQuantity,
+            unitPrice: line.unitPrice,
+            amount: f.estimatedAmount,
+            periodStart: f.periodStart,
+            periodEnd: f.periodEnd,
+            metadata: line.metadata ?? null,
+            createdAt: now,
+          });
+          existingItemKeys.add(itemKey);
+        }
+
+        const ledgerMarked = await this.deps.markUsageInvoiced(
+          {
+            usageLedger: this.opts?.usageLedger,
+            organizationId,
+          },
+          {
+            customerId,
+            featureId: f.featureId,
+            periodStart: f.periodStart,
+            periodEnd: f.periodEnd,
+            usageCutoffAt: usageWindowEnd,
+            invoiceId,
+          },
+        );
+
+        if (ledgerMarked === null) {
+          throw new Error(
+            `[billing] Failed to mark usage as invoiced in UsageLedgerDO for ` +
+              `customer=${customerId}, feature=${f.featureId}, invoice=${invoiceId}`,
+          );
+        }
+      }
+    };
+
+    try {
+      await this.db.transaction(async (tx: any) => {
+        await applyInvoiceWrites(tx);
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const isD1TransactionUnsupported =
+        message.includes("state.storage.transaction") ||
+        message.includes("BEGIN TRANSACTION") ||
+        message.includes("SAVEPOINT");
+
+      if (!isD1TransactionUnsupported) {
+        throw error;
+      }
+
+      console.warn(
+        "[billing] DB transaction unsupported; generating invoice without transaction",
+      );
+      try {
+        await applyInvoiceWrites(this.db);
+      } catch (applyError) {
+        if (!existingInvoice) {
+          await this.db
+            .delete(schema.invoices)
+            .where(eq(schema.invoices.id, invoiceId));
+        }
+        throw applyError;
+      }
+    }
+
+    const finalInvoice = await this.db.query.invoices.findFirst({
+      where: eq(schema.invoices.id, invoiceId),
+      with: {
+        items: true,
+      },
+    });
+
+    if (!finalInvoice) {
+      throw new Error(`[billing] Invoice ${invoiceId} disappeared after creation`);
+    }
+
+    const featureSlugById = new Map(
+      unbilled.features.map((feature) => [feature.featureId, feature.featureSlug]),
+    );
+
+    return {
+      invoiceId: finalInvoice.id,
+      number: finalInvoice.number || existingInvoice?.number || invoiceNumber,
+      status: finalInvoice.status,
+      currency: finalInvoice.currency,
+      subtotal: finalInvoice.subtotal,
+      total: finalInvoice.total,
+      items: finalInvoice.items.map((item: (typeof finalInvoice.items)[number]) => {
+        const metadata = (item.metadata || {}) as Record<string, unknown>;
+        return {
+          featureId: item.featureId || "unknown",
+          featureSlug:
+            featureSlugById.get(item.featureId || "") ||
+            item.featureId ||
+            "unknown",
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          amount: item.amount,
+          periodStart: item.periodStart || 0,
+          periodEnd: item.periodEnd || 0,
+          ...(typeof metadata.ratingModel === "string"
+            ? { ratingModel: metadata.ratingModel as RatingModel }
+            : {}),
+          ...(Array.isArray(metadata.tierBreakdown)
+            ? {
+                tierBreakdown:
+                  metadata.tierBreakdown as BillingTierBreakdown[],
+              }
+            : {}),
+        };
+      }),
+      periodStart: finalInvoice.periodStart,
+      periodEnd: finalInvoice.periodEnd,
+      usageWindowEnd: finalInvoice.usageWindowEnd || usageWindowEnd,
+    };
+  }
+
+  async releaseInvoiceToUnbilledUsage(
+    invoiceId: string,
+    organizationId: string,
+    options: {
+      reason: string;
+      metadata?: Record<string, unknown> | null;
+    },
+  ): Promise<
+    Result<ReleaseInvoiceResult, NotFoundError | ValidationError | DatabaseError>
+  > {
+    return Result.tryPromise({
+      try: async () => {
+        const invoice = await this.db.query.invoices.findFirst({
+          where: and(
+            eq(schema.invoices.id, invoiceId),
+            eq(schema.invoices.organizationId, organizationId),
+          ),
+        });
+
+        if (!invoice) {
+          throw new NotFoundError({ resource: "Invoice", id: invoiceId });
+        }
+
+        if (invoice.status !== "open") {
+          throw new ValidationError({
+            field: "invoice_status",
+            details: `only open invoices can be released (current: ${invoice.status})`,
+          });
+        }
+
+        const successfulAttempt = await this.db.query.paymentAttempts.findFirst({
+          where: and(
+            eq(schema.paymentAttempts.invoiceId, invoiceId),
+            eq(schema.paymentAttempts.status, "succeeded"),
+          ),
+        });
+
+        if (successfulAttempt) {
+          throw new ValidationError({
+            field: "invoice_status",
+            details: "cannot release an invoice with a successful payment attempt",
+          });
+        }
+
+        const releasedUsageRecords = await this.deps.releaseUsageInvoice(
+          {
+            usageLedger: this.opts?.usageLedger,
+            organizationId,
+          },
+          invoiceId,
+        );
+
+        if (releasedUsageRecords === null) {
+          throw new Error(
+            `[billing] Failed to release invoiced usage in UsageLedgerDO for invoice=${invoiceId}`,
+          );
+        }
+
+        const now = Date.now();
+        const existingMetadata =
+          typeof invoice.metadata === "object" && invoice.metadata
+            ? (invoice.metadata as Record<string, unknown>)
+            : {};
+
+        await this.db
+          .update(schema.invoices)
+          .set({
+            status: "void",
+            amountDue: 0,
+            updatedAt: now,
+            metadata: {
+              ...existingMetadata,
+              release: {
+                reason: options.reason,
+                releasedUsageRecords,
+                releasedAt: new Date(now).toISOString(),
+                ...(options.metadata ?? {}),
+              },
+            },
+          })
+          .where(eq(schema.invoices.id, invoiceId));
+
+        await this.deps.releaseCustomerOverageBlockForInvoice(this.db, invoiceId, {
+          failureReason: options.reason,
+          metadata: options.metadata ?? null,
+        });
+
+        return {
+          invoiceId,
+          status: "void" as const,
+          releasedUsageRecords,
         };
       },
       catch: (e) => {
-        if (e instanceof NotFoundError) return e;
-        return new DatabaseError({ operation: "generateInvoice", cause: e });
+        if (
+          e instanceof NotFoundError ||
+          e instanceof ValidationError ||
+          e instanceof DatabaseError
+        ) {
+          return e;
+        }
+        return new DatabaseError({
+          operation: "releaseInvoiceToUnbilledUsage",
+          cause: e,
+        });
       },
     });
   }

@@ -26,7 +26,7 @@
   // Pagination options
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-  const organizationId = $derived(page.params.projectId);
+  const organizationId = $derived(page.params.projectId ?? "");
   let customers = $state<any[]>([]);
   let totalCount = $state(0);
   let currentPage = $state(1);

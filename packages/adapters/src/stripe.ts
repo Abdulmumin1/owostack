@@ -533,6 +533,7 @@ class StripeClient {
     method: "GET" | "POST" | "DELETE",
     path: string,
     body?: Record<string, unknown>,
+    options?: { headers?: Record<string, string> },
   ): Promise<ProviderResult<T>> {
     return Result.tryPromise({
       try: async () => {
@@ -551,6 +552,7 @@ class StripeClient {
               headers: {
                 Authorization: `Bearer ${this.config.secretKey}`,
                 "Content-Type": "application/x-www-form-urlencoded",
+                ...(options?.headers || {}),
               },
               body: method === "GET" ? undefined : toFormBody(body),
               signal: controller.signal,
@@ -689,8 +691,9 @@ class StripeClient {
 
   createPaymentIntent(
     params: Record<string, unknown>,
+    options?: { headers?: Record<string, string> },
   ): Promise<ProviderResult<StripePaymentIntentResponse>> {
-    return this.request("POST", "/payment_intents", params);
+    return this.request("POST", "/payment_intents", params, options);
   }
 
   createRefund(
@@ -1151,7 +1154,13 @@ export const stripeAdapter: ProviderAdapter = {
       metadata: coerceMetadata(params.metadata),
       receipt_email: params.customer.email,
       ...(params.reference ? { description: params.reference } : {}),
-    });
+    }, params.reference
+      ? {
+          headers: {
+            "Idempotency-Key": params.reference,
+          },
+        }
+      : undefined);
 
     if (response.isErr()) return response;
 

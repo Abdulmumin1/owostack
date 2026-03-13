@@ -234,6 +234,10 @@
       invoiceResult = res;
       log("Invoice Generated:", res);
     } catch (e: any) {
+      if (e?.code === "invoice_below_provider_minimum") {
+        log("Invoice Skipped:", e.message);
+        return;
+      }
       log("Invoice Failed:", e.message);
     }
   }
@@ -277,6 +281,18 @@
         window.open(res.checkoutUrl, "_blank");
       }
     } catch (e: any) {
+      if (e?.code === "invoice_below_provider_minimum") {
+        log("Invoice Released:", e.message);
+        if (invoiceResult?.invoice?.id === invoiceId) {
+          invoiceResult = {
+            ...invoiceResult,
+            invoice: { ...invoiceResult.invoice, status: "void" },
+          };
+        }
+        await handleGetUnbilledUsage();
+        await handleListInvoices();
+        return;
+      }
       log("Pay Failed:", e.message);
     }
   }

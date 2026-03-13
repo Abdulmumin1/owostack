@@ -4,6 +4,7 @@ import { provisionEntitlements } from "../../plan-switch";
 import { topUpScopedBalance } from "../../addon-credits";
 import { upsertPaymentMethod } from "../../payment-methods";
 import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
+import { clearCustomerOverageBlockForInvoice } from "../../overage-blocks";
 import {
   isCustomerResolutionConflictError,
   resolveCustomerByEmail,
@@ -345,6 +346,7 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
           updatedAt: Date.now(),
         })
         .where(eq(schema.invoices.id, invoiceId));
+      await clearCustomerOverageBlockForInvoice(db, invoiceId);
     } catch (e) {
       console.warn(`[WEBHOOK] Failed to mark invoice ${invoiceId} as paid:`, e);
     }

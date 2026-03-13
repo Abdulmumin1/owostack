@@ -7,7 +7,7 @@
 
   let { 
     projectId,
-    accounts: initialAccounts = [],
+    accounts: accountsProp = [],
     enabledProviderIds = [],
     onEdit,
     onAdd
@@ -19,10 +19,14 @@
     onAdd: () => void;
   } = $props();
 
-  let accounts = $state(initialAccounts);
+  let accounts = $state<ProviderAccount[]>([]);
   let providerError = $state<string | null>(null);
   let deletingId = $state<string | null>(null);
   let isDeleting = $state(false);
+
+  $effect(() => {
+    accounts = accountsProp;
+  });
 
   async function loadAccounts() {
     const res = await apiFetch(`/api/dashboard/providers/accounts?organizationId=${projectId}`);
@@ -43,10 +47,6 @@
   function getProviderLabel(id: string): string {
     return SUPPORTED_PROVIDERS.find((p) => p.id === id)?.name || id;
   }
-
-  let availableProviders = $derived(
-    SUPPORTED_PROVIDERS.filter((p) => enabledProviderIds.includes(p.id))
-  );
 </script>
 
 <div class="flex items-center justify-between mb-6">

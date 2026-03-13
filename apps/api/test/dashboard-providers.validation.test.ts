@@ -303,7 +303,8 @@ describe("Dashboard provider validation", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       success: false,
-      error: "Dodo Payments rejected the API key: Unauthorized",
+      error:
+        "Dodo Payments rejected the test API key: Unauthorized. Make sure the key belongs to the test environment selected in Owostack.",
     });
     expect(insertMock).not.toHaveBeenCalled();
   });

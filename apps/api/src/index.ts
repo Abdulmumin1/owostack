@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createDb, schema } from "@owostack/db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { type User } from "better-auth";
 import { auth } from "./lib/auth";
 import { trackHttpMetric } from "./lib/analytics-engine";
@@ -290,10 +290,8 @@ app.route("/", webhooksRoute);
 // and kicks off OverageBillingWorkflow for each customer with active subs.
 // =============================================================================
 
-// Queue message shape for overage billing dispatch
 interface OverageBillingQueueMessage {
   organizationId: string;
-  targetInterval: "daily" | "weekly" | "end_of_period" | "paid_reconcile";
   scheduledTime: number;
 }
 
@@ -308,114 +306,38 @@ export default {
       `[CRON] Triggered at ${new Date(event.scheduledTime).toISOString()}, cron=${event.cron}`,
     );
 
-    const db = createDb(env.DB);
-
-    // Determine which billing intervals this cron matches
-    // Daily cron  → process "daily"
-    // Weekly cron → process "weekly"
-    // Daily cron also checks free-plan period-end renewals for end_of_period orgs
-    const targetIntervals: OverageBillingQueueMessage["targetInterval"][] = [];
-    if (event.cron === "0 0 * * 1") {
-      targetIntervals.push("weekly");
-    } else {
-      targetIntervals.push("daily");
-    }
-    if (event.cron === "0 0 * * *") {
-      targetIntervals.push("end_of_period");
-      targetIntervals.push("paid_reconcile");
+    // Only the daily cron dispatches overage billing.
+    if (event.cron !== "0 0 * * *") {
+      console.log(
+        `[CRON] Ignoring non-daily overage cron ${event.cron}; daily period-end dispatch is the canonical lane.`,
+      );
+      return;
     }
 
     try {
-      const messages: { body: OverageBillingQueueMessage }[] = [];
-      for (const targetInterval of targetIntervals) {
-        if (targetInterval === "paid_reconcile") {
-          // Reconcile paid renewals for orgs that are not already handled by
-          // other scheduled billing lanes in the same run.
-          const dueOrgs = await env.DB.prepare(
-            `SELECT DISTINCT c.organization_id AS organization_id
-             FROM subscriptions s
-             INNER JOIN customers c ON c.id = s.customer_id
-             INNER JOIN plans p ON p.id = s.plan_id
-             LEFT JOIN overage_settings os ON os.organization_id = c.organization_id
-             WHERE s.status = 'active'
-               AND p.type != 'free'
-               AND s.current_period_end <= ?
-               AND os.billing_interval IS NOT NULL
-               AND os.billing_interval NOT IN ('end_of_period', 'daily', 'weekly')`,
-          )
-            .bind(event.scheduledTime)
-            .all<{ organization_id: string }>();
+      const dueOrgs = await env.DB.prepare(
+        `SELECT DISTINCT c.organization_id AS organization_id
+         FROM subscriptions s
+         INNER JOIN customers c ON c.id = s.customer_id
+         WHERE s.status = 'active'
+           AND s.current_period_end <= ?`,
+      )
+        .bind(event.scheduledTime)
+        .all<{ organization_id: string }>();
 
-          const orgs = dueOrgs.results || [];
-          console.log(
-            `[CRON] Found ${orgs.length} orgs for paid_reconcile, enqueuing...`,
-          );
+      const orgs = dueOrgs.results || [];
+      console.log(
+        `[CRON] Found ${orgs.length} orgs with due subscriptions for period-end overage billing, enqueuing...`,
+      );
 
-          for (const org of orgs) {
-            messages.push({
-              body: {
-                organizationId: org.organization_id,
-                targetInterval,
-                scheduledTime: event.scheduledTime,
-              },
-            });
-          }
-        } else if (targetInterval === "end_of_period") {
-          // Include orgs with explicit end_of_period setting OR no row (default behavior).
-          // Only enqueue orgs that actually have due subscriptions.
-          const dueOrgs = await env.DB.prepare(
-            `SELECT DISTINCT c.organization_id AS organization_id
-             FROM subscriptions s
-             INNER JOIN customers c ON c.id = s.customer_id
-             LEFT JOIN overage_settings os ON os.organization_id = c.organization_id
-             WHERE s.status = 'active'
-               AND s.current_period_end <= ?
-               AND (os.billing_interval = 'end_of_period' OR os.billing_interval IS NULL)`,
-          )
-            .bind(event.scheduledTime)
-            .all<{ organization_id: string }>();
-
-          const orgs = dueOrgs.results || [];
-          console.log(
-            `[CRON] Found ${orgs.length} orgs with due end_of_period subscriptions, enqueuing...`,
-          );
-
-          for (const org of orgs) {
-            messages.push({
-              body: {
-                organizationId: org.organization_id,
-                targetInterval,
-                scheduledTime: event.scheduledTime,
-              },
-            });
-          }
-        } else {
-          const orgs = await db
-            .select()
-            .from((schema as any).overageSettings)
-            .where(
-              eq(
-                (schema as any).overageSettings.billingInterval,
-                targetInterval,
-              ),
-            );
-
-          console.log(
-            `[CRON] Found ${orgs.length} orgs with interval=${targetInterval} (queue=${targetInterval}), enqueuing...`,
-          );
-
-          // Enqueue one message per org — the queue consumer handles the heavy lifting
-          for (const org of orgs as any[]) {
-            messages.push({
-              body: {
-                organizationId: org.organizationId,
-                targetInterval,
-                scheduledTime: event.scheduledTime,
-              },
-            });
-          }
-        }
-      }
+      const messages: { body: OverageBillingQueueMessage }[] = orgs.map(
+        (org) => ({
+          body: {
+            organizationId: org.organization_id,
+            scheduledTime: event.scheduledTime,
+          },
+        }),
+      );
 
       // Queue.sendBatch accepts up to 100 messages per call
       const QUEUE_BATCH_LIMIT = 100;
@@ -440,64 +362,25 @@ export default {
     env: Env,
     _ctx: ExecutionContext,
   ) {
-    const db = createDb(env.DB);
-
     for (const msg of batch.messages) {
-      const { organizationId, scheduledTime, targetInterval } = msg.body;
+      const { organizationId, scheduledTime } = msg.body;
       try {
-        let uniqueIds: string[] = [];
-        let trigger: "cron" | "period_end" | "reconcile_only" = "cron";
+        const due = await env.DB.prepare(
+          `SELECT DISTINCT s.customer_id AS id
+           FROM subscriptions s
+           INNER JOIN customers c ON c.id = s.customer_id
+           WHERE c.organization_id = ?
+             AND s.status = 'active'
+             AND s.current_period_end <= ?`,
+        )
+          .bind(organizationId, scheduledTime)
+          .all<{ id: string }>();
 
-        if (targetInterval === "end_of_period") {
-          const due = await env.DB.prepare(
-            `SELECT DISTINCT s.customer_id AS id
-             FROM subscriptions s
-             INNER JOIN customers c ON c.id = s.customer_id
-             WHERE c.organization_id = ?
-               AND s.status = 'active'
-               AND s.current_period_end <= ?`,
-          )
-            .bind(organizationId, scheduledTime)
-            .all<{ id: string }>();
-
-          uniqueIds = (due.results || []).map((row) => row.id);
-          trigger = "period_end";
-        } else if (targetInterval === "paid_reconcile") {
-          const due = await env.DB.prepare(
-            `SELECT DISTINCT s.customer_id AS id
-             FROM subscriptions s
-             INNER JOIN plans p ON p.id = s.plan_id
-             INNER JOIN customers c ON c.id = s.customer_id
-             WHERE c.organization_id = ?
-               AND s.status = 'active'
-               AND p.type != 'free'
-               AND s.current_period_end <= ?`,
-          )
-            .bind(organizationId, scheduledTime)
-            .all<{ id: string }>();
-
-          uniqueIds = (due.results || []).map((row) => row.id);
-          trigger = "reconcile_only";
-        } else {
-          const customers = await db
-            .select({ id: schema.customers.id })
-            .from(schema.customers)
-            .innerJoin(
-              schema.subscriptions,
-              and(
-                eq(schema.subscriptions.customerId, schema.customers.id),
-                eq(schema.subscriptions.status, "active"),
-              ),
-            )
-            .where(eq(schema.customers.organizationId, organizationId));
-
-          // Deduplicate — a customer with multiple active subs appears multiple times
-          const customerIds: string[] = customers.map((c: any) => String(c.id));
-          uniqueIds = Array.from(new Set(customerIds));
-        }
+        const uniqueIds = (due.results || []).map((row) => row.id);
+        const trigger = "period_end" as const;
 
         console.log(
-          `[QUEUE] Org ${organizationId}: dispatching ${uniqueIds.length} workflows (target=${targetInterval}, trigger=${trigger})`,
+          `[QUEUE] Org ${organizationId}: dispatching ${uniqueIds.length} workflows (trigger=${trigger})`,
         );
 
         // Dispatch in parallel batches
@@ -507,7 +390,7 @@ export default {
           await Promise.allSettled(
             chunk.map((customerId) =>
               env.OVERAGE_BILLING_WORKFLOW.create({
-                id: `overage-${targetInterval}-${customerId}-${scheduledTime}`,
+                id: `overage-period-end-${customerId}-${scheduledTime}`,
                 params: {
                   organizationId,
                   customerId,

@@ -26,8 +26,10 @@ import {
   invoices,
   invoiceItems,
   paymentAttempts,
+  billingRuns,
   overageSettings,
   customerOverageLimits,
+  customerOverageBlocks,
   paymentMethods,
 } from "./billing";
 
@@ -69,6 +71,8 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   apiKeys: many(apiKeys),
   providerAccounts: many(providerAccounts),
   providerRules: many(providerRules),
+  billingRuns: many(billingRuns),
+  overageBlocks: many(customerOverageBlocks),
   // Rewards & Referrals
   rewards: many(rewards),
   referralPrograms: many(referralPrograms),
@@ -148,6 +152,8 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   usageRecords: many(usageRecords),
   credits: many(credits),
   invoices: many(invoices),
+  billingRuns: many(billingRuns),
+  overageBlocks: many(customerOverageBlocks),
 }));
 
 export const plansRelations = relations(plans, ({ one, many }) => ({
@@ -372,6 +378,8 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   }),
   items: many(invoiceItems),
   paymentAttempts: many(paymentAttempts),
+  billingRuns: many(billingRuns),
+  overageBlocks: many(customerOverageBlocks),
 }));
 
 export const invoiceItemsRelations = relations(invoiceItems, ({ one }) => ({
@@ -395,6 +403,22 @@ export const paymentAttemptsRelations = relations(
   }),
 );
 
+export const billingRunsRelations = relations(billingRuns, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [billingRuns.organizationId],
+    references: [organizations.id],
+  }),
+  customer: one(customers, {
+    fields: [billingRuns.customerId],
+    references: [customers.id],
+  }),
+  invoice: one(invoices, {
+    fields: [billingRuns.invoiceId],
+    references: [invoices.id],
+  }),
+  overageBlocks: many(customerOverageBlocks),
+}));
+
 export const overageSettingsRelations = relations(
   overageSettings,
   ({ one }) => ({
@@ -415,6 +439,28 @@ export const customerOverageLimitsRelations = relations(
     organization: one(organizations, {
       fields: [customerOverageLimits.organizationId],
       references: [organizations.id],
+    }),
+  }),
+);
+
+export const customerOverageBlocksRelations = relations(
+  customerOverageBlocks,
+  ({ one }) => ({
+    customer: one(customers, {
+      fields: [customerOverageBlocks.customerId],
+      references: [customers.id],
+    }),
+    organization: one(organizations, {
+      fields: [customerOverageBlocks.organizationId],
+      references: [organizations.id],
+    }),
+    billingRun: one(billingRuns, {
+      fields: [customerOverageBlocks.billingRunId],
+      references: [billingRuns.id],
+    }),
+    invoice: one(invoices, {
+      fields: [customerOverageBlocks.invoiceId],
+      references: [invoices.id],
     }),
   }),
 );

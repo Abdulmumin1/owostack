@@ -6,7 +6,7 @@
   let { 
     projectId,
     organizationId,
-    members: initialMembers = [],
+    members: membersProp = [],
     formatDate
   }: {
     projectId: string;
@@ -15,7 +15,17 @@
     formatDate: (date: string | number) => string;
   } = $props();
 
-  let members = $state(initialMembers);
+  type PendingInvite = {
+    id: string;
+    email: string;
+    role: string;
+    organizationId: string;
+    status: string;
+    createdAt: string | number | Date;
+    expiresAt: string | number | Date;
+  };
+
+  let members = $state<TeamMember[]>([]);
   let pendingInvites = $state<any[]>([]);
   let inviteEmail = $state("");
   let inviteRole = $state("member");
@@ -23,6 +33,10 @@
   let isLoadingInvites = $state(false);
   let cancelingInviteId = $state<string | null>(null);
   let resendingInviteId = $state<string | null>(null);
+
+  $effect(() => {
+    members = membersProp;
+  });
 
   $effect(() => {
     if (organizationId) {
@@ -52,7 +66,7 @@
           invites = (res.data as any).invitations;
         }
         
-        pendingInvites = invites.filter((invite: any) => {
+        pendingInvites = invites.filter((invite: PendingInvite) => {
           return invite.organizationId === organizationId && invite.status === "pending";
         });
       } else {
@@ -86,7 +100,7 @@
     }
   }
 
-  async function resendInvite(invitationId: string, email: string) {
+  async function resendInvite(invitationId: string) {
     resendingInviteId = invitationId;
     try {
       // Better Auth doesn't have a direct resend method, so we cancel and recreate
@@ -249,7 +263,7 @@
               <div class="flex items-center justify-end gap-2">
                 <button 
                   class="text-text-dim hover:text-accent transition-colors p-1"
-                  onclick={() => resendInvite(invite.id, invite.email)}
+                  onclick={() => resendInvite(invite.id)}
                   disabled={resendingInviteId === invite.id}
                   title="Resend invitation"
                 >
