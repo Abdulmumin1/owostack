@@ -36,7 +36,12 @@ function createDbMock(options: {
     paystack_plan_id: string | null;
     currency: string;
   };
-  subscriptionStatus?: { id: string; status: string; cancel_at: number | null } | null;
+  subscriptionStatus?: {
+    id: string;
+    status: string;
+    cancel_at: number | null;
+    metadata?: string | Record<string, unknown> | null;
+  } | null;
 }) {
   const updateBinds: any[] = [];
 
@@ -50,7 +55,7 @@ function createDbMock(options: {
               async first() {
                 if (
                   sql.includes(
-                    "SELECT id, status, cancel_at FROM subscriptions",
+                    "SELECT id, status, cancel_at, metadata FROM subscriptions",
                   )
                 ) {
                   return options.subscriptionStatus ?? null;
@@ -288,6 +293,52 @@ describe("TrialEndWorkflow", () => {
     expect(String(db.updateBinds[1][0])).toContain(
       '"renewal_setup_status":"failed"',
     );
+
+    vi.restoreAllMocks();
+  });
+
+  it("defers to the scheduled downgrade workflow when a trial already has a period-end downgrade queued", async () => {
+    const now = new Date("2026-03-13T12:00:00.000Z").getTime();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const db = createDbMock({
+      subscriptionStatus: {
+        id: "sub_trial_3",
+        status: "trialing",
+        cancel_at: now,
+        metadata: JSON.stringify({
+          scheduled_downgrade: {
+            new_plan_id: "plan_free",
+            effective_at: now,
+          },
+        }),
+      },
+    });
+
+    const step = createWorkflowStepMock();
+
+    await TrialEndWorkflow.prototype.run.call(
+      createWorkflowInstance(TrialEndWorkflow, { DB: db.DB }),
+      {
+        payload: {
+          subscriptionId: "sub_trial_3",
+          customerId: "cust_1",
+          planId: "plan_paid",
+          organizationId: "org_1",
+          providerId: "paystack",
+          environment: "test",
+          trialEndMs: now,
+          amount: 3000000,
+          currency: "NGN",
+          email: "customer@example.com",
+        },
+      },
+      step,
+    );
+
+    expect(db.updateBinds).toHaveLength(0);
+    expect(chargeAuthorizationMock).not.toHaveBeenCalled();
+    expect(createSubscriptionMock).not.toHaveBeenCalled();
 
     vi.restoreAllMocks();
   });

@@ -44,6 +44,22 @@ interface ResolvedAccount {
   updatedAt: number;
 }
 
+function parseMetadata(
+  metadata: string | Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  if (!metadata) return {};
+
+  if (typeof metadata === "string") {
+    try {
+      return JSON.parse(metadata) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+
+  return metadata;
+}
+
 // ---------------------------------------------------------------------------
 // Params
 // ---------------------------------------------------------------------------
@@ -107,13 +123,36 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
     }
 
     // Step 2: Verify subscription is still in trialing state (idempotency)
-    const sub = await step.do("check-subscription-status", async () => {
+    const sub = await step.do<{
+      id: string;
+      status: string;
+      cancel_at: number | null;
+      metadata: string | null;
+    } | null>("check-subscription-status", async () => {
       const result = await this.env.DB.prepare(
-        "SELECT id, status, cancel_at FROM subscriptions WHERE id = ? LIMIT 1",
+        "SELECT id, status, cancel_at, metadata FROM subscriptions WHERE id = ? LIMIT 1",
       )
         .bind(subscriptionId)
-        .first<{ id: string; status: string; cancel_at: number | null }>();
-      return result;
+        .first<{
+          id: string;
+          status: string;
+          cancel_at: number | null;
+          metadata: string | Record<string, unknown> | null;
+        }>();
+
+      if (!result) return null;
+
+      return {
+        id: result.id,
+        status: result.status,
+        cancel_at: result.cancel_at,
+        metadata:
+          typeof result.metadata === "string"
+            ? result.metadata
+            : result.metadata
+              ? JSON.stringify(result.metadata)
+              : null,
+      };
     });
 
     if (!sub || sub.status !== "trialing") {
@@ -125,6 +164,14 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
 
     // If user canceled before trial end, expire instead of charging
     if (sub.cancel_at) {
+      const metadata = parseMetadata(sub.metadata);
+      if (metadata.scheduled_downgrade) {
+        console.log(
+          `[TrialEndWorkflow] Scheduled downgrade will take over at period end: subscription=${subscriptionId}`,
+        );
+        return;
+      }
+
       await step.do("expire-canceled-trial", async () => {
         const now = Date.now();
         await this.env.DB.prepare(

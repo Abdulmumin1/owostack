@@ -290,6 +290,13 @@ export async function executeSwitch(
     : "new";
 
   // =========================================================================
+  // DOWNGRADE — schedule for period end, including free plan downgrades
+  // =========================================================================
+  if (switchType === "downgrade" && existingSub) {
+    return handleDowngrade(db, customer, existingSub, newPlan, options);
+  }
+
+  // =========================================================================
   // FREE plan — handle entirely in DB, no Paystack
   // =========================================================================
   if (newPlan.price === 0) {
@@ -316,13 +323,6 @@ export async function executeSwitch(
       provider,
       options,
     );
-  }
-
-  // =========================================================================
-  // DOWNGRADE — schedule for period end
-  // =========================================================================
-  if (switchType === "downgrade") {
-    return handleDowngrade(db, customer, existingSub!, newPlan, options);
   }
 
   // =========================================================================
@@ -647,7 +647,9 @@ async function handleDowngrade(
   await db
     .update(schema.subscriptions)
     .set({
-      status: "active", // Keep active until period end
+      // Preserve trialing subscriptions so the customer keeps the full trial
+      // window and the trial-end workflow can defer to the scheduled downgrade.
+      status: existingSub.status === "trialing" ? "trialing" : "active",
       cancelAt: existingSub.currentPeriodEnd,
       metadata: {
         ...(typeof existingSub.metadata === "object"
