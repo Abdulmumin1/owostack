@@ -29,26 +29,31 @@ describe("POST /v1/attach", () => {
       verifyApiKeyMock as unknown as CheckoutDependencies["verifyApiKey"],
     resolveOrCreateCustomer:
       vi.fn() as unknown as CheckoutDependencies["resolveOrCreateCustomer"],
-    executeSwitch:
-      vi.fn() as unknown as CheckoutDependencies["executeSwitch"],
+    executeSwitch: vi.fn() as unknown as CheckoutDependencies["executeSwitch"],
     provisionEntitlements:
       vi.fn() as unknown as CheckoutDependencies["provisionEntitlements"],
     hasPaymentMethod:
       vi.fn() as unknown as CheckoutDependencies["hasPaymentMethod"],
     ensurePlanSynced:
       vi.fn() as unknown as CheckoutDependencies["ensurePlanSynced"],
-    resolveProvider:
-      vi.fn(() => err("no provider")) as unknown as CheckoutDependencies["resolveProvider"],
-    getProviderRegistry:
-      vi.fn(() => new Map()) as unknown as CheckoutDependencies["getProviderRegistry"],
-    buildProviderContext:
-      vi.fn((context) => context) as unknown as CheckoutDependencies["buildProviderContext"],
-    deriveProviderEnvironment:
-      vi.fn(() => "test") as unknown as CheckoutDependencies["deriveProviderEnvironment"],
-    loadProviderAccounts:
-      vi.fn(async () => []) as unknown as CheckoutDependencies["loadProviderAccounts"],
-    loadProviderRules:
-      vi.fn(async () => []) as unknown as CheckoutDependencies["loadProviderRules"],
+    resolveProvider: vi.fn(() =>
+      err("no provider"),
+    ) as unknown as CheckoutDependencies["resolveProvider"],
+    getProviderRegistry: vi.fn(
+      () => new Map(),
+    ) as unknown as CheckoutDependencies["getProviderRegistry"],
+    buildProviderContext: vi.fn(
+      (context) => context,
+    ) as unknown as CheckoutDependencies["buildProviderContext"],
+    deriveProviderEnvironment: vi.fn(
+      () => "test",
+    ) as unknown as CheckoutDependencies["deriveProviderEnvironment"],
+    loadProviderAccounts: vi.fn(
+      async () => [],
+    ) as unknown as CheckoutDependencies["loadProviderAccounts"],
+    loadProviderRules: vi.fn(
+      async () => [],
+    ) as unknown as CheckoutDependencies["loadProviderRules"],
   };
 
   const app = createRouteTestApp(createCheckoutRoute(deps), {

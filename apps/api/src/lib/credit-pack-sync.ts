@@ -46,7 +46,10 @@ export async function ensureCreditPackSynced(
   });
 
   if (fresh?.providerProductId && fresh?.providerPriceId) {
-    return { productId: fresh.providerProductId, priceId: fresh.providerPriceId };
+    return {
+      productId: fresh.providerProductId,
+      priceId: fresh.providerPriceId,
+    };
   }
 
   const createResult = await adapter.createProduct({
@@ -60,7 +63,9 @@ export async function ensureCreditPackSynced(
   });
 
   if (createResult.isErr()) {
-    console.warn(`[credit-pack-sync] Failed to sync pack ${pack.id}: ${createResult.error.message}`);
+    console.warn(
+      `[credit-pack-sync] Failed to sync pack ${pack.id}: ${createResult.error.message}`,
+    );
     return null;
   }
 
@@ -81,7 +86,9 @@ export async function ensureCreditPackSynced(
         isNull((schema as any).creditPacks.providerProductId),
       ),
     )
-    .returning({ providerProductId: (schema as any).creditPacks.providerProductId });
+    .returning({
+      providerProductId: (schema as any).creditPacks.providerProductId,
+    });
 
   if (updated.length === 0) {
     // Lost the race — read the winning value
@@ -89,12 +96,16 @@ export async function ensureCreditPackSynced(
       where: eq((schema as any).creditPacks.id, pack.id),
       columns: { providerProductId: true, providerPriceId: true },
     });
-    console.warn(`[credit-pack-sync] Race: pack ${pack.id} already synced, using ${winner?.providerProductId}`);
+    console.warn(
+      `[credit-pack-sync] Race: pack ${pack.id} already synced, using ${winner?.providerProductId}`,
+    );
     return winner?.providerProductId && winner?.providerPriceId
       ? { productId: winner.providerProductId, priceId: winner.providerPriceId }
       : null;
   }
 
-  console.log(`[credit-pack-sync] Synced pack ${pack.id} (${pack.name}) → product=${productId}, price=${priceId}`);
+  console.log(
+    `[credit-pack-sync] Synced pack ${pack.id} (${pack.name}) → product=${productId}, price=${priceId}`,
+  );
   return { productId, priceId };
 }

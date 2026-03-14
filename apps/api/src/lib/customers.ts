@@ -34,7 +34,8 @@ export interface ResolveCustomerOptions {
 export async function resolveOrCreateCustomer(
   opts: ResolveCustomerOptions,
 ): Promise<typeof schema.customers.$inferSelect | null> {
-  const { db, organizationId, customerId, customerData, providerId, cache } = opts;
+  const { db, organizationId, customerId, customerData, providerId, cache } =
+    opts;
   const customerIdLower = customerId.toLowerCase();
   const resolved = await resolveCustomerByIdentifier({
     db,
@@ -57,9 +58,15 @@ export async function resolveOrCreateCustomer(
     ) {
       patches.externalId = customerId;
     }
-    if ((!customer.name || customer.name === "Anonymous") && customerData?.name) {
+    if (
+      (!customer.name || customer.name === "Anonymous") &&
+      customerData?.name
+    ) {
       patches.name = customerData.name;
-    } else if ((!customer.name || customer.name === "Anonymous") && customer.email) {
+    } else if (
+      (!customer.name || customer.name === "Anonymous") &&
+      customer.email
+    ) {
       patches.name = customer.email.split("@")[0];
     }
     if (!customer.providerId && providerId) {
@@ -106,7 +113,9 @@ export async function resolveOrCreateCustomer(
   }
 
   // 3. Auto-create if we have enough info
-  const email = customerData?.email?.toLowerCase() ?? (customerIdLower.includes("@") ? customerIdLower : null);
+  const email =
+    customerData?.email?.toLowerCase() ??
+    (customerIdLower.includes("@") ? customerIdLower : null);
   if (!email) return null;
 
   const now = Date.now();

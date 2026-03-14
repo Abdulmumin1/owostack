@@ -45,7 +45,8 @@
   ],
 
   // Cloudflare Data Platform — Pipelines
-  // Analytics layer auto-switches from AE to Pipelines when this is enabled.
+  // Bound for future use; Analytics Engine remains the default until
+  // USE_EVENTS_PIPELINE is explicitly enabled.
   "pipelines": [
     {
       "binding": "EVENTS_PIPELINE",
@@ -135,6 +136,7 @@
   "vars": {
     "ENVIRONMENT": "development",
     "ANALYTICS_DATASET": "owostack_api_dev",
+    "USE_EVENTS_PIPELINE": "false",
     "BETTER_AUTH_URL": "http://localhost:8787/api/auth",
   },
 
@@ -150,6 +152,7 @@
       "vars": {
         "ENVIRONMENT": "test",
         "ANALYTICS_DATASET": "owostack_api_test",
+        "USE_EVENTS_PIPELINE": "false",
         "BETTER_AUTH_URL": "https://sandbox.owostack.com",
       },
 
@@ -252,6 +255,7 @@
       "vars": {
         "ENVIRONMENT": "live",
         "ANALYTICS_DATASET": "owostack_api_live",
+        "USE_EVENTS_PIPELINE": "false",
         "BETTER_AUTH_URL": "https://api.owostack.com",
       },
       "routes": [

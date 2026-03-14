@@ -816,13 +816,17 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
           `[OverageBilling] Invoice amount ${unbilled.totalEstimated} ${unbilled.currency} below provider minimum ${minimumAmount}. Leaving usage unbilled so it can accumulate across future periods.`,
         );
         if (thresholdRun) {
-          await deferThresholdRun("defer-threshold-run-below-minimum", "below_provider_minimum", {
-            outcome: "below_provider_minimum",
-            invoiceAmount: unbilled.totalEstimated,
-            minimumAmount,
-            currency: unbilled.currency,
-            usageWindowEnd: unbilled.usageWindowEnd,
-          });
+          await deferThresholdRun(
+            "defer-threshold-run-below-minimum",
+            "below_provider_minimum",
+            {
+              outcome: "below_provider_minimum",
+              invoiceAmount: unbilled.totalEstimated,
+              minimumAmount,
+              currency: unbilled.currency,
+              usageWindowEnd: unbilled.usageWindowEnd,
+            },
+          );
         }
         // Usage remains unstamped, but period reconciliation still runs so future
         // usage keeps the correct billing window instead of collapsing into the
@@ -836,7 +840,8 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
         const billingService = this.deps.createBillingService(db, {
           usageLedger: this.env.USAGE_LEDGER,
         });
-        const sourceTrigger = trigger === "threshold" ? "threshold" : "period_end";
+        const sourceTrigger =
+          trigger === "threshold" ? "threshold" : "period_end";
         const idempotencyKey =
           thresholdRun?.idempotencyKey ||
           `${sourceTrigger}:${organizationId}:${customerId}:${unbilled.usageWindowEnd}`;
@@ -912,7 +917,8 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
 
       const authCode = customerPayment?.authCode;
       const providerId = customerPayment?.providerId || "unknown";
-      const providerCustomerId = customerPayment?.providerCustomerId || customerId;
+      const providerCustomerId =
+        customerPayment?.providerCustomerId || customerId;
 
       if (!authCode || !customerPayment?.email) {
         console.log(
@@ -936,11 +942,15 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
         });
 
         if (thresholdRun) {
-          await blockThresholdRun("block-threshold-run-no-card", "no_payment_method_on_file", {
-            outcome: "no_payment_method_on_file",
-            invoiceId: invoice.invoiceId,
-            invoiceNumber: invoice.number,
-          });
+          await blockThresholdRun(
+            "block-threshold-run-no-card",
+            "no_payment_method_on_file",
+            {
+              outcome: "no_payment_method_on_file",
+              invoiceId: invoice.invoiceId,
+              invoiceNumber: invoice.number,
+            },
+          );
         }
         return;
       }
@@ -1047,12 +1057,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
                    updated_at = ?
                WHERE id = ? AND status = 'open'`,
             )
-              .bind(
-                invoice.total,
-                Date.now(),
-                Date.now(),
-                invoice.invoiceId,
-              )
+              .bind(invoice.total, Date.now(), Date.now(), invoice.invoiceId)
               .run();
 
             return {
@@ -1084,12 +1089,15 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             },
           );
         } else if (thresholdRun) {
-          await completeThresholdRun("complete-threshold-run-non-open-invoice", {
-            outcome: invoiceStillOpen.reason,
-            invoiceId: invoice.invoiceId,
-            invoiceNumber: invoice.number,
-            invoiceStatus: invoiceStillOpen.status,
-          });
+          await completeThresholdRun(
+            "complete-threshold-run-non-open-invoice",
+            {
+              outcome: invoiceStillOpen.reason,
+              invoiceId: invoice.invoiceId,
+              invoiceNumber: invoice.number,
+              invoiceStatus: invoiceStillOpen.status,
+            },
+          );
         }
         return;
       }
@@ -1274,11 +1282,15 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
         const failureReason =
           error instanceof Error ? error.message : "threshold_billing_failed";
 
-        await blockThresholdRun("block-threshold-run-unexpected-error", failureReason, {
-          outcome: "threshold_billing_failed",
-          invoiceId: thresholdRunInvoiceId,
-          error: failureReason,
-        });
+        await blockThresholdRun(
+          "block-threshold-run-unexpected-error",
+          failureReason,
+          {
+            outcome: "threshold_billing_failed",
+            invoiceId: thresholdRunInvoiceId,
+            error: failureReason,
+          },
+        );
       }
 
       throw error;

@@ -72,10 +72,12 @@ describe("/attach behavior", () => {
   const loadProviderRulesMock = vi.fn(async () => []);
 
   const deps: CheckoutDependencies = {
-    verifyApiKey: verifyApiKeyMock as unknown as CheckoutDependencies["verifyApiKey"],
+    verifyApiKey:
+      verifyApiKeyMock as unknown as CheckoutDependencies["verifyApiKey"],
     resolveOrCreateCustomer:
       resolveOrCreateCustomerMock as unknown as CheckoutDependencies["resolveOrCreateCustomer"],
-    executeSwitch: executeSwitchMock as unknown as CheckoutDependencies["executeSwitch"],
+    executeSwitch:
+      executeSwitchMock as unknown as CheckoutDependencies["executeSwitch"],
     provisionEntitlements:
       provisionEntitlementsMock as unknown as CheckoutDependencies["provisionEntitlements"],
     hasPaymentMethod:

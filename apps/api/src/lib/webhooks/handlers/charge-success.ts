@@ -211,16 +211,17 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
   // fall back to a provider-managed token row to make the wallet usable.
   const authorization = event.authorization;
   const shouldStoreCardMethod =
-    authorization?.reusable &&
-    authorization.code &&
-    !!authorization.last4;
+    authorization?.reusable && authorization.code && !!authorization.last4;
   const shouldStoreProviderManagedMethod =
     event.provider === "stripe" &&
     metadata.type === "card_setup" &&
     authorization?.reusable &&
     !!authorization.code;
 
-  if ((shouldStoreCardMethod || shouldStoreProviderManagedMethod) && authorization) {
+  if (
+    (shouldStoreCardMethod || shouldStoreProviderManagedMethod) &&
+    authorization
+  ) {
     try {
       await chargeSuccessDependencies.upsertPaymentMethod(db, {
         customerId: dbCustomer.id,

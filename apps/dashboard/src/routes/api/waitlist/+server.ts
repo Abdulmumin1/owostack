@@ -1,11 +1,10 @@
 import { Resend } from "resend";
 import { json } from "@sveltejs/kit";
 
-
 export async function POST({ request }) {
   try {
     const { email } = await request.json();
-const resend = new Resend(process.env.RESEND_API_KEY);
+    const resend = new Resend(process.env.RESEND_API_KEY);
 
     if (!email) {
       return json({ error: "Email is required" }, { status: 400 });

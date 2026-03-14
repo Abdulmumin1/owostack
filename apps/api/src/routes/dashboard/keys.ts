@@ -61,7 +61,8 @@ export function createDashboardKeysRoute(
     }
 
     const { name } = parsed.data;
-    const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
+    const organizationId =
+      c.get("organizationId") ?? parsed.data.organizationId;
     const db = c.get("authDb");
 
     const finalKey = deps.generateApiKey();

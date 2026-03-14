@@ -27,7 +27,10 @@ export function resolveProvider(
   registry: ProviderRegistry,
   factoryContext: ProviderFactoryContext,
 ): Result<ProviderFactoryResult, { code: string; message: string }> {
-  const selection = selectProvider(factoryContext.rules, factoryContext.context);
+  const selection = selectProvider(
+    factoryContext.rules,
+    factoryContext.context,
+  );
   if (!selection.providerId) {
     return Result.err({
       code: "provider_not_found",

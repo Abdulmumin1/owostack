@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { and, eq, or } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../index";
+import type { AnalyticsEnv } from "../lib/analytics-engine";
 import { WebhookHandler } from "../lib/webhooks";
 import { decrypt } from "../lib/encryption";
 import { WebhookError, errorToResponse } from "../lib/errors";
@@ -18,10 +19,7 @@ export type WebhookRouteDependencies = {
     trialEndWorkflow: Env["TRIAL_END_WORKFLOW"];
     planUpgradeWorkflow: Env["PLAN_UPGRADE_WORKFLOW"];
     cache: Env["CACHE"];
-    analyticsEnv: {
-      ANALYTICS: Env["ANALYTICS"];
-      ENVIRONMENT: Env["ENVIRONMENT"];
-    };
+    analyticsEnv: AnalyticsEnv;
   }) => {
     handle(event: unknown): Promise<{
       isErr(): boolean;
@@ -61,9 +59,7 @@ export function createWebhookRoutes(
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
   async function handleWebhookRequest(
-    c: Parameters<typeof app.post>[1] extends (
-      arg: infer T,
-    ) => unknown
+    c: Parameters<typeof app.post>[1] extends (arg: infer T) => unknown
       ? T
       : never,
     organizationId: string,
@@ -86,7 +82,8 @@ export function createWebhookRoutes(
       return c.json({ error: `Unsupported provider: ${providerId}` }, 400);
     }
 
-    const sigHeader = adapter.signatureHeaderName || `x-${providerId}-signature`;
+    const sigHeader =
+      adapter.signatureHeaderName || `x-${providerId}-signature`;
     const signature = c.req.header(sigHeader);
     console.log(
       `[WEBHOOK-ROUTE] Signature header=${sigHeader}, hasSignature=${!!signature}`,
@@ -152,7 +149,9 @@ export function createWebhookRoutes(
 
       if (typeof potentialSecret === "string" && potentialSecret.length > 0) {
         try {
-          secret = (await deps.decrypt(potentialSecret, c.env.ENCRYPTION_KEY)).trim();
+          secret = (
+            await deps.decrypt(potentialSecret, c.env.ENCRYPTION_KEY)
+          ).trim();
           secretSource = creds.webhookSecret
             ? "provider_account_webhook_secret_encrypted"
             : "provider_account_api_key_encrypted";
@@ -189,7 +188,9 @@ export function createWebhookRoutes(
         workerEnv === "live" ? org.liveSecretKey : org.testSecretKey;
       if (encryptedKey) {
         try {
-          secret = (await deps.decrypt(encryptedKey, c.env.ENCRYPTION_KEY)).trim();
+          secret = (
+            await deps.decrypt(encryptedKey, c.env.ENCRYPTION_KEY)
+          ).trim();
           secretSource = `organization_${workerEnv}_secret_key_encrypted`;
           console.log(
             `[WEBHOOK-ROUTE] No webhookSecret, falling back to ${workerEnv} secret key for org=${organizationId}`,
@@ -315,6 +316,12 @@ export function createWebhookRoutes(
       analyticsEnv: {
         ANALYTICS: c.env.ANALYTICS,
         ENVIRONMENT: c.env.ENVIRONMENT,
+        CF_ACCOUNT_ID: c.env.CF_ACCOUNT_ID,
+        CF_ANALYTICS_READ_TOKEN: c.env.CF_ANALYTICS_READ_TOKEN,
+        ANALYTICS_DATASET: c.env.ANALYTICS_DATASET,
+        EVENTS_PIPELINE: c.env.EVENTS_PIPELINE,
+        R2_SQL_TOKEN: c.env.R2_SQL_TOKEN,
+        R2_WAREHOUSE: c.env.R2_WAREHOUSE,
       },
     });
 

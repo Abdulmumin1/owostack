@@ -114,7 +114,10 @@ export function createCheckoutRoute(
       }
 
       // Environment comes directly from ENVIRONMENT variable
-      const providerEnv = deps.deriveProviderEnvironment(c.env.ENVIRONMENT, null);
+      const providerEnv = deps.deriveProviderEnvironment(
+        c.env.ENVIRONMENT,
+        null,
+      );
 
       // Parse Body
       let body;
@@ -259,226 +262,66 @@ export function createCheckoutRoute(
         throw error;
       }
 
-    if (!customerRecord) {
-      return c.json(
-        { success: false, error: "Could not resolve or create customer" },
-        400,
-      );
-    }
-
-    // 4. Handle TRIAL plans (trialDays > 0, no card required) — separate path
-    const trialDays = plan.trialDays || 0;
-    const trialCardRequired = plan.trialCardRequired || false;
-    const trialUnit =
-      (plan.metadata as Record<string, unknown>)?.trialUnit === "minutes"
-        ? "minutes"
-        : "days";
-
-    if (trialDays > 0 && !trialCardRequired) {
-      try {
-        // Check for existing active/trialing subscription to prevent duplicates
-        const existingSub = await db.query.subscriptions.findFirst({
-          where: and(
-            eq(schema.subscriptions.customerId, customerRecord.id),
-            eq(schema.subscriptions.planId, plan.id),
-            or(
-              eq(schema.subscriptions.status, "active"),
-              eq(schema.subscriptions.status, "trialing"),
-              eq(schema.subscriptions.status, "pending"),
-            ),
-          ),
-        });
-
-        if (existingSub && existingSub.status !== "pending") {
-          console.log(
-            `[TRIAL] Existing subscription found: ${existingSub.id}, skipping trial creation`,
-          );
-          return c.json({
-            success: true,
-            trial: true,
-            message: "Trial already active",
-            subscription_id: existingSub.id,
-            customer_id: customerRecord.id,
-            trial_ends_at: existingSub.currentPeriodEnd
-              ? new Date(existingSub.currentPeriodEnd).toISOString()
-              : null,
-          });
-        }
-
-        const now = Date.now();
-        const trialEndMs =
-          trialUnit === "minutes"
-            ? now + trialDays * 60 * 1000
-            : now + trialDays * 24 * 60 * 60 * 1000;
-        console.log(
-          `[TRIAL] Creating no-card trial: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}, endsAt=${new Date(trialEndMs).toISOString()}`,
-        );
-
-        let subscriptionId;
-
-        if (existingSub && existingSub.status === "pending") {
-          subscriptionId = existingSub.id;
-          const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
-          await db
-            .update(schema.subscriptions)
-            .set({
-              providerId: selectedProviderId,
-              providerSubscriptionId: trialCode,
-              providerSubscriptionCode: trialCode,
-              paystackSubscriptionCode:
-                selectedProviderId === "paystack" ? trialCode : null,
-              status: "trialing",
-              currentPeriodStart: now,
-              currentPeriodEnd: trialEndMs,
-              metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
-              updatedAt: now,
-            })
-            .where(eq(schema.subscriptions.id, existingSub.id));
-        } else {
-          const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
-          const [subscription] = await db
-            .insert(schema.subscriptions)
-            .values({
-              id: crypto.randomUUID(),
-              customerId: customerRecord.id,
-              planId: plan.id,
-              providerId: selectedProviderId,
-              providerSubscriptionId: trialCode,
-              providerSubscriptionCode: trialCode,
-              paystackSubscriptionCode:
-                selectedProviderId === "paystack" ? trialCode : null,
-              status: "trialing",
-              currentPeriodStart: now,
-              currentPeriodEnd: trialEndMs,
-              metadata: { ...metadata, trial: true, trial_ends_at: trialEndMs },
-            })
-            .returning();
-          subscriptionId = subscription.id;
-        }
-
-        // Dispatch trial-end workflow (sleeps until trial ends, then expires)
-        try {
-          await c.env.TRIAL_END_WORKFLOW.create({
-            params: {
-              subscriptionId: subscriptionId,
-              customerId: customerRecord.id,
-              planId: plan.id,
-              organizationId: keyRecord.organizationId,
-              providerId: selectedProviderId,
-              environment: providerEnv,
-              trialEndMs,
-              email,
-              amount: plan.price,
-              currency: plan.currency,
-              planSlug: plan.slug,
-            },
-          });
-          console.log(
-            `[TRIAL] Trial end workflow dispatched: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
-          );
-        } catch (wfErr) {
-          console.error(
-            `[TRIAL] Failed to dispatch trial end workflow for subscription=${subscriptionId}:`,
-            wfErr,
-          );
-        }
-
-        // Provision entitlements so trial users can access features
-        await deps.provisionEntitlements(db, customerRecord.id, plan.id);
-
-        console.log(
-          `[TRIAL] No-card trial activated: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
-        );
-        return c.json({
-          success: true,
-          trial: true,
-          message:
-            trialUnit === "minutes"
-              ? `${trialDays}-minute trial activated`
-              : `${trialDays}-day trial activated`,
-          subscription_id: subscriptionId,
-          customer_id: customerRecord.id,
-          trial_ends_at: new Date(trialEndMs).toISOString(),
-        });
-      } catch (e: any) {
+      if (!customerRecord) {
         return c.json(
-          {
-            success: false,
-            error: e.message || "Failed to create trial subscription",
-          },
-          500,
-        );
-      }
-    }
-
-    // 5a. Lazy plan sync — ensure the plan exists on the provider before any checkout
-    if (
-      providerCtx &&
-      !plan.providerPlanId &&
-      plan.type === "paid" &&
-      plan.billingType === "recurring"
-    ) {
-      try {
-        const syncedId = await deps.ensurePlanSynced(
-          db,
-          plan,
-          providerCtx.adapter,
-          providerCtx.account,
-        );
-        if (syncedId) {
-          (plan as any).providerPlanId = syncedId;
-          if (providerCtx.adapter.id === "paystack")
-            (plan as any).paystackPlanId = syncedId;
-        }
-      } catch (e) {
-        console.warn(`[checkout] Lazy plan sync failed for ${plan.id}:`, e);
-      }
-    }
-
-    // 5b. Handle trial with card required — checkout for card capture
-    if (trialDays > 0 && trialCardRequired) {
-      if (!providerCtx) {
-        return c.json(
-          {
-            success: false,
-            error:
-              "Trial with card requires a payment provider. Please connect a provider first.",
-          },
+          { success: false, error: "Could not resolve or create customer" },
           400,
         );
       }
 
-      // If the customer already has a valid payment method (e.g. from wallet.setup()
-      // or a previous purchase), skip the card capture checkout entirely — just create
-      // the trialing subscription directly. This is the elegant composition:
-      // wallet.setup() + attach() work together without redundant charges.
-      const alreadyHasCard = await deps.hasPaymentMethod(db, customerRecord.id);
-      if (alreadyHasCard) {
-        console.log(
-          `[TRIAL] Customer ${customerRecord.id} already has card — skipping auth capture, creating trial directly`,
-        );
+      // 4. Handle TRIAL plans (trialDays > 0, no card required) — separate path
+      const trialDays = plan.trialDays || 0;
+      const trialCardRequired = plan.trialCardRequired || false;
+      const trialUnit =
+        (plan.metadata as Record<string, unknown>)?.trialUnit === "minutes"
+          ? "minutes"
+          : "days";
+
+      if (trialDays > 0 && !trialCardRequired) {
         try {
+          // Check for existing active/trialing subscription to prevent duplicates
+          const existingSub = await db.query.subscriptions.findFirst({
+            where: and(
+              eq(schema.subscriptions.customerId, customerRecord.id),
+              eq(schema.subscriptions.planId, plan.id),
+              or(
+                eq(schema.subscriptions.status, "active"),
+                eq(schema.subscriptions.status, "trialing"),
+                eq(schema.subscriptions.status, "pending"),
+              ),
+            ),
+          });
+
+          if (existingSub && existingSub.status !== "pending") {
+            console.log(
+              `[TRIAL] Existing subscription found: ${existingSub.id}, skipping trial creation`,
+            );
+            return c.json({
+              success: true,
+              trial: true,
+              message: "Trial already active",
+              subscription_id: existingSub.id,
+              customer_id: customerRecord.id,
+              trial_ends_at: existingSub.currentPeriodEnd
+                ? new Date(existingSub.currentPeriodEnd).toISOString()
+                : null,
+            });
+          }
+
           const now = Date.now();
           const trialEndMs =
             trialUnit === "minutes"
               ? now + trialDays * 60 * 1000
               : now + trialDays * 24 * 60 * 60 * 1000;
-
-          const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
-
-          // Find existing pending sub if it exists to prevent duplicates
-          const existingPendingSub = await db.query.subscriptions.findFirst({
-            where: and(
-              eq(schema.subscriptions.customerId, customerRecord.id),
-              eq(schema.subscriptions.planId, plan.id),
-              eq(schema.subscriptions.status, "pending"),
-            ),
-          });
+          console.log(
+            `[TRIAL] Creating no-card trial: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}, endsAt=${new Date(trialEndMs).toISOString()}`,
+          );
 
           let subscriptionId;
 
-          if (existingPendingSub) {
-            subscriptionId = existingPendingSub.id;
+          if (existingSub && existingSub.status === "pending") {
+            subscriptionId = existingSub.id;
+            const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
             await db
               .update(schema.subscriptions)
               .set({
@@ -497,8 +340,9 @@ export function createCheckoutRoute(
                 },
                 updatedAt: now,
               })
-              .where(eq(schema.subscriptions.id, existingPendingSub.id));
+              .where(eq(schema.subscriptions.id, existingSub.id));
           } else {
+            const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
             const [subscription] = await db
               .insert(schema.subscriptions)
               .values({
@@ -523,6 +367,7 @@ export function createCheckoutRoute(
             subscriptionId = subscription.id;
           }
 
+          // Dispatch trial-end workflow (sleeps until trial ends, then expires)
           try {
             await c.env.TRIAL_END_WORKFLOW.create({
               params: {
@@ -539,19 +384,25 @@ export function createCheckoutRoute(
                 planSlug: plan.slug,
               },
             });
+            console.log(
+              `[TRIAL] Trial end workflow dispatched: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
+            );
           } catch (wfErr) {
             console.error(
-              `[TRIAL] Failed to dispatch trial end workflow:`,
+              `[TRIAL] Failed to dispatch trial end workflow for subscription=${subscriptionId}:`,
               wfErr,
             );
           }
 
+          // Provision entitlements so trial users can access features
           await deps.provisionEntitlements(db, customerRecord.id, plan.id);
 
+          console.log(
+            `[TRIAL] No-card trial activated: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
+          );
           return c.json({
             success: true,
             trial: true,
-            trial_days: trialDays,
             message:
               trialUnit === "minutes"
                 ? `${trialDays}-minute trial activated`
@@ -571,137 +422,302 @@ export function createCheckoutRoute(
         }
       }
 
-      console.log(
-        `[TRIAL] Initiating card-required trial checkout: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}`,
-      );
-      // Providers like Dodo handle trials natively via subscription_data.trial_period_days.
-      // Mark these so the trial-end workflow skips the charge (provider handles billing).
-      const isNativeTrial = providerCtx.adapter.supportsNativeTrials === true;
+      // 5a. Lazy plan sync — ensure the plan exists on the provider before any checkout
+      if (
+        providerCtx &&
+        !plan.providerPlanId &&
+        plan.type === "paid" &&
+        plan.billingType === "recurring"
+      ) {
+        try {
+          const syncedId = await deps.ensurePlanSynced(
+            db,
+            plan,
+            providerCtx.adapter,
+            providerCtx.account,
+          );
+          if (syncedId) {
+            (plan as any).providerPlanId = syncedId;
+            if (providerCtx.adapter.id === "paystack")
+              (plan as any).paystackPlanId = syncedId;
+          }
+        } catch (e) {
+          console.warn(`[checkout] Lazy plan sync failed for ${plan.id}:`, e);
+        }
+      }
 
-      // Pre-calculate trial end date for reliable downstream processing
-      const trialDurationMs =
-        trialUnit === "minutes"
-          ? trialDays * 60 * 1000
-          : trialDays * 24 * 60 * 60 * 1000;
-      const trialEndsAt = new Date(Date.now() + trialDurationMs).toISOString();
+      // 5b. Handle trial with card required — checkout for card capture
+      if (trialDays > 0 && trialCardRequired) {
+        if (!providerCtx) {
+          return c.json(
+            {
+              success: false,
+              error:
+                "Trial with card requires a payment provider. Please connect a provider first.",
+            },
+            400,
+          );
+        }
 
-      const trialMetadata = {
-        ...metadata,
-        organization_id: keyRecord.organizationId,
-        plan_id: plan.id,
-        plan_slug: plan.slug,
-        customer_id: customerRecord.id,
-        environment: providerEnv,
-        provider_id: selectedProviderId,
-        trial_days: trialDays,
-        trial_unit: trialUnit,
-        trial_ends_at: trialEndsAt,
-        is_trial: true,
-        native_trial: isNativeTrial,
-        amount: plan.price,
-        currency: plan.currency,
-      };
+        // If the customer already has a valid payment method (e.g. from wallet.setup()
+        // or a previous purchase), skip the card capture checkout entirely — just create
+        // the trialing subscription directly. This is the elegant composition:
+        // wallet.setup() + attach() work together without redundant charges.
+        const alreadyHasCard = await deps.hasPaymentMethod(
+          db,
+          customerRecord.id,
+        );
+        if (alreadyHasCard) {
+          console.log(
+            `[TRIAL] Customer ${customerRecord.id} already has card — skipping auth capture, creating trial directly`,
+          );
+          try {
+            const now = Date.now();
+            const trialEndMs =
+              trialUnit === "minutes"
+                ? now + trialDays * 60 * 1000
+                : now + trialDays * 24 * 60 * 60 * 1000;
 
-      try {
-        const customerRef =
-          customerRecord.providerCustomerId ||
-          customerRecord.paystackCustomerId ||
-          email;
-        // Only pass the plan for providers with native trial support.
-        // For auth-capture providers (Paystack), plan: null ensures the checkout
-        // charges the small auth amount instead of the full subscription price.
-        const trialPlanRef = isNativeTrial
-          ? plan.providerPlanId || plan.paystackPlanId
-          : null;
+            const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
 
-        // Convert trial duration to days for providers that support native trials (Dodo).
-        // Minute-based trials (used for testing) round up to at least 1 day.
-        const trialDaysForProvider =
+            // Find existing pending sub if it exists to prevent duplicates
+            const existingPendingSub = await db.query.subscriptions.findFirst({
+              where: and(
+                eq(schema.subscriptions.customerId, customerRecord.id),
+                eq(schema.subscriptions.planId, plan.id),
+                eq(schema.subscriptions.status, "pending"),
+              ),
+            });
+
+            let subscriptionId;
+
+            if (existingPendingSub) {
+              subscriptionId = existingPendingSub.id;
+              await db
+                .update(schema.subscriptions)
+                .set({
+                  providerId: selectedProviderId,
+                  providerSubscriptionId: trialCode,
+                  providerSubscriptionCode: trialCode,
+                  paystackSubscriptionCode:
+                    selectedProviderId === "paystack" ? trialCode : null,
+                  status: "trialing",
+                  currentPeriodStart: now,
+                  currentPeriodEnd: trialEndMs,
+                  metadata: {
+                    ...metadata,
+                    trial: true,
+                    trial_ends_at: trialEndMs,
+                  },
+                  updatedAt: now,
+                })
+                .where(eq(schema.subscriptions.id, existingPendingSub.id));
+            } else {
+              const [subscription] = await db
+                .insert(schema.subscriptions)
+                .values({
+                  id: crypto.randomUUID(),
+                  customerId: customerRecord.id,
+                  planId: plan.id,
+                  providerId: selectedProviderId,
+                  providerSubscriptionId: trialCode,
+                  providerSubscriptionCode: trialCode,
+                  paystackSubscriptionCode:
+                    selectedProviderId === "paystack" ? trialCode : null,
+                  status: "trialing",
+                  currentPeriodStart: now,
+                  currentPeriodEnd: trialEndMs,
+                  metadata: {
+                    ...metadata,
+                    trial: true,
+                    trial_ends_at: trialEndMs,
+                  },
+                })
+                .returning();
+              subscriptionId = subscription.id;
+            }
+
+            try {
+              await c.env.TRIAL_END_WORKFLOW.create({
+                params: {
+                  subscriptionId: subscriptionId,
+                  customerId: customerRecord.id,
+                  planId: plan.id,
+                  organizationId: keyRecord.organizationId,
+                  providerId: selectedProviderId,
+                  environment: providerEnv,
+                  trialEndMs,
+                  email,
+                  amount: plan.price,
+                  currency: plan.currency,
+                  planSlug: plan.slug,
+                },
+              });
+            } catch (wfErr) {
+              console.error(
+                `[TRIAL] Failed to dispatch trial end workflow:`,
+                wfErr,
+              );
+            }
+
+            await deps.provisionEntitlements(db, customerRecord.id, plan.id);
+
+            return c.json({
+              success: true,
+              trial: true,
+              trial_days: trialDays,
+              message:
+                trialUnit === "minutes"
+                  ? `${trialDays}-minute trial activated`
+                  : `${trialDays}-day trial activated`,
+              subscription_id: subscriptionId,
+              customer_id: customerRecord.id,
+              trial_ends_at: new Date(trialEndMs).toISOString(),
+            });
+          } catch (e: any) {
+            return c.json(
+              {
+                success: false,
+                error: e.message || "Failed to create trial subscription",
+              },
+              500,
+            );
+          }
+        }
+
+        console.log(
+          `[TRIAL] Initiating card-required trial checkout: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}`,
+        );
+        // Providers like Dodo handle trials natively via subscription_data.trial_period_days.
+        // Mark these so the trial-end workflow skips the charge (provider handles billing).
+        const isNativeTrial = providerCtx.adapter.supportsNativeTrials === true;
+
+        // Pre-calculate trial end date for reliable downstream processing
+        const trialDurationMs =
           trialUnit === "minutes"
-            ? Math.max(1, Math.ceil(trialDays / 1440))
-            : trialDays;
+            ? trialDays * 60 * 1000
+            : trialDays * 24 * 60 * 60 * 1000;
+        const trialEndsAt = new Date(
+          Date.now() + trialDurationMs,
+        ).toISOString();
 
-        const result = await providerCtx.adapter.createCheckoutSession({
-          customer: { id: customerRef, email },
-          plan: trialPlanRef ? { id: trialPlanRef } : null,
-          amount: 10000, // 100 NGN/GHS minimum for card verification (Paystack)
-          currency: currency || plan.currency,
-          channels,
-          callbackUrl,
-          metadata: trialMetadata,
-          trialDays: trialDaysForProvider,
-          environment: providerCtx.account.environment,
-          account: providerCtx.account,
-        });
+        const trialMetadata = {
+          ...metadata,
+          organization_id: keyRecord.organizationId,
+          plan_id: plan.id,
+          plan_slug: plan.slug,
+          customer_id: customerRecord.id,
+          environment: providerEnv,
+          provider_id: selectedProviderId,
+          trial_days: trialDays,
+          trial_unit: trialUnit,
+          trial_ends_at: trialEndsAt,
+          is_trial: true,
+          native_trial: isNativeTrial,
+          amount: plan.price,
+          currency: plan.currency,
+        };
 
-        if (result.isErr()) {
-          return c.json({ success: false, error: result.error.message }, 400);
+        try {
+          const customerRef =
+            customerRecord.providerCustomerId ||
+            customerRecord.paystackCustomerId ||
+            email;
+          // Only pass the plan for providers with native trial support.
+          // For auth-capture providers (Paystack), plan: null ensures the checkout
+          // charges the small auth amount instead of the full subscription price.
+          const trialPlanRef = isNativeTrial
+            ? plan.providerPlanId || plan.paystackPlanId
+            : null;
+
+          // Convert trial duration to days for providers that support native trials (Dodo).
+          // Minute-based trials (used for testing) round up to at least 1 day.
+          const trialDaysForProvider =
+            trialUnit === "minutes"
+              ? Math.max(1, Math.ceil(trialDays / 1440))
+              : trialDays;
+
+          const result = await providerCtx.adapter.createCheckoutSession({
+            customer: { id: customerRef, email },
+            plan: trialPlanRef ? { id: trialPlanRef } : null,
+            amount: 10000, // 100 NGN/GHS minimum for card verification (Paystack)
+            currency: currency || plan.currency,
+            channels,
+            callbackUrl,
+            metadata: trialMetadata,
+            trialDays: trialDaysForProvider,
+            environment: providerCtx.account.environment,
+            account: providerCtx.account,
+          });
+
+          if (result.isErr()) {
+            return c.json({ success: false, error: result.error.message }, 400);
+          }
+
+          return c.json({
+            success: true,
+            trial: true,
+            trial_days: trialDays,
+            checkoutUrl: result.value.url,
+            reference: result.value.reference,
+            accessCode: result.value.accessCode,
+          });
+        } catch (e: any) {
+          return c.json(
+            { success: false, error: e.message || "Network error" },
+            500,
+          );
+        }
+      }
+
+      // 6. Plan switching (handles free, upgrade, downgrade, lateral, new)
+      //    Uses the unified executeSwitch logic which:
+      //    - Detects if customer has an active sub in the same planGroup
+      //    - Upgrades: prorates and charges immediately (or returns checkout URL)
+      //    - Downgrades: schedules for end of billing period
+      //    - Lateral: switches features immediately, no charge
+      //    - New: creates subscription (direct if card on file, checkout if not)
+      try {
+        const result = await deps.executeSwitch(
+          db,
+          customerRecord.id,
+          plan.id,
+          providerCtx,
+          {
+            callbackUrl,
+            metadata: {
+              ...metadata,
+              organization_id: keyRecord.organizationId,
+              environment: providerEnv,
+              provider_id: selectedProviderId,
+            },
+            downgradeWorkflow: c.env.DOWNGRADE_WORKFLOW,
+            organizationId: keyRecord.organizationId,
+            environment: providerEnv,
+          },
+        );
+
+        if (!result.success) {
+          return c.json({ success: false, error: result.message }, 400);
         }
 
         return c.json({
-          success: true,
-          trial: true,
-          trial_days: trialDays,
-          checkoutUrl: result.value.url,
-          reference: result.value.reference,
-          accessCode: result.value.accessCode,
+          ...result,
+          customer_id: customerRecord.id,
         });
       } catch (e: any) {
         return c.json(
-          { success: false, error: e.message || "Network error" },
+          { success: false, error: e.message || "Switch failed" },
           500,
         );
       }
-    }
-
-    // 6. Plan switching (handles free, upgrade, downgrade, lateral, new)
-    //    Uses the unified executeSwitch logic which:
-    //    - Detects if customer has an active sub in the same planGroup
-    //    - Upgrades: prorates and charges immediately (or returns checkout URL)
-    //    - Downgrades: schedules for end of billing period
-    //    - Lateral: switches features immediately, no charge
-    //    - New: creates subscription (direct if card on file, checkout if not)
-    try {
-      const result = await deps.executeSwitch(
-        db,
-        customerRecord.id,
-        plan.id,
-        providerCtx,
-        {
-          callbackUrl,
-          metadata: {
-            ...metadata,
-            organization_id: keyRecord.organizationId,
-            environment: providerEnv,
-            provider_id: selectedProviderId,
-          },
-          downgradeWorkflow: c.env.DOWNGRADE_WORKFLOW,
-          organizationId: keyRecord.organizationId,
-          environment: providerEnv,
-        },
-      );
-
-      if (!result.success) {
-        return c.json({ success: false, error: result.message }, 400);
-      }
-
-      return c.json({
-        ...result,
-        customer_id: customerRecord.id,
-      });
     } catch (e: any) {
+      console.error("[attach] Unhandled error:", e);
       return c.json(
-        { success: false, error: e.message || "Switch failed" },
+        { success: false, error: e.message || "Internal server error" },
         500,
       );
     }
-  } catch (e: any) {
-    console.error("[attach] Unhandled error:", e);
-    return c.json(
-      { success: false, error: e.message || "Internal server error" },
-      500,
-    );
-  }
   });
 
   return app;

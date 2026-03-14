@@ -302,13 +302,11 @@ describe("Webhook handlers behavior", () => {
       email: "customer@example.com",
       organizationId: "org_1",
     });
-    db.query.plans.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        id: "plan_db_1",
-        organizationId: "org_1",
-        interval: "monthly",
-      });
+    db.query.plans.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: "plan_db_1",
+      organizationId: "org_1",
+      interval: "monthly",
+    });
     db.query.subscriptions.findFirst.mockResolvedValue(null);
 
     const event = {

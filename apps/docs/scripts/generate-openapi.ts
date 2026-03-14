@@ -1,8 +1,8 @@
-import { generateFiles } from 'fumadocs-openapi';
-import { openapi } from '../src/lib/openapi';
+import { generateFiles } from "fumadocs-openapi";
+import { openapi } from "../src/lib/openapi";
 
 void generateFiles({
   input: openapi,
-  output: './content/docs/api-reference',
+  output: "./content/docs/api-reference",
   includeDescription: true,
 });

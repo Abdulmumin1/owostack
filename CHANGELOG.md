@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+
 - **Dashboard**: Fixed environment state hydration from server-side data
   - Active environment now properly loads from organization metadata on page load
   - Prevents environment state mismatch between server and client
@@ -10,6 +11,7 @@
   - Ensures correct API endpoint selection on initial render
 
 ### Changed
+
 - **Dashboard**: Improved environment state management
   - Server-side loads active environment from organization metadata
   - Client-side hydrates from server data instead of defaulting to "test"
@@ -21,6 +23,7 @@
   - Added test coverage for unlimited metered features
 
 ### Changed
+
 - **API**: Improved feature enabled logic in `/api/v1/plans` and `/api/v1/plans/:slug` endpoints
   - Boolean features: `enabled` based on `limitValue !== 0`
   - Metered features: `enabled` always `true` (availability controlled by limit value)

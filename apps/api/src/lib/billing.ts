@@ -270,7 +270,9 @@ export class BillingService {
               pf?.feature.name ||
               row.featureSlug ||
               row.featureId,
-            ...(row.subscriptionId ? { subscriptionId: row.subscriptionId } : {}),
+            ...(row.subscriptionId
+              ? { subscriptionId: row.subscriptionId }
+              : {}),
             ...(row.planId ? { planId: row.planId } : {}),
             usageModel: rated.usageModel,
             usage,
@@ -293,7 +295,8 @@ export class BillingService {
 
         return {
           customerId,
-          usageWindowEnd: usageWindowEnd || options?.usageCutoffAt || Date.now(),
+          usageWindowEnd:
+            usageWindowEnd || options?.usageCutoffAt || Date.now(),
           features,
           totalEstimated,
           currency: subscription.plan.currency || "USD",
@@ -311,7 +314,10 @@ export class BillingService {
     organizationId: string,
     options?: GenerateInvoiceOptions,
   ): Promise<
-    Result<GenerateInvoiceResult, NotFoundError | ValidationError | DatabaseError>
+    Result<
+      GenerateInvoiceResult,
+      NotFoundError | ValidationError | DatabaseError
+    >
   > {
     return Result.tryPromise({
       try: async () => {
@@ -390,7 +396,9 @@ export class BillingService {
       });
     }
 
-    const periodStart = Math.min(...unbilled.features.map((f) => f.periodStart));
+    const periodStart = Math.min(
+      ...unbilled.features.map((f) => f.periodStart),
+    );
     const periodEnd = Math.max(...unbilled.features.map((f) => f.periodEnd));
     const usageWindowEnd = unbilled.usageWindowEnd;
 
@@ -436,7 +444,9 @@ export class BillingService {
           organizationId,
           customerId,
           subscriptionId:
-            uniqueSubscriptionIds.length === 1 ? uniqueSubscriptionIds[0] : null,
+            uniqueSubscriptionIds.length === 1
+              ? uniqueSubscriptionIds[0]
+              : null,
           number: invoiceNumber,
           idempotencyKey: options.idempotencyKey,
           status: "open",
@@ -550,11 +560,16 @@ export class BillingService {
     });
 
     if (!finalInvoice) {
-      throw new Error(`[billing] Invoice ${invoiceId} disappeared after creation`);
+      throw new Error(
+        `[billing] Invoice ${invoiceId} disappeared after creation`,
+      );
     }
 
     const featureSlugById = new Map(
-      unbilled.features.map((feature) => [feature.featureId, feature.featureSlug]),
+      unbilled.features.map((feature) => [
+        feature.featureId,
+        feature.featureSlug,
+      ]),
     );
 
     return {
@@ -564,31 +579,33 @@ export class BillingService {
       currency: finalInvoice.currency,
       subtotal: finalInvoice.subtotal,
       total: finalInvoice.total,
-      items: finalInvoice.items.map((item: (typeof finalInvoice.items)[number]) => {
-        const metadata = (item.metadata || {}) as Record<string, unknown>;
-        return {
-          featureId: item.featureId || "unknown",
-          featureSlug:
-            featureSlugById.get(item.featureId || "") ||
-            item.featureId ||
-            "unknown",
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          amount: item.amount,
-          periodStart: item.periodStart || 0,
-          periodEnd: item.periodEnd || 0,
-          ...(typeof metadata.ratingModel === "string"
-            ? { ratingModel: metadata.ratingModel as RatingModel }
-            : {}),
-          ...(Array.isArray(metadata.tierBreakdown)
-            ? {
-                tierBreakdown:
-                  metadata.tierBreakdown as BillingTierBreakdown[],
-              }
-            : {}),
-        };
-      }),
+      items: finalInvoice.items.map(
+        (item: (typeof finalInvoice.items)[number]) => {
+          const metadata = (item.metadata || {}) as Record<string, unknown>;
+          return {
+            featureId: item.featureId || "unknown",
+            featureSlug:
+              featureSlugById.get(item.featureId || "") ||
+              item.featureId ||
+              "unknown",
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            amount: item.amount,
+            periodStart: item.periodStart || 0,
+            periodEnd: item.periodEnd || 0,
+            ...(typeof metadata.ratingModel === "string"
+              ? { ratingModel: metadata.ratingModel as RatingModel }
+              : {}),
+            ...(Array.isArray(metadata.tierBreakdown)
+              ? {
+                  tierBreakdown:
+                    metadata.tierBreakdown as BillingTierBreakdown[],
+                }
+              : {}),
+          };
+        },
+      ),
       periodStart: finalInvoice.periodStart,
       periodEnd: finalInvoice.periodEnd,
       usageWindowEnd: finalInvoice.usageWindowEnd || usageWindowEnd,
@@ -603,7 +620,10 @@ export class BillingService {
       metadata?: Record<string, unknown> | null;
     },
   ): Promise<
-    Result<ReleaseInvoiceResult, NotFoundError | ValidationError | DatabaseError>
+    Result<
+      ReleaseInvoiceResult,
+      NotFoundError | ValidationError | DatabaseError
+    >
   > {
     return Result.tryPromise({
       try: async () => {
@@ -625,17 +645,20 @@ export class BillingService {
           });
         }
 
-        const successfulAttempt = await this.db.query.paymentAttempts.findFirst({
-          where: and(
-            eq(schema.paymentAttempts.invoiceId, invoiceId),
-            eq(schema.paymentAttempts.status, "succeeded"),
-          ),
-        });
+        const successfulAttempt = await this.db.query.paymentAttempts.findFirst(
+          {
+            where: and(
+              eq(schema.paymentAttempts.invoiceId, invoiceId),
+              eq(schema.paymentAttempts.status, "succeeded"),
+            ),
+          },
+        );
 
         if (successfulAttempt) {
           throw new ValidationError({
             field: "invoice_status",
-            details: "cannot release an invoice with a successful payment attempt",
+            details:
+              "cannot release an invoice with a successful payment attempt",
           });
         }
 
@@ -677,10 +700,14 @@ export class BillingService {
           })
           .where(eq(schema.invoices.id, invoiceId));
 
-        await this.deps.releaseCustomerOverageBlockForInvoice(this.db, invoiceId, {
-          failureReason: options.reason,
-          metadata: options.metadata ?? null,
-        });
+        await this.deps.releaseCustomerOverageBlockForInvoice(
+          this.db,
+          invoiceId,
+          {
+            failureReason: options.reason,
+            metadata: options.metadata ?? null,
+          },
+        );
 
         return {
           invoiceId,

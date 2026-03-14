@@ -33,15 +33,23 @@ export class EntitlementCache {
   // ==========================================================================
 
   async getCustomer<T>(orgId: string, customerId: string): Promise<T | null> {
-    const cached = await this.kv.get(this.key("customer", orgId, customerId), "json");
+    const cached = await this.kv.get(
+      this.key("customer", orgId, customerId),
+      "json",
+    );
     return cached as T | null;
   }
 
-  async setCustomer<T>(orgId: string, customerId: string, data: T, ttl = DEFAULT_TTL): Promise<void> {
+  async setCustomer<T>(
+    orgId: string,
+    customerId: string,
+    data: T,
+    ttl = DEFAULT_TTL,
+  ): Promise<void> {
     await this.kv.put(
       this.key("customer", orgId, customerId),
       JSON.stringify(data),
-      { expirationTtl: this.normalizeTtl(ttl) }
+      { expirationTtl: this.normalizeTtl(ttl) },
     );
   }
 
@@ -51,7 +59,11 @@ export class EntitlementCache {
 
   async setCustomerAliases<T>(
     orgId: string,
-    customer: { id?: string | null; email?: string | null; externalId?: string | null },
+    customer: {
+      id?: string | null;
+      email?: string | null;
+      externalId?: string | null;
+    },
     data: T,
     ttl = DEFAULT_TTL,
   ): Promise<void> {
@@ -64,12 +76,18 @@ export class EntitlementCache {
     if (aliases.length === 0) return;
 
     const unique = [...new Set(aliases)];
-    await Promise.all(unique.map((alias) => this.setCustomer(orgId, alias, data, ttl)));
+    await Promise.all(
+      unique.map((alias) => this.setCustomer(orgId, alias, data, ttl)),
+    );
   }
 
   async invalidateCustomerAliases(
     orgId: string,
-    customer: { id?: string | null; email?: string | null; externalId?: string | null },
+    customer: {
+      id?: string | null;
+      email?: string | null;
+      externalId?: string | null;
+    },
   ): Promise<void> {
     const aliases = [
       customer.id,
@@ -80,7 +98,9 @@ export class EntitlementCache {
     if (aliases.length === 0) return;
 
     const unique = [...new Set(aliases)];
-    await Promise.all(unique.map((alias) => this.invalidateCustomer(orgId, alias)));
+    await Promise.all(
+      unique.map((alias) => this.invalidateCustomer(orgId, alias)),
+    );
   }
 
   // ==========================================================================
@@ -88,15 +108,23 @@ export class EntitlementCache {
   // ==========================================================================
 
   async getFeature<T>(orgId: string, featureId: string): Promise<T | null> {
-    const cached = await this.kv.get(this.key("feature", orgId, featureId), "json");
+    const cached = await this.kv.get(
+      this.key("feature", orgId, featureId),
+      "json",
+    );
     return cached as T | null;
   }
 
-  async setFeature<T>(orgId: string, featureId: string, data: T, ttl = FEATURE_TTL): Promise<void> {
+  async setFeature<T>(
+    orgId: string,
+    featureId: string,
+    data: T,
+    ttl = FEATURE_TTL,
+  ): Promise<void> {
     await this.kv.put(
       this.key("feature", orgId, featureId),
       JSON.stringify(data),
-      { expirationTtl: this.normalizeTtl(ttl) }
+      { expirationTtl: this.normalizeTtl(ttl) },
     );
   }
 
@@ -108,20 +136,34 @@ export class EntitlementCache {
   // Subscriptions Cache (by customer)
   // ==========================================================================
 
-  async getSubscriptions<T>(orgId: string, customerId: string): Promise<T | null> {
-    const cached = await this.kv.get(this.key("subscriptions", orgId, customerId), "json");
+  async getSubscriptions<T>(
+    orgId: string,
+    customerId: string,
+  ): Promise<T | null> {
+    const cached = await this.kv.get(
+      this.key("subscriptions", orgId, customerId),
+      "json",
+    );
     return cached as T | null;
   }
 
-  async setSubscriptions<T>(orgId: string, customerId: string, data: T, ttl = SUBSCRIPTION_TTL): Promise<void> {
+  async setSubscriptions<T>(
+    orgId: string,
+    customerId: string,
+    data: T,
+    ttl = SUBSCRIPTION_TTL,
+  ): Promise<void> {
     await this.kv.put(
       this.key("subscriptions", orgId, customerId),
       JSON.stringify(data),
-      { expirationTtl: this.normalizeTtl(ttl) }
+      { expirationTtl: this.normalizeTtl(ttl) },
     );
   }
 
-  async invalidateSubscriptions(orgId: string, customerId: string): Promise<void> {
+  async invalidateSubscriptions(
+    orgId: string,
+    customerId: string,
+  ): Promise<void> {
     await this.kv.delete(this.key("subscriptions", orgId, customerId));
   }
 
@@ -130,15 +172,23 @@ export class EntitlementCache {
   // ==========================================================================
 
   async getPlanFeatures<T>(orgId: string, cacheKey: string): Promise<T | null> {
-    const cached = await this.kv.get(this.key("planFeatures", orgId, cacheKey), "json");
+    const cached = await this.kv.get(
+      this.key("planFeatures", orgId, cacheKey),
+      "json",
+    );
     return cached as T | null;
   }
 
-  async setPlanFeatures<T>(orgId: string, cacheKey: string, data: T, ttl = PLAN_FEATURE_TTL): Promise<void> {
+  async setPlanFeatures<T>(
+    orgId: string,
+    cacheKey: string,
+    data: T,
+    ttl = PLAN_FEATURE_TTL,
+  ): Promise<void> {
     await this.kv.put(
       this.key("planFeatures", orgId, cacheKey),
       JSON.stringify(data),
-      { expirationTtl: this.normalizeTtl(ttl) }
+      { expirationTtl: this.normalizeTtl(ttl) },
     );
   }
 
@@ -203,11 +253,11 @@ export async function getOrFetch<T>(
   orgId: string,
   id: string,
   fetcher: () => Promise<T | null>,
-  ttl = DEFAULT_TTL
+  ttl = DEFAULT_TTL,
 ): Promise<T | null> {
   // Try cache first
   let cached: T | null = null;
-  
+
   switch (type) {
     case "customer":
       cached = await cache.getCustomer<T>(orgId, id);

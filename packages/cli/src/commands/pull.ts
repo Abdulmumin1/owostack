@@ -3,11 +3,7 @@ import pc from "picocolors";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { resolve, isAbsolute } from "node:path";
-import {
-  getApiKey,
-  getLiveApiUrl,
-  getTestApiUrl,
-} from "../lib/config.js";
+import { getApiKey, getLiveApiUrl, getTestApiUrl } from "../lib/config.js";
 import { loadConfigSettings, resolveConfigPath } from "../lib/loader.js";
 import {
   buildRemoteCatalogSnapshot,

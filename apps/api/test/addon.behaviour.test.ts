@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { createAddonRoute, type AddonDependencies } from "../src/routes/api/addon";
+import {
+  createAddonRoute,
+  type AddonDependencies,
+} from "../src/routes/api/addon";
 import { CustomerResolutionConflictError } from "../src/lib/customer-resolution";
 import { createRouteTestApp } from "./helpers/route-harness";
 import { err, ok } from "./helpers/result";
@@ -56,7 +59,8 @@ describe("POST /v1/addon behavior", () => {
   const deps: AddonDependencies = {
     resolveOrCreateCustomer:
       resolveOrCreateCustomerMock as unknown as AddonDependencies["resolveOrCreateCustomer"],
-    verifyApiKey: verifyApiKeyMock as unknown as AddonDependencies["verifyApiKey"],
+    verifyApiKey:
+      verifyApiKeyMock as unknown as AddonDependencies["verifyApiKey"],
     resolveProvider:
       resolveProviderMock as unknown as AddonDependencies["resolveProvider"],
     getProviderRegistry:

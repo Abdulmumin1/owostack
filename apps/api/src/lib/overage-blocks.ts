@@ -45,10 +45,7 @@ export async function blockCustomerOverage(
     });
 }
 
-export async function clearCustomerOverageBlock(
-  db: any,
-  customerId: string,
-) {
+export async function clearCustomerOverageBlock(db: any, customerId: string) {
   await db
     .delete(schema.customerOverageBlocks)
     .where(eq(schema.customerOverageBlocks.customerId, customerId));

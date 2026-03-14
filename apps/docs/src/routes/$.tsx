@@ -26,8 +26,8 @@ export const Route = createFileRoute("/$")({
   head: ({ loaderData }) => ({
     meta: [
       {
-        title: loaderData?.title 
-          ? `${loaderData.title} - Owostack` 
+        title: loaderData?.title
+          ? `${loaderData.title} - Owostack`
           : "Owostack - Billing infrastructure for AI SaaS",
       },
       loaderData?.description && {
@@ -83,11 +83,7 @@ function Page() {
   const data = useFumadocsLoader(Route.useLoaderData());
 
   return (
-    <DocsLayout
-      {...baseOptions()}
-      tree={data.pageTree}
-      
-    >
+    <DocsLayout {...baseOptions()} tree={data.pageTree}>
       <Suspense>
         {clientLoader.useContent(data.path, {
           className: "",

@@ -9,13 +9,10 @@ export type DashboardShellDependencies = {
   getSession: (
     env: Env,
     headers: Headers,
-  ) => Promise<
-    | {
-        user: Variables["user"];
-        session: Variables["session"];
-      }
-    | null
-  >;
+  ) => Promise<{
+    user: Variables["user"];
+    session: Variables["session"];
+  } | null>;
   resolveOrganizationId: typeof resolveOrganizationId;
 };
 
@@ -79,7 +76,10 @@ export function createDashboardShell(
             where: eq(schema.organizations.id, finalOrgId),
           }));
         if (org) {
-          await db.insert(schema.organizations).values(org).onConflictDoNothing();
+          await db
+            .insert(schema.organizations)
+            .values(org)
+            .onConflictDoNothing();
         }
       }
     }

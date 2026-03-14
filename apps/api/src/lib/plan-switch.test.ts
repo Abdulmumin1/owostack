@@ -205,18 +205,16 @@ describe("executeSwitch", () => {
     const db = {
       query: {
         plans: {
-          findFirst: vi
-            .fn()
-            .mockResolvedValueOnce({
-              id: "plan_free",
-              name: "Free",
-              slug: "free",
-              price: 0,
-              interval: "monthly",
-              billingType: "recurring",
-              planGroup: "base",
-              isAddon: false,
-            }),
+          findFirst: vi.fn().mockResolvedValueOnce({
+            id: "plan_free",
+            name: "Free",
+            slug: "free",
+            price: 0,
+            interval: "monthly",
+            billingType: "recurring",
+            planGroup: "base",
+            isAddon: false,
+          }),
         },
         customers: {
           findFirst: vi.fn().mockResolvedValue({

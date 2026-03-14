@@ -1,17 +1,26 @@
-import { Owostack, metered, boolean, creditSystem, creditPack, plan } from "owostack";
+import {
+  Owostack,
+  metered,
+  boolean,
+  creditSystem,
+  creditPack,
+  plan,
+} from "owostack";
 export const sendEmail = metered("send-email", { name: "send-email" });
 export const apiRequests = metered("api-requests", { name: "api requests" });
 export const sso = boolean("sso", { name: "sso" });
 export const thirdpen = metered("thirdpen", { name: "Thirdpen" });
-export const dearfutureself = metered("dearfutureself", { name: "dearfutureself" });
+export const dearfutureself = metered("dearfutureself", {
+  name: "dearfutureself",
+});
 export const dfs = metered("dfs", { name: "dfs" });
 export const supportCredits = creditSystem("support-credits", {
   name: "support credits",
-  features: [dfs(20), apiRequests(10), dearfutureself(1)]
+  features: [dfs(20), apiRequests(10), dearfutureself(1)],
 });
 export const thirdpenCredits = creditSystem("thirdpen-credits", {
   name: "thirdpen-credits",
-  features: [thirdpen(3)]
+  features: [thirdpen(3)],
 });
 export const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY!,
@@ -22,7 +31,26 @@ export const owo = new Owostack({
       currency: "NGN",
       interval: "monthly",
       provider: "paystack",
-      features: [sendEmail.limit(10, {"reset":"5min","usageModel":"included","ratingModel":"volume","tiers":[{"upTo":30,"unitPrice":0,"flatFee":1000},{"upTo":100,"unitPrice":0,"flatFee":5000}],"billingUnits":1,"overage":"charge"}), apiRequests.config({"limit":null,"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1})]
+      features: [
+        sendEmail.limit(10, {
+          reset: "5min",
+          usageModel: "included",
+          ratingModel: "volume",
+          tiers: [
+            { upTo: 30, unitPrice: 0, flatFee: 1000 },
+            { upTo: 100, unitPrice: 0, flatFee: 5000 },
+          ],
+          billingUnits: 1,
+          overage: "charge",
+        }),
+        apiRequests.config({
+          limit: null,
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+      ],
     }),
     plan("testesa", {
       name: "testesa",
@@ -32,7 +60,7 @@ export const owo = new Owostack({
       planGroup: "teateaesar",
       provider: "paystack",
       autoEnable: true,
-      features: []
+      features: [],
     }),
     plan("money-man", {
       name: "money man",
@@ -41,7 +69,7 @@ export const owo = new Owostack({
       interval: "monthly",
       provider: "paystack",
       autoEnable: true,
-      features: [sso.off(), supportCredits.credits(300, { reset: "monthly" })]
+      features: [sso.off(), supportCredits.credits(300, { reset: "monthly" })],
     }),
     plan("test-trial-polar2", {
       name: "test-trial-polar2",
@@ -50,7 +78,24 @@ export const owo = new Owostack({
       interval: "monthly",
       trialDays: 1,
       provider: "polar",
-      features: [thirdpen.limit(100, {"reset":"5min","usageModel":"included","pricePerUnit":20,"ratingModel":"package","billingUnits":1,"overage":"charge"}), dearfutureself.limit(10, {"reset":"5min","usageModel":"included","pricePerUnit":30,"ratingModel":"package","billingUnits":1,"overage":"charge"})]
+      features: [
+        thirdpen.limit(100, {
+          reset: "5min",
+          usageModel: "included",
+          pricePerUnit: 20,
+          ratingModel: "package",
+          billingUnits: 1,
+          overage: "charge",
+        }),
+        dearfutureself.limit(10, {
+          reset: "5min",
+          usageModel: "included",
+          pricePerUnit: 30,
+          ratingModel: "package",
+          billingUnits: 1,
+          overage: "charge",
+        }),
+      ],
     }),
     plan("test-trial-polar", {
       name: "test-trial-polar",
@@ -60,7 +105,7 @@ export const owo = new Owostack({
       planGroup: "sales",
       trialDays: 3,
       provider: "polar",
-      features: [supportCredits.credits(100, { reset: "monthly" })]
+      features: [supportCredits.credits(100, { reset: "monthly" })],
     }),
     plan("wanssoawe", {
       name: "wanssoawe",
@@ -69,7 +114,21 @@ export const owo = new Owostack({
       interval: "monthly",
       planGroup: "support",
       provider: "dodopayments",
-      features: [thirdpen.limit(100, {"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1}), dearfutureself.config({"limit":null,"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1})]
+      features: [
+        thirdpen.limit(100, {
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+        dearfutureself.config({
+          limit: null,
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+      ],
     }),
     plan("dry", {
       name: "dry",
@@ -78,7 +137,18 @@ export const owo = new Owostack({
       currency: "USD",
       interval: "monthly",
       provider: "dodopayments",
-      features: [supportCredits.credits(100, { reset: "5min", overage: "charge" }), thirdpen.config({"limit":null,"reset":"monthly","usageModel":"usage_based","pricePerUnit":100,"ratingModel":"package","billingUnits":1,"overage":"charge"})]
+      features: [
+        supportCredits.credits(100, { reset: "5min", overage: "charge" }),
+        thirdpen.config({
+          limit: null,
+          reset: "monthly",
+          usageModel: "usage_based",
+          pricePerUnit: 100,
+          ratingModel: "package",
+          billingUnits: 1,
+          overage: "charge",
+        }),
+      ],
     }),
     plan("test-trial-dodod", {
       name: "test-trial-dodod",
@@ -87,7 +157,23 @@ export const owo = new Owostack({
       interval: "monthly",
       trialDays: 2,
       provider: "dodopayments",
-      features: [thirdpen.limit(100, {"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1}), supportCredits.credits(100, { reset: "monthly", overage: "charge" }), dearfutureself.limit(10, {"reset":"5min","usageModel":"included","pricePerUnit":200,"ratingModel":"package","billingUnits":1,"overage":"charge"})]
+      features: [
+        thirdpen.limit(100, {
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+        supportCredits.credits(100, { reset: "monthly", overage: "charge" }),
+        dearfutureself.limit(10, {
+          reset: "5min",
+          usageModel: "included",
+          pricePerUnit: 200,
+          ratingModel: "package",
+          billingUnits: 1,
+          overage: "charge",
+        }),
+      ],
     }),
     plan("test-trial-dodo-1", {
       name: "test-trial-dodo",
@@ -96,7 +182,7 @@ export const owo = new Owostack({
       interval: "monthly",
       trialDays: 15,
       provider: "dodopayments",
-      features: [supportCredits.credits(100, { reset: "monthly" })]
+      features: [supportCredits.credits(100, { reset: "monthly" })],
     }),
     plan("test-trial-dodo", {
       name: "test-trial-dodo",
@@ -105,7 +191,14 @@ export const owo = new Owostack({
       interval: "monthly",
       trialDays: 3,
       provider: "dodopayments",
-      features: [thirdpen.limit(100, {"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1})]
+      features: [
+        thirdpen.limit(100, {
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+      ],
     }),
     plan("test-trial-stack", {
       name: "test-trial-stack",
@@ -114,7 +207,18 @@ export const owo = new Owostack({
       interval: "monthly",
       trialDays: 3,
       provider: "paystack",
-      features: [thirdpenCredits.credits(100, { reset: "monthly" }), dearfutureself.config({"limit":null,"reset":"monthly","usageModel":"included","pricePerUnit":300,"ratingModel":"package","billingUnits":1,"overage":"charge"})]
+      features: [
+        thirdpenCredits.credits(100, { reset: "monthly" }),
+        dearfutureself.config({
+          limit: null,
+          reset: "monthly",
+          usageModel: "included",
+          pricePerUnit: 300,
+          ratingModel: "package",
+          billingUnits: 1,
+          overage: "charge",
+        }),
+      ],
     }),
     plan("masterxx", {
       name: "masterxx",
@@ -122,7 +226,7 @@ export const owo = new Owostack({
       currency: "USD",
       interval: "monthly",
       provider: "dodopayments",
-      features: [supportCredits.credits(100, { reset: "5min" })]
+      features: [supportCredits.credits(100, { reset: "5min" })],
     }),
     plan("teast", {
       name: "teast",
@@ -131,7 +235,9 @@ export const owo = new Owostack({
       interval: "monthly",
       planGroup: "sales",
       autoEnable: true,
-      features: [supportCredits.credits(100, { reset: "15min", overage: "charge" })]
+      features: [
+        supportCredits.credits(100, { reset: "15min", overage: "charge" }),
+      ],
     }),
     plan("mastert", {
       name: "mastert",
@@ -140,7 +246,20 @@ export const owo = new Owostack({
       interval: "monthly",
       trialDays: 4,
       provider: "paystack",
-      features: [dearfutureself.limit(100, {"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1}), apiRequests.limit(100, {"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1})]
+      features: [
+        dearfutureself.limit(100, {
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+        apiRequests.limit(100, {
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+      ],
     }),
     plan("masterx", {
       name: "masterx",
@@ -149,7 +268,20 @@ export const owo = new Owostack({
       interval: "monthly",
       trialDays: 4,
       provider: "paystack",
-      features: [apiRequests.limit(100, {"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1}), thirdpen.limit(100, {"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1})]
+      features: [
+        apiRequests.limit(100, {
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+        thirdpen.limit(100, {
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+      ],
     }),
     plan("master2", {
       name: "master2",
@@ -158,7 +290,14 @@ export const owo = new Owostack({
       interval: "monthly",
       trialDays: 4,
       provider: "paystack",
-      features: [apiRequests.limit(100, {"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1})]
+      features: [
+        apiRequests.limit(100, {
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+      ],
     }),
     plan("master", {
       name: "master",
@@ -167,14 +306,47 @@ export const owo = new Owostack({
       interval: "monthly",
       trialDays: 4,
       provider: "paystack",
-      features: [apiRequests.limit(100, {"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1})]
+      features: [
+        apiRequests.limit(100, {
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+      ],
     }),
     plan("credit-plan", {
       name: "Credit plan",
       price: 10000,
       currency: "NGN",
       interval: "monthly",
-      features: [thirdpen.limit(10, {"reset":"5min","usageModel":"included","pricePerUnit":10000,"ratingModel":"package","billingUnits":1,"overage":"charge"}), dearfutureself.limit(10, {"reset":"5min","usageModel":"included","pricePerUnit":10900,"ratingModel":"package","billingUnits":1,"overage":"charge"}), dfs.config({"limit":null,"reset":"5min","usageModel":"usage_based","pricePerUnit":1000,"ratingModel":"package","billingUnits":1,"overage":"charge"})]
+      features: [
+        thirdpen.limit(10, {
+          reset: "5min",
+          usageModel: "included",
+          pricePerUnit: 10000,
+          ratingModel: "package",
+          billingUnits: 1,
+          overage: "charge",
+        }),
+        dearfutureself.limit(10, {
+          reset: "5min",
+          usageModel: "included",
+          pricePerUnit: 10900,
+          ratingModel: "package",
+          billingUnits: 1,
+          overage: "charge",
+        }),
+        dfs.config({
+          limit: null,
+          reset: "5min",
+          usageModel: "usage_based",
+          pricePerUnit: 1000,
+          ratingModel: "package",
+          billingUnits: 1,
+          overage: "charge",
+        }),
+      ],
     }),
     plan("pro-plan", {
       name: "pro plan",
@@ -182,7 +354,20 @@ export const owo = new Owostack({
       currency: "NGN",
       interval: "monthly",
       provider: "paystack",
-      features: [thirdpen.limit(200, {"reset":"5min","usageModel":"included","ratingModel":"package","billingUnits":1}), apiRequests.limit(200, {"reset":"5min","usageModel":"included","ratingModel":"package","billingUnits":1})]
+      features: [
+        thirdpen.limit(200, {
+          reset: "5min",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+        apiRequests.limit(200, {
+          reset: "5min",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+      ],
     }),
     plan("basic", {
       name: "basic",
@@ -190,7 +375,14 @@ export const owo = new Owostack({
       currency: "NGN",
       interval: "monthly",
       provider: "paystack",
-      features: [apiRequests.limit(100, {"reset":"monthly","usageModel":"included","ratingModel":"package","billingUnits":1})]
+      features: [
+        apiRequests.limit(100, {
+          reset: "monthly",
+          usageModel: "included",
+          ratingModel: "package",
+          billingUnits: 1,
+        }),
+      ],
     }),
     creditPack("extra-thirdpen-credits", {
       name: "extra thirdpen credits",
@@ -198,7 +390,7 @@ export const owo = new Owostack({
       price: 5000,
       currency: "NGN",
       creditSystem: "thirdpen-credits",
-      provider: "paystack"
+      provider: "paystack",
     }),
     creditPack("40-extra-xcredits", {
       name: "40 extra xcredits",
@@ -206,14 +398,14 @@ export const owo = new Owostack({
       price: 2,
       currency: "USD",
       creditSystem: "support-credits",
-      provider: "dodopayments"
+      provider: "dodopayments",
     }),
     creditPack("40-extra-creditssds", {
       name: "40 extra creditssds",
       credits: 100,
       price: 500,
       currency: "NGN",
-      creditSystem: "support-credits"
-    })
+      creditSystem: "support-credits",
+    }),
   ],
 });

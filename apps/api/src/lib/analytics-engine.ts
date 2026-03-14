@@ -2,11 +2,12 @@
  * Compatibility layer — delegates to @owostack/analytics EventStore.
  *
  * All consumers continue to import the same function names from this module.
- * Under the hood we create an EventStore backed by Analytics Engine (current)
- * or Cloudflare Pipelines (when EVENTS_PIPELINE binding is present).
+ * Under the hood we create an EventStore backed by Analytics Engine (default)
+ * or Cloudflare Pipelines (when explicitly enabled).
  *
- * To migrate to the Data Platform, simply add the Pipeline binding in
- * wrangler.jsonc — no consumer code changes needed.
+ * To migrate to the Data Platform, enable USE_EVENTS_PIPELINE in wrangler.jsonc
+ * once the pipeline sinks are queryable via R2 SQL — no consumer code changes
+ * are needed.
  */
 import {
   createEventStore,
@@ -27,12 +28,13 @@ export type {
 // Env type accepted by all public functions (superset of both backends)
 // ---------------------------------------------------------------------------
 
-type AnalyticsEnv = {
+export type AnalyticsEnv = {
   ANALYTICS?: AnalyticsEngineDataset;
   ENVIRONMENT?: string;
   CF_ACCOUNT_ID?: string;
   CF_ANALYTICS_READ_TOKEN?: string;
   ANALYTICS_DATASET?: string;
+  USE_EVENTS_PIPELINE?: string | boolean;
   // Pipeline backend (Cloudflare Data Platform)
   EVENTS_PIPELINE?: { send(records: Record<string, unknown>[]): Promise<void> };
   R2_SQL_TOKEN?: string;
@@ -45,12 +47,21 @@ type AnalyticsEnv = {
 
 const storeCache = new WeakMap<object, EventStore>();
 
+function isPipelineEnabled(
+  value: AnalyticsEnv["USE_EVENTS_PIPELINE"],
+): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
 function getStore(env: AnalyticsEnv): EventStore {
   // Use the env object itself as the cache key (stable per request lifecycle)
   let store = storeCache.get(env as object);
   if (store) return store;
 
-  if (env.EVENTS_PIPELINE) {
+  if (env.EVENTS_PIPELINE && isPipelineEnabled(env.USE_EVENTS_PIPELINE)) {
     store = createEventStore({
       backend: "pipeline",
       pipeline: env.EVENTS_PIPELINE,

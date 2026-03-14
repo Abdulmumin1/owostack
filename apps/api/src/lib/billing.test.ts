@@ -67,8 +67,7 @@ describe("BillingService.getUnbilledUsage", () => {
 
     const service = new BillingService(createDbMock() as any, {
       deps: {
-        sumUnbilledByFeaturePeriod:
-          sumUnbilledByFeaturePeriodMock as any,
+        sumUnbilledByFeaturePeriod: sumUnbilledByFeaturePeriodMock as any,
         markUsageInvoiced: markUsageInvoicedMock as any,
       },
     });
@@ -113,8 +112,7 @@ describe("BillingService.getUnbilledUsage", () => {
 
     const service = new BillingService(createDbMock() as any, {
       deps: {
-        sumUnbilledByFeaturePeriod:
-          sumUnbilledByFeaturePeriodMock as any,
+        sumUnbilledByFeaturePeriod: sumUnbilledByFeaturePeriodMock as any,
         markUsageInvoiced: markUsageInvoicedMock as any,
       },
     });
@@ -169,8 +167,7 @@ describe("BillingService.getUnbilledUsage", () => {
       createDbMock({ overagePrice: 900, billingUnits: 100 }) as any,
       {
         deps: {
-          sumUnbilledByFeaturePeriod:
-            sumUnbilledByFeaturePeriodMock as any,
+          sumUnbilledByFeaturePeriod: sumUnbilledByFeaturePeriodMock as any,
           markUsageInvoiced: markUsageInvoicedMock as any,
         },
       },
@@ -208,8 +205,7 @@ describe("BillingService.getUnbilledUsage", () => {
 
     const service = new BillingService(createDbMock() as any, {
       deps: {
-        sumUnbilledByFeaturePeriod:
-          sumUnbilledByFeaturePeriodMock as any,
+        sumUnbilledByFeaturePeriod: sumUnbilledByFeaturePeriodMock as any,
         markUsageInvoiced: markUsageInvoicedMock as any,
       },
     });
@@ -232,8 +228,7 @@ describe("BillingService.getUnbilledUsage", () => {
 
     const service = new BillingService(createDbMock() as any, {
       deps: {
-        sumUnbilledByFeaturePeriod:
-          sumUnbilledByFeaturePeriodMock as any,
+        sumUnbilledByFeaturePeriod: sumUnbilledByFeaturePeriodMock as any,
         markUsageInvoiced: markUsageInvoicedMock as any,
       },
     });

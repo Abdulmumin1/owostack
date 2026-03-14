@@ -10,9 +10,7 @@ import { error, redirect } from "@sveltejs/kit";
  * 3. Returns org data to the client
  */
 
-
-import { PUBLIC_API_URL_LIVE, PUBLIC_API_URL_TEST } from '$env/static/public';
-
+import { PUBLIC_API_URL_LIVE, PUBLIC_API_URL_TEST } from "$env/static/public";
 
 export const load: LayoutServerLoad = async ({
   params,
@@ -31,7 +29,8 @@ export const load: LayoutServerLoad = async ({
   }
 
   // Get the API URL
-  const apiUrl = PUBLIC_API_URL_TEST || PUBLIC_API_URL_LIVE || "http://localhost:8787";
+  const apiUrl =
+    PUBLIC_API_URL_TEST || PUBLIC_API_URL_LIVE || "http://localhost:8787";
 
   // Forward the original request cookies to Better Auth
   const cookieHeader = request.headers.get("cookie") || "";
@@ -47,7 +46,10 @@ export const load: LayoutServerLoad = async ({
 
     if (!orgsResponse.ok) {
       console.error(
-        "[Layout Server] Failed to fetch organizations: " + PUBLIC_API_URL_TEST + " " + PUBLIC_API_URL_LIVE,
+        "[Layout Server] Failed to fetch organizations: " +
+          PUBLIC_API_URL_TEST +
+          " " +
+          PUBLIC_API_URL_LIVE,
         await orgsResponse.text(),
       );
       throw error(500, "Failed to fetch organizations");

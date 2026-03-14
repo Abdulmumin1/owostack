@@ -11,7 +11,9 @@ export interface UsagePricingSnapshot {
   tiers: PricingTier[] | null;
 }
 
-export function buildUsagePricingSnapshot(planFeature: any): UsagePricingSnapshot {
+export function buildUsagePricingSnapshot(
+  planFeature: any,
+): UsagePricingSnapshot {
   const usageModel =
     planFeature?.usageModel === "usage_based"
       ? "usage_based"
@@ -22,7 +24,8 @@ export function buildUsagePricingSnapshot(planFeature: any): UsagePricingSnapsho
   return {
     usageModel,
     ratingModel: normalizeRatingModel(planFeature?.ratingModel),
-    included: usageModel === "usage_based" ? 0 : (planFeature?.limitValue ?? null),
+    included:
+      usageModel === "usage_based" ? 0 : (planFeature?.limitValue ?? null),
     pricePerUnit: planFeature?.pricePerUnit ?? null,
     billingUnits: planFeature?.billingUnits ?? null,
     overagePrice: planFeature?.overagePrice ?? null,

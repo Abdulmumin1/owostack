@@ -18,10 +18,10 @@ export async function topUpScopedBalance(
     sql`INSERT INTO credit_system_balances (id, customer_id, credit_system_id, balance, updated_at)
         VALUES (${crypto.randomUUID()}, ${customerId}, ${creditSystemId}, ${amount}, ${now})
         ON CONFLICT (customer_id, credit_system_id)
-        DO UPDATE SET balance = balance + ${amount}, updated_at = ${now}`
+        DO UPDATE SET balance = balance + ${amount}, updated_at = ${now}`,
   );
 
-  // Return updated balance 
+  // Return updated balance
   const row = await (db as any)
     .select({ balance: (schema as any).creditSystemBalances.balance })
     .from((schema as any).creditSystemBalances)
@@ -51,7 +51,10 @@ export async function getScopedBalance(
       .where(
         and(
           eq((schema as any).creditSystemBalances.customerId, customerId),
-          eq((schema as any).creditSystemBalances.creditSystemId, creditSystemId),
+          eq(
+            (schema as any).creditSystemBalances.creditSystemId,
+            creditSystemId,
+          ),
         ),
       )
       .limit(1);
@@ -77,7 +80,7 @@ export async function deductScopedBalance(
         SET balance = balance - ${amount}, updated_at = ${Date.now()}
         WHERE customer_id = ${customerId}
           AND credit_system_id = ${creditSystemId}
-          AND balance >= ${amount}`
+          AND balance >= ${amount}`,
   );
   // D1 .run() returns { meta: { changes } } — if 0 rows changed, balance was insufficient
   return (result?.meta?.changes ?? result?.changes ?? 0) > 0;

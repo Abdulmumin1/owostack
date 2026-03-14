@@ -53,7 +53,9 @@ describe("Webhooks API", () => {
         payload: string;
         secret: string;
       }) => {
-        const expected = createHmac("sha512", secret).update(payload).digest("hex");
+        const expected = createHmac("sha512", secret)
+          .update(payload)
+          .digest("hex");
         return expected === signature ? ok(true) : err("invalid_signature");
       },
     ),
@@ -169,7 +171,9 @@ describe("Webhooks API", () => {
       event: "charge.success",
       data: { id: 1 },
     });
-    const signature = createHmac("sha512", secret).update(payload).digest("hex");
+    const signature = createHmac("sha512", secret)
+      .update(payload)
+      .digest("hex");
 
     const res = await app.request(
       `/webhooks/${orgId}`,
@@ -199,7 +203,9 @@ describe("Webhooks API", () => {
     });
 
     const payload = JSON.stringify({ event: "test" });
-    const signature = createHmac("sha512", orgSecret).update(payload).digest("hex");
+    const signature = createHmac("sha512", orgSecret)
+      .update(payload)
+      .digest("hex");
 
     const res = await app.request(
       `/webhooks/${orgId}`,

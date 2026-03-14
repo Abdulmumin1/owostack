@@ -32,7 +32,9 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
     dbCustomer = resolvedCustomer?.customer ?? null;
   } catch (error) {
     if (isCustomerResolutionConflictError(error)) {
-      console.warn(`[WEBHOOK] refund.success resolution conflict: ${error.message}`);
+      console.warn(
+        `[WEBHOOK] refund.success resolution conflict: ${error.message}`,
+      );
       return;
     }
     throw error;

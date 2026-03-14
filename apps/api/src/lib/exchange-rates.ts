@@ -14,14 +14,17 @@ interface ExchangeRates {
 async function fetchRates(cache?: KVNamespace): Promise<ExchangeRates> {
   // Try KV cache first
   if (cache) {
-    const cached = await cache.get(CACHE_KEY, "json") as ExchangeRates | null;
+    const cached = (await cache.get(CACHE_KEY, "json")) as ExchangeRates | null;
     if (cached) return cached;
   }
 
   try {
     const res = await fetch("https://open.er-api.com/v6/latest/USD");
     if (!res.ok) throw new Error(`Exchange rate API returned ${res.status}`);
-    const data = await res.json() as { result: string; rates: Record<string, number> };
+    const data = (await res.json()) as {
+      result: string;
+      rates: Record<string, number>;
+    };
     if (data.result !== "success") throw new Error("Exchange rate API error");
 
     const rates: ExchangeRates = {
@@ -33,7 +36,9 @@ async function fetchRates(cache?: KVNamespace): Promise<ExchangeRates> {
     // Cache in KV (non-blocking is fine since we already have the data)
     if (cache) {
       // Fire-and-forget — caller can use waitUntil if they want
-      cache.put(CACHE_KEY, JSON.stringify(rates), { expirationTtl: CACHE_TTL }).catch(() => {});
+      cache
+        .put(CACHE_KEY, JSON.stringify(rates), { expirationTtl: CACHE_TTL })
+        .catch(() => {});
     }
 
     return rates;
@@ -73,8 +78,15 @@ export async function convertMrrTotal(
 ): Promise<{ amount: number; currency: string; approximate: boolean } | null> {
   if (mrrByCurrency.length === 0) return null;
   // If only one currency and it matches target, no conversion needed
-  if (mrrByCurrency.length === 1 && mrrByCurrency[0].currency === targetCurrency) {
-    return { amount: mrrByCurrency[0].amount, currency: targetCurrency, approximate: false };
+  if (
+    mrrByCurrency.length === 1 &&
+    mrrByCurrency[0].currency === targetCurrency
+  ) {
+    return {
+      amount: mrrByCurrency[0].amount,
+      currency: targetCurrency,
+      approximate: false,
+    };
   }
 
   const rates = await fetchRates(cache);
@@ -82,7 +94,12 @@ export async function convertMrrTotal(
   let approximate = false;
 
   for (const entry of mrrByCurrency) {
-    const converted = convert(entry.amount, entry.currency, targetCurrency, rates);
+    const converted = convert(
+      entry.amount,
+      entry.currency,
+      targetCurrency,
+      rates,
+    );
     if (converted === null) {
       // Can't convert this currency — skip it and mark as approximate
       approximate = true;

@@ -1,9 +1,5 @@
 import { extname } from "node:path";
-import {
-  fetchPlans,
-  fetchCreditSystems,
-  fetchCreditPacks,
-} from "./api.js";
+import { fetchPlans, fetchCreditSystems, fetchCreditPacks } from "./api.js";
 import { generateConfig, type ConfigFormat } from "./generate.js";
 
 export interface CatalogImportFilters {
@@ -49,7 +45,9 @@ export async function buildRemoteCatalogSnapshot(params: {
   const creditSystems = await fetchCreditSystems(params.apiKey, params.apiUrl);
   const creditPacks = await fetchCreditPacks(params.apiKey, params.apiUrl);
 
-  const providers = new Set(plans.map((plan: any) => plan.provider).filter(Boolean));
+  const providers = new Set(
+    plans.map((plan: any) => plan.provider).filter(Boolean),
+  );
   const defaultProvider =
     providers.size === 1 ? Array.from(providers)[0] : undefined;
 

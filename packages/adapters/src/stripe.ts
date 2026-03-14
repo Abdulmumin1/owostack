@@ -1144,23 +1144,26 @@ export const stripeAdapter: ProviderAdapter = {
       });
     }
 
-    const response = await clientResult.value.createPaymentIntent({
-      amount: params.amount,
-      currency: lowercaseCurrency(params.currency),
-      customer: params.customer.id,
-      payment_method: params.authorizationCode,
-      confirm: true,
-      off_session: true,
-      metadata: coerceMetadata(params.metadata),
-      receipt_email: params.customer.email,
-      ...(params.reference ? { description: params.reference } : {}),
-    }, params.reference
-      ? {
-          headers: {
-            "Idempotency-Key": params.reference,
-          },
-        }
-      : undefined);
+    const response = await clientResult.value.createPaymentIntent(
+      {
+        amount: params.amount,
+        currency: lowercaseCurrency(params.currency),
+        customer: params.customer.id,
+        payment_method: params.authorizationCode,
+        confirm: true,
+        off_session: true,
+        metadata: coerceMetadata(params.metadata),
+        receipt_email: params.customer.email,
+        ...(params.reference ? { description: params.reference } : {}),
+      },
+      params.reference
+        ? {
+            headers: {
+              "Idempotency-Key": params.reference,
+            },
+          }
+        : undefined,
+    );
 
     if (response.isErr()) return response;
 

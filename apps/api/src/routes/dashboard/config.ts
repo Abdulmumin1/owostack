@@ -89,10 +89,12 @@ app.post("/switch-environment", async (c) => {
   await authDb
     .update(schema.organizations)
     .set({ metadata: newMetadata })
-    .where(or(
-      eq(schema.organizations.id, organizationId),
-      eq(schema.organizations.slug, organizationId),
-    ));
+    .where(
+      or(
+        eq(schema.organizations.id, organizationId),
+        eq(schema.organizations.slug, organizationId),
+      ),
+    );
 
   return c.json({
     success: true,
@@ -114,7 +116,7 @@ app.get("/config/default-currency", async (c) => {
   const org = await authDb.query.organizations.findFirst({
     where: or(
       eq(schema.organizations.id, organizationId),
-      eq(schema.organizations.slug, organizationId)
+      eq(schema.organizations.slug, organizationId),
     ),
     columns: { metadata: true },
   });
@@ -163,9 +165,9 @@ app.put("/config/default-currency", async (c) => {
   // Organizations are in authDb, not business db
   const authDb = c.get("authDb");
   const org = await authDb.query.organizations.findFirst({
-    where:or(
+    where: or(
       eq(schema.organizations.id, organizationId),
-      eq(schema.organizations.slug, organizationId)
+      eq(schema.organizations.slug, organizationId),
     ),
     columns: { metadata: true },
   });
@@ -183,8 +185,12 @@ app.put("/config/default-currency", async (c) => {
   await authDb
     .update(schema.organizations)
     .set({ metadata: newMetadata })
-    .where(or(eq(schema.organizations.id, organizationId),
-      eq(schema.organizations.slug, organizationId)));
+    .where(
+      or(
+        eq(schema.organizations.id, organizationId),
+        eq(schema.organizations.slug, organizationId),
+      ),
+    );
 
   return c.json({
     success: true,

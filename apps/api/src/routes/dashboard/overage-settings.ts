@@ -64,7 +64,7 @@ app.put("/", async (c) => {
   const normalized = normalizeOverageSettings(parsed.data);
   const { thresholdEnabled, autoCollect, gracePeriodHours } = normalized;
   const thresholdAmount = thresholdEnabled
-    ? parsed.data.thresholdAmount ?? null
+    ? (parsed.data.thresholdAmount ?? null)
     : null;
 
   if (thresholdEnabled && !autoCollect) {
@@ -77,10 +77,7 @@ app.put("/", async (c) => {
     );
   }
 
-  if (
-    thresholdEnabled &&
-    (thresholdAmount === null || thresholdAmount <= 0)
-  ) {
+  if (thresholdEnabled && (thresholdAmount === null || thresholdAmount <= 0)) {
     return c.json(
       {
         success: false,

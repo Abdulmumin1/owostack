@@ -142,27 +142,19 @@ function toDashboardEvent(
   };
 }
 
-function parseQueryRows(
-  payload: unknown,
-): Array<Record<string, unknown>> {
+function parseQueryRows(payload: unknown): Array<Record<string, unknown>> {
   const p = payload as Record<string, unknown> | null | undefined;
-  if (Array.isArray(p))
-    return p as Array<Record<string, unknown>>;
+  if (Array.isArray(p)) return p as Array<Record<string, unknown>>;
   if (!p || typeof p !== "object") return [];
-  if (Array.isArray(p.data))
-    return p.data as Array<Record<string, unknown>>;
+  if (Array.isArray(p.data)) return p.data as Array<Record<string, unknown>>;
   const result = p.result;
-  if (Array.isArray(result))
-    return result as Array<Record<string, unknown>>;
+  if (Array.isArray(result)) return result as Array<Record<string, unknown>>;
   if (result && typeof result === "object") {
     const r = result as Record<string, unknown>;
-    if (Array.isArray(r.data))
-      return r.data as Array<Record<string, unknown>>;
-    if (Array.isArray(r.rows))
-      return r.rows as Array<Record<string, unknown>>;
+    if (Array.isArray(r.data)) return r.data as Array<Record<string, unknown>>;
+    if (Array.isArray(r.rows)) return r.rows as Array<Record<string, unknown>>;
   }
-  if (Array.isArray(p.rows))
-    return p.rows as Array<Record<string, unknown>>;
+  if (Array.isArray(p.rows)) return p.rows as Array<Record<string, unknown>>;
   return [];
 }
 

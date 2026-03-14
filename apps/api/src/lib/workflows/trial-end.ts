@@ -244,7 +244,9 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
         authCode: providerPm?.token || authorizationCode || null,
         email: customer?.email || email || null,
         providerCustomerId:
-          customer?.provider_customer_id || customer?.paystack_customer_id || null,
+          customer?.provider_customer_id ||
+          customer?.paystack_customer_id ||
+          null,
       };
     });
 
@@ -497,7 +499,9 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
         try {
           const subResult = await step.do(
             "create-provider-subscription",
-            { retries: { limit: 2, delay: "5 seconds", backoff: "exponential" } },
+            {
+              retries: { limit: 2, delay: "5 seconds", backoff: "exponential" },
+            },
             async () => {
               const adapter = this.deps.getAdapter(providerId);
               if (!adapter)

@@ -10,10 +10,7 @@ import {
   OverageBillingWorkflow,
   type OverageBillingWorkflowDependencies,
 } from "./overage-billing";
-import {
-  createWorkflowInstance,
-  createWorkflowStepMock,
-} from "./test-helpers";
+import { createWorkflowInstance, createWorkflowStepMock } from "./test-helpers";
 
 type BillingRunRecord = {
   id: string;
@@ -193,15 +190,14 @@ function createSqlDbMock(options: SqlDbOptions = {}) {
                   const succeededAttempt =
                     [...state.paymentAttempts]
                       .reverse()
-                      .find((attempt) => attempt.status === "succeeded") || null;
+                      .find((attempt) => attempt.status === "succeeded") ||
+                    null;
 
-                  return (
-                    succeededAttempt
-                      ? {
-                          provider_reference: succeededAttempt.providerReference,
-                        }
-                      : options.existingSuccessfulPaymentAttempt
-                  );
+                  return succeededAttempt
+                    ? {
+                        provider_reference: succeededAttempt.providerReference,
+                      }
+                    : options.existingSuccessfulPaymentAttempt;
                 }
 
                 return null;
@@ -438,7 +434,9 @@ describe("OverageBillingWorkflow", () => {
       updatedAt: 0,
     });
     getUnbilledUsageMock.mockResolvedValue(Result.ok(createUnbilledUsage()));
-    chargeAuthorizationMock.mockResolvedValue(Result.ok({ reference: "ch_123" }));
+    chargeAuthorizationMock.mockResolvedValue(
+      Result.ok({ reference: "ch_123" }),
+    );
   });
 
   function createDeps(sqlState: {
@@ -478,9 +476,8 @@ describe("OverageBillingWorkflow", () => {
         createInvoiceFromUsage: createInvoiceFromUsageMock.mockImplementation(
           async (_customerId, _organizationId, unbilled, options) => {
             const existingInvoice =
-              sqlState.invoices.find(
-                (invoice) => invoice.id === "inv_1",
-              ) || null;
+              sqlState.invoices.find((invoice) => invoice.id === "inv_1") ||
+              null;
 
             if (!existingInvoice) {
               sqlState.invoices.push({
@@ -845,7 +842,9 @@ describe("OverageBillingWorkflow", () => {
   });
 
   it("defers a threshold run when the fixed usage slice is still below the provider minimum", async () => {
-    getUnbilledUsageMock.mockResolvedValueOnce(Result.ok(createUnbilledUsage(10, 2500)));
+    getUnbilledUsageMock.mockResolvedValueOnce(
+      Result.ok(createUnbilledUsage(10, 2500)),
+    );
 
     const sql = createSqlDbMock({
       paymentMethodForMinimumCheck: { provider_id: "paystack" },

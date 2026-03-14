@@ -1,6 +1,3 @@
 {
-  "pages": [
-    "(core)",
-    "api-reference"
-  ]
+  "pages": ["(core)", "api-reference"]
 }

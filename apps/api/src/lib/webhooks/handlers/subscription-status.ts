@@ -175,7 +175,10 @@ export function handleSubscriptionStatus(status: string) {
           try {
             await cache.invalidateSubscriptions(organizationId, sub.customerId);
           } catch (e) {
-            console.warn(`[WEBHOOK] Status change cache invalidation failed:`, e);
+            console.warn(
+              `[WEBHOOK] Status change cache invalidation failed:`,
+              e,
+            );
           }
         }
 
@@ -197,7 +200,11 @@ export function handleSubscriptionStatus(status: string) {
     };
     const renewalSetupRecovery =
       status === "active"
-        ? buildRenewalSetupRecoveryUpdate(sub.metadata, "subscription_status", now)
+        ? buildRenewalSetupRecoveryUpdate(
+            sub.metadata,
+            "subscription_status",
+            now,
+          )
         : null;
     if (renewalSetupRecovery) {
       updates.cancelAt = null;

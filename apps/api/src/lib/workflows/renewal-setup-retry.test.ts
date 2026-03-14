@@ -9,10 +9,7 @@ import {
   RenewalSetupRetryWorkflow,
   type RenewalSetupRetryWorkflowDependencies,
 } from "./renewal-setup-retry";
-import {
-  createWorkflowInstance,
-  createWorkflowStepMock,
-} from "./test-helpers";
+import { createWorkflowInstance, createWorkflowStepMock } from "./test-helpers";
 
 function createDbMock(options: {
   subscription: any;
@@ -44,7 +41,9 @@ function createDbMock(options: {
                   return options.customer;
                 }
                 if (
-                  sql.includes("provider_id = ? AND is_valid = 1 AND is_default = 1")
+                  sql.includes(
+                    "provider_id = ? AND is_valid = 1 AND is_default = 1",
+                  )
                 ) {
                   return options.providerDefaultPm ?? null;
                 }

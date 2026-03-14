@@ -6,11 +6,7 @@ import {
   resolveConfigPath,
 } from "../lib/loader.js";
 import { fetchPlans } from "../lib/api.js";
-import {
-  getApiKey,
-  getLiveApiUrl,
-  getTestApiUrl,
-} from "../lib/config.js";
+import { getApiKey, getLiveApiUrl, getTestApiUrl } from "../lib/config.js";
 
 interface ValidateOptions {
   config?: string;

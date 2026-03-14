@@ -23,7 +23,10 @@ const DOCUMENT_ID = "./openapi.json";
 let cache: Promise<Record<string, ProcessedDocument>> | undefined;
 
 async function processDocument(): Promise<ProcessedDocument> {
-  const bundled = upgrade(structuredClone(spec), "3.2") as Record<string, unknown>;
+  const bundled = upgrade(structuredClone(spec), "3.2") as Record<
+    string,
+    unknown
+  >;
   const idToSchema = new Map<string, object>();
   const schemaToId = new WeakMap<object, string>();
 

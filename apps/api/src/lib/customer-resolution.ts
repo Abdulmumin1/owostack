@@ -134,11 +134,9 @@ async function getCachedResolvedCustomer(
   if (!opts.cache) return null;
 
   for (const key of getCustomerCacheKeys(opts.customerId)) {
-    const cached =
-      await opts.cache.getCustomer<typeof schema.customers.$inferSelect>(
-        opts.organizationId,
-        key,
-      );
+    const cached = await opts.cache.getCustomer<
+      typeof schema.customers.$inferSelect
+    >(opts.organizationId, key);
 
     if (!cached) {
       continue;
