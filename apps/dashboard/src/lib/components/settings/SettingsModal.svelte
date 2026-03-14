@@ -316,7 +316,7 @@
 
     <!-- Modal Container -->
     <div
-      class="relative bg-bg-primary border border-border rounded-xl shadow-lg flex w-full max-w-5xl h-[85vh] overflow-hidden"
+      class="relative bg-bg-primary border border-border rounded-xl  flex w-full max-w-5xl h-[85vh] overflow-hidden"
       onclick={(e) => e.stopPropagation()}
       onkeydown={(e) => e.stopPropagation()}
       role="dialog"

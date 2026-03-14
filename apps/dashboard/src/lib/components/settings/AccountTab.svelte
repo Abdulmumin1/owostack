@@ -1,20 +1,18 @@
 <script lang="ts">
   import {
-    Check,
     CircleNotch,
     FloppyDisk,
     User,
     Envelope,
   } from "phosphor-svelte";
-  import { fade } from "svelte/transition";
   import { authClient, useSession } from "$lib/auth-client";
+  import { toast } from "svelte-sonner";
 
   const session = useSession();
 
   let userName = $state("");
   let userEmail = $state("");
   let isSaving = $state(false);
-  let successMessage = $state<string | null>(null);
 
   $effect(() => {
     if ($session.data?.user) {
@@ -22,11 +20,6 @@
       if (!userEmail) userEmail = $session.data.user.email || "";
     }
   });
-
-  function showSuccess(msg: string) {
-    successMessage = msg;
-    setTimeout(() => (successMessage = null), 3000);
-  }
 
   async function save() {
     isSaving = true;
@@ -43,9 +36,14 @@
         });
       }
 
-      showSuccess("Account updated successfully");
-    } catch (e) {
+      toast.success("Account updated", {
+        description: "Your profile has been saved"
+      });
+    } catch (e: any) {
       console.error("Failed to save account settings", e);
+      toast.error("Failed to update account", {
+        description: e.message || "Please try again"
+      });
     } finally {
       isSaving = false;
     }
@@ -104,12 +102,5 @@
         Save Changes
       {/if}
     </button>
-
-    {#if successMessage}
-      <span class="text-xs text-success flex items-center gap-1 ml-3" in:fade>
-        <Check size={12} weight="duotone" />
-        {successMessage}
-      </span>
-    {/if}
   </div>
 </div>

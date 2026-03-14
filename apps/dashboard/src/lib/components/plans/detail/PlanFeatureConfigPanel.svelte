@@ -375,7 +375,7 @@
               </div>
               {#if configUsageModel === "included"}
                 <div class="absolute top-2.5 right-2.5" transition:fade={{ duration: 150 }}>
-                  <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast shadow-sm">
+                  <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast">
                     <Check size={10} weight="bold" />
                   </div>
                 </div>
@@ -415,7 +415,7 @@
               </div>
               {#if configUsageModel === "usage_based"}
                 <div class="absolute top-2.5 right-2.5" transition:fade={{ duration: 150 }}>
-                  <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast shadow-sm">
+                  <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast">
                     <Check size={10} weight="bold" />
                   </div>
                 </div>
@@ -435,7 +435,17 @@
                   Billing starts from the first tracked unit.
                 </p>
               </div>
-              <div class="flex w-fit bg-bg-card border border-border p-1 rounded-md">
+              <div class="relative flex w-fit bg-bg-card border border-border p-1 rounded-md overflow-hidden isolate">
+                <!-- Animated background slider -->
+                <div 
+                  class="absolute inset-y-1 rounded-md bg-accent border border-accent-border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-0"
+                  style="
+                    width: calc((100% - 8px) / 3); 
+                    left: calc(4px + (100% - 8px) / 3 * {
+                      configRatingModel === 'package' ? 0 : configRatingModel === 'graduated' ? 1 : 2
+                    });
+                  "
+                ></div>
                 {#each [
                   { value: "package", label: "Package" },
                   { value: "graduated", label: "Graduated" },
@@ -443,9 +453,9 @@
                 ] as model}
                   <button
                     type="button"
-                    class="px-4 py-1.5 text-xs font-bold transition-all rounded-sm {configRatingModel ===
+                    class="px-4 py-1.5 text-xs font-bold transition-colors duration-200 relative z-10 {configRatingModel ===
                     model.value
-                      ? 'bg-accent text-accent-contrast shadow-sm'
+                      ? 'text-accent-contrast'
                       : 'text-text-muted hover:text-text-primary'}"
                     onclick={() => selectRatingModel(model.value as RatingModel)}
                   >
@@ -620,7 +630,7 @@
             </div>
           </div>
         {:else}
-          <div class="rounded-lg border border-border bg-bg-card p-4 shadow-[2px_2px_0_0_var(--color-border-muted)]">
+          <div class="rounded-lg border border-border bg-bg-card p-4">
             <div class="text-sm font-semibold text-text-primary">
               Usage-based billing
             </div>
@@ -637,16 +647,26 @@
             <div class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1">
               When Limit Exceeded
             </div>
-            <div class="flex bg-bg-card border border-border p-1 rounded-md">
+            <div class="relative flex bg-bg-card border border-border p-1 rounded-md overflow-hidden isolate">
+              <!-- Animated background slider -->
+              <div 
+                class="absolute inset-y-1 rounded-md bg-accent border border-accent-border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-0"
+                style="
+                  width: calc((100% - 8px) / 2); 
+                  left: calc(4px + (100% - 8px) / 2 * {
+                    configOverage === 'block' ? 0 : 1
+                  });
+                "
+              ></div>
               {#each [
                 { value: "block", label: "Block" },
                 { value: "charge", label: "Charge" },
               ] as option}
                 <button
                   type="button"
-                  class="flex-1 py-1.5 text-xs font-bold transition-all rounded-sm {configOverage ===
+                  class="flex-1 py-1.5 text-xs font-bold transition-colors duration-200 relative z-10 {configOverage ===
                   option.value
-                    ? 'bg-accent text-accent-contrast'
+                    ? 'text-accent-contrast'
                     : 'text-text-muted hover:text-text-primary'}"
                   onclick={() => (configOverage = option.value as typeof configOverage)}
                 >
@@ -666,7 +686,17 @@
                       Applied only after the included grant is exhausted.
                     </p>
                   </div>
-                  <div class="flex w-fit bg-bg-card border border-border p-1 rounded-md">
+                  <div class="relative flex w-fit bg-bg-card border border-border p-1 rounded-md overflow-hidden isolate">
+                    <!-- Animated background slider -->
+                    <div 
+                      class="absolute inset-y-1 rounded-md bg-accent border border-accent-border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-0"
+                      style="
+                        width: calc((100% - 8px) / 3); 
+                        left: calc(4px + (100% - 8px) / 3 * {
+                          configRatingModel === 'package' ? 0 : configRatingModel === 'graduated' ? 1 : 2
+                        });
+                      "
+                    ></div>
                     {#each [
                       { value: "package", label: "Package" },
                       { value: "graduated", label: "Graduated" },
@@ -674,9 +704,9 @@
                     ] as model}
                       <button
                         type="button"
-                        class="px-4 py-1.5 text-[11px] font-bold transition-all rounded-sm {configRatingModel ===
+                        class="px-4 py-1.5 text-[11px] font-bold transition-colors duration-200 relative z-10 {configRatingModel ===
                         model.value
-                          ? 'bg-accent text-accent-contrast'
+                          ? 'text-accent-contrast'
                           : 'text-text-muted hover:text-text-primary'}"
                         onclick={() => selectRatingModel(model.value as RatingModel)}
                       >
@@ -861,16 +891,26 @@
         {#if configUsageModel === "included" && configResetInterval !== "none"}
           <div class="space-y-4">
             <div class="flex items-center gap-3">
+             <label
+                for="configRolloverEnabled"
+                class="text-sm flex gap-2 items-center font-medium text-text-primary cursor-pointer group select-none"
+              >
               <input
                 id="configRolloverEnabled"
                 type="checkbox"
                 bind:checked={configRolloverEnabled}
-                class="w-4 h-4 border border-border rounded-sm bg-bg-card text-accent focus:ring-accent accent-accent cursor-pointer"
+                class="hidden"
               />
-              <label
-                for="configRolloverEnabled"
-                class="text-sm font-medium text-text-primary cursor-pointer select-none"
+               <div
+                class="relative w-4 h-4 rounded border flex items-center justify-center transition-colors {configRolloverEnabled
+                  ? 'bg-accent border-accent'
+                  : 'border-border group-hover:border-text-dim'}"
               >
+                {#if configRolloverEnabled}
+                  <Check size={10} class="text-accent-contrast" weight="fill" />
+                {/if}
+              </div>
+             
                 Rollover unused balance
               </label>
             </div>

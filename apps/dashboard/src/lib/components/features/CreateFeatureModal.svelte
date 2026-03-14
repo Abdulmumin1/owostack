@@ -118,7 +118,18 @@
           >
             Type
           </label>
-          <div class="flex p-1 bg-bg-card border border-border rounded-lg">
+          <div class="relative flex p-1 bg-bg-card border border-border rounded-lg overflow-hidden isolate">
+            <!-- Animated background slider -->
+            <div 
+              class="absolute inset-y-1 rounded-md bg-accent border border-accent-border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-0"
+              style="
+                width: calc((100% - 8px) / 3); 
+                left: calc(4px + (100% - 8px) / 3 * {
+                  type === 'metered' ? 0 : type === 'boolean' ? 1 : 2
+                });
+              "
+            ></div>
+
             {#each [
               { value: 'metered', label: 'Metered' },
               { value: 'boolean', label: 'Boolean' },
@@ -126,8 +137,8 @@
             ] as opt}
               <button
                 type="button"
-                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 {type === opt.value
-                  ? 'bg-accent text-accent-contrast'
+                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10 {type === opt.value
+                  ? 'text-accent-contrast'
                   : 'text-text-muted hover:text-text-primary'}"
                 onclick={() => (type = opt.value as typeof type)}
               >
@@ -155,15 +166,26 @@
             >
               Meter Type
             </label>
-          <div class="flex p-1 bg-bg-card border border-border rounded-lg">
+          <div class="relative flex p-1 bg-bg-card border border-border rounded-lg overflow-hidden isolate">
+            <!-- Animated background slider -->
+            <div 
+              class="absolute inset-y-1 rounded-md bg-accent border border-accent-border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-0"
+              style="
+                width: calc((100% - 8px) / 2); 
+                left: calc(4px + (100% - 8px) / 2 * {
+                  meterType === 'consumable' ? 0 : 1
+                });
+              "
+            ></div>
+
             {#each [
               { value: 'consumable', label: 'Consumable' },
               { value: 'non_consumable', label: 'Non-Consumable' }
             ] as opt}
               <button
                 type="button"
-                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 {meterType === opt.value
-                  ? 'bg-accent text-accent-contrast'
+                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10 {meterType === opt.value
+                  ? 'text-accent-contrast'
                   : 'text-text-muted hover:text-text-primary'}"
                 onclick={() => (meterType = opt.value as typeof meterType)}
               >

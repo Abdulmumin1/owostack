@@ -40,6 +40,7 @@ app.get("/", async (c) => {
   }
 
   const days = Number(c.req.query("days")) || 0;
+  const customerId = c.req.query("customerId") || null;
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
@@ -48,7 +49,7 @@ app.get("/", async (c) => {
   const fromDate = new Date(fromTs).toISOString().split("T")[0];
 
   // Try KV cache first
-  const cacheKey = `dashboard:usage:${organizationId}:${days}`;
+  const cacheKey = `dashboard:usage:${organizationId}:${days}:${customerId || "all"}`;
   if (c.env.CACHE) {
     const cached = await c.env.CACHE.get(cacheKey, "json");
     if (cached) {
@@ -157,6 +158,9 @@ app.get("/", async (c) => {
       and(
         eq(schema.features.organizationId, organizationId),
         gte(schema.usageDailySummaries.date, fromDate),
+        customerId
+          ? eq(schema.usageDailySummaries.customerId, customerId)
+          : undefined,
       ),
     )
     .groupBy(schema.features.id)
@@ -171,6 +175,7 @@ app.get("/", async (c) => {
     },
     fromTs,
     FEATURE_CONSUMPTION_LIMIT,
+    customerId,
   );
   if (ledgerFeatureRows) {
     const featureIds = [

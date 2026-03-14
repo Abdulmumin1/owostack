@@ -44,7 +44,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="modal-title"
-    class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 {width} w-[90%] max-h-[90vh] bg-bg-card border border-border shadow-lg rounded-xl flex flex-col z-50 overflow-hidden"
+    class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 {width} w-[90%] max-h-[90vh] bg-bg-card border border-border  rounded-xl flex flex-col z-50 overflow-hidden"
     transition:scale={{ duration: 150, start: 0.95 }}
   >
     <div

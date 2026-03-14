@@ -12,6 +12,7 @@
   import { apiFetch } from "$lib/auth-client";
   import { getActiveEnvironment, getApiUrl } from "$lib/env";
   import { SUPPORTED_PROVIDERS } from "$lib/providers";
+  import { toast } from "svelte-sonner";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import type { ProviderAccount } from "./types";
 
@@ -113,6 +114,9 @@
         if (result.error) {
           throw new Error(result.error.message || "Failed to update provider");
         }
+        toast.success("Provider updated", {
+          description: `${selectedProviderConfig?.name || "Provider"} has been updated`
+        });
         onSaved();
         onClose();
       } else {
@@ -133,10 +137,16 @@
         }
         lastCreatedProviderId = formProviderId;
         formStep = "webhook";
+        toast.success("Provider connected", {
+          description: `${selectedProviderConfig?.name || "Provider"} connected successfully`
+        });
         onSaved();
       }
     } catch (e: any) {
       providerError = e.message;
+      toast.error("Failed to save provider", {
+        description: e.message
+      });
     } finally {
       isSavingProvider = false;
     }
@@ -144,6 +154,9 @@
 
   function copyUrl(url: string) {
     navigator.clipboard.writeText(url);
+    toast.success("Copied to clipboard", {
+      description: "URL has been copied"
+    });
   }
 </script>
 

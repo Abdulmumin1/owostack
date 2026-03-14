@@ -76,6 +76,7 @@ export const load: LayoutServerLoad = async ({
         headers: {
           "Content-Type": "application/json",
           Cookie: cookieHeader,
+          Origin: url.origin,
         },
         credentials: "include",
         body: JSON.stringify({

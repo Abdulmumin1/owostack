@@ -47,12 +47,13 @@
     Array<{ id: string; name: string; slug: string }>
   >([]);
 
-  async function loadUsage(days?: number) {
+  async function loadUsage(days?: number, customerId?: string) {
     isLoading = true;
     try {
       const params = new URLSearchParams();
       params.set("organizationId", organizationId ?? "");
       if (days) params.set("days", String(days));
+      if (customerId) params.set("customerId", customerId);
       const res = await apiFetch(`/api/dashboard/usage?${params.toString()}`);
       if (res.data) {
         usage = res.data.data;
@@ -110,10 +111,11 @@
 
   let hasMounted = $state(false);
   let lastLoadedUsageDays = $state(30);
+  let lastLoadedUsageCustomerId = $state("");
   let lastLoadedTimeseriesKey = $state("30::");
 
   onMount(() => {
-    loadUsage(timeseriesDays);
+    loadUsage(timeseriesDays, timeseriesCustomerId);
     loadTimeseries();
     loadFilterOptions();
     hasMounted = true;
@@ -130,9 +132,11 @@
       return;
     }
 
-    if (currentDays !== lastLoadedUsageDays) {
+    // Refresh usage table if either days or customer changes
+    if (currentDays !== lastLoadedUsageDays || currentCustomerId !== lastLoadedUsageCustomerId) {
       lastLoadedUsageDays = currentDays;
-      loadUsage(currentDays);
+      lastLoadedUsageCustomerId = currentCustomerId;
+      loadUsage(currentDays, currentCustomerId);
     }
 
     if (currentTimeseriesKey !== lastLoadedTimeseriesKey) {
@@ -456,7 +460,7 @@
                   <div class="flex items-center justify-end gap-2.5 w-24 sm:w-32 shrink-0">
                     {#if feat.uniqueConsumers > 0}
                       <div class="hidden sm:flex -space-x-1.5 mr-1 shrink-0">
-                        {#each Array(Math.min(feat.uniqueConsumers, 3)) as _, i}
+                        {#each Array(Math.min(feat.uniqueConsumers, 5)) as _, i}
                           <div
                             class="w-6 h-6 rounded-full border-2 border-bg-card bg-bg-secondary overflow-hidden shrink-0 relative"
                             style="z-index: {10 - i}"

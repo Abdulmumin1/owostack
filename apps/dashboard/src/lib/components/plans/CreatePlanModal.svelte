@@ -421,7 +421,7 @@
 
       <!-- Free Plan Config (Currency for overages) -->
       {#if planType === "free"}
-        <div class="pt-2" transition:fly={{ y: -10, duration: 200 }}>
+        <div class="pt-2" in:fly={{ y: -10, duration: 200 }}>
           <label
             class="block text-xs font-medium text-text-dim mb-1.5"
             for="freeCurrencySelect">Default Currency</label
@@ -448,12 +448,12 @@
 
       <!-- Paid Config -->
       {#if planType === "paid"}
-        <div class="space-y-4 pt-2" transition:fly={{ y: -10, duration: 200 }}>
+        <div class="space-y-4 pt-2" in:fly={{ y: -10, duration: 200 }}>
           <div>
             <div class="text-[11px] font-bold text-text-dim uppercase tracking-wider mb-3 px-1">Plan Price</div>
 
             <!-- Billing Model -->
-            <div class="flex flex-col gap-2 mb-5">
+            <!-- <div class="flex flex-col gap-2 mb-5">
               <label class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-200 {billingModel === 'base' ? 'bg-accent-light/20 border-accent' : 'bg-bg-card border-border hover:border-border-strong'}">
                 <div
                   class="w-4 h-4 rounded-full border flex items-center justify-center transition-colors {billingModel ===
@@ -478,17 +478,28 @@
                   >
                 </div>
               </label>
-            </div>
+            </div> -->
 
             <!-- Recurring vs One-off segment -->
             <div
-              class="flex p-1 bg-bg-card border border-border rounded-lg mb-5"
+              class="relative flex p-1 bg-bg-card border border-border rounded-lg mb-5 overflow-hidden isolate"
             >
+              <!-- Animated background slider -->
+              <div 
+                class="absolute inset-y-1 rounded-md bg-accent border border-accent-border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-0"
+                style="
+                  width: calc((100% - 8px) / 2); 
+                  left: calc(4px + (100% - 8px) / 2 * {
+                    billingType === 'recurring' ? 0 : 1
+                  });
+                "
+              ></div>
+
               <button
                 type="button"
-                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 {billingType ===
+                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10 {billingType ===
                 'recurring'
-                  ? 'bg-accent text-accent-contrast'
+                  ? 'text-accent-contrast'
                   : 'text-text-muted hover:text-text-primary'}"
                 onclick={() => (billingType = "recurring")}
               >
@@ -497,9 +508,9 @@
               </button>
               <button
                 type="button"
-                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1.5 {billingType ===
+                class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10 {billingType ===
                 'one_time'
-                  ? 'bg-accent text-accent-contrast'
+                  ? 'text-accent-contrast'
                   : 'text-text-muted hover:text-text-primary'}"
                 onclick={() => (billingType = "one_time")}
               >

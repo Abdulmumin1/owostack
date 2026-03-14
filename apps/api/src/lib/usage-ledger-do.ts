@@ -495,6 +495,7 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
   async featureConsumptionForOrg(
     createdAtFrom: number,
     limit: number = 10,
+    customerId?: string | null,
   ): Promise<
     Array<{
       featureId: string;
@@ -504,23 +505,30 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
   > {
     this.ensureSchema();
 
+    let sqlText = `SELECT feature_id,
+                COUNT(DISTINCT customer_id) AS unique_consumers,
+                COALESCE(SUM(amount), 0) AS total_usage
+         FROM usage_records
+         WHERE created_at >= ?`;
+
+    const bindings: Array<string | number> = [createdAtFrom];
+
+    if (customerId) {
+      sqlText += ` AND customer_id = ?`;
+      bindings.push(customerId);
+    }
+
+    sqlText += ` GROUP BY feature_id
+         ORDER BY total_usage DESC
+         LIMIT ?`;
+    bindings.push(Math.max(1, Math.min(limit, 100)));
+
     const rows = this.ctx.storage.sql
       .exec<{
         feature_id: string;
         unique_consumers: number;
         total_usage: number;
-      }>(
-        `SELECT feature_id,
-                COUNT(DISTINCT customer_id) AS unique_consumers,
-                COALESCE(SUM(amount), 0) AS total_usage
-         FROM usage_records
-         WHERE created_at >= ?
-         GROUP BY feature_id
-         ORDER BY total_usage DESC
-         LIMIT ?`,
-        createdAtFrom,
-        Math.max(1, Math.min(limit, 100)),
-      )
+      }>(sqlText, ...bindings)
       .toArray();
 
     return rows.map((row) => ({

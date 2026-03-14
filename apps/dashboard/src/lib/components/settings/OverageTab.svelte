@@ -8,6 +8,7 @@
     FloppyDisk,
   } from "phosphor-svelte";
   import { apiFetch } from "$lib/auth-client";
+  import { toast } from "svelte-sonner";
   import type { OverageSettings } from "./types";
 
   let {
@@ -28,7 +29,6 @@
   let overageThresholdAmount = $state<number | null>(null);
   let overageAutoCollect = $state(false);
   let isSavingOverage = $state(false);
-  let overageError = $state<string | null>(null);
 
   const thresholdConfigInvalid = $derived(
     thresholdEnabled &&
@@ -39,7 +39,6 @@
     thresholdEnabled = initialSettings.thresholdEnabled;
     overageThresholdAmount = initialSettings.thresholdAmount;
     overageAutoCollect = initialSettings.autoCollect;
-    overageError = null;
   });
 
   $effect(() => {
@@ -49,12 +48,11 @@
   });
 
   async function save() {
-    overageError = null;
-
     if (thresholdEnabled) {
       if (!overageThresholdAmount || overageThresholdAmount <= 0) {
-        overageError =
-          "Threshold collection requires a positive threshold amount.";
+        toast.error("Invalid threshold", {
+          description: "Threshold collection requires a positive threshold amount."
+        });
         return;
       }
 
@@ -74,12 +72,14 @@
           gracePeriodHours: 0,
         }),
       });
-    } catch (e) {
-      overageError =
-        e instanceof Error
-          ? e.message
-          : "Failed to save overage settings.";
+      toast.success("Settings saved", {
+        description: "Overage billing settings have been updated"
+      });
+    } catch (e: any) {
       console.error(e);
+      toast.error("Failed to save settings", {
+        description: e instanceof Error ? e.message : "Please try again"
+      });
     } finally {
       isSavingOverage = false;
     }
@@ -263,14 +263,6 @@
         : "This method applies to the final period-end overage invoice."}
     </p>
   </div>
-
-  {#if overageError}
-    <div
-      class="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger"
-    >
-      {overageError}
-    </div>
-  {/if}
 
   <div class="pt-4 flex justify-end">
     <button

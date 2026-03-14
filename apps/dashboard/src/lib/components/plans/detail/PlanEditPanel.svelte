@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CircleNotch, FloppyDisk } from "phosphor-svelte";
+  import { Check, CircleNotch, FloppyDisk } from "phosphor-svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import { defaultCurrency } from "$lib/stores/currency";
   import { COMMON_CURRENCIES } from "$lib/utils/currency";
@@ -215,16 +215,26 @@
         {#if editBillingType === "recurring"}
           <div class="space-y-2 pt-2 border-t border-border-light">
             <div class="flex items-center gap-3">
+            <label
+                for="editAutoEnable"
+                class="text-sm flex gap-2 items-center font-medium text-text-primary cursor-pointer group select-none"
+              >
               <input
                 id="editAutoEnable"
                 type="checkbox"
                 bind:checked={editAutoEnable}
-                class="w-4 h-4 border border-border rounded-sm bg-bg-card text-accent focus:ring-accent accent-accent cursor-pointer"
+                class="hidden"
               />
-              <label
-                for="editAutoEnable"
-                class="text-sm font-medium text-text-primary cursor-pointer select-none"
+               <div
+                class="relative w-4 h-4 rounded border flex items-center justify-center transition-colors {editAutoEnable
+                  ? 'bg-accent border-accent'
+                  : 'border-border group-hover:border-text-dim'}"
               >
+                {#if editAutoEnable}
+                  <Check size={10} class="text-accent-contrast" weight="fill" />
+                {/if}
+              </div>
+              
                 Auto-enable plan
               </label>
             </div>
