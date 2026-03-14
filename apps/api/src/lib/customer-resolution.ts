@@ -166,10 +166,28 @@ async function resolveUniqueCustomerMatch(opts: {
   matchedBy: Exclude<CustomerMatchField, "id">;
   where: unknown;
 }): Promise<Customer | null> {
-  const matches = await opts.db.query.customers.findMany({
-    where: opts.where as never,
-    limit: 2,
-  });
+  const customerQuery = opts.db.query.customers as {
+    findMany?: (args: { where: never; limit: number }) => Promise<Customer[]>;
+    findFirst: (args: { where: never }) => Promise<Customer | null>;
+  };
+
+  let matches: Customer[] | undefined;
+  if (typeof customerQuery.findMany === "function") {
+    const result = await customerQuery.findMany({
+      where: opts.where as never,
+      limit: 2,
+    });
+    if (Array.isArray(result)) {
+      matches = result;
+    }
+  }
+
+  if (!matches) {
+    const customer = await customerQuery.findFirst({
+      where: opts.where as never,
+    });
+    matches = customer ? [customer] : [];
+  }
 
   const [first, second] = matches;
   if (!first) {

@@ -58,18 +58,19 @@ That's it. No webhooks, no state syncing, no billing logic.
 ```
 owostack/
 ├── packages/
-│   ├── core/          # Core TypeScript SDK
-│   ├── svelte/        # Svelte stores & components
-│   ├── react/         # React hooks & components
-│   └── types/         # Shared TypeScript types
+│   ├── core/          # Public TypeScript SDK (`owostack`)
+│   ├── cli/           # CLI (`owosk`)
+│   ├── types/         # Shared public types
+│   ├── svelte/        # Svelte bindings (currently internal/private)
+│   ├── adapters/      # Provider adapter layer
+│   ├── analytics/     # Analytics abstraction
+│   └── db/            # Database schema and utilities
 ├── apps/
 │   ├── api/           # Cloudflare Workers API
 │   ├── dashboard/     # SvelteKit dashboard
-│   └── docs/          # Documentation site
-└── examples/
-    ├── sveltekit-saas/
-    ├── ai-api-metering/
-    └── mobile-money-checkout/
+│   ├── docs/          # Documentation site
+│   ├── marketing/     # Marketing site
+│   └── demo-app/      # Local SDK demo app
 ```
 
 ## Development
@@ -78,15 +79,19 @@ owostack/
 # Install dependencies
 pnpm install
 
-# Run all apps in dev mode
-pnpm dev
-
-# Build all packages
+# Build the workspace
 pnpm build
 
-# Deploy to Cloudflare
-pnpm deploy
+# Run focused apps
+pnpm api:dev
+pnpm docs:dev
+pnpm --filter owostack-dashboard dev
+pnpm --filter owostack-marketing dev
 ```
+
+## Repository Status
+
+This is an active monorepo. Some packages are intended for public consumption (`owostack`, `owosk`, `@owostack/types`) while others are internal implementation packages that support the API, dashboard, and docs.
 
 ## Optional: Cloudflare Analytics Engine
 

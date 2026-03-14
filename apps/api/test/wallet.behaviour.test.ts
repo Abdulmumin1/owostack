@@ -8,7 +8,7 @@ import { err, ok } from "./helpers/result";
 
 interface MockDb {
   query: {
-    customers: { findFirst: Mock };
+    customers: { findFirst: Mock; findMany: Mock };
     paymentMethods: { findMany: Mock };
   };
   update: Mock;
@@ -35,6 +35,7 @@ describe("/wallet/setup behavior", () => {
     query: {
       customers: {
         findFirst: vi.fn(),
+        findMany: vi.fn(),
       },
       paymentMethods: {
         findMany: vi.fn(async () => []),
@@ -248,23 +249,25 @@ describe("/wallet/setup behavior", () => {
   it("returns 409 when a customer email matches multiple customers", async () => {
     mockDb.query.customers.findFirst
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
+      .mockResolvedValueOnce(null);
+    mockDb.query.customers.findMany.mockResolvedValueOnce([
+      {
         id: "cust_1",
         email: "alice@example.com",
         name: "Alice",
         providerId: null,
         providerCustomerId: null,
         paystackCustomerId: null,
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         id: "cust_2",
         email: "alice@example.com",
         name: "Alice Clone",
         providerId: null,
         providerCustomerId: null,
         paystackCustomerId: null,
-      });
+      },
+    ]);
 
     const res = await app.request(
       "/wallet?customer=alice@example.com",

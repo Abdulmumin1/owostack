@@ -19,7 +19,7 @@ import {
 
 interface MockDb {
   query: {
-    customers: { findFirst: Mock };
+    customers: { findFirst: Mock; findMany: Mock };
     subscriptions: { findFirst: Mock; findMany: Mock };
     plans: { findFirst: Mock };
     invoices: { findFirst: Mock };
@@ -55,7 +55,7 @@ function createDbMock() {
 
   const db: MockDb = {
     query: {
-      customers: { findFirst: vi.fn() },
+      customers: { findFirst: vi.fn(), findMany: vi.fn() },
       subscriptions: { findFirst: vi.fn(), findMany: vi.fn() },
       plans: { findFirst: vi.fn() },
       invoices: { findFirst: vi.fn() },
@@ -253,17 +253,18 @@ describe("Webhook handlers behavior", () => {
   it("charge.success skips processing when customer email is ambiguous", async () => {
     const { db, insertValuesMock, updateSetMock } = createDbMock();
 
-    db.query.customers.findFirst
-      .mockResolvedValueOnce({
+    db.query.customers.findMany.mockResolvedValue([
+      {
         id: "cus_1",
         email: "customer@example.com",
         organizationId: "org_1",
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         id: "cus_2",
         email: "customer@example.com",
         organizationId: "org_1",
-      });
+      },
+    ]);
 
     const event = {
       type: "charge.success",
