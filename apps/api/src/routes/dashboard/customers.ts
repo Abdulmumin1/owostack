@@ -186,8 +186,10 @@ app.get("/:id", async (c) => {
           id: schema.subscriptions.id,
           status: schema.subscriptions.status,
           providerId: schema.subscriptions.providerId,
-          providerSubscriptionCode: schema.subscriptions.providerSubscriptionCode,
-          paystackSubscriptionCode: schema.subscriptions.paystackSubscriptionCode,
+          providerSubscriptionCode:
+            schema.subscriptions.providerSubscriptionCode,
+          paystackSubscriptionCode:
+            schema.subscriptions.paystackSubscriptionCode,
           currentPeriodStart: schema.subscriptions.currentPeriodStart,
           currentPeriodEnd: schema.subscriptions.currentPeriodEnd,
           cancelAt: schema.subscriptions.cancelAt,

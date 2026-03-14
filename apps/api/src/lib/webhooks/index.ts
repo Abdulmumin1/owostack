@@ -1,4 +1,6 @@
 import { Result } from "better-result";
+import { and, eq } from "drizzle-orm";
+import { schema } from "@owostack/db";
 import type {
   ProviderAdapter,
   ProviderAccount,
@@ -6,7 +8,12 @@ import type {
 } from "@owostack/adapters";
 import { EntitlementCache } from "../cache";
 import { DatabaseError } from "../errors";
-import { trackWebhookEvent } from "../analytics-engine";
+import { trackWebhookEvent, type AnalyticsEnv } from "../analytics-engine";
+import {
+  isCustomerResolutionConflictError,
+  resolveCustomerByEmail,
+  resolveCustomerByProviderReference,
+} from "../customer-resolution";
 import type { DB, WebhookContext, WebhookHandlerFn } from "./types";
 
 // Handlers
@@ -33,6 +40,74 @@ const handlers: Record<string, WebhookHandlerFn> = {
   "customer.identified": handleCustomerIdentified,
 };
 
+async function resolveWebhookAnalyticsCustomerId(params: {
+  db: DB;
+  organizationId: string;
+  event: NormalizedWebhookEvent;
+  cache: EntitlementCache | null;
+}): Promise<string | null> {
+  const { db, organizationId, event, cache } = params;
+  const metadataCustomerId =
+    typeof event.metadata.customer_id === "string"
+      ? event.metadata.customer_id
+      : null;
+  const providerCustomerId = event.customer.providerCustomerId || null;
+  const email = event.customer.email?.toLowerCase() || null;
+
+  if (metadataCustomerId) {
+    const customerById = await db.query.customers.findFirst({
+      where: and(
+        eq(schema.customers.id, metadataCustomerId),
+        eq(schema.customers.organizationId, organizationId),
+      ),
+    });
+    if (customerById) return customerById.id;
+  }
+
+  if (providerCustomerId) {
+    try {
+      const customerByProvider = await resolveCustomerByProviderReference({
+        db,
+        organizationId,
+        providerCustomerId,
+      });
+      if (customerByProvider) return customerByProvider.customer.id;
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        console.warn(
+          `[WEBHOOK] analytics customer resolution conflict: ${error.message}`,
+        );
+        return providerCustomerId;
+      }
+      throw error;
+    }
+  }
+
+  if (!email) {
+    return providerCustomerId;
+  }
+
+  try {
+    const customerByEmail = await resolveCustomerByEmail({
+      db,
+      organizationId,
+      email,
+      cache,
+    });
+    if (customerByEmail) return customerByEmail.customer.id;
+  } catch (error) {
+    if (isCustomerResolutionConflictError(error)) {
+      console.warn(
+        `[WEBHOOK] analytics customer resolution conflict: ${error.message}`,
+      );
+      return providerCustomerId;
+    }
+    throw error;
+  }
+
+  return providerCustomerId;
+}
+
 // =============================================================================
 // WebhookHandler — thin router
 // =============================================================================
@@ -43,10 +118,7 @@ export class WebhookHandler {
   private trialEndWorkflow: any | null;
   private planUpgradeWorkflow: any | null;
   private cache: EntitlementCache | null;
-  private analyticsEnv: {
-    ANALYTICS?: AnalyticsEngineDataset;
-    ENVIRONMENT?: string;
-  } | null;
+  private analyticsEnv: AnalyticsEnv | null;
 
   constructor(
     private db: DB,
@@ -57,10 +129,7 @@ export class WebhookHandler {
       trialEndWorkflow?: any;
       planUpgradeWorkflow?: any;
       cache?: KVNamespace;
-      analyticsEnv?: {
-        ANALYTICS?: AnalyticsEngineDataset;
-        ENVIRONMENT?: string;
-      };
+      analyticsEnv?: AnalyticsEnv;
     },
   ) {
     this.adapter = opts?.adapter || null;
@@ -85,13 +154,20 @@ export class WebhookHandler {
 
         // 1. Log event for audit trail (via Analytics Engine now)
         if (this.analyticsEnv) {
+          const customerId = await resolveWebhookAnalyticsCustomerId({
+            db: this.db,
+            organizationId: this.organizationId,
+            event,
+            cache: this.cache,
+          });
+
           trackWebhookEvent(this.analyticsEnv, {
             id: eventId,
             organizationId: this.organizationId,
             type: event.type,
             providerId: event.provider,
             customerEmail: event.customer?.email || null,
-            customerId: event.customer?.providerCustomerId || null,
+            customerId,
             processed: false,
             payload: event.raw,
             createdAt,

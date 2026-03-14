@@ -65,7 +65,7 @@ export type Env = {
   CACHE: KVNamespace; // Per-environment cache
   CACHE_SHARED: KVNamespace; // Shared cache across all environments (CLI auth, etc.)
   ANALYTICS?: AnalyticsEngineDataset; // Optional Cloudflare Analytics Engine dataset
-  // Cloudflare Data Platform (Pipelines + R2 SQL) — when present, preferred over AE
+  // Cloudflare Data Platform (Pipelines + R2 SQL) — enabled only when USE_EVENTS_PIPELINE is true
   EVENTS_PIPELINE?: { send(records: Record<string, unknown>[]): Promise<void> };
   R2_SQL_TOKEN?: string; // API token for R2 SQL queries
   R2_WAREHOUSE?: string; // R2 Data Catalog warehouse ID
@@ -85,6 +85,7 @@ export type Env = {
   CF_ACCOUNT_ID?: string; // Cloudflare account ID — used for Analytics Engine & R2 SQL
   CF_ANALYTICS_READ_TOKEN?: string; // API token with Analytics:Read for SQL queries
   ANALYTICS_DATASET?: string; // Optional override dataset name for SQL reads
+  USE_EVENTS_PIPELINE?: string; // Explicit opt-in for Cloudflare Pipelines reads/writes
   ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack,stripe,dodopayments"
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_WEBHOOK_SECRET: string;

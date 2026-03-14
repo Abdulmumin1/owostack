@@ -1,5 +1,9 @@
 import type { createDb } from "@owostack/db";
-import type { ProviderAdapter, ProviderAccount, NormalizedWebhookEvent } from "@owostack/adapters";
+import type {
+  ProviderAdapter,
+  ProviderAccount,
+  NormalizedWebhookEvent,
+} from "@owostack/adapters";
 import { EntitlementCache } from "../cache";
 
 // =============================================================================
@@ -36,13 +40,23 @@ export function safeParseDate(value: unknown): number {
 
 export function intervalToMs(interval: string): number {
   switch (interval) {
-    case "hourly": return 60 * 60 * 1000;
-    case "daily": return 24 * 60 * 60 * 1000;
-    case "weekly": return 7 * 24 * 60 * 60 * 1000;
-    case "monthly": return 30 * 24 * 60 * 60 * 1000;
-    case "quarterly": return 90 * 24 * 60 * 60 * 1000;
-    case "biannually": case "semi_annual": return 180 * 24 * 60 * 60 * 1000;
-    case "annually": case "yearly": return 365 * 24 * 60 * 60 * 1000;
-    default: return 30 * 24 * 60 * 60 * 1000;
+    case "hourly":
+      return 60 * 60 * 1000;
+    case "daily":
+      return 24 * 60 * 60 * 1000;
+    case "weekly":
+      return 7 * 24 * 60 * 60 * 1000;
+    case "monthly":
+      return 30 * 24 * 60 * 60 * 1000;
+    case "quarterly":
+      return 90 * 24 * 60 * 60 * 1000;
+    case "biannually":
+    case "semi_annual":
+      return 180 * 24 * 60 * 60 * 1000;
+    case "annually":
+    case "yearly":
+      return 365 * 24 * 60 * 60 * 1000;
+    default:
+      return 30 * 24 * 60 * 60 * 1000;
   }
 }

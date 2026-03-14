@@ -9,7 +9,6 @@ import {
 import { loadConfigSettings, resolveConfigPath } from "../lib/loader.js";
 import { executeConnectFlow } from "../lib/connect.js";
 
-
 interface ConnectOptions {
   browser?: boolean;
 }

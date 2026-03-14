@@ -531,18 +531,18 @@
         { href: "/usage", icon: ChartBar, label: "Usage", color: "text-info" },
       ],
     },
-    {
-      label: "Developer",
-      collapsible: false,
-      items: [
-        {
-          href: "/events",
-          icon: Globe,
-          label: "Events",
-          color: "text-warning",
-        },
-      ],
-    },
+    // {
+    //   label: "Developer",
+    //   collapsible: false,
+    //   items: [
+    //     {
+    //       href: "/events",
+    //       icon: Globe,
+    //       label: "Events",
+    //       color: "text-warning",
+    //     },
+    //   ],
+    // },
   ];
 
   function isActive(href: string, exact = false): boolean {

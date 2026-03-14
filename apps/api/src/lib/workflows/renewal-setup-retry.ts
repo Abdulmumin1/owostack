@@ -177,7 +177,8 @@ async function attemptRenewalSetup(
   const retryCount = (renewalSetup.renewal_setup_retry_count || 0) + 1;
 
   const existingCode =
-    subscription.provider_subscription_code || subscription.paystack_subscription_code;
+    subscription.provider_subscription_code ||
+    subscription.paystack_subscription_code;
   if (existingCode && !isPlaceholderSubscriptionCode(existingCode)) {
     const recovery = buildRenewalSetupRecoveryUpdate(
       subscription.metadata,
@@ -208,7 +209,10 @@ async function attemptRenewalSetup(
     return { status: "aborted", reason: `subscription_${subscription.status}` };
   }
 
-  if (!subscription.current_period_end || subscription.current_period_end <= now) {
+  if (
+    !subscription.current_period_end ||
+    subscription.current_period_end <= now
+  ) {
     return { status: "aborted", reason: "period_elapsed" };
   }
 
@@ -363,7 +367,9 @@ async function attemptRenewalSetup(
       renewal_setup_updated_at: now,
       renewal_setup_last_source: source,
     });
-    return retryable ? { status: "retryable", reason } : { status: "aborted", reason };
+    return retryable
+      ? { status: "retryable", reason }
+      : { status: "aborted", reason };
   }
 
   const providerSubCode = result.value.id;
@@ -410,7 +416,8 @@ export class RenewalSetupRetryWorkflow extends WorkflowEntrypoint<
   WorkflowEnv,
   RenewalSetupRetryParams
 > {
-  static dependencies: RenewalSetupRetryWorkflowDependencies = defaultDependencies;
+  static dependencies: RenewalSetupRetryWorkflowDependencies =
+    defaultDependencies;
 
   private get deps() {
     return RenewalSetupRetryWorkflow.dependencies;
@@ -454,7 +461,10 @@ export class RenewalSetupRetryWorkflow extends WorkflowEntrypoint<
       }
     }
 
-    const finalSub = await readSubscription(this.env, event.payload.subscriptionId);
+    const finalSub = await readSubscription(
+      this.env,
+      event.payload.subscriptionId,
+    );
     if (finalSub) {
       const finalMetadata = coerceMetadataRecord(finalSub.metadata);
       if (finalMetadata.renewal_setup_status !== "complete") {

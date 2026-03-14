@@ -10,7 +10,7 @@ thumbnail: "https://mac-file.yaqeen.me/3B499EC5-Generated%20Image%20March%2004%2
 
 A simple principle i've been sticking with for a while is a quote from steve jobs - where he said: "start with the customer experience, then walk up the technology" i don't know if i got that right (could google it though);
 
-I got too confident in the beginning, as i've put together experiences i've gathered to build a solid foundation for our api design to make sure we're not accumulating unnecessary overhead in terms of speed. 
+I got too confident in the beginning, as i've put together experiences i've gathered to build a solid foundation for our api design to make sure we're not accumulating unnecessary overhead in terms of speed.
 
 In our development stage, the average speed for /check was just a bit over 20ms, which we use as a base to predict what the average speed might look like for entities scattered around the world. our prediction was in the range of 100-150ms which at the time, feels fine.
 
@@ -20,11 +20,9 @@ Then I started to beta test it with more and more people, the regions start to e
 
 Then we consulted the oracle and asked for a solution (i'm not kidding!)
 
-
 ![alt text](/images/blog/making-check-fast-CONSULTING-ORACLE.png)
 
-
-The first step was to  parallelizing the sequential customer→feature→subscription fetches with Promise.all, and housekeeping should use ctx.waitUntil  (a thing in cf workers that allow the worker to respond early, but stay awake till the task is complete). 
+The first step was to parallelizing the sequential customer→feature→subscription fetches with Promise.all, and housekeeping should use ctx.waitUntil (a thing in cf workers that allow the worker to respond early, but stay awake till the task is complete).
 
 But there are calls that depends on another..
 
@@ -58,7 +56,7 @@ We currently don't have a "client-side" sdk yet :/ (soon though) which would hav
 
 ---
 
-Those were great, but we're not still where we wanted, BUT thanks to opus 4.6 in Amp code we had another proposal: 
+Those were great, but we're not still where we wanted, BUT thanks to opus 4.6 in Amp code we had another proposal:
 
 ### The "Compiled Entitlement Graph"
 
@@ -69,28 +67,22 @@ Instead of fetching 5 separate entities to answer "does this customer have acces
 **Materialized View in KV:** Whenever a subscription is created, a plan changed, or an add-on bought (via webhooks or dashboard mutations), a background job compiles a JSON object: `customer_entitlements:<orgId>:<customerId>`.
 
 ```json
-
 {
+  "subscriptions": [{ "id": "sub_1", "status": "active", "planId": "plan_1" }],
 
-"subscriptions": [{ "id": "sub_1", "status": "active", "planId": "plan_1" }],
+  "features": {
+    "feature_1": { "type": "boolean", "allowed": true },
 
-"features": {
-
-"feature_1": { "type": "boolean", "allowed": true },
-
-"feature_2": { "type": "metered", "limit": 100, "resetInterval": "month" }
-
+    "feature_2": { "type": "metered", "limit": 100, "resetInterval": "month" }
+  }
 }
-
-}
-
 ```
 
 **O(1) Fetch:** The `/check` endpoint now makes **exactly ONE** KV read for this object. If it exists, the access decision is pure CPU logic (0ms). Total latency: **KV Read Time (~10-20ms) + Execution Time (~5ms) = 15-25ms.**
 
 **Fallback & Rebuild:** If the KV object is missing, fallback to the old sequential D1 fetch, serve the request, and trigger an asynchronous rebuild (`waitUntil`) to populate the cache.
 
-This one really challenged our design, and reminded me that, if we had truely started with the customer experience, before walking up to the technology, a solution like this might be what we will have from the beginning. 
+This one really challenged our design, and reminded me that, if we had truely started with the customer experience, before walking up to the technology, a solution like this might be what we will have from the beginning.
 
 But the above proposal is not implemented in any of our test environment yet, i'm still actively battling alot of issues and edge cases that this has, though the result (when it works) makes me think this might be work it.
 

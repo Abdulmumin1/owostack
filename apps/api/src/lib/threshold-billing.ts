@@ -1,7 +1,11 @@
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { BillingService } from "./billing";
-import { createThresholdBillingRun, getActiveThresholdBillingRun, updateBillingRun } from "./billing-runs";
+import {
+  createThresholdBillingRun,
+  getActiveThresholdBillingRun,
+  updateBillingRun,
+} from "./billing-runs";
 import { getCustomerOverageBlock } from "./overage-blocks";
 import { getOrgOverageSettings } from "./overage-guards";
 import { getMinimumChargeAmount } from "./provider-minimums";
@@ -14,27 +18,39 @@ export async function evaluateThresholdBillingCandidate(params: {
   usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
   workflow: any;
 }) {
-  const settings = await getOrgOverageSettings(params.db, params.organizationId);
-  if (
-    !settings ||
-    !settings.thresholdEnabled ||
-    !settings.thresholdAmount
-  ) {
+  const settings = await getOrgOverageSettings(
+    params.db,
+    params.organizationId,
+  );
+  if (!settings || !settings.thresholdEnabled || !settings.thresholdAmount) {
     return { created: false, reason: "threshold_disabled" as const };
   }
 
   if (!settings.autoCollect) {
-    return { created: false, reason: "threshold_requires_auto_collect" as const };
+    return {
+      created: false,
+      reason: "threshold_requires_auto_collect" as const,
+    };
   }
 
-  const overageBlock = await getCustomerOverageBlock(params.db, params.customerId);
+  const overageBlock = await getCustomerOverageBlock(
+    params.db,
+    params.customerId,
+  );
   if (overageBlock) {
     return { created: false, reason: "customer_blocked" as const };
   }
 
-  const activeRun = await getActiveThresholdBillingRun(params.db, params.customerId);
+  const activeRun = await getActiveThresholdBillingRun(
+    params.db,
+    params.customerId,
+  );
   if (activeRun) {
-    return { created: false, reason: "active_run_exists" as const, run: activeRun };
+    return {
+      created: false,
+      reason: "active_run_exists" as const,
+      run: activeRun,
+    };
   }
 
   const billingService = new BillingService(params.db, {
@@ -46,7 +62,11 @@ export async function evaluateThresholdBillingCandidate(params: {
   );
 
   if (previewResult.isErr()) {
-    return { created: false, reason: "preview_failed" as const, error: previewResult.error };
+    return {
+      created: false,
+      reason: "preview_failed" as const,
+      error: previewResult.error,
+    };
   }
 
   const preview = previewResult.value;
@@ -65,7 +85,10 @@ export async function evaluateThresholdBillingCandidate(params: {
     paymentMethod?.providerId || "unknown",
     preview.currency,
   );
-  const effectiveThreshold = Math.max(settings.thresholdAmount, providerMinimum);
+  const effectiveThreshold = Math.max(
+    settings.thresholdAmount,
+    providerMinimum,
+  );
 
   if (preview.totalEstimated < effectiveThreshold) {
     return {

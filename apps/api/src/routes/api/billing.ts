@@ -164,7 +164,11 @@ app.post("/invoice", async (c) => {
       result.error.field === "invoice_amount";
     trackBusinessEvent(c.env, {
       event: "billing.invoice.generate",
-      outcome: noUsage ? "empty" : belowMinimum ? "below_provider_minimum" : "error",
+      outcome: noUsage
+        ? "empty"
+        : belowMinimum
+          ? "below_provider_minimum"
+          : "error",
       organizationId,
       customerId: customer.id,
     });

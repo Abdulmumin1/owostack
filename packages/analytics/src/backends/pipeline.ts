@@ -19,6 +19,7 @@ const TABLES = {
   usageEvents: "usage_events",
   webhookEvents: "webhook_events",
 } as const;
+const DEFAULT_NAMESPACE = "default";
 
 function safeJSONStringify(value: unknown): string {
   try {
@@ -30,6 +31,19 @@ function safeJSONStringify(value: unknown): string {
 
 function sqlString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+function tableRef(table: string): string {
+  return `${DEFAULT_NAMESPACE}.${table}`;
+}
+
+function deriveBucketName(warehouse: string): string {
+  const separatorIndex = warehouse.indexOf("_");
+  if (separatorIndex <= 0 || separatorIndex === warehouse.length - 1) {
+    return warehouse;
+  }
+
+  return warehouse.slice(separatorIndex + 1);
 }
 
 function statusBucket(status: number): string {
@@ -69,7 +83,9 @@ export class PipelineStore implements EventStore {
   private send(event: Record<string, unknown>): void {
     if (!this.pipeline) return;
     try {
-      this.pipeline.send([event]);
+      void this.pipeline.send([event]).catch((error) => {
+        console.warn("[pipeline] send failed:", error);
+      });
     } catch (error) {
       console.warn("[pipeline] send failed:", error);
     }
@@ -79,51 +95,76 @@ export class PipelineStore implements EventStore {
     query: string,
   ): Promise<T[] | null> {
     if (!this.accountId || !this.apiToken || !this.warehouse) return null;
+    const bucketName = deriveBucketName(this.warehouse);
+    const endpointTargets = [bucketName, this.warehouse].filter(
+      (value, index, all) => all.indexOf(value) === index,
+    );
 
-    const endpoint = `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/r2/warehouses/${this.warehouse}/sql`;
+    let lastPayload: unknown = null;
+    let lastStatus: number | null = null;
 
-    let response: Response;
-    try {
-      response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ query }),
-      });
-    } catch (error) {
-      console.warn("[pipeline] R2 SQL query failed:", error);
-      return null;
+    for (const target of endpointTargets) {
+      const endpoint =
+        `https://api.sql.cloudflarestorage.com/api/v1/accounts/${this.accountId}` +
+        `/r2-sql/query/${target}`;
+
+      let response: Response;
+      try {
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ query }),
+        });
+      } catch (error) {
+        console.warn("[pipeline] R2 SQL query failed:", error);
+        return null;
+      }
+
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        console.warn("[pipeline] R2 SQL response parse failed:", error);
+        return null;
+      }
+
+      if (
+        response.ok &&
+        (payload as Record<string, unknown> | null | undefined)?.success !==
+          false
+      ) {
+        const p = payload as Record<string, unknown>;
+        const result = p?.result as
+          | Record<string, unknown>
+          | unknown[]
+          | undefined;
+        if (Array.isArray(result)) return result as T[];
+        if (
+          result &&
+          typeof result === "object" &&
+          Array.isArray((result as Record<string, unknown>).data)
+        ) {
+          return (result as Record<string, unknown>).data as T[];
+        }
+        if (Array.isArray(p?.data)) return p.data as T[];
+        return [];
+      }
+
+      lastPayload = payload;
+      lastStatus = response.status;
     }
 
-    let payload: unknown = null;
-    try {
-      payload = await response.json();
-    } catch (error) {
-      console.warn("[pipeline] R2 SQL response parse failed:", error);
-      return null;
-    }
-
-    if (!response.ok) {
-      console.warn("[pipeline] R2 SQL query error", {
-        status: response.status,
-        errors: (payload as Record<string, unknown>)?.errors,
-      });
-      return null;
-    }
-
-    const p = payload as Record<string, unknown>;
-    const result = p?.result as Record<string, unknown> | unknown[] | undefined;
-    if (Array.isArray(result)) return result as T[];
-    if (
-      result &&
-      typeof result === "object" &&
-      Array.isArray((result as Record<string, unknown>).data)
-    )
-      return (result as Record<string, unknown>).data as T[];
-    if (Array.isArray(p?.data)) return p.data as T[];
-    return [];
+    console.warn("[pipeline] R2 SQL query error", {
+      status: lastStatus,
+      errors: (lastPayload as Record<string, unknown> | null | undefined)
+        ?.errors,
+      messages: (lastPayload as Record<string, unknown> | null | undefined)
+        ?.messages,
+    });
+    return null;
   }
 
   // ---- Ingestion ----
@@ -232,7 +273,7 @@ export class PipelineStore implements EventStore {
         processed,
         payload,
         created_at
-      FROM ${TABLES.webhookEvents}
+      FROM ${tableRef(TABLES.webhookEvents)}
       ${where}
       ORDER BY timestamp DESC
       LIMIT ${limit}
@@ -308,7 +349,7 @@ export class PipelineStore implements EventStore {
         processed,
         payload,
         created_at
-      FROM ${TABLES.webhookEvents}
+      FROM ${tableRef(TABLES.webhookEvents)}
       WHERE ${conditions.join(" AND ")}
       ORDER BY timestamp DESC
       LIMIT 1

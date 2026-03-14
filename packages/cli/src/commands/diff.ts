@@ -1,10 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import {
-  getApiKey,
-  getLiveApiUrl,
-  getTestApiUrl,
-} from "../lib/config.js";
+import { getApiKey, getLiveApiUrl, getTestApiUrl } from "../lib/config.js";
 import {
   loadConfigSettings,
   loadOwostackFromConfig,

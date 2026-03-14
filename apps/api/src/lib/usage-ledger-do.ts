@@ -310,7 +310,9 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
     return { updated: cursor.rowsWritten };
   }
 
-  async releaseInvoice(query: ReleaseInvoiceQuery): Promise<{ updated: number }> {
+  async releaseInvoice(
+    query: ReleaseInvoiceQuery,
+  ): Promise<{ updated: number }> {
     this.ensureSchema();
 
     const cursor = this.ctx.storage.sql.exec(

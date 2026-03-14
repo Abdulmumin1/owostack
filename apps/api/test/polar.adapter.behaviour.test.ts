@@ -188,17 +188,15 @@ describe("Polar adapter behavior", () => {
   });
 
   it("uses external_customer_id for checkout and sets explicit trial interval fields", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            id: "chk_1",
-            url: "https://checkout.polar.sh/checkout/chk_1",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "chk_1",
+          url: "https://checkout.polar.sh/checkout/chk_1",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
 
     const result = await polarAdapter.createCheckoutSession({
       customer: { id: "local_customer_uuid", email: "dora@example.com" },
@@ -360,10 +358,10 @@ describe("Polar adapter behavior", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ id: "prod_charge_3" }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
+        new Response(JSON.stringify({ id: "prod_charge_3" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
       )
       .mockResolvedValueOnce(
         new Response(
@@ -385,14 +383,15 @@ describe("Polar adapter behavior", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       )
-      .mockImplementation(async () =>
-        new Response(
-          JSON.stringify({
-            id: "chk_charge_3",
-            status: "confirmed",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
+      .mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              id: "chk_charge_3",
+              status: "confirmed",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
       );
 
     const result = await polarAdapter.chargeAuthorization({

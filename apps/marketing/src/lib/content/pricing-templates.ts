@@ -88,7 +88,8 @@ plan("starter", {
     pricingUrl: "https://www.notion.com/pricing",
     summary:
       "Notion's live pricing is seat-based across Free, Plus, Business, and Enterprise tiers.",
-    headline: "Plus starts at $10/member/month; Business starts at $20/member/month.",
+    headline:
+      "Plus starts at $10/member/month; Business starts at $20/member/month.",
     description:
       "This is not an included-usage quota product today. The official pricing page is organized around per-member collaboration plans.",
     category: "Vendor snapshot",
@@ -142,7 +143,8 @@ plan("growth", {
     pricingUrl: "https://developers.openai.com/codex/pricing/",
     summary:
       "Codex is currently packaged through ChatGPT plans, with higher limits on paid tiers.",
-    headline: "Free and Go have limited access; paid plans raise limits and credits.",
+    headline:
+      "Free and Go have limited access; paid plans raise limits and credits.",
     description:
       "The public pricing is plan-based rather than a single standalone Codex SKU. OpenAI also notes that Free and Go access is temporary.",
     category: "Vendor snapshot",
@@ -265,7 +267,8 @@ plan("api", {
     pricingUrl: "https://stripe.com/billing/pricing",
     summary:
       "Stripe Billing is priced as billing software, based on billing volume rather than request blocks.",
-    headline: "Pay-as-you-go is 0.7% of billing volume; contracted starts from $620/month.",
+    headline:
+      "Pay-as-you-go is 0.7% of billing volume; contracted starts from $620/month.",
     description:
       "The official pricing page does not present Stripe Billing as included API units plus overage. It is volume-based software pricing.",
     category: "Vendor snapshot",
@@ -371,7 +374,8 @@ plan("scale", {
     shortTitle: "Snowflake editions",
     eyebrow: "Edition-first data platform pricing",
     inspiredBy: "Snowflake",
-    logoUrl: "https://cdn.brandfetch.io/idJz-fGD_q/w/400/h/400/theme/dark/icon.png?c=1bxid64Mup7aczewSAYMX&t=1667589077114",
+    logoUrl:
+      "https://cdn.brandfetch.io/idJz-fGD_q/w/400/h/400/theme/dark/icon.png?c=1bxid64Mup7aczewSAYMX&t=1667589077114",
     pricingUrl: "https://www.snowflake.com/en/pricing-options//",
     summary:
       "Snowflake sells editions and consumption models rather than a simple public volume ladder.",
@@ -428,7 +432,8 @@ plan("enterprise-api", {
     inspiredBy: "Slack",
     logoUrl: "https://cdn.brandfetch.io/domain/slack.com?c=1iduQCu8CNcitTrpDvi",
     pricingUrl: "https://slack.com/pricing/pro",
-    summary: "Slack is priced per user across Pro, Business+, and Enterprise Grid.",
+    summary:
+      "Slack is priced per user across Pro, Business+, and Enterprise Grid.",
     headline: "Pro starts at $8.75/user/month or $7.25 billed annually.",
     description:
       "The current pricing page is seat-based. The number in the old template was too high for today's public Pro plan.",
@@ -472,7 +477,8 @@ plan("team", {
     pricingUrl: "https://clerk.com/pricing",
     summary:
       "Clerk's pricing starts with a free Hobby tier and moves to Pro with included usage plus overage.",
-    headline: "Pro starts at $20/month billed annually with 50,000 included users.",
+    headline:
+      "Pro starts at $20/month billed annually with 50,000 included users.",
     description:
       "The current page is usage-based around active/retained users and add-ons, rather than a generic flat $25 MAU tier.",
     category: "Vendor snapshot",
@@ -586,7 +592,8 @@ plan("collab-ai", {
     shortTitle: "Minimum commitment",
     eyebrow: "Vector database pricing",
     inspiredBy: "Pinecone",
-    logoUrl: "https://cdn.brandfetch.io/idCLuo1dQ8/w/178/h/178/theme/dark/icon.png?c=1bxid64Mup7aczewSAYMX&t=1718349235873",
+    logoUrl:
+      "https://cdn.brandfetch.io/idCLuo1dQ8/w/178/h/178/theme/dark/icon.png?c=1bxid64Mup7aczewSAYMX&t=1718349235873",
     pricingUrl: "https://www.pinecone.io/pricing/",
     summary: "$50/month minimum commitment, then pay-as-you-go beyond.",
     headline: "Commitment-based minimums.",
@@ -855,7 +862,8 @@ plan("pro", {
     pricingUrl: "https://replit.com/pricing",
     summary:
       "Replit currently packages plans around included monthly credits, collaborator limits, and higher-capability AI access.",
-    headline: "Core is $20/month billed annually with $25 monthly credits and up to 5 collaborators.",
+    headline:
+      "Core is $20/month billed annually with $25 monthly credits and up to 5 collaborators.",
     description:
       "The live pricing page combines a subscription tier with bundled usage credits, collaborator limits, and optional pay-as-you-go once the included credits are exhausted.",
     category: "Vendor snapshot",

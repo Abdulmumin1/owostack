@@ -9,10 +9,7 @@ import {
   TrialEndWorkflow,
   type TrialEndWorkflowDependencies,
 } from "./trial-end";
-import {
-  createWorkflowInstance,
-  createWorkflowStepMock,
-} from "./test-helpers";
+import { createWorkflowInstance, createWorkflowStepMock } from "./test-helpers";
 
 function createDbMock(options: {
   providerDefaultPm?: { token: string; provider_id: string } | null;
@@ -67,9 +64,7 @@ function createDbMock(options: {
                 ) {
                   return options.providerDefaultPm ?? null;
                 }
-                if (
-                  sql.includes("provider_id = ? AND is_valid = 1 LIMIT 1")
-                ) {
+                if (sql.includes("provider_id = ? AND is_valid = 1 LIMIT 1")) {
                   return options.providerPm ?? null;
                 }
                 if (
@@ -151,7 +146,9 @@ describe("TrialEndWorkflow", () => {
       createdAt: 0,
       updatedAt: 0,
     });
-    chargeAuthorizationMock.mockResolvedValue(Result.ok({ reference: "ref_123" }));
+    chargeAuthorizationMock.mockResolvedValue(
+      Result.ok({ reference: "ref_123" }),
+    );
     createSubscriptionMock.mockResolvedValue(
       Result.ok({ id: "SUB_live_123", status: "active", metadata: {} }),
     );

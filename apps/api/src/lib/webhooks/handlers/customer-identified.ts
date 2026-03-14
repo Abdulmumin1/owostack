@@ -89,8 +89,7 @@ export async function handleCustomerIdentified(
       : {};
   const authorization = event.authorization;
 
-  const hasReusableAuth =
-    authorization?.reusable && !!authorization.code;
+  const hasReusableAuth = authorization?.reusable && !!authorization.code;
 
   await db
     .update(schema.customers)

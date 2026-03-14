@@ -21,7 +21,10 @@ export function getResetPeriod(
   subscriptionPeriodEnd: number,
 ): ResetPeriod {
   if (resetInterval === "none") {
-    return { periodStart: subscriptionPeriodStart, periodEnd: subscriptionPeriodEnd };
+    return {
+      periodStart: subscriptionPeriodStart,
+      periodEnd: subscriptionPeriodEnd,
+    };
   }
 
   const now = new Date();
@@ -77,20 +80,44 @@ export function getResetPeriod(
     case "month":
     case "monthly": {
       const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      const end = new Date(
+        now.getFullYear(),
+        now.getMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999,
+      );
       return { periodStart: start.getTime(), periodEnd: end.getTime() };
     }
     case "quarter":
     case "quarterly": {
       const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
       const start = new Date(now.getFullYear(), quarterMonth, 1);
-      const end = new Date(now.getFullYear(), quarterMonth + 3, 0, 23, 59, 59, 999);
+      const end = new Date(
+        now.getFullYear(),
+        quarterMonth + 3,
+        0,
+        23,
+        59,
+        59,
+        999,
+      );
       return { periodStart: start.getTime(), periodEnd: end.getTime() };
     }
     case "semi_annual": {
       const halfMonth = now.getMonth() < 6 ? 0 : 6;
       const start = new Date(now.getFullYear(), halfMonth, 1);
-      const end = new Date(now.getFullYear(), halfMonth + 6, 0, 23, 59, 59, 999);
+      const end = new Date(
+        now.getFullYear(),
+        halfMonth + 6,
+        0,
+        23,
+        59,
+        59,
+        999,
+      );
       return { periodStart: start.getTime(), periodEnd: end.getTime() };
     }
     case "year":
@@ -102,7 +129,10 @@ export function getResetPeriod(
     }
     default: {
       // Unknown interval — fall back to subscription billing period
-      return { periodStart: subscriptionPeriodStart, periodEnd: subscriptionPeriodEnd };
+      return {
+        periodStart: subscriptionPeriodStart,
+        periodEnd: subscriptionPeriodEnd,
+      };
     }
   }
 }

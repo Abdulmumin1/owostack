@@ -201,13 +201,20 @@ export function createAddonRoute(overrides: Partial<AddonDependencies> = {}) {
       );
     }
 
-    return handleAddonPurchase(c, db, keyRecord, creditPack, {
-      customer,
-      quantity,
-      currency,
-      metadata,
-      callbackUrl,
-    }, deps);
+    return handleAddonPurchase(
+      c,
+      db,
+      keyRecord,
+      creditPack,
+      {
+        customer,
+        quantity,
+        currency,
+        metadata,
+        callbackUrl,
+      },
+      deps,
+    );
   });
 
   return app;
@@ -237,7 +244,10 @@ async function handleAddonPurchase(
     metadata,
   });
 
-  const providerRules = await deps.loadProviderRules(db, keyRecord.organizationId);
+  const providerRules = await deps.loadProviderRules(
+    db,
+    keyRecord.organizationId,
+  );
   const providerAccounts = await deps.loadProviderAccounts(
     db,
     keyRecord.organizationId,

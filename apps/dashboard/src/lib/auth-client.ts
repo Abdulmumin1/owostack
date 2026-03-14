@@ -3,7 +3,6 @@ import { organizationClient } from "better-auth/client/plugins";
 import { getApiUrl } from "$lib/env";
 import { sentinelClient } from "@better-auth/infra/client";
 
-
 /**
  * Auth client with dynamic base URL resolution.
  * Both API workers share the same auth DB (DB_AUTH) and use

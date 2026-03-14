@@ -186,13 +186,16 @@ class PaystackClient {
     return this.request("POST", "/plan", params);
   }
 
-  updatePlan(planCode: string, params: {
-    name?: string;
-    amount?: number;
-    interval?: string;
-    description?: string;
-    currency?: string;
-  }): Promise<ProviderResult<Record<string, unknown>>> {
+  updatePlan(
+    planCode: string,
+    params: {
+      name?: string;
+      amount?: number;
+      interval?: string;
+      description?: string;
+      currency?: string;
+    },
+  ): Promise<ProviderResult<Record<string, unknown>>> {
     return this.request("PUT", `/plan/${encodeURIComponent(planCode)}`, params);
   }
 
@@ -205,18 +208,23 @@ class PaystackClient {
     return this.request("POST", "/subscription", params);
   }
 
-  fetchSubscription(code: string): Promise<ProviderResult<{
-    email_token: string;
-    status: string;
-    subscription_code: string;
-    plan: { plan_code: string } | null;
-    createdAt: string;
-    next_payment_date: string | null;
-  }>> {
+  fetchSubscription(code: string): Promise<
+    ProviderResult<{
+      email_token: string;
+      status: string;
+      subscription_code: string;
+      plan: { plan_code: string } | null;
+      createdAt: string;
+      next_payment_date: string | null;
+    }>
+  > {
     return this.request("GET", `/subscription/${encodeURIComponent(code)}`);
   }
 
-  disableSubscription(code: string, token: string): Promise<ProviderResult<{ status: boolean }>> {
+  disableSubscription(
+    code: string,
+    token: string,
+  ): Promise<ProviderResult<{ status: boolean }>> {
     return this.request("POST", "/subscription/disable", {
       code,
       token,
@@ -242,7 +250,9 @@ class PaystackClient {
     amount?: number;
     currency?: string;
     merchant_note?: string;
-  }): Promise<ProviderResult<{ status: string; transaction: number; id: number }>> {
+  }): Promise<
+    ProviderResult<{ status: string; transaction: number; id: number }>
+  > {
     return this.request("POST", "/refund", params);
   }
 }
@@ -253,7 +263,9 @@ function getSecretKey(account: ProviderAccount): string | null {
   return typeof secretKey === "string" ? secretKey : null;
 }
 
-function resolveClient(account: ProviderAccount): ProviderResult<PaystackClient> {
+function resolveClient(
+  account: ProviderAccount,
+): ProviderResult<PaystackClient> {
   const secretKey = getSecretKey(account);
   if (!secretKey) {
     return Result.err({
@@ -273,7 +285,9 @@ export const paystackAdapter: ProviderAdapter = {
   supportsNativeTrials: false,
   defaultCurrency: "NGN",
 
-  async createCheckoutSession(params): Promise<ProviderResult<CheckoutSession>> {
+  async createCheckoutSession(
+    params,
+  ): Promise<ProviderResult<CheckoutSession>> {
     const clientResult = resolveClient(params.account);
     if (clientResult.isErr()) return clientResult;
 
@@ -344,9 +358,13 @@ export const paystackAdapter: ProviderAdapter = {
     if (params.amount !== undefined) updateBody.amount = params.amount;
     if (params.interval !== undefined) updateBody.interval = params.interval;
     if (params.currency !== undefined) updateBody.currency = params.currency;
-    if (params.description !== undefined) updateBody.description = params.description;
+    if (params.description !== undefined)
+      updateBody.description = params.description;
 
-    const response = await clientResult.value.updatePlan(params.planId, updateBody);
+    const response = await clientResult.value.updatePlan(
+      params.planId,
+      updateBody,
+    );
     if (response.isErr()) return response;
 
     return Result.ok({ updated: true });
@@ -383,14 +401,16 @@ export const paystackAdapter: ProviderAdapter = {
     const fetchResult = await clientResult.value.fetchSubscription(
       params.subscription.id,
     );
-    if (fetchResult.isErr()) return fetchResult as ProviderResult<{ canceled: boolean }>;
+    if (fetchResult.isErr())
+      return fetchResult as ProviderResult<{ canceled: boolean }>;
 
     const disableResult = await clientResult.value.disableSubscription(
       params.subscription.id,
       fetchResult.value.email_token,
     );
 
-    if (disableResult.isErr()) return disableResult as ProviderResult<{ canceled: boolean }>;
+    if (disableResult.isErr())
+      return disableResult as ProviderResult<{ canceled: boolean }>;
 
     return Result.ok({ canceled: true });
   },
@@ -415,7 +435,9 @@ export const paystackAdapter: ProviderAdapter = {
     return Result.ok({ reference: response.value.reference });
   },
 
-  async refundCharge(params): Promise<ProviderResult<{ refunded: boolean; reference: string }>> {
+  async refundCharge(
+    params,
+  ): Promise<ProviderResult<{ refunded: boolean; reference: string }>> {
     const clientResult = resolveClient(params.account);
     if (clientResult.isErr()) return clientResult;
 
@@ -439,7 +461,8 @@ export const paystackAdapter: ProviderAdapter = {
     const response = await clientResult.value.fetchSubscription(
       params.subscriptionId,
     );
-    if (response.isErr()) return response as ProviderResult<ProviderSubscriptionDetail>;
+    if (response.isErr())
+      return response as ProviderResult<ProviderSubscriptionDetail>;
 
     return Result.ok({
       id: params.subscriptionId,
@@ -452,9 +475,7 @@ export const paystackAdapter: ProviderAdapter = {
     });
   },
 
-  async verifyWebhook(
-    params,
-  ): Promise<ProviderResult<boolean>> {
+  async verifyWebhook(params): Promise<ProviderResult<boolean>> {
     try {
       const encoder = new TextEncoder();
       const key = await crypto.subtle.importKey(
@@ -481,9 +502,7 @@ export const paystackAdapter: ProviderAdapter = {
     }
   },
 
-  parseWebhookEvent(
-    params,
-  ): ProviderResult<NormalizedWebhookEvent> {
+  parseWebhookEvent(params): ProviderResult<NormalizedWebhookEvent> {
     const raw = params.payload;
     const event = raw.event as string;
     const data = raw.data as Record<string, any>;
@@ -505,7 +524,11 @@ export const paystackAdapter: ProviderAdapter = {
     if (rawMeta && typeof rawMeta === "object" && !Array.isArray(rawMeta)) {
       metadata = rawMeta as Record<string, unknown>;
     } else if (typeof rawMeta === "string") {
-      try { metadata = JSON.parse(rawMeta); } catch { metadata = {}; }
+      try {
+        metadata = JSON.parse(rawMeta);
+      } catch {
+        metadata = {};
+      }
     }
 
     const base = {

@@ -1,4 +1,5 @@
 ### You should know:
+
 - in api we have two separate databases:
   - D1 database for core data (users, organizations, etc.)
   - Business database for business-related data (invoices, payments, plans, etc.)

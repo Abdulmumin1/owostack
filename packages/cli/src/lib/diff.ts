@@ -41,12 +41,16 @@ function normalizeFeature(pf: any, creditSystemSlugs: Set<string>) {
     usageModel: isCreditSystemFeature ? "included" : usageModel,
     pricePerUnit: isCreditSystemFeature ? null : (pf.pricePerUnit ?? null),
     billingUnits: isCreditSystemFeature ? 1 : (pf.billingUnits ?? 1),
-    ratingModel: isCreditSystemFeature ? "package" : (pf.ratingModel || "package"),
+    ratingModel: isCreditSystemFeature
+      ? "package"
+      : pf.ratingModel || "package",
     tiers: isCreditSystemFeature ? null : (pf.tiers ?? null),
     // Handle both SDK 'overage' and API 'overage' (same name)
     overage: normalizeOverage(usageModel, pf.overage),
     overagePrice: isCreditSystemFeature ? null : (pf.overagePrice ?? null),
-    maxOverageUnits: isCreditSystemFeature ? null : (pf.maxOverageUnits ?? null),
+    maxOverageUnits: isCreditSystemFeature
+      ? null
+      : (pf.maxOverageUnits ?? null),
     creditCost: isCreditSystemFeature ? 0 : (pf.creditCost ?? 0),
   };
 }

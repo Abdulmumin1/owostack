@@ -16,10 +16,11 @@ export type SubscriptionCreatedDependencies = {
   upsertPaymentMethod: typeof upsertPaymentMethod;
 };
 
-export const subscriptionCreatedDependencies: SubscriptionCreatedDependencies = {
-  provisionEntitlements,
-  upsertPaymentMethod,
-};
+export const subscriptionCreatedDependencies: SubscriptionCreatedDependencies =
+  {
+    provisionEntitlements,
+    upsertPaymentMethod,
+  };
 
 async function invalidateSubscriptionCache(
   ctx: WebhookContext,
@@ -30,7 +31,10 @@ async function invalidateSubscriptionCache(
   try {
     await ctx.cache.invalidateSubscriptions(ctx.organizationId, customerId);
   } catch (e) {
-    console.warn(`[WEBHOOK] subscription.created cache invalidation failed:`, e);
+    console.warn(
+      `[WEBHOOK] subscription.created cache invalidation failed:`,
+      e,
+    );
   }
 }
 
@@ -162,7 +166,10 @@ export async function handleSubscriptionCreated(
             updatedAt: now,
           })
           .where(eq(schema.subscriptions.id, existingSubForCustomer.id));
-        await invalidateSubscriptionCache(ctx, existingSubForCustomer.customerId);
+        await invalidateSubscriptionCache(
+          ctx,
+          existingSubForCustomer.customerId,
+        );
       }
     }
     return;
@@ -210,7 +217,10 @@ export async function handleSubscriptionCreated(
             updatedAt: now,
           })
           .where(eq(schema.subscriptions.id, existingSubForCustomer.id));
-        await invalidateSubscriptionCache(ctx, existingSubForCustomer.customerId);
+        await invalidateSubscriptionCache(
+          ctx,
+          existingSubForCustomer.customerId,
+        );
       } else {
         console.warn(
           `Plan ${planCode} not found in org ${organizationId}, no existing sub to link`,

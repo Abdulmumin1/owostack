@@ -185,7 +185,8 @@ app.post("/", async (c) => {
     providerId: requestedProviderId,
   } = normalizedInput;
   // Use resolved organization ID from context (middleware resolves slug to UUID)
-  const organizationId = c.get("organizationId") ?? normalizedInput.organizationId;
+  const organizationId =
+    c.get("organizationId") ?? normalizedInput.organizationId;
   const db = c.get("db");
 
   // Generate a slug from the name
@@ -446,7 +447,8 @@ app.patch("/:id", async (c) => {
   try {
     // If trialUnit was provided, merge it into existing metadata
     let metadataUpdate: Record<string, unknown> | undefined;
-    const existingMeta = (existingPlan.metadata as Record<string, unknown>) || {};
+    const existingMeta =
+      (existingPlan.metadata as Record<string, unknown>) || {};
     if (finalBillingType === "one_time") {
       metadataUpdate = { ...existingMeta, trialUnit: undefined };
     } else if (trialUnit !== undefined) {

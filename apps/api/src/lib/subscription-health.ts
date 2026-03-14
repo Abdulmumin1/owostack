@@ -44,7 +44,8 @@ export function resolveSubscriptionCode(
   >,
 ): string | null {
   const code =
-    subscription.providerSubscriptionCode || subscription.paystackSubscriptionCode;
+    subscription.providerSubscriptionCode ||
+    subscription.paystackSubscriptionCode;
   if (!code) return null;
   const normalized = code.trim();
   return normalized.length > 0 ? normalized : null;
@@ -90,7 +91,8 @@ export function getSubscriptionHealthState(
     now,
     graceMs,
   );
-  const providerLinkMissing = isPaidSubscriptionProviderLinkMissing(subscription);
+  const providerLinkMissing =
+    isPaidSubscriptionProviderLinkMissing(subscription);
 
   return {
     pastGracePeriodEnd,

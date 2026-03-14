@@ -18,6 +18,7 @@
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import UsageChart from "$lib/components/ui/UsageChart.svelte";
   import Select from "$lib/components/ui/Select.svelte";
+  import Avatar from "$lib/components/ui/Avatar.svelte";
   import CustomerFilterModal from "$lib/components/usage/CustomerFilterModal.svelte";
   import FeatureFilterModal from "$lib/components/usage/FeatureFilterModal.svelte";
 
@@ -355,125 +356,134 @@
   <!-- Feature Consumption                                                 -->
   <!-- ================================================================= -->
   {#if isLoading}
-    <div class="bg-bg-card border border-border overflow-hidden rounded-lg">
-      <div class="p-5 border-b border-border">
+    <div class="mb-6">
+      <div class="flex items-center justify-between mb-4">
         <Skeleton class="h-3 w-32" />
       </div>
-      <div class="p-5 space-y-4">
+      <div class="grid gap-3">
         {#each Array(5) as _}
-          <div class="flex items-center justify-between py-2">
-            <div class="space-y-2">
-              <Skeleton class="h-4 w-32" />
-              <Skeleton class="h-3 w-48" />
+          <div
+            class="border border-border rounded-lg px-4 py-3 flex items-center justify-between bg-bg-card"
+          >
+            <div class="space-y-1.5 flex-1 pr-4">
+              <Skeleton class="h-3.5 w-32" />
+              <Skeleton class="h-2.5 w-48 max-w-full" />
             </div>
-            <Skeleton class="h-4 w-12" />
-            <Skeleton class="h-4 w-16" />
-            <Skeleton class="h-2 w-32" />
+            <div class="flex items-center gap-5 sm:gap-6 shrink-0">
+              <div class="space-y-1.5 flex flex-col items-end w-20 sm:w-24 shrink-0">
+                <Skeleton class="h-3.5 w-12" />
+                <Skeleton class="h-2 w-16" />
+              </div>
+              <div class="w-px h-6 bg-border/60 hidden sm:block"></div>
+              <div class="flex items-center justify-end gap-2.5 w-24 sm:w-32 shrink-0">
+                <div class="hidden sm:flex -space-x-1.5 mr-1 shrink-0">
+                  <Skeleton class="h-6 w-6 rounded-full border-2 border-bg-card" />
+                  <Skeleton class="h-6 w-6 rounded-full border-2 border-bg-card" />
+                  <Skeleton class="h-6 w-6 rounded-full border-2 border-bg-card" />
+                </div>
+                <div class="space-y-1.5 flex flex-col items-end min-w-[3rem]">
+                  <Skeleton class="h-3.5 w-8" />
+                  <Skeleton class="h-2 w-12" />
+                </div>
+              </div>
+            </div>
           </div>
         {/each}
       </div>
     </div>
   {:else if usage}
     <!-- ================================================================= -->
-    <!-- Feature Consumption Table                                          -->
+    <!-- Feature Consumption List                                           -->
     <!-- ================================================================= -->
-    <div
-      class="bg-bg-card border border-border overflow-hidden rounded-lg mb-6"
-    >
-      <div class="p-5 border-b border-border">
-        <div class="flex items-center justify-between">
-          <h3
-            class="text-[10px] font-bold text-text-primary uppercase tracking-widest"
-          >
-            Feature Consumption
-          </h3>
-          <span
-            class="text-[10px] text-text-dim font-bold uppercase tracking-widest"
-            >{timeseriesDays
-              ? `Last ${timeseriesDays} days`
-              : "This month"}</span
-          >
-        </div>
+    <div class="mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3
+          class="text-[10px] font-bold text-text-primary uppercase tracking-widest"
+        >
+          Feature Consumption
+        </h3>
+        <span
+          class="text-[10px] text-text-dim font-bold uppercase tracking-widest"
+          >{timeseriesDays
+            ? `Last ${timeseriesDays} days`
+            : "This month"}</span
+        >
       </div>
       {#if usage.featureConsumption?.length > 0}
-        <table class="w-full table-fixed">
-          <colgroup>
-            <col class="w-[30%]" />
-            <col class="w-[20%]" />
-            <col class="w-[20%]" />
-            <col class="w-[30%]" />
-          </colgroup>
-          <thead>
-            <tr class="bg-bg-secondary">
-              <th
-                class="px-5 py-2.5 text-[10px] font-bold text-text-dim uppercase tracking-widest text-left"
-                >Feature</th
+        <div class="grid gap-3">
+          {#each usage.featureConsumption as feat}
+            {@const pct = maxFeatureUsage > 0 ? (feat.totalUsage / maxFeatureUsage) * 100 : 0}
+            <div
+              class="relative overflow-hidden rounded-lg border border-border bg-bg-card hover:border-border-hover transition-colors group"
+            >
+              <!-- Background Progress -->
+              <div
+                class="absolute inset-y-0 left-0 bg-accent/5 dark:bg-accent/10 z-0 transition-all duration-500 ease-out"
+                style="width: {pct}%"
               >
-              <th
-                class="px-5 py-2.5 text-[10px] font-bold text-text-dim uppercase tracking-widest text-right"
-                >Consumers</th
-              >
-              <th
-                class="px-5 py-2.5 text-[10px] font-bold text-text-dim uppercase tracking-widest text-right"
-                >Total Usage</th
-              >
-              <th
-                class="px-5 py-2.5 text-[10px] font-bold text-text-dim uppercase tracking-widest text-left pl-6"
-                >Volume</th
-              >
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border/30">
-            {#each usage.featureConsumption as feat}
-              <tr class="hover:bg-bg-secondary transition-colors">
-                <td class="px-5 py-3">
-                  <div class="text-sm text-text-primary font-medium truncate">
-                    {feat.featureName}
-                  </div>
+                <!-- Right border edge indicator for the progress bar -->
+                <div class="absolute right-0 top-0 bottom-0 w-[2px] bg-accent/40 dark:bg-accent/30"></div>
+              </div>
+
+              <!-- Content -->
+              <div class="relative z-10 flex flex-wrap sm:flex-nowrap items-center justify-between px-4 py-3 gap-4">
+                <div class="flex flex-col truncate min-w-0 pr-4 flex-1">
+                  <span class="text-[13px] font-semibold text-text-primary truncate"
+                    >{feat.featureName}</span
+                  >
                   {#if feat.featureSlug && feat.featureSlug.toLowerCase() !== feat.featureName.toLowerCase()}
-                    <div class="text-[10px] text-text-dim font-mono truncate">
-                      {feat.featureSlug}
-                    </div>
+                    <span class="text-[9px] text-text-dim font-mono mt-0.5 truncate"
+                      >{feat.featureSlug}</span
+                    >
                   {/if}
-                </td>
-                <td class="px-5 py-3">
-                  <div class="flex items-center justify-end">
-                    <span class="text-sm text-text-primary font-bold text-right"
-                      >{formatNumber(feat.uniqueConsumers)}</span
-                    >
-                    <span class="text-[10px] text-text-dim ml-1.5 w-8 text-left"
-                      >{feat.uniqueConsumers === 1 ? "user" : "users"}</span
-                    >
-                  </div>
-                </td>
-                <td class="px-5 py-3">
-                  <div class="flex items-center justify-end">
-                    <span class="text-sm text-text-primary font-bold text-right"
+                </div>
+
+                <div class="flex items-center gap-5 sm:gap-6 shrink-0">
+                  <div class="flex flex-col items-end w-20 sm:w-24 shrink-0">
+                    <span class="text-[13px] font-bold text-text-primary truncate w-full text-right" title={formatNumber(feat.totalUsage)}
                       >{formatNumber(feat.totalUsage)}</span
                     >
-                    {#if feat.unit}
-                      <span
-                        class="text-[10px] text-text-dim ml-1.5 w-10 text-left line-clamp-1 truncate"
-                        title={feat.unit}>{feat.unit}</span
-                      >
-                    {:else}
-                      <span class="w-10 ml-1.5 block"></span>
-                    {/if}
+                    <span
+                      class="text-[9px] text-text-dim font-bold uppercase tracking-widest truncate w-full text-right"
+                      title={feat.unit || "events"}
+                    >
+                      {feat.unit || "events"}
+                    </span>
                   </div>
-                </td>
-                <td class="px-5 py-3 pl-6">
-                  <ProgressBar
-                    value={feat.totalUsage}
-                    max={maxFeatureUsage}
-                    color="bg-accent/70"
-                  />
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+
+                  <div class="w-px h-6 bg-border/60 hidden sm:block"></div>
+
+                  <div class="flex items-center justify-end gap-2.5 w-24 sm:w-32 shrink-0">
+                    {#if feat.uniqueConsumers > 0}
+                      <div class="hidden sm:flex -space-x-1.5 mr-1 shrink-0">
+                        {#each Array(Math.min(feat.uniqueConsumers, 3)) as _, i}
+                          <div
+                            class="w-6 h-6 rounded-full border-2 border-bg-card bg-bg-secondary overflow-hidden shrink-0 relative"
+                            style="z-index: {10 - i}"
+                          >
+                            <Avatar name={`${feat.featureId}-user-${i}`} size={24} />
+                          </div>
+                        {/each}
+                      </div>
+                    {/if}
+                    <div class="flex flex-col items-end min-w-[3rem]">
+                      <span class="text-[13px] font-bold text-text-primary truncate w-full text-right" title={formatNumber(feat.uniqueConsumers)}
+                        >{formatNumber(feat.uniqueConsumers)}</span
+                      >
+                      <span
+                        class="text-[9px] text-text-dim font-bold uppercase tracking-widest truncate w-full text-right"
+                      >
+                        {feat.uniqueConsumers === 1 ? "user" : "users"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {/each}
+        </div>
       {:else}
-        <div class="p-10 flex flex-col items-center justify-center text-center">
+        <div class="py-10 flex flex-col items-center justify-center text-center bg-bg-card border border-border rounded-lg">
           <ChartBar size={20} class="text-text-dim mb-3" />
           <p class="text-xs text-text-dim">
             No feature usage recorded this month

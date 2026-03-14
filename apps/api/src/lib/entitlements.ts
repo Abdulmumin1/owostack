@@ -207,10 +207,18 @@ export class EntitlementService {
         // Compute reset-interval-aware period boundaries
         let periodStart =
           subscription?.currentPeriodStart ||
-          new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+          new Date(
+            new Date().getFullYear(),
+            new Date().getMonth(),
+            1,
+          ).getTime();
         let periodEnd =
           subscription?.currentPeriodEnd ||
-          new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getTime();
+          new Date(
+            new Date().getFullYear(),
+            new Date().getMonth() + 1,
+            0,
+          ).getTime();
 
         if (subscription) {
           let planFeature = subscription.plan.planFeatures.find(
@@ -236,7 +244,8 @@ export class EntitlementService {
             if (mapped.length > 0) {
               const ms = mapped[0];
               const pf = subscription.plan.planFeatures.find(
-                (pf: PlanFeatureRow) => pf.feature.slug === ms.creditSystems.slug,
+                (pf: PlanFeatureRow) =>
+                  pf.feature.slug === ms.creditSystems.slug,
               );
               if (pf) {
                 planFeature = pf;

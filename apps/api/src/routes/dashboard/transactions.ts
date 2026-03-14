@@ -537,15 +537,17 @@ app.get("/:id", async (c) => {
           name: row.customer.name,
         },
         entitlements: [],
-        planFeatures: invoiceItems.map((item: { featureId: string | null; description: string }) => ({
-          featureId: item.featureId,
-          featureName: item.description,
-          featureSlug: null,
-          featureType: "metered",
-          unit: null,
-          limitValue: null,
-          resetInterval: null,
-        })),
+        planFeatures: invoiceItems.map(
+          (item: { featureId: string | null; description: string }) => ({
+            featureId: item.featureId,
+            featureName: item.description,
+            featureSlug: null,
+            featureType: "metered",
+            unit: null,
+            limitValue: null,
+            resetInterval: null,
+          }),
+        ),
         events,
       },
     });

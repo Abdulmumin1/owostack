@@ -45,7 +45,9 @@ export async function syncPlansToProvider(
     const batch = unsyncedPlans.slice(i, i + SYNC_CONCURRENCY);
 
     const settled = await Promise.allSettled(
-      batch.map((plan: typeof schema.plans.$inferSelect) => syncSinglePlan(db, plan, adapter, account)),
+      batch.map((plan: typeof schema.plans.$inferSelect) =>
+        syncSinglePlan(db, plan, adapter, account),
+      ),
     );
 
     for (let j = 0; j < settled.length; j++) {
@@ -53,17 +55,25 @@ export async function syncPlansToProvider(
       const plan = batch[j];
       if (outcome.status === "fulfilled") {
         if (outcome.value) {
-          result.synced.push({ planId: plan.id, providerPlanId: outcome.value });
+          result.synced.push({
+            planId: plan.id,
+            providerPlanId: outcome.value,
+          });
         } else {
           result.skipped++; // Already synced by another concurrent call
         }
       } else {
-        result.failed.push({ planId: plan.id, error: outcome.reason?.message || "Unknown error" });
+        result.failed.push({
+          planId: plan.id,
+          error: outcome.reason?.message || "Unknown error",
+        });
       }
     }
   }
 
-  console.log(`[plan-sync] Bulk sync done: ${result.synced.length} synced, ${result.failed.length} failed, ${result.skipped} skipped`);
+  console.log(
+    `[plan-sync] Bulk sync done: ${result.synced.length} synced, ${result.failed.length} failed, ${result.skipped} skipped`,
+  );
   return result;
 }
 
@@ -109,17 +119,23 @@ async function syncSinglePlan(
       ...(adapter.id === "paystack" ? { paystackPlanId: providerPlanId } : {}),
       updatedAt: Date.now(),
     })
-    .where(and(eq(schema.plans.id, plan.id), isNull(schema.plans.providerPlanId)))
+    .where(
+      and(eq(schema.plans.id, plan.id), isNull(schema.plans.providerPlanId)),
+    )
     .returning({ id: schema.plans.id });
 
   if (updated.length === 0) {
     // Another call already synced this plan — our provider plan is orphaned
     // (acceptable; provider plans are cheap and won't be referenced)
-    console.warn(`[plan-sync] Race: plan ${plan.id} was synced by another call, discarding ${providerPlanId}`);
+    console.warn(
+      `[plan-sync] Race: plan ${plan.id} was synced by another call, discarding ${providerPlanId}`,
+    );
     return null;
   }
 
-  console.log(`[plan-sync] Synced plan ${plan.id} (${plan.name}) → ${providerPlanId}`);
+  console.log(
+    `[plan-sync] Synced plan ${plan.id} (${plan.name}) → ${providerPlanId}`,
+  );
   return providerPlanId;
 }
 
@@ -172,7 +188,9 @@ export async function ensurePlanSynced(
   });
 
   if (createResult.isErr()) {
-    console.warn(`[plan-sync] Lazy sync failed for plan ${plan.id}: ${createResult.error.message}`);
+    console.warn(
+      `[plan-sync] Lazy sync failed for plan ${plan.id}: ${createResult.error.message}`,
+    );
     return null;
   }
 
@@ -187,7 +205,9 @@ export async function ensurePlanSynced(
       ...(adapter.id === "paystack" ? { paystackPlanId: providerPlanId } : {}),
       updatedAt: Date.now(),
     })
-    .where(and(eq(schema.plans.id, plan.id), isNull(schema.plans.providerPlanId)))
+    .where(
+      and(eq(schema.plans.id, plan.id), isNull(schema.plans.providerPlanId)),
+    )
     .returning({ providerPlanId: schema.plans.providerPlanId });
 
   if (updated.length === 0) {
@@ -196,10 +216,14 @@ export async function ensurePlanSynced(
       where: eq(schema.plans.id, plan.id),
       columns: { providerPlanId: true },
     });
-    console.warn(`[plan-sync] Lazy race: plan ${plan.id} already synced, using ${winner?.providerPlanId}`);
+    console.warn(
+      `[plan-sync] Lazy race: plan ${plan.id} already synced, using ${winner?.providerPlanId}`,
+    );
     return winner?.providerPlanId || null;
   }
 
-  console.log(`[plan-sync] Lazy-synced plan ${plan.id} (${plan.name}) → ${providerPlanId}`);
+  console.log(
+    `[plan-sync] Lazy-synced plan ${plan.id} (${plan.name}) → ${providerPlanId}`,
+  );
   return providerPlanId;
 }

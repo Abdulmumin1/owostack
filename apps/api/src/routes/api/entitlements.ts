@@ -10,10 +10,7 @@ import { getResetPeriod } from "../../lib/reset-period";
 import { zodErrorToResponse } from "../../lib/validation";
 import { getScopedBalance, deductScopedBalance } from "../../lib/addon-credits";
 import { trackUsageEvent } from "../../lib/analytics-engine";
-import {
-  appendUsageRecord,
-  sumUsageAmount,
-} from "../../lib/usage-ledger";
+import { appendUsageRecord, sumUsageAmount } from "../../lib/usage-ledger";
 import {
   checkOverageAllowed,
   getOrgOverageSettings,
@@ -188,7 +185,9 @@ async function persistUsageRecord(
 ) {
   const orgId = organizationId || "unknown";
   const dateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-  const requireAuthoritativeLedger = Boolean(c.env.USAGE_LEDGER && organizationId);
+  const requireAuthoritativeLedger = Boolean(
+    c.env.USAGE_LEDGER && organizationId,
+  );
 
   // Dispatch all logging tasks in parallel for maximum background efficiency
   const [d1Result, doResult, aeResult] = await Promise.allSettled([

@@ -44,7 +44,11 @@ export async function createThresholdBillingRun(
     where: eq(schema.billingRuns.idempotencyKey, params.idempotencyKey),
   });
   if (existingByKey) {
-    return { created: false, run: existingByKey, reason: "idempotent" as const };
+    return {
+      created: false,
+      run: existingByKey,
+      reason: "idempotent" as const,
+    };
   }
 
   const activeLockKey = `threshold:${params.customerId}`;
@@ -115,7 +119,9 @@ export async function updateBillingRun(
     .update(schema.billingRuns)
     .set({
       ...(updates.status !== undefined ? { status: updates.status } : {}),
-      ...(updates.invoiceId !== undefined ? { invoiceId: updates.invoiceId } : {}),
+      ...(updates.invoiceId !== undefined
+        ? { invoiceId: updates.invoiceId }
+        : {}),
       ...(updates.failureReason !== undefined
         ? { failureReason: updates.failureReason }
         : {}),
@@ -127,4 +133,3 @@ export async function updateBillingRun(
     })
     .where(eq(schema.billingRuns.id, billingRunId));
 }
-

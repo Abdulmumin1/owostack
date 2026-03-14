@@ -150,8 +150,8 @@ describe("Webhook route pipeline behavior", () => {
   it("duplicate webhook delivery dispatches twice but charge.success credit purchase is idempotent (no double top-up)", async () => {
     const processedRefs = new Set<string>();
 
-    billingDb.query.creditPurchases.findFirst.mockImplementation(
-      async () => (processedRefs.has("ref_credit_1") ? { id: "cp_1" } : null),
+    billingDb.query.creditPurchases.findFirst.mockImplementation(async () =>
+      processedRefs.has("ref_credit_1") ? { id: "cp_1" } : null,
     );
     billingDb.query.customers.findFirst.mockResolvedValue({
       id: "cus_1",
@@ -159,12 +159,14 @@ describe("Webhook route pipeline behavior", () => {
       email: "customer@example.com",
     });
 
-    const insertValues = vi.fn(async (payload: { paymentReference?: string }) => {
-      if (payload.paymentReference) {
-        processedRefs.add(payload.paymentReference);
-      }
-      return null;
-    });
+    const insertValues = vi.fn(
+      async (payload: { paymentReference?: string }) => {
+        if (payload.paymentReference) {
+          processedRefs.add(payload.paymentReference);
+        }
+        return null;
+      },
+    );
     billingDb.insert.mockImplementation(() => ({
       values: insertValues,
     }));

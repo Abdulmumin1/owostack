@@ -114,7 +114,9 @@ export function createApiPlansRoute(
         features: (p.planFeatures || []).map((pf: any) => {
           const featureType = pf.feature?.type ?? "metered";
           const isBoolean = featureType === "boolean";
-          const usageModel = isBoolean ? undefined : pf.usageModel || "included";
+          const usageModel = isBoolean
+            ? undefined
+            : pf.usageModel || "included";
           const overage = isBoolean
             ? undefined
             : normalizePlanFeatureOverage(usageModel, pf.overage);

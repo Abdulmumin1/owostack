@@ -30,7 +30,10 @@ export class WorkflowEntrypoint<TEnv = unknown, TPayload = unknown> {
   }
 
   // Placeholder base signature for compatibility with subclasses in tests.
-  async run(_event: WorkflowEvent<TPayload>, _step: WorkflowStep): Promise<unknown> {
+  async run(
+    _event: WorkflowEvent<TPayload>,
+    _step: WorkflowStep,
+  ): Promise<unknown> {
     return undefined;
   }
 }
