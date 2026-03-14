@@ -1,17 +1,16 @@
 <script lang="ts">
   import {
-    Check,
     CircleNotch,
     FloppyDisk,
     Buildings,
     Link,
     Coins,
   } from "phosphor-svelte";
-  import { fade } from "svelte/transition";
   import { organization } from "$lib/auth-client";
   import { defaultCurrency } from "$lib/stores/currency";
   import { COMMON_CURRENCIES } from "$lib/utils/currency";
   import { apiFetch } from "$lib/auth-client";
+  import { toast } from "svelte-sonner";
   import { onMount } from "svelte";
 
   let {
@@ -31,12 +30,6 @@
   let orgCurrency = $state("");
 
   let isSaving = $state(false);
-  let successMessage = $state<string | null>(null);
-
-  function showSuccess(msg: string) {
-    successMessage = msg;
-    setTimeout(() => (successMessage = null), 3000);
-  }
 
   async function save() {
     isSaving = true;
@@ -55,9 +48,14 @@
       });
       defaultCurrency.set(orgCurrency);
 
-      showSuccess("Settings updated successfully");
-    } catch (e) {
+      toast.success("Settings updated", {
+        description: "Your changes have been saved"
+      });
+    } catch (e: any) {
       console.error("Failed to save settings", e);
+      toast.error("Failed to save settings", {
+        description: e.message || "Please try again"
+      });
     } finally {
       isSaving = false;
     }
@@ -147,12 +145,5 @@
         Save Changes
       {/if}
     </button>
-
-    {#if successMessage}
-      <span class="text-xs text-success flex items-center gap-1" in:fade>
-        <Check size={12} weight="duotone" />
-        {successMessage}
-      </span>
-    {/if}
   </div>
 </div>

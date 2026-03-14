@@ -110,6 +110,7 @@
         >
         <div class="input-icon-wrapper">
           <EnvelopeSimple size={14} class="input-icon-left" weight="duotone" />
+          <!-- svelte-ignore a11y_autofocus -->
           <input
             type="email"
             id="customerEmail"

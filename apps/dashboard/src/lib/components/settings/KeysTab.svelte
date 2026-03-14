@@ -2,6 +2,7 @@
   import { CheckCircle, CircleNotch, Copy, Key, Trash, X } from "phosphor-svelte";
   import { fade } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
+  import { toast } from "svelte-sonner";
   import type { ApiKey } from "./types";
 
   let { 
@@ -42,14 +43,25 @@
           name: newKeyName
         })
       });
-      
+
       if (res.data?.success) {
         generatedKey = res.data.data.secretKey;
         await loadApiKeys();
         newKeyName = "";
+        showKeyModal = false;
+        toast.success("API key created", {
+          description: "Copy your key now - you won't see it again"
+        });
+      } else {
+        toast.error("Failed to create key", {
+          description: res.data?.error || "Unknown error"
+        });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to create key", e);
+      toast.error("Error creating key", {
+        description: e.message
+      });
     } finally {
       isCreatingKey = false;
     }
@@ -57,24 +69,32 @@
 
   async function deleteKey(id: string) {
     if (!confirm("Are you sure you want to revoke this API key?")) return;
-    
+
     try {
       const res = await apiFetch(`/api/dashboard/keys/${id}?organizationId=${projectId}`, {
         method: "DELETE"
       });
       if (res.data?.success) {
         await loadApiKeys();
+        toast.success("API key revoked successfully");
       } else {
-        alert("Failed to delete key: " + (res.data?.error || "Unknown error"));
+        toast.error("Failed to revoke key", {
+          description: res.data?.error || "Unknown error"
+        });
       }
     } catch (e: any) {
       console.error("Failed to delete key", e);
-      alert("Error: " + e.message);
+      toast.error("Error revoking key", {
+        description: e.message
+      });
     }
   }
 
   function copyUrl(url: string) {
     navigator.clipboard.writeText(url);
+    toast.success("Copied to clipboard", {
+      description: "API key has been copied"
+    });
   }
 </script>
 

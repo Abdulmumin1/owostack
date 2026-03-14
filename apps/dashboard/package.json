@@ -20,7 +20,8 @@
     "better-result": "^2.7.0",
     "chart.js": "^4.4.7",
     "phosphor-svelte": "^3.1.0",
-    "resend": "^6.9.3"
+    "resend": "^6.9.3",
+    "svelte-sonner": "^1.1.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250214.0",

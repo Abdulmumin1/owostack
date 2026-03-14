@@ -39,6 +39,53 @@ export const load: PageServerLoad = async ({ locals, request }) => {
       throw redirect(302, "/onboarding");
     }
 
+    // 4. Redirect to the last visited organization
+    let targetOrg = null;
+
+    // Fetch the currently active organization from Better Auth
+    try {
+      const activeOrgResponse = await fetch(
+        `${apiUrl}/api/auth/organization/get-full-organization`,
+        {
+          headers: { Cookie: cookieHeader },
+          credentials: "include",
+        },
+      );
+
+      if (activeOrgResponse.ok) {
+        const activeOrgResult = await activeOrgResponse.json();
+        // The API returns the org object directly or in a `data` field depending on Better Auth version
+        const activeOrg = activeOrgResult?.id
+          ? activeOrgResult
+          : activeOrgResult?.data;
+        if (activeOrg && activeOrg.id) {
+          targetOrg = organizations.find((org: any) => org.id === activeOrg.id);
+        }
+      }
+    } catch (e) {
+      console.error("[Dashboard Load] Failed to fetch active organization", e);
+    }
+
+    // Check if there's an active organization in the session from Better Auth (fallback)
+    if (!targetOrg) {
+      const activeOrgId =
+        locals.session?.activeOrganizationId || locals.session?.organizationId;
+      if (activeOrgId) {
+        targetOrg = organizations.find((org: any) => org.id === activeOrgId);
+      }
+    }
+
+    // Fallback to the first organization if none matches or no active org is set
+    if (!targetOrg && organizations.length > 0) {
+      targetOrg = organizations[0];
+    }
+
+    if (targetOrg) {
+      const targetIdentifier = targetOrg.slug || targetOrg.id;
+      // Default to the usage/overview page instead of plans
+      throw redirect(302, `/${targetIdentifier}/usage`);
+    }
+
     return {
       organizations,
       user: locals.user,

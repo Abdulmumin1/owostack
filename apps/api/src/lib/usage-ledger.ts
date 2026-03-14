@@ -187,6 +187,7 @@ export async function featureConsumptionForOrg(
   opts: UsageLedgerOptions,
   createdAtFrom: number,
   limit = 10,
+  customerId?: string | null,
 ): Promise<Array<{
   featureId: string;
   uniqueConsumers: number;
@@ -196,7 +197,11 @@ export async function featureConsumptionForOrg(
   if (!stub) return null;
 
   try {
-    return await stub.featureConsumptionForOrg(createdAtFrom, limit);
+    return await stub.featureConsumptionForOrg(
+      createdAtFrom,
+      limit,
+      customerId,
+    );
   } catch (error) {
     console.error("[usage-ledger] featureConsumptionForOrg failed:", error);
     return null;

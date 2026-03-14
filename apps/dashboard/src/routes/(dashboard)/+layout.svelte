@@ -840,7 +840,7 @@
 
       <!-- Modal -->
       <div
-        class="relative bg-bg-primary rounded-xl overflow-hidden border border-border shadow-2xl w-full max-w-lg mx-4"
+        class="relative bg-bg-primary rounded-lg overflow-hidden border border-border w-full max-w-lg mx-4"
         transition:scale={{ duration: 150 }}
       >
         <!-- Header -->

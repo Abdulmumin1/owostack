@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+  ArrowsClockwise,
     CaretLeft,
     CaretRight,
     CircleNotch,
@@ -224,7 +225,7 @@
         {#if isLoading}
           <CircleNotch size={14} class="animate-spin" weight="duotone" />
         {:else}
-          <DownloadSimple size={14} weight="duotone" />
+          <ArrowsClockwise size={14} weight="duotone" />
         {/if}
         Refresh
       </button>
@@ -232,7 +233,7 @@
         class="btn btn-primary gap-2 text-xs uppercase tracking-wider font-bold"
         onclick={() => (showCreateCustomerModal = true)}
       >
-        <Plus size={14} weight="fill" />
+        <Plus size={14}  />
         Create Customer
       </button>
     </div>
@@ -409,7 +410,10 @@
                   </button>
 
                   {#if openMenuId === customer.id}
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <div
+                      role="menu"
+                      tabindex="-1"
                       class="absolute right-0 mt-2 w-40 bg-bg-card border border-border z-[100] py-1 rounded shadow-sm"
                       transition:fade={{ duration: 100 }}
                       onclick={(e) => e.stopPropagation()}

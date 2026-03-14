@@ -58,7 +58,7 @@
   <div class="p-6">
     {#if copyState === "confirm"}
       <div class="text-center mb-6">
-        <h3 class="text-lg font-bold text-text-primary mb-2">Copy {typeLabels[itemType]}?</h3>
+        <!-- <h3 class="text-lg font-bold text-text-primary mb-2">Copy {typeLabels[itemType]}?</h3> -->
         <p class="text-sm text-text-dim">
           Are you sure you want to copy the {typeLabels[itemType]} <strong class="text-text-primary">{itemName}</strong> to production?
           {#if itemType === 'plan' || itemType === 'creditSystem'}

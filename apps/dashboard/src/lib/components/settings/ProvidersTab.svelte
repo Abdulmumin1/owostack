@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { Check, Cpu, Pencil, Plus, Trash, WarningCircle, X } from "phosphor-svelte";
+  import { Check, Cpu, Pencil, Plus, Trash, X } from "phosphor-svelte";
   import { apiFetch } from "$lib/auth-client";
   import { SUPPORTED_PROVIDERS } from "$lib/providers";
+  import { toast } from "svelte-sonner";
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import type { ProviderAccount } from "./types";
 
@@ -20,7 +21,6 @@
   } = $props();
 
   let accounts = $state<ProviderAccount[]>([]);
-  let providerError = $state<string | null>(null);
   let deletingId = $state<string | null>(null);
   let isDeleting = $state(false);
 
@@ -41,7 +41,15 @@
       await apiFetch(`/api/dashboard/providers/accounts/${id}?organizationId=${projectId}`, { method: "DELETE" });
       await loadAccounts();
       deletingId = null;
-    } catch (e) { console.error(e); } finally { isDeleting = false; }
+      toast.success("Provider removed");
+    } catch (e: any) {
+      console.error(e);
+      toast.error("Failed to remove provider", {
+        description: e.message || "Please try again"
+      });
+    } finally {
+      isDeleting = false;
+    }
   }
 
   function getProviderLabel(id: string): string {
@@ -55,12 +63,6 @@
   </div>
   <button class="btn btn-primary" onclick={onAdd}><Plus size={14} weight="fill" /> Add Provider</button>
 </div>
-
-{#if providerError}
-  <div class="p-4 bg-error-bg border border-error text-error text-xs mb-6 flex items-center gap-2">
-    <WarningCircle size={14} weight="fill" /> {providerError}
-  </div>
-{/if}
 
 {#if accounts.length === 0}
   <div class="text-center py-12 border border-dashed border-border rounded-lg">

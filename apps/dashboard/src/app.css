@@ -514,7 +514,7 @@ select.input {
 }
 
 table {
-  @apply w-full border-collapse;
+  @apply w-full border-separate border-spacing-0;
 }
 
 thead {
@@ -527,9 +527,25 @@ th {
   border-color: var(--color-border);
 }
 
+th:first-child {
+  @apply rounded-tl-lg;
+}
+
+th:last-child {
+  @apply rounded-tr-lg;
+}
+
 td {
   @apply px-3 py-2 text-sm border-b;
   border-color: var(--color-border-light);
+}
+
+tbody tr:last-child td:first-child {
+  @apply rounded-bl-lg;
+}
+
+tbody tr:last-child td:last-child {
+  @apply rounded-br-lg;
 }
 
 tbody tr:hover {
