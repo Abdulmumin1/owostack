@@ -9,10 +9,11 @@ interface BillingDb {
   query: {
     organizations: { findFirst: Mock };
     providerAccounts: { findMany: Mock };
-    customers: { findFirst: Mock };
+    customers: { findFirst: Mock; findMany: Mock };
     creditPurchases: { findFirst: Mock };
   };
   insert: Mock;
+  update: Mock;
   run: Mock;
   select: Mock;
 }
@@ -33,12 +34,17 @@ const billingDb: BillingDb = {
   query: {
     organizations: { findFirst: vi.fn() },
     providerAccounts: { findMany: vi.fn() },
-    customers: { findFirst: vi.fn() },
+    customers: { findFirst: vi.fn(), findMany: vi.fn() },
     creditPurchases: { findFirst: vi.fn() },
   },
   insert: vi.fn(() => ({
     values: vi.fn(() => ({
       onConflictDoNothing: vi.fn(async () => null),
+    })),
+  })),
+  update: vi.fn(() => ({
+    set: vi.fn(() => ({
+      where: vi.fn(async () => []),
     })),
   })),
   run: vi.fn(async () => ({ meta: { changes: 1 } })),
