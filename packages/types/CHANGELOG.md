@@ -1,5 +1,11 @@
 # @owostack/types
 
+## 0.3.2
+
+### Patch Changes
+
+- [#98](https://github.com/Abdulmumin1/owostack/pull/98) [`73b560a`](https://github.com/Abdulmumin1/owostack/commit/73b560aa7af6884b6ee2d371e834ce9b25220896) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Add `billingType` support to catalog sync payloads and preserve it in CLI-generated configs and diffs.
+
 ## 0.3.1
 
 ### Patch Changes
