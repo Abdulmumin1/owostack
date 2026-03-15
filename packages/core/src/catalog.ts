@@ -609,6 +609,7 @@ export function plan(
     price: number;
     currency: Currency;
     interval: PlanInterval;
+    billingType?: "recurring" | "one_time";
     features: PlanFeatureEntry[];
     planGroup?: string;
     trialDays?: number;
@@ -622,6 +623,7 @@ export function plan(
     _type: "plan",
     slug,
     ...config,
+    billingType: config.billingType ?? "recurring",
   };
 }
 
@@ -725,6 +727,7 @@ export function buildSyncPayload(
       price: p.price,
       currency: p.currency,
       interval: p.interval,
+      billingType: p.billingType,
       planGroup: p.planGroup ?? undefined,
       trialDays: p.trialDays ?? undefined,
       provider: p.provider ?? undefined,

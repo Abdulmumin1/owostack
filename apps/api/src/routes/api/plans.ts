@@ -7,6 +7,7 @@ import {
   normalizePlanFeatureOverage,
   normalizePlanFeatureResetInterval,
 } from "../../lib/plan-feature-normalization";
+import { normalizeOneTimePlan } from "../../lib/plans";
 import type { Env, Variables } from "../../index";
 
 export type ApiPlansDependencies = {
@@ -16,17 +17,6 @@ export type ApiPlansDependencies = {
 const defaultDependencies: ApiPlansDependencies = {
   verifyApiKey,
 };
-
-function normalizeOneTimePlan<T extends { billingType?: string | null }>(
-  plan: T & { trialDays?: number | null; autoEnable?: boolean | null },
-) {
-  const isOneTime = plan.billingType === "one_time";
-  return {
-    ...plan,
-    trialDays: isOneTime ? 0 : (plan.trialDays ?? 0),
-    autoEnable: isOneTime ? false : (plan.autoEnable ?? false),
-  };
-}
 
 export function createApiPlansRoute(
   overrides: Partial<ApiPlansDependencies> = {},

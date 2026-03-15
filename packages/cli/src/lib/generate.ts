@@ -195,6 +195,9 @@ export function generateConfig(
     configLines.push(`price: ${plan.price}`);
     configLines.push(`currency: ${JSON.stringify(plan.currency)}`);
     configLines.push(`interval: ${JSON.stringify(plan.interval)}`);
+    if (plan.billingType === "one_time") {
+      configLines.push(`billingType: "one_time"`);
+    }
     if (plan.planGroup)
       configLines.push(`planGroup: ${JSON.stringify(plan.planGroup)}`);
     if (plan.trialDays && plan.trialDays > 0)
