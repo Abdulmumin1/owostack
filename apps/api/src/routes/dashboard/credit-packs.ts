@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
+import { syncCreditPackProduct } from "../../lib/credit-pack-provider-sync";
 import type { Env, Variables } from "../../index";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -142,6 +143,54 @@ app.post("/", async (c) => {
       })
       .returning();
 
+    const providerSync = await syncCreditPackProduct({
+      context: {
+        db,
+        organizationId,
+        environment: c.env.ENVIRONMENT,
+        encryptionKey: c.env.ENCRYPTION_KEY,
+      },
+      pack: {
+        id: pack.id,
+        slug: pack.slug,
+        name: pack.name,
+        description: pack.description ?? null,
+        price: pack.price,
+        currency: pack.currency,
+        providerId: pack.providerId ?? null,
+        providerProductId: pack.providerProductId ?? null,
+        providerPriceId: pack.providerPriceId ?? null,
+        metadata: (pack.metadata as Record<string, unknown> | null) ?? null,
+      },
+      preferredProviderId: pack.providerId ?? null,
+    });
+
+    if (providerSync.issue) {
+      console.warn(
+        `[credit-packs] Provider sync skipped for ${pack.slug}: ${providerSync.issue.message}`,
+      );
+      return c.json({ success: true, data: pack });
+    }
+
+    if (
+      providerSync.providerProductId !== (pack.providerProductId ?? null) ||
+      providerSync.providerPriceId !== (pack.providerPriceId ?? null) ||
+      providerSync.providerId !== (pack.providerId ?? null)
+    ) {
+      const [syncedPack] = await (db as any)
+        .update((schema as any).creditPacks)
+        .set({
+          providerId: providerSync.providerId,
+          providerProductId: providerSync.providerProductId,
+          providerPriceId: providerSync.providerPriceId,
+          updatedAt: Date.now(),
+        })
+        .where(eq((schema as any).creditPacks.id, pack.id))
+        .returning();
+
+      return c.json({ success: true, data: syncedPack ?? pack });
+    }
+
     return c.json({ success: true, data: pack });
   } catch (e: any) {
     if (e?.message?.includes("no such table")) {
@@ -175,7 +224,32 @@ app.patch("/:id", async (c) => {
   }
 
   const db = c.get("db");
+  const existing = await (db.query as any).creditPacks?.findFirst?.({
+    where: eq((schema as any).creditPacks.id, id),
+  });
+
+  if (!existing) {
+    return c.json({ success: false, error: "Credit pack not found" }, 404);
+  }
+
   const updates: Record<string, unknown> = { updatedAt: Date.now() };
+  const nextName = parsed.data.name ?? existing.name;
+  const nextDescription =
+    parsed.data.description !== undefined
+      ? parsed.data.description
+      : existing.description;
+  const nextPrice = parsed.data.price ?? existing.price;
+  const nextCurrency = parsed.data.currency ?? existing.currency;
+  const nextProviderId =
+    parsed.data.providerId !== undefined
+      ? parsed.data.providerId
+      : existing.providerId;
+  const providerProductChanged =
+    nextName !== existing.name ||
+    nextDescription !== existing.description ||
+    nextPrice !== existing.price ||
+    nextCurrency !== existing.currency ||
+    nextProviderId !== existing.providerId;
 
   if (parsed.data.name !== undefined) {
     updates.name = parsed.data.name;
@@ -192,10 +266,15 @@ app.patch("/:id", async (c) => {
     updates.currency = parsed.data.currency;
   if (parsed.data.creditSystemId !== undefined)
     updates.creditSystemId = parsed.data.creditSystemId;
+  if (parsed.data.providerId !== undefined) updates.providerId = parsed.data.providerId;
   if (parsed.data.isActive !== undefined)
     updates.isActive = parsed.data.isActive;
   if (parsed.data.metadata !== undefined)
     updates.metadata = parsed.data.metadata;
+  if (providerProductChanged) {
+    updates.providerProductId = null;
+    updates.providerPriceId = null;
+  }
 
   try {
     const [updated] = await (db as any)
@@ -206,6 +285,55 @@ app.patch("/:id", async (c) => {
 
     if (!updated) {
       return c.json({ success: false, error: "Credit pack not found" }, 404);
+    }
+
+    const providerSync = await syncCreditPackProduct({
+      context: {
+        db,
+        organizationId: updated.organizationId,
+        environment: c.env.ENVIRONMENT,
+        encryptionKey: c.env.ENCRYPTION_KEY,
+      },
+      pack: {
+        id: updated.id,
+        slug: updated.slug,
+        name: updated.name,
+        description: updated.description ?? null,
+        price: updated.price,
+        currency: updated.currency,
+        providerId: updated.providerId ?? null,
+        providerProductId: updated.providerProductId ?? null,
+        providerPriceId: updated.providerPriceId ?? null,
+        metadata: (updated.metadata as Record<string, unknown> | null) ?? null,
+      },
+      preferredProviderId: updated.providerId ?? null,
+      forceResync: providerProductChanged,
+    });
+
+    if (providerSync.issue) {
+      console.warn(
+        `[credit-packs] Provider sync skipped for ${updated.slug}: ${providerSync.issue.message}`,
+      );
+      return c.json({ success: true, data: updated });
+    }
+
+    if (
+      providerSync.providerProductId !== (updated.providerProductId ?? null) ||
+      providerSync.providerPriceId !== (updated.providerPriceId ?? null) ||
+      providerSync.providerId !== (updated.providerId ?? null)
+    ) {
+      const [syncedPack] = await (db as any)
+        .update((schema as any).creditPacks)
+        .set({
+          providerId: providerSync.providerId,
+          providerProductId: providerSync.providerProductId,
+          providerPriceId: providerSync.providerPriceId,
+          updatedAt: Date.now(),
+        })
+        .where(eq((schema as any).creditPacks.id, updated.id))
+        .returning();
+
+      return c.json({ success: true, data: syncedPack ?? updated });
     }
 
     return c.json({ success: true, data: updated });

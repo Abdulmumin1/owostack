@@ -10,12 +10,10 @@ import {
   normalizePlanFeatureResetInterval,
   validatePlanFeaturePricingConfig,
 } from "../../lib/plan-feature-normalization";
-import {
-  getProviderRegistry,
-  deriveProviderEnvironment,
-  loadProviderAccounts,
-} from "../../lib/providers";
 import { getMinimumChargeAmount } from "../../lib/provider-minimums";
+import { sanitizeOneTimePlanFlags } from "../../lib/plans";
+import { syncProviderPlan } from "../../lib/plan-provider-sync";
+import { syncCreditPackProduct } from "../../lib/credit-pack-provider-sync";
 import type { Env, Variables } from "../../index";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -86,6 +84,7 @@ const syncPlanSchema = z.object({
   price: z.number(),
   currency: z.string(),
   interval: z.string(),
+  billingType: z.enum(["recurring", "one_time"]).default("recurring"),
   planGroup: z.string().optional(),
   trialDays: z.number().optional(),
   provider: z.string().optional(),
@@ -127,6 +126,8 @@ const syncPayloadSchema = z.object({
   plans: z.array(syncPlanSchema),
 });
 
+type SyncPlanDefinition = z.infer<typeof syncPlanSchema>;
+
 /**
  * POST /sync
  *
@@ -144,9 +145,12 @@ app.post("/", async (c) => {
     features: featureDefs,
     creditSystems: creditSystemDefs,
     creditPacks: creditPackDefs,
-    plans: planDefs,
+    plans: rawPlanDefs,
     defaultProvider,
   } = parsed.data;
+  const planDefs = rawPlanDefs.map((planDef) =>
+    sanitizeOneTimePlanFlags(planDef, planDef.billingType),
+  );
   const organizationId = c.get("organizationId")!;
   const db = c.get("db");
   const featureTypeBySlug = new Map(
@@ -214,6 +218,59 @@ app.post("/", async (c) => {
       unchanged: [] as string[],
     },
     warnings: [] as string[],
+  };
+
+  const syncPlanWithProvider = async (
+    plan: typeof schema.plans.$inferSelect,
+    planDef: SyncPlanDefinition,
+    hasPlanChanges: boolean,
+  ) => {
+    const providerSync = await syncProviderPlan({
+      context: {
+        db,
+        organizationId,
+        environment: c.env.ENVIRONMENT,
+        encryptionKey: c.env.ENCRYPTION_KEY,
+      },
+      plan: {
+        slug: planDef.slug,
+        name: planDef.name,
+        description: planDef.description ?? null,
+        price: planDef.price,
+        currency: planDef.currency,
+        interval: planDef.interval,
+        type: plan.type,
+        billingType: plan.billingType,
+        providerId: plan.providerId ?? null,
+        providerPlanId: plan.providerPlanId ?? null,
+        metadata: planDef.metadata ?? null,
+      },
+      preferredProviderId: planDef.provider ?? defaultProvider ?? plan.providerId,
+      allowUpdate: hasPlanChanges,
+    });
+
+    if (providerSync.issue) {
+      result.warnings.push(
+        `Plan '${planDef.slug}' provider sync skipped: ${providerSync.issue.message}`,
+      );
+      return;
+    }
+
+    if (
+      providerSync.providerId !== plan.providerId ||
+      providerSync.providerPlanId !== plan.providerPlanId ||
+      providerSync.paystackPlanId !== plan.paystackPlanId
+    ) {
+      await db
+        .update(schema.plans)
+        .set({
+          providerId: providerSync.providerId,
+          providerPlanId: providerSync.providerPlanId,
+          paystackPlanId: providerSync.paystackPlanId,
+          updatedAt: Date.now(),
+        })
+        .where(eq(schema.plans.id, plan.id));
+    }
   };
 
   // 1. Sync Features
@@ -392,13 +449,25 @@ app.post("/", async (c) => {
       });
 
       if (existing) {
+        const desiredProviderId =
+          packDef.provider ?? defaultProvider ?? existing.providerId ?? null;
+        const providerProductChanged =
+          existing.name !== packDef.name ||
+          existing.price !== packDef.price ||
+          existing.currency !== packDef.currency ||
+          existing.description !== (packDef.description ?? null) ||
+          existing.providerId !== desiredProviderId;
         const changed =
           existing.name !== packDef.name ||
           existing.credits !== packDef.credits ||
           existing.price !== packDef.price ||
           existing.currency !== packDef.currency ||
           existing.creditSystemId !== creditSystem.id ||
-          existing.description !== (packDef.description ?? null);
+          existing.description !== (packDef.description ?? null) ||
+          existing.providerId !== desiredProviderId ||
+          (providerProductChanged &&
+            (existing.providerProductId !== null ||
+              existing.providerPriceId !== null));
 
         if (changed) {
           await db
@@ -410,19 +479,119 @@ app.post("/", async (c) => {
               price: packDef.price,
               currency: packDef.currency,
               creditSystemId: creditSystem.id,
-              providerId:
-                packDef.provider ?? defaultProvider ?? existing.providerId,
+              providerId: desiredProviderId,
+              ...(providerProductChanged
+                ? {
+                    providerProductId: null,
+                    providerPriceId: null,
+                  }
+                : {}),
               metadata: packDef.metadata ?? null,
               updatedAt: Date.now(),
             })
             .where(eq(schema.creditPacks.id, existing.id));
           result.creditPacks.updated.push(packDef.slug);
+
+          const providerSync = await syncCreditPackProduct({
+            context: {
+              db,
+              organizationId,
+              environment: c.env.ENVIRONMENT,
+              encryptionKey: c.env.ENCRYPTION_KEY,
+            },
+            pack: {
+              id: existing.id,
+              slug: packDef.slug,
+              name: packDef.name,
+              description: packDef.description ?? null,
+              price: packDef.price,
+              currency: packDef.currency,
+              providerId: desiredProviderId,
+              providerProductId: providerProductChanged
+                ? null
+                : existing.providerProductId,
+              providerPriceId: providerProductChanged
+                ? null
+                : existing.providerPriceId,
+              metadata: packDef.metadata ?? null,
+            },
+            preferredProviderId: desiredProviderId,
+            forceResync: providerProductChanged,
+          });
+
+          if (providerSync.issue) {
+            result.warnings.push(
+              `Credit pack '${packDef.slug}' provider sync skipped: ${providerSync.issue.message}`,
+            );
+          } else if (
+            providerSync.providerProductId !==
+              (providerProductChanged ? null : existing.providerProductId) ||
+            providerSync.providerPriceId !==
+              (providerProductChanged ? null : existing.providerPriceId) ||
+            providerSync.providerId !== desiredProviderId
+          ) {
+            await db
+              .update(schema.creditPacks)
+              .set({
+                providerId: providerSync.providerId,
+                providerProductId: providerSync.providerProductId,
+                providerPriceId: providerSync.providerPriceId,
+                updatedAt: Date.now(),
+              })
+              .where(eq(schema.creditPacks.id, existing.id));
+          }
         } else {
           result.creditPacks.unchanged.push(packDef.slug);
+
+          if (!existing.providerProductId || !existing.providerPriceId) {
+            const providerSync = await syncCreditPackProduct({
+              context: {
+                db,
+                organizationId,
+                environment: c.env.ENVIRONMENT,
+                encryptionKey: c.env.ENCRYPTION_KEY,
+              },
+              pack: {
+                id: existing.id,
+                slug: packDef.slug,
+                name: packDef.name,
+                description: packDef.description ?? null,
+                price: packDef.price,
+                currency: packDef.currency,
+                providerId: desiredProviderId,
+                providerProductId: existing.providerProductId,
+                providerPriceId: existing.providerPriceId,
+                metadata: packDef.metadata ?? null,
+              },
+              preferredProviderId: desiredProviderId,
+            });
+
+            if (providerSync.issue) {
+              result.warnings.push(
+                `Credit pack '${packDef.slug}' provider sync skipped: ${providerSync.issue.message}`,
+              );
+            } else if (
+              providerSync.providerProductId !== existing.providerProductId ||
+              providerSync.providerPriceId !== existing.providerPriceId ||
+              providerSync.providerId !== desiredProviderId
+            ) {
+              await db
+                .update(schema.creditPacks)
+                .set({
+                  providerId: providerSync.providerId,
+                  providerProductId: providerSync.providerProductId,
+                  providerPriceId: providerSync.providerPriceId,
+                  updatedAt: Date.now(),
+                })
+                .where(eq(schema.creditPacks.id, existing.id));
+            }
+          }
         }
       } else {
+        const packId = crypto.randomUUID();
+        const desiredProviderId = packDef.provider ?? defaultProvider ?? null;
         await db.insert(schema.creditPacks).values({
-          id: crypto.randomUUID(),
+          id: packId,
           organizationId,
           name: packDef.name,
           slug: packDef.slug,
@@ -431,10 +600,52 @@ app.post("/", async (c) => {
           price: packDef.price,
           currency: packDef.currency,
           creditSystemId: creditSystem.id,
-          providerId: packDef.provider ?? defaultProvider ?? null,
+          providerId: desiredProviderId,
           metadata: packDef.metadata ?? null,
           isActive: true,
         });
+
+        const providerSync = await syncCreditPackProduct({
+          context: {
+            db,
+            organizationId,
+            environment: c.env.ENVIRONMENT,
+            encryptionKey: c.env.ENCRYPTION_KEY,
+          },
+          pack: {
+            id: packId,
+            slug: packDef.slug,
+            name: packDef.name,
+            description: packDef.description ?? null,
+            price: packDef.price,
+            currency: packDef.currency,
+            providerId: desiredProviderId,
+            providerProductId: null,
+            providerPriceId: null,
+            metadata: packDef.metadata ?? null,
+          },
+          preferredProviderId: desiredProviderId,
+        });
+
+        if (providerSync.issue) {
+          result.warnings.push(
+            `Credit pack '${packDef.slug}' provider sync skipped: ${providerSync.issue.message}`,
+          );
+        } else if (
+          providerSync.providerProductId ||
+          providerSync.providerPriceId ||
+          providerSync.providerId !== desiredProviderId
+        ) {
+          await db
+            .update(schema.creditPacks)
+            .set({
+              providerId: providerSync.providerId,
+              providerProductId: providerSync.providerProductId,
+              providerPriceId: providerSync.providerPriceId,
+              updatedAt: Date.now(),
+            })
+            .where(eq(schema.creditPacks.id, packId));
+        }
         result.creditPacks.created.push(packDef.slug);
       }
     }
@@ -450,32 +661,59 @@ app.post("/", async (c) => {
     });
 
     if (existing) {
+      const desiredProviderId =
+        planDef.provider ?? defaultProvider ?? existing.providerId ?? null;
+      const shouldClearProviderPlanIds =
+        planDef.billingType === "one_time" &&
+        (existing.providerPlanId !== null || existing.paystackPlanId !== null);
       const changed =
         existing.name !== planDef.name ||
         existing.price !== planDef.price ||
         existing.currency !== planDef.currency ||
         existing.interval !== planDef.interval ||
+        existing.billingType !== planDef.billingType ||
         existing.description !== (planDef.description ?? null) ||
         existing.planGroup !== (planDef.planGroup ?? null) ||
         existing.trialDays !== (planDef.trialDays ?? 0) ||
         existing.autoEnable !== (planDef.autoEnable ?? false) ||
-        existing.isAddon !== (planDef.isAddon ?? false);
+        existing.isAddon !== (planDef.isAddon ?? false) ||
+        shouldClearProviderPlanIds;
+      const currentPlan = {
+        ...existing,
+        name: planDef.name,
+        price: planDef.price,
+        currency: planDef.currency,
+        interval: planDef.interval,
+        description: planDef.description ?? null,
+        planGroup: planDef.planGroup ?? null,
+        trialDays: planDef.trialDays ?? 0,
+        type: planDef.price === 0 ? "free" : "paid",
+        billingType: planDef.billingType,
+        providerId: desiredProviderId,
+        providerPlanId: planDef.billingType === "one_time" ? null : existing.providerPlanId,
+        paystackPlanId: planDef.billingType === "one_time" ? null : existing.paystackPlanId,
+        metadata: planDef.metadata ?? null,
+        autoEnable: planDef.autoEnable ?? false,
+        isAddon: planDef.isAddon ?? false,
+        source: "sdk" as const,
+      };
 
       if (changed) {
         if (
           existing.price !== planDef.price &&
           planDef.price > 0 &&
-          existing.providerId
+          desiredProviderId &&
+          planDef.billingType === "recurring"
         ) {
           const minimumAmount = getMinimumChargeAmount(
-            existing.providerId,
+            desiredProviderId,
             planDef.currency,
           );
 
           if (minimumAmount > 0 && planDef.price < minimumAmount) {
             const minDisplay = minimumAmount / 100;
             result.warnings.push(
-              `Plan '${planDef.slug}' price ${planDef.price / 100} ${planDef.currency} is below the minimum charge amount of ${minDisplay} ${planDef.currency} for ${existing.providerId}. Price update skipped.`,
+              `Plan '${planDef.slug}' price ${planDef.price / 100} ${planDef.currency} is below the minimum charge amount of ${minDisplay} ${planDef.currency} for ${desiredProviderId}. Price update skipped.`,
             );
             await db
               .update(schema.plans)
@@ -487,8 +725,8 @@ app.post("/", async (c) => {
                 planGroup: planDef.planGroup ?? null,
                 trialDays: planDef.trialDays ?? 0,
                 type: planDef.price === 0 ? "free" : "paid",
-                providerId:
-                  planDef.provider ?? defaultProvider ?? existing.providerId,
+                billingType: planDef.billingType,
+                providerId: desiredProviderId,
                 metadata: planDef.metadata ?? null,
                 autoEnable: planDef.autoEnable ?? false,
                 isAddon: planDef.isAddon ?? false,
@@ -518,8 +756,14 @@ app.post("/", async (c) => {
             planGroup: planDef.planGroup ?? null,
             trialDays: planDef.trialDays ?? 0,
             type: planDef.price === 0 ? "free" : "paid",
-            providerId:
-              planDef.provider ?? defaultProvider ?? existing.providerId,
+            billingType: planDef.billingType,
+            providerId: desiredProviderId,
+            ...(planDef.billingType === "one_time"
+              ? {
+                  providerPlanId: null,
+                  paystackPlanId: null,
+                }
+              : {}),
             metadata: planDef.metadata ?? null,
             autoEnable: planDef.autoEnable ?? false,
             isAddon: planDef.isAddon ?? false,
@@ -532,59 +776,6 @@ app.post("/", async (c) => {
           result.warnings.push(
             `Plan '${planDef.slug}' was managed by dashboard — now managed by SDK.`,
           );
-        }
-
-        // Provider sync
-        if (existing.providerPlanId && existing.providerId) {
-          try {
-            const registry = getProviderRegistry();
-            const adapter = registry.get(existing.providerId);
-            const providerEnv = deriveProviderEnvironment(
-              c.env.ENVIRONMENT,
-              null,
-            );
-            const providerAccounts = await loadProviderAccounts(
-              db,
-              organizationId,
-              c.env.ENCRYPTION_KEY,
-            );
-            const account = providerAccounts.find(
-              (a) => a.providerId === existing.providerId,
-            );
-
-            if (adapter?.updatePlan && account) {
-              const result = await adapter.updatePlan({
-                planId: existing.providerPlanId,
-                name: planDef.name,
-                amount: planDef.price,
-                interval: planDef.interval,
-                currency: planDef.currency,
-                description: planDef.description ?? null,
-                environment: providerEnv,
-                account,
-              });
-
-              if (
-                result.isOk() &&
-                typeof result.value.nextPlanId === "string" &&
-                result.value.nextPlanId.length > 0 &&
-                result.value.nextPlanId !== existing.providerPlanId
-              ) {
-                await db
-                  .update(schema.plans)
-                  .set({
-                    providerPlanId: result.value.nextPlanId,
-                    ...(existing.providerId === "paystack"
-                      ? { paystackPlanId: result.value.nextPlanId }
-                      : {}),
-                    updatedAt: Date.now(),
-                  })
-                  .where(eq(schema.plans.id, existing.id));
-              }
-            }
-          } catch (e) {
-            console.warn("[sync] Provider sync error:", e);
-          }
         }
         result.plans.updated.push(planDef.slug);
       } else {
@@ -614,9 +805,12 @@ app.post("/", async (c) => {
       } else {
         result.plans.unchanged.push(planDef.slug);
       }
+
+      await syncPlanWithProvider(currentPlan, planDef, changed);
     } else {
       const planId = crypto.randomUUID();
       const effectiveProvider = planDef.provider ?? defaultProvider ?? null;
+      const createdAt = Date.now();
 
       await db.insert(schema.plans).values({
         id: planId,
@@ -630,14 +824,49 @@ app.post("/", async (c) => {
         planGroup: planDef.planGroup ?? null,
         trialDays: planDef.trialDays ?? 0,
         type: planDef.price === 0 ? "free" : "paid",
+        billingType: planDef.billingType,
         providerId: effectiveProvider,
         metadata: planDef.metadata ?? null,
         autoEnable: planDef.autoEnable ?? false,
         isAddon: planDef.isAddon ?? false,
         source: "sdk",
+        createdAt,
+        updatedAt: createdAt,
       });
 
       await reconcilePlanFeatures(db, organizationId, planId, planDef.features);
+      await syncPlanWithProvider(
+        {
+          id: planId,
+          organizationId,
+          providerId: effectiveProvider,
+          providerPlanId: null,
+          providerMetadata: null,
+          paystackPlanId: null,
+          name: planDef.name,
+          slug: planDef.slug,
+          description: planDef.description ?? null,
+          price: planDef.price,
+          currency: planDef.currency,
+          interval: planDef.interval,
+          type: planDef.price === 0 ? "free" : "paid",
+          billingModel: "base",
+          billingType: planDef.billingType,
+          autoEnable: planDef.autoEnable ?? false,
+          isAddon: planDef.isAddon ?? false,
+          planGroup: planDef.planGroup ?? null,
+          trialDays: planDef.trialDays ?? 0,
+          trialCardRequired: false,
+          isActive: true,
+          version: 1,
+          source: "sdk",
+          metadata: planDef.metadata ?? null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+        planDef,
+        true,
+      );
       result.plans.created.push(planDef.slug);
     }
   }

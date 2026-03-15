@@ -837,6 +837,9 @@ export interface PlanDefinition {
   /** Billing interval */
   interval: PlanInterval;
 
+  /** Whether this plan is recurring or one-time */
+  billingType: "recurring" | "one_time";
+
   /** Features included in this plan */
   features: PlanFeatureEntry[];
 
@@ -1145,6 +1148,7 @@ export interface SyncPayload {
     price: number;
     currency: Currency;
     interval: PlanInterval;
+    billingType?: "recurring" | "one_time";
     planGroup?: string;
     trialDays?: number;
     provider?: string;

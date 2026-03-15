@@ -1,14 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
-import { resolveProvider } from "@owostack/adapters";
-import {
-  getProviderRegistry,
-  buildProviderContext,
-  deriveProviderEnvironment,
-  loadProviderAccounts,
-  loadProviderRules,
-} from "../../lib/providers";
 import { schema } from "@owostack/db";
 import {
   normalizePlanFeaturePricingConfig,
@@ -17,9 +9,10 @@ import {
   type PlanFeaturePricingConfigInput,
   validatePlanFeaturePricingConfig,
 } from "../../lib/plan-feature-normalization";
+import { normalizeOneTimePlan, sanitizeOneTimePlanFlags } from "../../lib/plans";
+import { syncProviderPlan } from "../../lib/plan-provider-sync";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
-import { getMinimumChargeAmount } from "../../lib/provider-minimums";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -95,25 +88,6 @@ function zodErrorToResponse(zodError: {
       details: formError || "Invalid request body",
     }),
   );
-}
-
-function sanitizeOneTimePlanFlags<
-  T extends {
-    billingType?: string | null;
-    trialDays?: number;
-    trialCardRequired?: boolean;
-    autoEnable?: boolean;
-  },
->(data: T, billingTypeOverride?: string | null): T {
-  const billingType = billingTypeOverride ?? data.billingType;
-  if (billingType !== "one_time") return data;
-
-  return {
-    ...data,
-    trialDays: 0,
-    trialCardRequired: false,
-    autoEnable: false,
-  };
 }
 
 const createPlanSchema = z.object({
@@ -219,117 +193,53 @@ app.post("/", async (c) => {
   let providerId: string | null = requestedProviderId || null;
   let providerPlanId: string | null = null;
 
-  // Only sync if it's a paid, recurring plan
-  if (type === "paid" && billingType === "recurring") {
-    // Validate minimum charge amount for the provider/currency
-    // Use requested provider or check against a default provider
-    const providerToCheck = requestedProviderId || "paystack"; // Default to paystack if not specified
-    const minimumAmount = getMinimumChargeAmount(providerToCheck, currency);
+  try {
+    const providerSync = await syncProviderPlan({
+      context: {
+        db,
+        organizationId,
+        environment: c.env.ENVIRONMENT,
+        encryptionKey: c.env.ENCRYPTION_KEY,
+      },
+      plan: {
+        slug,
+        name,
+        description: description ?? null,
+        price,
+        currency,
+        interval,
+        type,
+        billingType,
+        providerId: requestedProviderId ?? null,
+      },
+      preferredProviderId: requestedProviderId ?? null,
+    });
 
-    if (minimumAmount > 0 && price < minimumAmount) {
-      const minDisplay = minimumAmount / 100;
+    if (providerSync.issue?.code === "minimum_charge") {
       return c.json(
         {
           success: false,
-          error: `Plan price ${price / 100} ${currency} is below the minimum charge amount of ${minDisplay} ${currency} for ${providerToCheck}. Please increase the price or choose a different currency.`,
+          error: `${providerSync.issue.message} Please increase the price or choose a different currency.`,
         },
         400,
       );
     }
 
-    try {
-      const registry = getProviderRegistry();
-      // Environment comes directly from ENVIRONMENT variable
-      const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
-      const providerAccounts = await loadProviderAccounts(
-        db,
-        organizationId,
-        c.env.ENCRYPTION_KEY,
+    if (providerSync.issue) {
+      console.warn(
+        `[plans] Provider sync skipped for ${slug}: ${providerSync.issue.message}`,
       );
-
-      // If dashboard explicitly specified a provider, use it directly
-      if (requestedProviderId) {
-        const adapter = registry.get(requestedProviderId);
-        const account = providerAccounts.find(
-          (a) => a.providerId === requestedProviderId,
-        );
-
-        if (adapter && account) {
-          const planResult = await adapter.createPlan({
-            name,
-            amount: price,
-            interval: interval as any,
-            currency,
-            description: description || undefined,
-            environment: providerEnv,
-            account,
-          });
-
-          if (planResult.isOk()) {
-            providerPlanId = planResult.value.id;
-            if (requestedProviderId === "paystack")
-              paystackPlanId = planResult.value.id;
-            console.log(
-              `[plans] Created plan on ${requestedProviderId}: ${planResult.value.id}`,
-            );
-          } else {
-            console.warn(
-              `[plans] Failed to create plan on ${requestedProviderId}:`,
-              planResult.error,
-            );
-          }
-        } else {
-          console.warn(
-            `[plans] Provider ${requestedProviderId} not found or no account configured`,
-          );
-        }
-      } else {
-        // Fallback: resolve provider via routing rules
-        const providerRules = await loadProviderRules(db, organizationId);
-        const providerContext = buildProviderContext({ currency });
-
-        const selectionResult = resolveProvider(registry, {
-          organizationId,
-          environment: providerEnv,
-          context: providerContext,
-          rules: providerRules,
-          accounts: providerAccounts,
-        });
-
-        if (selectionResult.isOk()) {
-          providerId = selectionResult.value.adapter.id;
-
-          const planResult = await selectionResult.value.adapter.createPlan({
-            name,
-            amount: price,
-            interval: interval as any,
-            currency,
-            description: description || undefined,
-            environment: providerEnv,
-            account: selectionResult.value.account,
-          });
-
-          if (planResult.isOk()) {
-            providerPlanId = planResult.value.id;
-            if (providerId === "paystack") paystackPlanId = planResult.value.id;
-            console.log(
-              `[plans] Created plan on ${providerId}: ${planResult.value.id}`,
-            );
-          } else {
-            console.warn(
-              `[plans] Failed to create plan on ${providerId}:`,
-              planResult.error,
-            );
-          }
-        } else if (providerAccounts.length > 0) {
-          console.warn(
-            "Provider rules exist but no provider matched for plan creation",
-          );
-        }
-      }
-    } catch (e) {
-      console.warn("Provider sync error:", e);
+    } else if (providerSync.action === "created") {
+      console.log(
+        `[plans] Created plan on ${providerSync.providerId}: ${providerSync.providerPlanId}`,
+      );
     }
+
+    providerId = providerSync.providerId;
+    providerPlanId = providerSync.providerPlanId;
+    paystackPlanId = providerSync.paystackPlanId;
+  } catch (e) {
+    console.warn("Provider sync error:", e);
   }
 
   try {
@@ -393,7 +303,7 @@ app.get("/", async (c) => {
 
   return c.json({
     success: true,
-    data: plans.map((plan) => sanitizeOneTimePlanFlags(plan)),
+    data: plans.map((plan) => normalizeOneTimePlan(plan)),
   });
 });
 
@@ -416,7 +326,7 @@ app.get("/:id", async (c) => {
     return c.json({ error: "Plan not found" }, 404);
   }
 
-  return c.json({ success: true, data: sanitizeOneTimePlanFlags(plan) });
+  return c.json({ success: true, data: normalizeOneTimePlan(plan) });
 });
 
 app.patch("/:id", async (c) => {
@@ -436,7 +346,8 @@ app.patch("/:id", async (c) => {
     return c.json({ error: "Plan not found" }, 404);
   }
 
-  const finalBillingType = parsed.data.billingType ?? existingPlan.billingType;
+  const finalBillingType =
+    parsed.data.billingType ?? existingPlan.billingType ?? "recurring";
   const normalizedUpdate = sanitizeOneTimePlanFlags(
     parsed.data,
     finalBillingType,
@@ -462,6 +373,9 @@ app.patch("/:id", async (c) => {
       .update(schema.plans)
       .set({
         ...dbFields,
+        ...(finalBillingType === "one_time"
+          ? { providerPlanId: null, paystackPlanId: null }
+          : {}),
         ...(metadataUpdate ? { metadata: metadataUpdate } : {}),
         updatedAt: Date.now(),
       })
@@ -489,85 +403,69 @@ app.patch("/:id", async (c) => {
     let responsePlan = updated;
 
     if (hasProviderChange && updated.providerPlanId && updated.providerId) {
-      // Validate minimum charge amount if price is being updated
-      if (normalizedUpdate.price !== undefined) {
-        const minimumAmount = getMinimumChargeAmount(
-          updated.providerId,
-          normalizedUpdate.currency || updated.currency,
-        );
+      try {
+        const providerSync = await syncProviderPlan({
+          context: {
+            db,
+            organizationId: updated.organizationId,
+            environment: c.env.ENVIRONMENT,
+            encryptionKey: c.env.ENCRYPTION_KEY,
+          },
+          plan: {
+            slug: updated.slug ?? existingPlan.slug,
+            name: updated.name,
+            description: updated.description ?? null,
+            price: updated.price,
+            currency: updated.currency,
+            interval: updated.interval,
+            type: updated.type ?? existingPlan.type ?? "paid",
+            billingType: updated.billingType ?? finalBillingType,
+            providerId: updated.providerId,
+            providerPlanId: updated.providerPlanId,
+            metadata: (updated.metadata as Record<string, unknown> | null) ?? null,
+          },
+          preferredProviderId: updated.providerId,
+          allowUpdate: true,
+        });
 
-        if (minimumAmount > 0 && normalizedUpdate.price < minimumAmount) {
-          const minDisplay = minimumAmount / 100;
-          const currency = normalizedUpdate.currency || updated.currency;
+        if (providerSync.issue?.code === "minimum_charge") {
           return c.json(
             {
               success: false,
-              error: `Plan price ${normalizedUpdate.price / 100} ${currency} is below the minimum charge amount of ${minDisplay} ${currency} for ${updated.providerId}. Please increase the price or choose a different currency.`,
+              error: `${providerSync.issue.message} Please increase the price or choose a different currency.`,
             },
             400,
           );
         }
-      }
 
-      try {
-        const registry = getProviderRegistry();
-        const adapter = registry.get(updated.providerId);
-        // Environment comes directly from ENVIRONMENT variable
-        const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
-        const providerAccounts = await loadProviderAccounts(
-          db,
-          updated.organizationId,
-          c.env.ENCRYPTION_KEY,
-        );
-        const account = providerAccounts.find(
-          (a) => a.providerId === updated.providerId,
-        );
+        if (providerSync.issue) {
+          console.warn(
+            `[plans] Failed to sync plan on ${updated.providerId}: ${providerSync.issue.message}`,
+          );
+        } else if (
+          providerSync.providerPlanId &&
+          (providerSync.providerPlanId !== updated.providerPlanId ||
+            providerSync.paystackPlanId !== updated.paystackPlanId)
+        ) {
+          const [providerSynced] = await db
+            .update(schema.plans)
+            .set({
+              providerPlanId: providerSync.providerPlanId,
+              paystackPlanId: providerSync.paystackPlanId,
+              updatedAt: Date.now(),
+            })
+            .where(eq(schema.plans.id, updated.id))
+            .returning();
 
-        if (adapter?.updatePlan && account) {
-          const result = await adapter.updatePlan({
-            planId: updated.providerPlanId,
-            name: updated.name,
-            amount: updated.price,
-            interval: updated.interval,
-            currency: updated.currency,
-            description: updated.description,
-            environment: providerEnv,
-            account,
-          });
-
-          if (result.isOk()) {
-            const nextPlanId = result.value.nextPlanId;
-            if (
-              typeof nextPlanId === "string" &&
-              nextPlanId.length > 0 &&
-              nextPlanId !== updated.providerPlanId
-            ) {
-              const [providerSynced] = await db
-                .update(schema.plans)
-                .set({
-                  providerPlanId: nextPlanId,
-                  ...(updated.providerId === "paystack"
-                    ? { paystackPlanId: nextPlanId }
-                    : {}),
-                  updatedAt: Date.now(),
-                })
-                .where(eq(schema.plans.id, updated.id))
-                .returning();
-
-              if (providerSynced) {
-                responsePlan = providerSynced;
-              }
-            }
-
-            console.log(
-              `[plans] Updated plan on ${updated.providerId}: ${result.value.nextPlanId || updated.providerPlanId}`,
-            );
-          } else {
-            console.warn(
-              `[plans] Failed to update plan on ${updated.providerId}:`,
-              result.error,
-            );
+          if (providerSynced) {
+            responsePlan = providerSynced;
           }
+        }
+
+        if (providerSync.action === "updated") {
+          console.log(
+            `[plans] Updated plan on ${providerSync.providerId}: ${providerSync.providerPlanId}`,
+          );
         }
       } catch (e) {
         console.warn("[plans] Provider sync error during update:", e);

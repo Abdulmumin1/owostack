@@ -1,6 +1,7 @@
-import { eq, and, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { schema, createDb } from "@owostack/db";
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
+import { syncCreditPackProductWithResolvedProvider } from "./credit-pack-provider-sync";
 
 type DB = ReturnType<typeof createDb>;
 
@@ -29,83 +30,56 @@ export async function ensureCreditPackSynced(
   adapter: ProviderAdapter,
   account: ProviderAccount,
 ): Promise<{ productId: string; priceId: string } | null> {
-  // Already synced (in-memory check)
-  if (pack.providerProductId && pack.providerPriceId) {
-    return { productId: pack.providerProductId, priceId: pack.providerPriceId };
-  }
-
-  // Adapter doesn't support product creation (e.g. Paystack)
-  if (!adapter.createProduct) {
-    return null;
-  }
-
-  // Re-read from DB to catch concurrent syncs (TOCTOU guard)
-  const fresh = await (db.query as any).creditPacks?.findFirst?.({
-    where: eq((schema as any).creditPacks.id, pack.id),
-    columns: { providerProductId: true, providerPriceId: true },
-  });
-
-  if (fresh?.providerProductId && fresh?.providerPriceId) {
-    return {
-      productId: fresh.providerProductId,
-      priceId: fresh.providerPriceId,
-    };
-  }
-
-  const createResult = await adapter.createProduct({
-    name: pack.name,
-    description: pack.description || undefined,
-    amount: pack.price,
-    currency: pack.currency,
-    environment: account.environment as "test" | "live",
-    account,
-    metadata: { credit_pack_id: pack.id },
-  });
-
-  if (createResult.isErr()) {
-    console.warn(
-      `[credit-pack-sync] Failed to sync pack ${pack.id}: ${createResult.error.message}`,
-    );
-    return null;
-  }
-
-  const { productId, priceId } = createResult.value;
-
-  // Atomic write: only set if still NULL
-  const updated = await (db as any)
-    .update((schema as any).creditPacks)
-    .set({
-      providerProductId: productId,
-      providerPriceId: priceId,
+  const result = await syncCreditPackProductWithResolvedProvider({
+    db,
+    pack: {
+      id: pack.id,
+      slug: pack.id,
+      name: pack.name,
+      description: pack.description,
+      price: pack.price,
+      currency: pack.currency,
       providerId: adapter.id,
-      updatedAt: Date.now(),
-    })
-    .where(
-      and(
-        eq((schema as any).creditPacks.id, pack.id),
-        isNull((schema as any).creditPacks.providerProductId),
-      ),
-    )
-    .returning({
-      providerProductId: (schema as any).creditPacks.providerProductId,
-    });
+      providerProductId: pack.providerProductId,
+      providerPriceId: pack.providerPriceId,
+    },
+    adapter,
+    account,
+  });
 
-  if (updated.length === 0) {
-    // Lost the race — read the winning value
-    const winner = await (db.query as any).creditPacks?.findFirst?.({
-      where: eq((schema as any).creditPacks.id, pack.id),
-      columns: { providerProductId: true, providerPriceId: true },
-    });
+  if (result.issue) {
     console.warn(
-      `[credit-pack-sync] Race: pack ${pack.id} already synced, using ${winner?.providerProductId}`,
+      `[credit-pack-sync] Failed to sync pack ${pack.id}: ${result.issue.message}`,
     );
-    return winner?.providerProductId && winner?.providerPriceId
-      ? { productId: winner.providerProductId, priceId: winner.providerPriceId }
-      : null;
+    return null;
+  }
+
+  if (!result.providerProductId || !result.providerPriceId) {
+    return null;
+  }
+
+  const currentProductId = pack.providerProductId;
+  const currentPriceId = pack.providerPriceId;
+  if (
+    currentProductId !== result.providerProductId ||
+    currentPriceId !== result.providerPriceId
+  ) {
+    await (db as any)
+      .update((schema as any).creditPacks)
+      .set({
+        providerProductId: result.providerProductId,
+        providerPriceId: result.providerPriceId,
+        providerId: result.providerId,
+        updatedAt: Date.now(),
+      })
+      .where(eq((schema as any).creditPacks.id, pack.id));
   }
 
   console.log(
-    `[credit-pack-sync] Synced pack ${pack.id} (${pack.name}) → product=${productId}, price=${priceId}`,
+    `[credit-pack-sync] Synced pack ${pack.id} (${pack.name}) → product=${result.providerProductId}, price=${result.providerPriceId}`,
   );
-  return { productId, priceId };
+  return {
+    productId: result.providerProductId,
+    priceId: result.providerPriceId,
+  };
 }
