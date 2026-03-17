@@ -15,6 +15,7 @@ import {
   hasRenewalSetupIssue,
   readRenewalSetupMetadata,
 } from "../../lib/renewal-setup";
+import { autoAssignPlansToNewCustomer } from "../../lib/customer-auto-plans";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -61,33 +62,11 @@ app.post("/", async (c) => {
       })
       .returning();
 
-    // Auto-subscribe customer to all auto-enabled plans
-    const autoEnablePlans = await db.query.plans.findMany({
-      where: and(
-        eq(schema.plans.organizationId, organizationId),
-        eq(schema.plans.autoEnable, true),
-        eq(schema.plans.isActive, true),
-      ),
+    await autoAssignPlansToNewCustomer({
+      db,
+      organizationId,
+      customerId: customer.id,
     });
-
-    if (autoEnablePlans.length > 0) {
-      const now = Date.now();
-      const thirtyDaysFromNow = now + 30 * 24 * 60 * 60 * 1000;
-
-      for (const plan of autoEnablePlans) {
-        // Free plans → active immediately; Paid plans → pending (awaits payment)
-        const subscriptionStatus = plan.type === "free" ? "active" : "pending";
-
-        await db.insert(schema.subscriptions).values({
-          id: crypto.randomUUID(),
-          customerId: customer.id,
-          planId: plan.id,
-          status: subscriptionStatus,
-          currentPeriodStart: now,
-          currentPeriodEnd: thirtyDaysFromNow,
-        });
-      }
-    }
 
     return c.json({ success: true, data: customer });
   } catch (e: any) {
