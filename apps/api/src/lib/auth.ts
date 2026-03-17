@@ -153,7 +153,7 @@ export function auth(env: Env) {
     plugins: [
       organization({
         allowUserToCreateOrganization: true,
-        organizationLimit: 5,
+        organizationLimit: 6,
         creatorRole: "owner",
         membershipLimit: 100,
         async sendInvitationEmail(data) {

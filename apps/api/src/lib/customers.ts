@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { schema, createDb } from "@owostack/db";
 import { EntitlementCache } from "./cache";
 import { resolveCustomerByIdentifier } from "./customer-resolution";
+import { autoAssignPlansToNewCustomer } from "./customer-auto-plans";
 
 type DB = ReturnType<typeof createDb>;
 
@@ -17,6 +18,7 @@ export interface ResolveCustomerOptions {
   customerId: string;
   customerData?: CustomerData;
   providerId?: string;
+  autoApplyPlansOnCreate?: boolean;
   cache?: EntitlementCache | null;
   waitUntil?: (promise: Promise<unknown>) => void;
 }
@@ -133,6 +135,14 @@ export async function resolveOrCreateCustomer(
 
   await db.insert(schema.customers).values(newCustomer);
   customer = newCustomer as unknown as typeof schema.customers.$inferSelect;
+
+  if (opts.autoApplyPlansOnCreate) {
+    await autoAssignPlansToNewCustomer({
+      db,
+      organizationId,
+      customerId: customer.id,
+    });
+  }
 
   if (cache) {
     const setAliasesPromise = cache.setCustomerAliases(
