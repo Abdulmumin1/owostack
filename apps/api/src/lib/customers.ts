@@ -107,7 +107,7 @@ export async function resolveOrCreateCustomer(
       if (opts.waitUntil) {
         opts.waitUntil(updatePromise);
       }
-      // Optimistically patch the returned object so the caller sees updated values
+      // Optimistically patch the returned object so the caller sees updated values!
       customer = { ...customer, ...patches } as typeof customer;
     }
 

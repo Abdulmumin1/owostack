@@ -37,7 +37,7 @@
     {
       "@context": "https://schema.org",
       "@type": "BlogPosting",
-      "headline": "{data.metadata?.title || "Blog"}",
+      "headline": "{data.metadata?.title || 'Blog'}",
       "description": "{data.metadata?.excerpt || ""}",
       "datePublished": "{data.metadata?.date}",
       "author": {
