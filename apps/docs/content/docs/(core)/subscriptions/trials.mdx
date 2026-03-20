@@ -1,16 +1,24 @@
 ---
 title: Set up trials
-description: Offer free trial periods before charging
+description: Offer no-card or card-required trials and understand provider behavior
 icon: Clock
 ---
 
 # How to set up trials
 
-This guide shows how to offer a free trial period so customers can try your product before paying.
+Owostack supports two trial shapes:
+
+- **No-card trials**: `trialDays > 0` and `trialCardRequired = false`
+- **Card-required trials**: `trialDays > 0` and `trialCardRequired = true`
+
+Both provision the plan’s entitlements during the trial period.
 
 ## Create a plan with a trial
 
-In the dashboard, set the **Trial Days** field when creating or editing a plan. Alternatively, define it in code:
+In the dashboard, set **Trial Days** when creating the plan. If you want card
+collection up front, also enable **Require card for trial**.
+
+In code:
 
 ```ts
 import { plan, metered, boolean } from "owostack";
@@ -28,9 +36,27 @@ plan("pro", {
 });
 ```
 
-## Start a trial checkout
+## No-card trials
 
-Call `attach()` as usual. Owostack detects the trial configuration and adjusts the checkout flow:
+If `trialCardRequired` is false, `attach()` creates the trial directly.
+
+```ts
+const result = await owo.attach({
+  customer: "user_123",
+  product: "pro",
+});
+
+console.log(result.trial); // true
+console.log(result.checkoutUrl); // undefined
+```
+
+This path creates a `trialing` subscription immediately and schedules trial-end
+handling in Owostack.
+
+## Card-required trials
+
+If `trialCardRequired` is true, `attach()` may return a checkout URL so the card
+can be collected before the trial starts.
 
 ```ts
 const result = await owo.attach({
@@ -40,19 +66,30 @@ const result = await owo.attach({
 });
 
 if (result.checkoutUrl) {
-  // Redirect — the provider collects card details but doesn't charge yet
-  res.redirect(result.checkoutUrl);
+  return Response.redirect(result.checkoutUrl);
 }
 ```
 
-What happens depends on the payment provider:
+If the customer already has a payment method on file, Owostack can skip the
+card-capture checkout and activate the trial directly.
 
-- **Paystack** — A small verification charge (₦100) is made and auto-refunded. Owostack creates a `trialing` subscription and schedules billing at trial end.
-- **Dodo Payments** — The provider handles the trial natively via `trial_period_days`. No charge until the trial ends.
+## Provider behavior
+
+Provider handling depends on whether the adapter supports native trials.
+
+- **Stripe**: native trial support
+- **Dodo Payments**: native trial support
+- **Polar**: native trial support
+- **Paystack**: no native trial support
+
+For native-trial providers, Owostack passes the trial period to the provider.
+
+For Paystack, Owostack uses an auth/capture-style card verification flow when a
+card is required, then manages the trial lifecycle itself.
 
 ## Check trial status
 
-`check()` works the same during a trial — the customer has full access to the plan's features:
+`check()` works normally during the trial:
 
 ```ts
 const access = await owo.check({
@@ -64,22 +101,28 @@ console.log(access.allowed);  // true
 console.log(access.balance);  // 10000
 ```
 
-The subscription status will be `"trialing"` until the trial period ends.
+The subscription status remains `trialing` until the trial ends.
 
 ## What happens when the trial ends
 
-Owostack handles trial-to-paid conversion automatically:
+The exact behavior depends on the provider path:
+
+- for no-card trials, Owostack runs the trial-end workflow
+- for native-trial providers, the provider handles the first paid charge and
+  Owostack reconciles from provider events
+- for non-native card-required trials, Owostack manages the trial lifecycle
+
+The normal lifecycle is:
 
 1. A billing workflow fires at the trial end date
 2. The customer's card is charged the full plan price
 3. On successful payment, the subscription moves to `"active"`
 4. If payment fails, the subscription moves to `"past_due"`
 
-No code changes are needed on your end.
+## Trial + free plan
 
-## Combine with a free plan
-
-A common pattern: offer a free tier and a trial of the paid tier.
+A common pattern is a free tier in the main plan group plus a trial on the paid
+plan:
 
 ```ts
 plan("free", {
@@ -102,4 +145,11 @@ plan("pro", {
 });
 ```
 
-When a free-tier customer calls `attach()` with `"pro"`, they enter the 14-day trial. After the trial, they are charged or downgraded based on payment outcome.
+When a customer on `free` attaches to `pro`, they enter the trial for the paid
+plan in the same group.
+
+## Related guides
+
+- [Plans & products](/pricing/plans)
+- [Plan switching](/subscriptions/plan-switching)
+- [Pricing models](/pricing/pricing-models)

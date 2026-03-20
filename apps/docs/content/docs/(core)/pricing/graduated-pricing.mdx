@@ -1,0 +1,101 @@
+---
+title: Graduated pricing
+description: Staircase pricing where each tier prices only the usage inside that tier
+icon: TrendingUp
+---
+
+# Graduated pricing
+
+`graduated` pricing is cumulative.
+
+Each tier prices only the units that fall inside that tier.
+
+## Example
+
+```ts
+const apiCalls = metered("api-calls", { name: "API Calls" });
+
+plan("scale", {
+  name: "Scale",
+  price: 0,
+  currency: "USD",
+  interval: "monthly",
+  features: [
+    apiCalls.config({
+      usageModel: "usage_based",
+      reset: "monthly",
+      ratingModel: "graduated",
+      tiers: [
+        { upTo: 1000, unitPrice: 10 },
+        { upTo: 10000, unitPrice: 7 },
+        { upTo: null, unitPrice: 5 },
+      ],
+    }),
+  ],
+});
+```
+
+If usage is `1,500`:
+
+- first `1,000` units are billed at `10`
+- next `500` units are billed at `7`
+
+## Mental model
+
+Ask:
+
+- "What price applies to each chunk of usage?"
+
+If that is how your business thinks about pricing, `graduated` is usually the
+right fit.
+
+## Included + graduated overage
+
+Graduated pricing also works for overage.
+
+```ts
+apiCalls.limit(1000, {
+  overage: "charge",
+  ratingModel: "graduated",
+  tiers: [
+    { upTo: 500, unitPrice: 20 },
+    { upTo: 5000, unitPrice: 12 },
+    { upTo: null, unitPrice: 8 },
+  ],
+});
+```
+
+In that setup, the tiers apply to **overage units**, not total usage.
+
+If total usage is `1,300`, only `300` units are rated by the graduated tiers.
+
+## Flat fees in tiers
+
+Each tier may define:
+
+- `unitPrice`
+- `flatFee`
+- or both
+
+In graduated pricing, `flatFee` is added when usage enters that tier, so fees
+can accumulate across tiers.
+
+```ts
+tiers: [
+  { upTo: 1000, flatFee: 5000 },
+  { upTo: 10000, flatFee: 10000 },
+];
+```
+
+If billable usage reaches tier 2, both tier-entry fees apply.
+
+## Use graduated when
+
+- Pricing should accumulate by band
+- You want a classic staircase tariff
+- A higher band should not retroactively cheapen earlier units
+
+## Compare with volume
+
+See [Volume pricing](/pricing/volume-pricing) for the model where the final
+band reprices all billable usage.

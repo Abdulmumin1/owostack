@@ -1,12 +1,19 @@
 ---
 title: Introduction
-description: Billing infrastructure for AI SaaS
+description: Start here to understand Owostack’s model, pricing system, and billing flow
 icon: Rocket
 ---
 
 # Owostack
 
-Owostack is a billing infrastructure for subscriptions, usage, and entitlements. You define your plans in code using the catalog, connect a payment provider, and use three API primitives to enforce access and track usage: `attach`, `check`, and `track`.
+Owostack is a billing infrastructure for subscriptions, usage, entitlements,
+credits, and seat-based products.
+
+The docs should answer three questions in order:
+
+1. What does Owostack model?
+2. How do I represent my pricing correctly?
+3. What API calls and lifecycle flows do I use in production?
 
 ## What you build with Owostack
 
@@ -16,7 +23,7 @@ Owostack is a billing infrastructure for subscriptions, usage, and entitlements.
 - **Entity management** for per-seat, per-project, or per-workspace billing
 - **Code-first plans** with an SDK that syncs your definitions with a single command
 
-## Core primitives
+## The three runtime primitives
 
 ```ts
 import { Owostack } from "owostack";
@@ -40,32 +47,77 @@ await owo.track({
 });
 ```
 
-## How it works
+## Read in this order
 
-![](https://mac-file.yaqeen.me/B2D9D62C-Screenshot%202026-03-08%20at%2019.21.57.png)
+### 1. Learn the system
 
-Owostack receives provider webhooks, normalizes events, and keeps subscription state, entitlements, and usage meters in sync. Your app just checks and tracks.
+- [Quickstart](/getting-started/quickstart)
+- [How it works](/getting-started/how-it-works)
+- [Data model](/getting-started/data-model)
+- [Pricing models](/pricing/pricing-models)
+
+### 2. Model your product
+
+- [Plans & products](/pricing/plans)
+- [Entitlements & features](/pricing/features)
+- [Define plans in code](/pricing/programmatic-plans)
+- [Included vs usage-based](/pricing/included-vs-usage-based)
+- [Package pricing](/pricing/package-pricing)
+- [Graduated pricing](/pricing/graduated-pricing)
+- [Volume pricing](/pricing/volume-pricing)
+- [Overage](/pricing/overage)
+- [Credits](/pricing/credits)
+- [Entities & seat-based pricing](/pricing/seat-pricing)
+
+### 3. Run billing in production
+
+- [Providers](/getting-started/providers)
+- [API keys](/getting-started/api-keys)
+- [Webhook setup](/getting-started/webhook-setup)
+- [Checkout](/subscriptions/checkout)
+- [Trials](/subscriptions/trials)
+- [Plan switching](/subscriptions/plan-switching)
+- [Billing & invoices](/subscriptions/billing)
+- [Wallet & saved payment methods](/subscriptions/wallet)
+
+## Mental model
+
+Owostack separates:
+
+- **plans**: what customers subscribe to
+- **features**: what customers can use
+- **entitlements**: whether access should be allowed
+- **usage**: how much was consumed
+- **rating**: how billable usage becomes money
+
+That separation is what lets you combine:
+
+- subscriptions
+- usage-based pricing
+- included quotas with overage
+- prepaid credits
+- seats and other entity-based capacity
+
+## Common product shapes
+
+- SaaS plan with monthly quota and overage
+  Read [Included vs usage-based](/pricing/included-vs-usage-based), then
+  [Overage](/pricing/overage)
+- Pure pay-as-you-go API
+  Read [Included vs usage-based](/pricing/included-vs-usage-based), then
+  [Package pricing](/pricing/package-pricing) or
+  [Graduated pricing](/pricing/graduated-pricing)
+- Seat-based team billing
+  Read [Plans & products](/pricing/plans), [Entitlements & features](/pricing/features),
+  then [Entities & seat-based pricing](/pricing/seat-pricing)
+- Credit wallet or top-ups
+  Read [Credits](/pricing/credits) and [Billing & invoices](/subscriptions/billing)
+
+## Start with these pages
 
 <Cards>
   <Card title="Quickstart" href="/getting-started/quickstart" icon="Zap" />
-  <Card
-    title="Webhook Setup"
-    href="/getting-started/webhook-setup"
-    icon="Webhook"
-  />
-  <Card
-    title="How It Works"
-    href="/getting-started/how-it-works"
-    icon="Workflow"
-  />
+  <Card title="Pricing Models" href="/pricing/pricing-models" icon="Blend" />
+  <Card title="Plans & Products" href="/pricing/plans" icon="Layers" />
+  <Card title="Checkout Flow" href="/subscriptions/checkout" icon="CreditCard" />
 </Cards>
-
-## Supported billing models
-
-| Model                   | Status       |
-| ----------------------- | ------------ |
-| Flat-rate subscriptions | ✅ Supported |
-| Usage-based (metered)   | ✅ Supported |
-| Credits / prepaid       | ✅ Supported |
-| Trials & freemium       | ✅ Supported |
-| Per-seat (entities)     | ✅ Supported |

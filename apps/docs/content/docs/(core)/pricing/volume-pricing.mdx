@@ -1,0 +1,91 @@
+---
+title: Volume pricing
+description: Reached-band pricing where the final tier prices all billable usage
+icon: Layers
+---
+
+# Volume pricing
+
+`volume` pricing uses the final tier reached to price **all** billable usage.
+
+This is the model people often mean when they say "the more you use, the lower
+your unit rate becomes."
+
+## Example
+
+```ts
+const agentRuns = metered("agent-runs", { name: "Agent Runs" });
+
+plan("volume", {
+  name: "Volume",
+  price: 0,
+  currency: "USD",
+  interval: "monthly",
+  features: [
+    agentRuns.config({
+      usageModel: "usage_based",
+      reset: "monthly",
+      ratingModel: "volume",
+      tiers: [
+        { upTo: 1000, unitPrice: 10 },
+        { upTo: 10000, unitPrice: 7 },
+        { upTo: null, unitPrice: 5 },
+      ],
+    }),
+  ],
+});
+```
+
+If usage is `1,500`, tier 2 is reached, so all `1,500` units are billed at `7`.
+
+## Mental model
+
+Ask:
+
+- "What band did the customer end up in?"
+
+That final band decides the rate for the full billable quantity.
+
+## Included + volume overage
+
+Volume also works for included usage with chargeable overage:
+
+```ts
+agentRuns.limit(1000, {
+  overage: "charge",
+  ratingModel: "volume",
+  tiers: [
+    { upTo: 1000, unitPrice: 12 },
+    { upTo: 10000, unitPrice: 9 },
+    { upTo: null, unitPrice: 6 },
+  ],
+});
+```
+
+If total usage is `1,500`, only the `500` overage units are repriced by the
+reached band.
+
+## Flat-fee bands
+
+Volume tiers can also be flat-only or mixed:
+
+```ts
+tiers: [
+  { upTo: 100, flatFee: 5000 },
+  { upTo: 1000, flatFee: 20000 },
+  { upTo: null, flatFee: 50000 },
+];
+```
+
+In a flat-only volume setup, the reached tier acts like a fixed-price band.
+
+## Use volume when
+
+- Entering a better band should reprice all billable usage
+- Your pricing table is organized as reached bands
+- You want lower effective rates at higher usage without accumulation logic
+
+## Compare with graduated
+
+See [Graduated pricing](/pricing/graduated-pricing) if you want each tier to
+price only its own slice of usage.

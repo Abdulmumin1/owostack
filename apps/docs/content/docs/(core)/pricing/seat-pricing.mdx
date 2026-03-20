@@ -1,17 +1,36 @@
 ---
-title: Organizations & Entities
-description: Implement per-seat and per-organization pricing with entity-scoped metering
+title: Entities & seat-based pricing
+description: Model seats, workspaces, and other persistent capacity with non-consumable entity features
 icon: Users
 ---
 
-# Organizations & Entities
+# Entities & seat-based pricing
 
-Owostack supports per-seat and per-organization pricing through **entities**. You create entities to represent seats, workspaces, or any scoped resource, then track usage per-entity.
+Owostack supports seat-based and capacity-based products through **entity
+features**.
 
-This guide shows a common setup:
+Use an entity feature when the thing you sell is not "usage consumed" but
+"capacity currently allocated":
 
-- **Plan includes 5 seats**
-- **Each seat gets 1000 AI credits per month**
+- seats
+- workspaces
+- projects
+- managed environments
+
+Entity features are non-consumable. You manage them with `addEntity()` and
+`removeEntity()`, not `track()`.
+
+## How entities work
+
+- define the feature with `entity()`
+- set a limit on the plan with `.limit()`
+- add entities as customers allocate capacity
+- remove entities when capacity should be released
+
+This guide shows a common seat-based setup:
+
+- the plan includes `5` seats
+- each seat also gets `1,000` monthly AI credits
 
 ## 1. Define features
 
@@ -42,10 +61,10 @@ export default new Owostack({
 });
 ```
 
-## 3. Create the organization
+## 3. Create the customer
 
 ```ts
-// Create or get the org customer
+// Create or get the organization customer
 const org = await owo.customer({
   email: "org@acme.com",
   name: "Acme Corp",
@@ -62,10 +81,10 @@ await org.attach({
 
 ## 5. Add a seat
 
-Use `seats.add()` to reserve a seat. This validates against the seat limit.
+Use `seats.add()` to allocate a seat. Owostack validates the current entity
+count against the feature limit.
 
 ```ts
-// Add team members - validates against 5-seat limit
 try {
   await seats.add("org@acme.com", {
     entity: "user_123",
@@ -81,7 +100,7 @@ try {
 }
 ```
 
-## 6. Track AI credits per seat
+## 6. Track per-seat usage
 
 Use `entity` parameter to scope usage to a specific seat:
 
@@ -109,26 +128,42 @@ console.log("Credits remaining:", credits.balance);
 ## 7. List and manage seats
 
 ```ts
-// List all active seats
 const { entities } = await seats.list("org@acme.com");
 
-// Remove a seat (frees the slot)
 await seats.remove("org@acme.com", "user_123");
 ```
 
-## Org-wide credits (shared pool)
+## What removal actually does
+
+Seat removal is **deferred**, not immediate.
+
+When you remove an entity:
+
+- its status becomes `pending_removal`
+- it still counts for billing and limit checks until the end of the current
+  billing period
+- Owostack finalizes removal after renewal
+
+If you add the same entity again before period end, Owostack restores it instead
+of creating a duplicate.
+
+This matters for seat products. A removed seat does **not** instantly free a new
+billable slot mid-cycle.
+
+## Shared pool vs per-entity usage
 
 For a shared credit pool across all seats, omit the `entity` parameter:
 
 ```ts
-// Track against org-wide pool
 await owo.track({
   customer: "org@acme.com",
   feature: "shared-credits",
   value: 100,
-  // No entity = org-wide
 });
 ```
+
+With `entity`, usage is scoped per seat. Without it, usage is scoped to the
+customer as a whole.
 
 ## Complete example
 
@@ -155,16 +190,13 @@ const owo = new Owostack({
 });
 
 async function setupOrg() {
-  // 1. Create org
   const org = await owo.customer({
     email: "org@acme.com",
     name: "Acme Corp",
   });
 
-  // 2. Subscribe to team plan
   await org.attach({ product: "team" });
 
-  // 3. Add team members
   const teamMembers = [
     { id: "user_1", name: "Alice", email: "alice@acme.com" },
     { id: "user_2", name: "Bob", email: "bob@acme.com" },
@@ -177,22 +209,18 @@ async function setupOrg() {
         name: member.name,
         email: member.email,
       });
-      console.log(`Added ${member.name} as a seat`);
     } catch (err) {
       if (err.code === "limit_exceeded") {
-        console.error(`Cannot add ${member.name}: seat limit reached`);
+        console.error(`Seat limit reached for ${member.name}`);
       }
     }
   }
 
-  // 4. Track AI credits per seat
   await aiCredits.track(org.email, 100, { entity: "user_1" });
 
-  // 5. Check remaining credits for a seat
   const credits = await aiCredits.check(org.email, { entity: "user_1" });
   console.log(`User 1 has ${credits.balance} credits remaining`);
 
-  // 6. List and manage seats
   const { entities } = await seats.list(org.email);
   console.log(`${entities.length} seats active`);
 
@@ -202,18 +230,20 @@ async function setupOrg() {
 
 ## Notes
 
-- **Entity uniqueness:** Entity IDs are unique per feature. The same ID can be reused across different features.
-- **Limit validation:** `.add()` validates against the feature limit. If the limit would be exceeded, it throws with code `limit_exceeded`.
-- **Entity required:** You must explicitly add an entity with `.add()` before using it in `check()` or `track()`. Attempting to track/check a non-existent entity will fail with `entity_not_found` error.
-- **Seat removal:** `.remove()` immediately frees the slot for reuse.
-- **Metadata:** Store custom data (role, permissions, etc.) in the `metadata` field when adding entities.
-- **Org vs individual:** An org customer is the same as an individual customer in Owostack. Use entities to represent seats/workspaces within that customer.
+- Entity IDs are unique per feature.
+- `.add()` enforces the configured limit and returns `limit_exceeded` if adding
+  one more entity would exceed it.
+- You must create the entity before using it in entity-scoped `check()` or
+  `track()`.
+- Removed entities stay billable as `pending_removal` until period end.
+- Metadata is a good place for role, owner, or workspace details.
+- The same customer model works for individuals and organizations. Entities are
+  how you represent nested capacity inside that customer.
 
 ## API Reference
 
-See the SDK reference for detailed documentation:
-
 - [`entity()`](/sdk/catalog#entityslug-opts) - Define entity features (seats, projects)
-- [`customer()`](/sdk/customer) - Create and manage customers
-- [`check()`](/sdk/check) - Check feature access (supports entity scope)
-- [`track()`](/sdk/track) - Track usage for consumable features
+- [`addEntity(), removeEntity(), listEntities()`](/sdk/entities) - Manage
+  entity lifecycle
+- [`check()`](/sdk/check) - Check access with optional `entity`
+- [`track()`](/sdk/track) - Track consumable usage with optional `entity`
