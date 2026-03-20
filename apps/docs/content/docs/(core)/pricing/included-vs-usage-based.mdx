@@ -1,0 +1,106 @@
+---
+title: Included vs usage-based
+description: Choose between included quotas, pay-as-you-go usage, and prepaid balances
+icon: Gauge
+---
+
+# Included vs usage-based
+
+The first pricing choice in Owostack is not tiers. It is deciding **when usage
+becomes billable**.
+
+## Included
+
+Use `included` when a customer should get some usage before you block or charge.
+
+Common examples:
+
+- `10,000` emails per month included
+- `100` AI runs per week included
+- `5` seats included
+
+```ts
+const apiCalls = metered("api-calls", { name: "API Calls" });
+
+plan("pro", {
+  name: "Pro",
+  price: 200000,
+  currency: "NGN",
+  interval: "monthly",
+  features: [
+    apiCalls.limit(10000, {
+      reset: "monthly",
+      overage: "charge",
+      overagePrice: 500,
+      billingUnits: 1000,
+    }),
+  ],
+});
+```
+
+Here the first `10,000` units are included. Billing applies only after that.
+
+## Usage-based
+
+Use `usage_based` when every tracked unit is billable from the first one.
+
+Common examples:
+
+- pay-as-you-go APIs
+- image generation
+- storage processed
+- background jobs
+
+```ts
+const imageGenerations = metered("image-generations", {
+  name: "Image Generations",
+});
+
+plan("payg", {
+  name: "Pay as you go",
+  price: 0,
+  currency: "NGN",
+  interval: "monthly",
+  features: [
+    imageGenerations.perUnit(250, {
+      reset: "monthly",
+    }),
+  ],
+});
+```
+
+For `usage_based`, Owostack treats all tracked usage as billable quantity.
+
+## Prepaid
+
+Use `prepaid` when usage should consume from a balance instead of creating
+usage-based charges.
+
+This is the model behind credit systems and credit packs. See
+[Credits](/pricing/credits).
+
+## Billable quantity
+
+Owostack rates pricing against **billable quantity**:
+
+- `included`: `max(0, usage - included_limit)`
+- `usage_based`: all usage
+- `prepaid`: no normal overage rating, because usage consumes credits first
+
+That matters for tiered pricing. If a plan includes `100` units and the customer
+uses `220`, a graduated or volume model only sees `120` billable units.
+
+## When to use each
+
+- Choose `included` when the plan itself is the primary value and extra usage is
+  secondary.
+- Choose `usage_based` when usage is the product and billing should scale
+  linearly or by tiers.
+- Choose `prepaid` when customers should buy stored value up front.
+
+## Related guides
+
+- [Package pricing](/pricing/package-pricing)
+- [Graduated pricing](/pricing/graduated-pricing)
+- [Volume pricing](/pricing/volume-pricing)
+- [Overage](/pricing/overage)

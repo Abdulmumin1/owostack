@@ -1,0 +1,114 @@
+---
+title: Overage
+description: Block or charge after included usage is exhausted
+icon: TriangleAlert
+---
+
+# Overage
+
+Overage is what happens after an `included` feature runs out of granted usage.
+
+Owostack supports two overage behaviors:
+
+- `block`
+- `charge`
+
+## Block overage
+
+Use `block` when usage should stop at the limit.
+
+```ts
+const seats = entity("seats", { name: "Seats" });
+
+plan("starter", {
+  name: "Starter",
+  price: 0,
+  currency: "USD",
+  interval: "monthly",
+  features: [seats.limit(3, { overage: "block" })],
+});
+```
+
+Once the limit is reached, `check()` and `addEntity()` return a denial instead
+of billing more.
+
+## Charge overage
+
+Use `charge` when extra usage should continue and become billable.
+
+```ts
+const emails = metered("emails", { name: "Emails" });
+
+plan("pro", {
+  name: "Pro",
+  price: 3000,
+  currency: "USD",
+  interval: "monthly",
+  features: [
+    emails.limit(10000, {
+      overage: "charge",
+      overagePrice: 500,
+      billingUnits: 1000,
+    }),
+  ],
+});
+```
+
+That gives `10,000` included emails, then charges `500` per `1,000` overage
+emails.
+
+## Tiered overage
+
+Overage does not have to use package pricing. It can also use:
+
+- `graduated`
+- `volume`
+
+```ts
+emails.limit(10000, {
+  overage: "charge",
+  ratingModel: "graduated",
+  tiers: [
+    { upTo: 5000, unitPrice: 8 },
+    { upTo: null, unitPrice: 5 },
+  ],
+});
+```
+
+Those tiers rate only the **overage quantity**.
+
+## Max overage units
+
+If you allow chargeable overage but want a hard cap, set `maxOverageUnits`.
+
+```ts
+emails.limit(10000, {
+  overage: "charge",
+  overagePrice: 500,
+  billingUnits: 1000,
+  maxOverageUnits: 20000,
+});
+```
+
+That allows billing to continue, but only up to the configured extra usage cap.
+
+## Operational behavior
+
+Owostack’s billing paths and invoice generation use the same pricing metadata:
+
+- `usageModel`
+- `ratingModel`
+- `pricePerUnit`
+- `billingUnits`
+- `tiers`
+- `maxOverageUnits`
+
+That is why the same overage config is reflected in `check()`, `track()`, and
+invoice generation.
+
+## Related guides
+
+- [Included vs usage-based](/pricing/included-vs-usage-based)
+- [Package pricing](/pricing/package-pricing)
+- [Graduated pricing](/pricing/graduated-pricing)
+- [Volume pricing](/pricing/volume-pricing)

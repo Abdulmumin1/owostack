@@ -1,0 +1,82 @@
+---
+title: Package pricing
+description: Charge a fixed amount per billing unit such as per 1,000 requests
+icon: Package
+---
+
+# Package pricing
+
+`package` is the simplest rating model in Owostack.
+
+You define:
+
+- `pricePerUnit`
+- `billingUnits`
+
+That means "charge this amount per package of this many units."
+
+## Example
+
+```ts
+const apiCalls = metered("api-calls", { name: "API Calls" });
+
+plan("pro", {
+  name: "Pro",
+  price: 500000,
+  currency: "NGN",
+  interval: "monthly",
+  features: [
+    apiCalls.limit(50000, {
+      overage: "charge",
+      overagePrice: 500,
+      billingUnits: 1000,
+    }),
+  ],
+});
+```
+
+This means:
+
+- first `50,000` units are included
+- then overage is billed at `₦5.00` per `1,000` units
+
+If overage is `1,500` units, Owostack bills `2` packages.
+
+## Pay-as-you-go package pricing
+
+You can also use package pricing with `usage_based`:
+
+```ts
+const jobs = metered("jobs", { name: "Background Jobs" });
+
+plan("payg", {
+  name: "Usage",
+  price: 0,
+  currency: "NGN",
+  interval: "monthly",
+  features: [
+    jobs.config({
+      usageModel: "usage_based",
+      ratingModel: "package",
+      reset: "monthly",
+      pricePerUnit: 200,
+      billingUnits: 100,
+    }),
+  ],
+});
+```
+
+That charges `₦2.00` per `100` jobs from the first tracked unit.
+
+## When package pricing fits best
+
+- You want easy-to-explain pricing
+- You sell in blocks like `1,000` events or `100` credits
+- You do not need tier repricing
+
+## When to use something else
+
+- Use [Graduated pricing](/pricing/graduated-pricing) if each band should price
+  only its own units.
+- Use [Volume pricing](/pricing/volume-pricing) if one reached band should
+  reprice all billable units.
