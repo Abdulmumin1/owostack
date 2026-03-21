@@ -1,10 +1,54 @@
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
 import type { Env, Variables } from "../../index";
+import {
+  apiKeySecurity,
+  internalServerErrorResponse,
+  jsonContent,
+  unauthorizedResponse,
+} from "../../openapi/common";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
+
+const creditSystemSchema = z
+  .object({
+    slug: z.string(),
+    name: z.string(),
+    description: z.string().nullable(),
+    features: z.array(
+      z.object({
+        feature: z.string(),
+        creditCost: z.number(),
+      }),
+    ),
+  })
+  .passthrough();
+
+const listCreditSystemsRoute = createRoute({
+  method: "get",
+  path: "/",
+  operationId: "listCreditSystems",
+  tags: ["Credit Systems"],
+  summary: "List credit systems",
+  description:
+    "Lists credit systems and their feature-to-credit-cost mappings for the authenticated organization.",
+  security: apiKeySecurity,
+  responses: {
+    200: {
+      description: "Credit systems returned successfully",
+      ...jsonContent(
+        z.object({
+          success: z.literal(true),
+          creditSystems: z.array(creditSystemSchema),
+        }),
+      ),
+    },
+    401: unauthorizedResponse,
+    500: internalServerErrorResponse,
+  },
+});
 
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
@@ -27,7 +71,7 @@ app.use("*", async (c, next) => {
 });
 
 // GET /credit-systems — list all credit systems for the organization
-app.get("/", async (c) => {
+app.openapi(listCreditSystemsRoute, async (c) => {
   const organizationId = c.get("organizationId")!;
   const db = c.get("db");
 

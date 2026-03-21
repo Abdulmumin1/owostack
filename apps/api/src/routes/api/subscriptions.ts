@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
@@ -6,12 +6,94 @@ import type { Env, Variables } from "../../index";
 import { sendCheckoutEmail } from "../../lib/email";
 import { provisionEntitlements } from "../../lib/plan-switch";
 import { createCheckoutSessionForSubscription } from "../../lib/checkout-session";
+import {
+  badRequestResponse,
+  internalServerErrorResponse,
+  jsonContent,
+  notFoundResponse,
+  unauthorizedResponse,
+} from "../../openapi/common";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
+
+const subscriptionIdParamsSchema = z.object({
+  id: z.string(),
+});
+
+const subscriptionCheckoutBodySchema = z.object({
+  callbackUrl: z.string().url().optional(),
+});
+
+const subscriptionCheckoutResponseSchema = z
+  .object({
+    success: z.boolean(),
+    checkoutUrl: z.string().url().optional(),
+    reference: z.string().optional(),
+    accessCode: z.string().optional(),
+    activatedDirectly: z.boolean().optional(),
+    message: z.string().optional(),
+  })
+  .passthrough();
+
+const activatePendingSubscriptionRoute = createRoute({
+  method: "get",
+  path: "/{id}/activate",
+  operationId: "activatePendingSubscription",
+  tags: ["Subscriptions"],
+  summary: "Redirect to a fresh checkout session",
+  description:
+    "Public activation URL for a pending subscription. Generates a fresh provider checkout session and redirects the customer to it.",
+  security: [],
+  request: {
+    params: subscriptionIdParamsSchema,
+    query: z.object({
+      callbackUrl: z.string().url().optional(),
+    }),
+  },
+  responses: {
+    302: {
+      description: "Redirects to provider checkout",
+    },
+    400: {
+      description: "Failed to generate checkout link",
+    },
+  },
+});
+
+const generateSubscriptionCheckoutRoute = createRoute({
+  method: "post",
+  path: "/{id}/checkout",
+  operationId: "generateSubscriptionCheckout",
+  tags: ["Subscriptions"],
+  summary: "Generate checkout for a pending subscription",
+  description:
+    "Generates a payment checkout URL for an existing pending subscription. Useful for collecting payment details before activating.",
+  request: {
+    params: subscriptionIdParamsSchema,
+    body: {
+      required: false,
+      content: {
+        "application/json": {
+          schema: subscriptionCheckoutBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Checkout generated successfully",
+      ...jsonContent(subscriptionCheckoutResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    500: internalServerErrorResponse,
+  },
+});
 
 // GET /v1/subscriptions/:id/activate
 // Public route that redirects to a fresh provider checkout session.
-app.get("/:id/activate", async (c) => {
+app.openapi(activatePendingSubscriptionRoute, async (c) => {
   const { id } = c.req.param();
   const { callbackUrl } = c.req.query();
 
@@ -30,7 +112,7 @@ app.get("/:id/activate", async (c) => {
   }
 });
 
-app.post("/:id/checkout", async (c) => {
+app.openapi(generateSubscriptionCheckoutRoute, async (c) => {
   const { id } = c.req.param();
   const db = c.get("db");
   const authDb = c.get("authDb");

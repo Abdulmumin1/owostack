@@ -1,5 +1,5 @@
-import { Hono } from "hono";
-import { z } from "zod";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import type { MiddlewareHandler } from "hono";
 import { eq, and, sql, or, inArray } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
@@ -24,8 +24,21 @@ import {
 } from "../../lib/usage-rating";
 import { buildUsagePricingSnapshot } from "../../lib/usage-pricing-snapshot";
 import { isCustomerResolutionConflictError } from "../../lib/customer-resolution";
+import {
+  apiKeySecurity,
+  badRequestResponse,
+  billingTierBreakdownSchema,
+  conflictResponse,
+  customerDataSchema as customerDataOpenAPISchema,
+  errorResponseSchema,
+  internalServerErrorResponse,
+  jsonContent,
+  metadataSchema,
+  pricingDetailsSchema,
+  unauthorizedResponse,
+} from "../../openapi/common";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
 export type EntitlementsDependencies = {
   verifyApiKey: typeof verifyApiKey;
@@ -46,6 +59,8 @@ const defaultDependencies: EntitlementsDependencies = {
   getOrgOverageSettings,
   getUnbilledOverageAmount,
 };
+
+const jsonContentTypePattern = /^application\/([a-z-]+\+)?json\b/i;
 
 function getEntitlementsDependencies(c: any): EntitlementsDependencies {
   return c.get?.("entitlementsDeps") ?? defaultDependencies;
@@ -360,8 +375,27 @@ function hasAuthoritativeUsageLedger(
   return Boolean(c.env.USAGE_LEDGER && organizationId);
 }
 
-// Middleware for API Key Auth
-app.use("*", async (c, next) => {
+const ensureJsonContentType: MiddlewareHandler<{
+  Bindings: Env;
+  Variables: Variables;
+}> = async (c, next) => {
+  const contentType = c.req.header("Content-Type");
+  if (
+    c.req.raw.body !== null &&
+    (!contentType || !jsonContentTypePattern.test(contentType))
+  ) {
+    const headers = new Headers(c.req.raw.headers);
+    headers.set("Content-Type", "application/json");
+    c.req.raw = new Request(c.req.raw, { headers });
+  }
+
+  await next();
+};
+
+const requireApiKey: MiddlewareHandler<{
+  Bindings: Env;
+  Variables: Variables;
+}> = async (c, next) => {
   const deps = getEntitlementsDependencies(c);
   const authHeader = c.req.header("Authorization");
 
@@ -382,13 +416,9 @@ app.use("*", async (c, next) => {
 
   c.set("organizationId", keyRecord.organizationId);
   return await next();
-});
+};
 
-const customerDataSchema = z.object({
-  email: z.string().email(),
-  name: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
+const customerDataSchema = customerDataOpenAPISchema;
 
 const checkSchema = z.object({
   customer: z.string(),
@@ -405,7 +435,118 @@ const trackSchema = z.object({
   value: z.number().min(0).default(1),
   customerData: customerDataSchema.optional(),
   entity: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: metadataSchema.optional(),
+});
+
+const entitlementResultSchema = z
+  .object({
+    allowed: z.boolean(),
+    code: z.string(),
+    usage: z.number().nullable().optional(),
+    limit: z.number().nullable().optional(),
+    balance: z.number().nullable().optional(),
+    resetsAt: z.string().datetime().nullable().optional(),
+    resetInterval: z.string().nullable().optional(),
+    addonCredits: z.number().optional(),
+    details: z
+      .object({
+        message: z.string().optional(),
+        pricing: pricingDetailsSchema.optional(),
+        tierBreakdown: z.array(billingTierBreakdownSchema).optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+const entitlementOrErrorSchema = z.union([
+  entitlementResultSchema,
+  errorResponseSchema,
+]);
+
+const checkRoute = createRoute({
+  method: "post",
+  path: "/check",
+  operationId: "check",
+  tags: ["Entitlements"],
+  summary: "Check feature entitlements",
+  description:
+    "Check whether a customer is allowed to use a feature and get current usage and limits. Optionally track usage atomically if allowed via sendEvent.",
+  security: apiKeySecurity,
+  middleware: [requireApiKey, ensureJsonContentType],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: checkSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Entitlement result",
+      ...jsonContent(entitlementResultSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+    503: {
+      description: "Billing state unavailable",
+      ...jsonContent(entitlementResultSchema),
+    },
+  },
+});
+
+const trackRoute = createRoute({
+  method: "post",
+  path: "/track",
+  operationId: "track",
+  tags: ["Entitlements"],
+  summary: "Record metered usage",
+  description:
+    "Track usage for a feature and return the resulting entitlement state after the increment.",
+  security: apiKeySecurity,
+  middleware: [requireApiKey, ensureJsonContentType],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: trackSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Tracked usage result",
+      ...jsonContent(entitlementResultSchema),
+    },
+    400: {
+      description: "Invalid request or tracking denied",
+      ...jsonContent(entitlementOrErrorSchema),
+    },
+    401: unauthorizedResponse,
+    404: {
+      description: "Tracked resource not found",
+      ...jsonContent(entitlementResultSchema),
+    },
+    409: {
+      description: "Tracked request conflicts with current customer resolution",
+      ...jsonContent(entitlementResultSchema),
+    },
+    500: {
+      description: "Tracking failed",
+      ...jsonContent(entitlementOrErrorSchema),
+    },
+    503: {
+      description: "Billing state unavailable",
+      ...jsonContent(entitlementResultSchema),
+    },
+  },
 });
 
 // ---------------------------------------------------------------------------
@@ -640,158 +781,1481 @@ async function getManualEntitlementForFeature(
 }
 
 // Check Access
-app.post("/check", async (c) => {
-  const deps = getEntitlementsDependencies(c);
-  const body = await c.req.json();
-  const parsed = checkSchema.safeParse(body);
+app.openapi(
+  checkRoute,
+  async (c) => {
+    const deps = getEntitlementsDependencies(c);
+    const {
+      customer: customerId,
+      feature: featureId,
+      value,
+      customerData,
+      sendEvent,
+      entity,
+    } = c.req.valid("json");
+    const db = c.get("db");
+    const organizationId = c.get("organizationId");
+    const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
 
-  if (!parsed.success) {
-    return c.json(zodErrorToResponse(parsed.error), 400);
-  }
+    if (!organizationId) {
+      return c.json(
+        { success: false, error: "Organization Context Missing" },
+        500,
+      );
+    }
 
-  const {
-    customer: customerId,
-    feature: featureId,
-    value,
-    customerData,
-    sendEvent,
-    entity,
-  } = parsed.data;
-  const db = c.get("db");
-  const organizationId = c.get("organizationId");
-  const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
+    // 1 & 2. Resolve Customer and Feature in parallel
+    let customer;
+    let featureResult;
+    try {
+      [customer, featureResult] = await Promise.all([
+        deps.resolveOrCreateCustomer({
+          db,
+          organizationId,
+          customerId,
+          customerData,
+          cache,
+          waitUntil: (p) => c.executionCtx.waitUntil(p),
+        }),
+        (async () => {
+          let f = cache
+            ? await cache.getFeature<typeof schema.features.$inferSelect>(
+                organizationId,
+                featureId,
+              )
+            : null;
 
-  if (!organizationId) {
-    return c.json(
-      { success: false, error: "Organization Context Missing" },
-      500,
-    );
-  }
+          if (!f) {
+            f =
+              (await db.query.features.findFirst({
+                where: and(
+                  eq(schema.features.organizationId, organizationId),
+                  or(
+                    eq(schema.features.id, featureId),
+                    eq(schema.features.slug, featureId),
+                  ),
+                ),
+              })) ?? null;
 
-  // 1 & 2. Resolve Customer and Feature in parallel
-  let customer;
-  let featureResult;
-  try {
-    [customer, featureResult] = await Promise.all([
-      deps.resolveOrCreateCustomer({
-        db,
-        organizationId,
-        customerId,
-        customerData,
-        cache,
-        waitUntil: (p) => c.executionCtx.waitUntil(p),
-      }),
-      (async () => {
-        let f = cache
-          ? await cache.getFeature<typeof schema.features.$inferSelect>(
-              organizationId,
-              featureId,
-            )
-          : null;
+            if (f && cache) {
+              const featureCacheKeys = [featureId, f.id, f.slug].filter(
+                (key): key is string => !!key && key.length > 0,
+              );
+              const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
+              scheduleCacheOp(
+                c,
+                Promise.all(
+                  uniqueFeatureCacheKeys.map((key) =>
+                    cache.setFeature(organizationId, key, f),
+                  ),
+                ),
+                "setFeature(/check)",
+              );
+            }
+          }
+          return f;
+        })(),
+      ]);
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json(
+          {
+            allowed: false,
+            code: "customer_ambiguous",
+            usage: null,
+            limit: null,
+            balance: null,
+            resetsAt: null,
+            resetInterval: null,
+            details: {
+              message: error.message,
+            },
+          },
+          200,
+        );
+      }
+      throw error;
+    }
 
-        if (!f) {
-          f =
-            (await db.query.features.findFirst({
+    if (!customer) {
+      return c.json(
+        {
+          allowed: false,
+          code: "customer_not_found",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message: `Customer '${customerId}' not found in this organization.`,
+          },
+        },
+        200,
+      );
+    }
+
+    const feature = featureResult;
+
+    if (!feature) {
+      return c.json(
+        {
+          allowed: false,
+          code: "feature_not_found",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: { message: `Feature '${featureId}' not found.` },
+        },
+        200,
+      );
+    }
+
+    // ---------------------------------------------------------------------------
+    // 3 & 4. Check for Manual Overrides FIRST, then fetch Subscriptions
+    // ---------------------------------------------------------------------------
+    // Overrides take precedence over plan features - check them first
+    const now = Date.now();
+    const subsCacheKey = customer.id;
+
+    const [entityValid, subscriptionsResult, manualEntitlement] =
+      await Promise.all([
+        // Validate Entity (if provided, must exist)
+        entity
+          ? db.query.entities.findFirst({
               where: and(
-                eq(schema.features.organizationId, organizationId),
+                eq(schema.entities.customerId, customer.id),
+                eq(schema.entities.featureId, feature.id),
+                eq(schema.entities.entityId, entity),
                 or(
-                  eq(schema.features.id, featureId),
-                  eq(schema.features.slug, featureId),
+                  eq(schema.entities.status, "active"),
+                  eq(schema.entities.status, "pending_removal"),
                 ),
               ),
-            })) ?? null;
+            })
+          : true,
+        // Check Subscription & Plans (cache-first, then DB)
+        (async () => {
+          let subs = cache
+            ? await cache.getSubscriptions<
+                Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
+              >(organizationId, subsCacheKey)
+            : null;
 
-          if (f && cache) {
-            const featureCacheKeys = [featureId, f.id, f.slug].filter(
-              (key): key is string => !!key && key.length > 0,
-            );
-            const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
-            scheduleCacheOp(
-              c,
-              Promise.all(
-                uniqueFeatureCacheKeys.map((key) =>
-                  cache.setFeature(organizationId, key, f),
-                ),
+          if (!subs) {
+            subs = await db.query.subscriptions.findMany({
+              where: and(
+                eq(schema.subscriptions.customerId, customer.id),
+                inArray(schema.subscriptions.status, [
+                  "active",
+                  "trialing",
+                  "pending_cancel",
+                ]),
               ),
-              "setFeature(/check)",
+              with: {
+                plan: true,
+              },
+            });
+
+            if (cache) {
+              scheduleCacheOp(
+                c,
+                cache.setSubscriptions(organizationId, subsCacheKey, subs),
+                "setSubscriptions(/check)",
+              );
+            }
+          }
+          return subs;
+        })(),
+        // Check for manual entitlement override (runs in parallel)
+        getManualEntitlementForFeature(
+          c,
+          db,
+          cache,
+          organizationId,
+          customer.id,
+          feature.id,
+          now,
+        ),
+      ]);
+
+    if (entity && !entityValid) {
+      return c.json(
+        {
+          allowed: false,
+          code: "entity_not_found",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
+          },
+        },
+        200,
+      );
+    }
+
+    let subscriptions = subscriptionsResult;
+
+    // Filter out expired trialing subscriptions and scheduled cancellations past their effective date
+    const expiredTrialIds: string[] = [];
+    const expiredCancelIds: string[] = [];
+    const stalePaidPeriodIds: string[] = [];
+    subscriptions = subscriptions.filter((s: any) => {
+      if (s.status === "trialing") {
+        const trialEnd = s.currentPeriodEnd;
+        const trialEndValid =
+          typeof trialEnd === "number" &&
+          trialEnd > 0 &&
+          trialEnd <= now + MAX_TRIAL_DURATION_MS;
+        if (!trialEndValid || trialEnd < now) {
+          expiredTrialIds.push(s.id);
+          return false;
+        }
+      }
+      // Scheduled cancellation past effective date — customer should lose access
+      if (s.cancelAt && s.cancelAt < now && !s.canceledAt) {
+        expiredCancelIds.push(s.id);
+        return false;
+      }
+      if (
+        isPaidActivePastGracePeriod(
+          {
+            status: s.status,
+            currentPeriodEnd: s.currentPeriodEnd,
+            planType: s.plan?.type,
+          },
+          now,
+        )
+      ) {
+        stalePaidPeriodIds.push(s.id);
+        return false;
+      }
+      return true;
+    });
+    if (expiredTrialIds.length > 0) {
+      // Fire-and-forget: mark expired trials in DB
+      c.executionCtx.waitUntil(
+        db
+          .update(schema.subscriptions)
+          .set({ status: "expired", updatedAt: now })
+          .where(inArray(schema.subscriptions.id, expiredTrialIds)),
+      );
+    }
+    if (expiredCancelIds.length > 0) {
+      // Fire-and-forget: mark scheduled cancellations as canceled in DB
+      c.executionCtx.waitUntil(
+        db
+          .update(schema.subscriptions)
+          .set({ status: "canceled", canceledAt: now, updatedAt: now })
+          .where(inArray(schema.subscriptions.id, expiredCancelIds)),
+      );
+    }
+    if (stalePaidPeriodIds.length > 0) {
+      // Fire-and-forget: force stale paid subscriptions out of the active set
+      c.executionCtx.waitUntil(
+        db
+          .update(schema.subscriptions)
+          .set({ status: "past_due", updatedAt: now })
+          .where(inArray(schema.subscriptions.id, stalePaidPeriodIds)),
+      );
+    }
+    if (
+      expiredTrialIds.length > 0 ||
+      expiredCancelIds.length > 0 ||
+      stalePaidPeriodIds.length > 0
+    ) {
+      // Invalidate cache so next request gets fresh data
+      if (cache) {
+        scheduleCacheOp(
+          c,
+          cache.invalidateSubscriptions(organizationId, subsCacheKey),
+          "invalidateSubscriptions(/check)",
+        );
+      }
+    }
+
+    if (!subscriptions || subscriptions.length === 0) {
+      return c.json(
+        {
+          allowed: false,
+          code: "no_active_subscription",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message:
+              "No active or trialing subscription found for this customer.",
+          },
+        },
+        200,
+      );
+    }
+
+    // 4. Check Plan Features (cache-first, then batch DB query)
+    const planIds = subscriptions.map((s: { planId: string }) => s.planId);
+    const pfCacheKey = `${planIds.sort().join(",")}:${feature.id}`;
+    let planFeatures = cache
+      ? await cache.getPlanFeatures<
+          Awaited<ReturnType<typeof db.query.planFeatures.findMany>>
+        >(organizationId, pfCacheKey)
+      : null;
+
+    if (!planFeatures) {
+      planFeatures = await db.query.planFeatures.findMany({
+        where: and(
+          inArray(schema.planFeatures.planId, planIds),
+          eq(schema.planFeatures.featureId, feature.id),
+        ),
+      });
+
+      if (cache) {
+        scheduleCacheOp(
+          c,
+          cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures),
+          "setPlanFeatures(/check)",
+        );
+      }
+    }
+
+    // Find the first subscription that has a matching planFeature
+    let accessGrantingSubscription: (typeof subscriptions)[number] | null =
+      null;
+    let accessGrantingPlanFeature: any = null;
+    let creditMapping: CreditSystemMapping | null = null;
+
+    // Check for manual override FIRST - it takes precedence over plan features
+    if (manualEntitlement) {
+      // Found a manual override! Use it instead of plan feature
+      accessGrantingSubscription = subscriptions[0] || {
+        id: "manual",
+        status: "active",
+        currentPeriodStart: now - 30 * 24 * 60 * 60 * 1000,
+        currentPeriodEnd: now + 30 * 24 * 60 * 60 * 1000,
+        plan: { name: "Manual Override" },
+      };
+      accessGrantingPlanFeature = {
+        ...manualEntitlement,
+        planId: (accessGrantingSubscription as any).planId || "manual",
+        usageModel: "included",
+      };
+    } else {
+      // No manual override, check plan features
+      for (const pf of planFeatures) {
+        const sub = subscriptions.find(
+          (s: { planId: string }) => s.planId === pf.planId,
+        );
+        if (sub) {
+          accessGrantingSubscription = sub;
+          accessGrantingPlanFeature = pf;
+          break;
+        }
+      }
+
+      // Credit system fallback: feature may belong to a credit system pool
+      if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
+        creditMapping = await resolveCreditSystem(
+          db,
+          feature.id,
+          planIds,
+          subscriptions,
+          customer.id,
+          now,
+        );
+        if (creditMapping) {
+          accessGrantingSubscription = creditMapping.subscription;
+          accessGrantingPlanFeature = creditMapping.planFeature;
+        }
+      }
+    }
+
+    if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
+      return c.json(
+        {
+          allowed: false,
+          code: "feature_not_in_plan",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.`,
+          },
+        },
+        200,
+      );
+    }
+
+    // Use the granting subscription/feature for the rest of the logic
+    const subscription = accessGrantingSubscription;
+    const planFeature = accessGrantingPlanFeature;
+
+    // When resolved via credit system, adjust the effective values:
+    // - effectiveFeatureId: track usage against the credit system's feature, not the child
+    // - effectiveValue: multiply by cost (e.g., 1 unit of "dfs" = 20 credits)
+    // - effectiveFeatureKey: use credit system slug for DO tracking
+    const effectiveFeatureId = creditMapping
+      ? creditMapping.creditSystemId
+      : feature.id;
+    const effectiveValue = creditMapping
+      ? value * creditMapping.costPerUnit
+      : value;
+    const effectiveFeatureSlug = creditMapping
+      ? creditMapping.creditSystemSlug
+      : feature.slug || feature.id;
+
+    // Build reusable details context
+    const isTrial = subscription.status === "trialing";
+    const trialEndsAt =
+      isTrial && subscription.currentPeriodEnd
+        ? new Date(subscription.currentPeriodEnd).toISOString()
+        : null;
+    const planName = (subscription as any).plan?.name || "current plan";
+
+    // Helper to build the details object — only includes truthy optional fields
+    function buildDetails(
+      message: string,
+      extra?: Record<string, unknown>,
+      usageForPricing?: number | null,
+    ) {
+      const pricing = buildPricingDetails(planFeature, usageForPricing);
+      return {
+        message,
+        planName,
+        ...(isTrial ? { trial: true, trialEndsAt } : {}),
+        ...(creditMapping
+          ? {
+              creditSystem: creditMapping.creditSystemSlug,
+              creditCostPerUnit: creditMapping.costPerUnit,
+            }
+          : {}),
+        ...(pricing ? { pricing } : {}),
+        ...extra,
+      };
+    }
+
+    // 5. Check Logic based on Type
+    // Boolean features get immediate access UNLESS they're part of a credit system
+    // (credit system children must go through the metered path to consume credits)
+    if (feature.type === "boolean" && !creditMapping) {
+      return c.json(
+        {
+          allowed: true,
+          code: "access_granted",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: buildDetails(
+            isTrial
+              ? `Feature '${feature.slug || feature.id}' enabled on ${planName} via free trial (ends ${trialEndsAt}).`
+              : `Feature '${feature.slug || feature.id}' enabled on ${planName}.`,
+          ),
+        },
+        200,
+      );
+    }
+
+    if (feature.type === "metered" || creditMapping) {
+      // Compute reset period once for all response paths
+      const resetPeriod = getResetPeriod(
+        planFeature.resetInterval,
+        subscription.currentPeriodStart,
+        subscription.currentPeriodEnd,
+      );
+      const resetsAt = new Date(resetPeriod.periodEnd).toISOString();
+
+      // ===========================================================================
+      // DO Check (Preferred for atomicity)
+      // ===========================================================================
+      // When credit system resolved, use the credit system slug for DO key
+      // When entity is provided, scope DO feature key and DB queries by entity
+      const featureKey = entity
+        ? `${effectiveFeatureSlug}:${entity}`
+        : effectiveFeatureSlug;
+
+      if (c.env.USAGE_METER && organizationId) {
+        const doId = c.env.USAGE_METER.idFromName(
+          `${organizationId}:${customer.id}`,
+        );
+        const usageMeter = c.env.USAGE_METER.get(doId);
+        const usageModel = getUsageModel(planFeature);
+
+        // Pass current config inline — single RPC call, no extra round-trip
+        const currentConfig = {
+          limit: planFeature.limitValue,
+          resetInterval: planFeature.resetInterval,
+          resetOnEnable: planFeature.resetOnEnable || false,
+          rolloverEnabled: planFeature.rolloverEnabled || false,
+          rolloverMaxBalance: planFeature.rolloverMaxBalance,
+          usageModel: planFeature.usageModel || "included",
+          creditCost: planFeature.creditCost || 0,
+        };
+
+        let doResult = await usageMeter.check(
+          featureKey,
+          effectiveValue,
+          currentConfig,
+        );
+
+        // If DO has no state yet (fresh/restart), migrate usage from UsageLedgerDO and configure
+        if (doResult.code === "feature_not_found") {
+          const { periodStart: migPeriodStart, periodEnd: migPeriodEnd } =
+            resetPeriod;
+
+          // Query UsageLedgerDO for historical usage (not D1 - DO is source of truth)
+          const ledgerUsage = await sumUsageAmount(
+            {
+              usageLedger: c.env.USAGE_LEDGER,
+              organizationId: organizationId || null,
+            },
+            {
+              customerId: customer.id,
+              featureId: effectiveFeatureId,
+              entityId: entity || undefined,
+              createdAtFrom: migPeriodStart,
+              createdAtTo: migPeriodEnd,
+            },
+          );
+          if (
+            ledgerUsage === null &&
+            hasAuthoritativeUsageLedger(c, organizationId)
+          ) {
+            return c.json(
+              {
+                allowed: false,
+                code: "billing_unavailable",
+                usage: null,
+                limit: null,
+                balance: null,
+                resetsAt,
+                resetInterval: planFeature.resetInterval,
+                details: {
+                  message:
+                    "Billing ledger unavailable. Cannot safely initialize metered usage right now.",
+                },
+              },
+              503,
+            );
+          }
+
+          const currentUsage = ledgerUsage ?? 0;
+
+          await usageMeter.configureFeature(featureKey, {
+            ...currentConfig,
+            initialUsage: currentUsage,
+          });
+
+          doResult = await usageMeter.check(featureKey, effectiveValue);
+        }
+
+        if (usageModel === "usage_based") {
+          const usageBasedGuard = await deps.checkOverageAllowed(
+            db,
+            customer.id,
+            effectiveFeatureId,
+            resetPeriod.periodStart,
+            resetPeriod.periodEnd,
+            0,
+            planFeature.maxOverageUnits,
+            effectiveValue,
+            {
+              usageLedger: c.env.USAGE_LEDGER,
+              organizationId: organizationId || null,
+            },
+          );
+
+          if (!usageBasedGuard.allowed) {
+            return c.json(
+              {
+                allowed: false,
+                code: "limit_exceeded",
+                usage: doResult.usage,
+                limit: null,
+                balance: null,
+                resetsAt,
+                resetInterval: planFeature.resetInterval,
+                details: buildDetails(
+                  usageBasedGuard.reason ||
+                    "Usage-based billing is not allowed.",
+                  undefined,
+                  doResult.usage,
+                ),
+              },
+              200,
             );
           }
         }
-        return f;
-      })(),
-    ]);
-  } catch (error) {
-    if (isCustomerResolutionConflictError(error)) {
-      return c.json({
+
+        if (!doResult.allowed) {
+          // During trials, always block at limit — no overage billing for free trials
+          const overageSetting = isTrial
+            ? "block"
+            : planFeature.overage || "block";
+
+          // Add-on credits FIRST — consume purchased credits before overage billing
+          if (creditMapping) {
+            const addonBalance = await getAddonBalance(
+              db,
+              customer.id,
+              creditMapping.creditSystemId,
+              deps,
+            );
+            if (addonBalance >= effectiveValue) {
+              if (sendEvent) {
+                await tryDeductAddonCredits(
+                  db,
+                  customer.id,
+                  effectiveValue,
+                  creditMapping.creditSystemId,
+                  deps,
+                );
+                scheduleUsagePersist(
+                  c,
+                  db,
+                  organizationId,
+                  {
+                    customerId: customer.id,
+                    ...buildUsageLedgerContext({
+                      featureId: effectiveFeatureId,
+                      featureSlug: effectiveFeatureSlug,
+                      featureName: creditMapping
+                        ? effectiveFeatureSlug
+                        : (feature.name ?? effectiveFeatureSlug),
+                      subscription,
+                      planFeature,
+                    }),
+                    entityId: entity || null,
+                    amount: effectiveValue,
+                    periodStart: resetPeriod.periodStart,
+                    periodEnd: resetPeriod.periodEnd,
+                  },
+                  "check:addon-fallback",
+                );
+              }
+              const remaining = addonBalance - (sendEvent ? effectiveValue : 0);
+              return c.json(
+                {
+                  allowed: true,
+                  code: "addon_credits_used",
+                  usage: doResult.usage,
+                  limit: doResult.limit,
+                  balance:
+                    doResult.limit === null
+                      ? null
+                      : doResult.limit - doResult.usage,
+                  resetsAt,
+                  resetInterval: planFeature.resetInterval,
+                  addonCredits: remaining,
+                  planCredits: {
+                    used: doResult.usage,
+                    limit: doResult.limit,
+                    resetsAt,
+                  },
+                  details: buildDetails(
+                    `Plan credits exhausted. ${effectiveValue} add-on credits ${sendEvent ? "deducted" : "will be deducted"}.`,
+                    {
+                      addonCreditsUsed: effectiveValue,
+                      addonCreditsRemaining: remaining,
+                    },
+                    doResult.usage,
+                  ),
+                },
+                200,
+              );
+            }
+          }
+
+          // If overage is "charge", check guards before allowing
+          if (overageSetting === "charge") {
+            const overageGuard = await deps.checkOverageAllowed(
+              db,
+              customer.id,
+              effectiveFeatureId,
+              resetPeriod.periodStart,
+              resetPeriod.periodEnd,
+              planFeature.limitValue,
+              planFeature.maxOverageUnits,
+              effectiveValue,
+              {
+                usageLedger: c.env.USAGE_LEDGER,
+                organizationId: organizationId || null,
+              },
+            );
+
+            if (overageGuard.allowed) {
+              return c.json(
+                {
+                  allowed: true,
+                  code: "overage_allowed",
+                  usage: doResult.usage,
+                  limit: doResult.limit,
+                  balance:
+                    doResult.limit === null
+                      ? null
+                      : doResult.limit - doResult.usage,
+                  resetsAt,
+                  resetInterval: planFeature.resetInterval,
+                  details: buildDetails(
+                    `Usage exceeds limit (${doResult.usage}/${doResult.limit}), overage will be billed.`,
+                    {
+                      overage: {
+                        type: overageSetting,
+                        willBeBilled: true,
+                        pricePerUnit:
+                          planFeature.overagePrice || planFeature.pricePerUnit,
+                        billingUnits: planFeature.billingUnits,
+                      },
+                    },
+                    doResult.usage,
+                  ),
+                },
+                200,
+              );
+            }
+            // Guard failed — fall through to block
+          }
+
+          // Otherwise block
+          const blockAddonCredits = creditMapping
+            ? await getAddonBalance(
+                db,
+                customer.id,
+                creditMapping.creditSystemId,
+                deps,
+              )
+            : undefined;
+          return c.json(
+            {
+              allowed: false,
+              code: "limit_exceeded",
+              usage: doResult.usage,
+              limit: doResult.limit,
+              balance:
+                doResult.limit === null
+                  ? null
+                  : doResult.limit - doResult.usage,
+              resetsAt,
+              resetInterval: planFeature.resetInterval,
+              ...(blockAddonCredits !== undefined
+                ? { addonCredits: blockAddonCredits }
+                : {}),
+              details: buildDetails(
+                `Usage limit reached (${doResult.usage}/${doResult.limit}). Resets at ${resetsAt}.`,
+                undefined,
+                doResult.usage,
+              ),
+            },
+            200,
+          );
+        }
+
+        // sendEvent: atomically track usage if check passed
+        if (sendEvent) {
+          const trackResult = await usageMeter.track(
+            featureKey,
+            effectiveValue,
+            currentConfig,
+          );
+          if (trackResult && !trackResult.allowed) {
+            // Add-on credit fallback for race condition (check passed but track failed)
+            if (creditMapping) {
+              const deductResult = await tryDeductAddonCredits(
+                db,
+                customer.id,
+                effectiveValue,
+                creditMapping.creditSystemId,
+              );
+              if (deductResult.deducted) {
+                scheduleUsagePersist(
+                  c,
+                  db,
+                  organizationId,
+                  {
+                    customerId: customer.id,
+                    ...buildUsageLedgerContext({
+                      featureId: effectiveFeatureId,
+                      featureSlug: effectiveFeatureSlug,
+                      featureName: creditMapping
+                        ? effectiveFeatureSlug
+                        : (feature.name ?? effectiveFeatureSlug),
+                      subscription,
+                      planFeature,
+                    }),
+                    entityId: entity || null,
+                    amount: effectiveValue,
+                    periodStart: resetPeriod.periodStart,
+                    periodEnd: resetPeriod.periodEnd,
+                  },
+                  "check:track-race-addon",
+                );
+                return c.json(
+                  {
+                    allowed: true,
+                    code: "addon_credits_used",
+                    usage:
+                      trackResult.balance !== undefined
+                        ? doResult.limit !== null
+                          ? doResult.limit - trackResult.balance
+                          : null
+                        : doResult.usage,
+                    limit: doResult.limit,
+                    balance:
+                      doResult.limit === null
+                        ? null
+                        : (trackResult.balance ??
+                          doResult.limit - doResult.usage),
+                    resetsAt,
+                    resetInterval: planFeature.resetInterval,
+                    addonCredits: deductResult.remaining ?? 0,
+                    planCredits: {
+                      used: doResult.usage,
+                      limit: doResult.limit,
+                      resetsAt,
+                    },
+                    details: buildDetails(
+                      `Plan credits exhausted. ${effectiveValue} add-on credits deducted.`,
+                      {
+                        addonCreditsUsed: effectiveValue,
+                        addonCreditsRemaining: deductResult.remaining ?? 0,
+                      },
+                      doResult.usage,
+                    ),
+                  },
+                  200,
+                );
+              }
+            }
+            return c.json(
+              {
+                allowed: false,
+                code: "limit_exceeded",
+                usage:
+                  trackResult.balance !== undefined
+                    ? doResult.limit !== null
+                      ? doResult.limit - trackResult.balance
+                      : null
+                    : doResult.usage,
+                limit: doResult.limit,
+                balance:
+                  doResult.limit === null
+                    ? null
+                    : (trackResult.balance ?? doResult.limit - doResult.usage),
+                resetsAt,
+                resetInterval: planFeature.resetInterval,
+                details: buildDetails(
+                  `Usage tracking denied — insufficient balance (${trackResult.balance} remaining). Resets at ${resetsAt}.`,
+                  undefined,
+                  doResult.usage,
+                ),
+              },
+              200,
+            );
+          }
+          // Also persist to DB for audit trail
+          scheduleUsagePersist(
+            c,
+            db,
+            organizationId,
+            {
+              customerId: customer.id,
+              ...buildUsageLedgerContext({
+                featureId: effectiveFeatureId,
+                featureSlug: effectiveFeatureSlug,
+                featureName: creditMapping
+                  ? effectiveFeatureSlug
+                  : (feature.name ?? effectiveFeatureSlug),
+                subscription,
+                planFeature,
+              }),
+              entityId: entity || null,
+              amount: effectiveValue,
+              periodStart: resetPeriod.periodStart,
+              periodEnd: resetPeriod.periodEnd,
+            },
+            "check:track-inline",
+          );
+
+          // Deduct from credits.balance for prepaid model (not credit systems)
+          if (
+            !creditMapping &&
+            planFeature.creditCost &&
+            planFeature.creditCost > 0
+          ) {
+            const cost = value * planFeature.creditCost;
+            c.executionCtx.waitUntil(
+              db
+                .update(schema.credits)
+                .set({
+                  balance: sql`${schema.credits.balance} - ${cost}`,
+                  updatedAt: Date.now(),
+                })
+                .where(eq(schema.credits.customerId, customer.id)),
+            );
+          }
+        }
+
+        // Include add-on credit balance in response for credit system features
+        const addonCreditsBalance = creditMapping
+          ? await getAddonBalance(db, customer.id, creditMapping.creditSystemId)
+          : undefined;
+
+        return c.json(
+          {
+            allowed: true,
+            code: "access_granted",
+            usage: doResult.usage,
+            limit: doResult.limit,
+            balance: doResult.limit === null ? null : doResult.balance,
+            resetsAt,
+            resetInterval: planFeature.resetInterval,
+            ...(doResult.rolloverBalance > 0
+              ? { rolloverBalance: doResult.rolloverBalance }
+              : {}),
+            ...(addonCreditsBalance !== undefined
+              ? { addonCredits: addonCreditsBalance }
+              : {}),
+            ...(creditMapping && doResult.limit !== null
+              ? {
+                  planCredits: {
+                    used: doResult.usage,
+                    limit: doResult.limit,
+                    resetsAt,
+                  },
+                }
+              : {}),
+            details: buildDetails(
+              usageModel === "usage_based"
+                ? `Usage-based access granted for '${feature.slug || feature.id}'. Usage will be billed.`
+                : doResult.limit === null
+                  ? `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`
+                  : `Access granted — used ${doResult.usage} of ${doResult.limit}.`,
+              undefined,
+              doResult.usage,
+            ),
+          },
+          200,
+        );
+      }
+      // Calculate current usage for this period using the feature's reset interval
+      const { periodStart: currentPeriodStart, periodEnd: currentPeriodEnd } =
+        getResetPeriod(
+          planFeature.resetInterval,
+          subscription.currentPeriodStart,
+          subscription.currentPeriodEnd,
+        );
+
+      // Sum usage from UsageLedgerDO (source of truth) - not D1
+      const ledgerUsage = await sumUsageAmount(
+        {
+          usageLedger: c.env.USAGE_LEDGER,
+          organizationId: organizationId || null,
+        },
+        {
+          customerId: customer.id,
+          featureId: effectiveFeatureId,
+          entityId: entity || undefined,
+          createdAtFrom: currentPeriodStart,
+          createdAtTo: currentPeriodEnd,
+        },
+      );
+      if (
+        ledgerUsage === null &&
+        hasAuthoritativeUsageLedger(c, organizationId)
+      ) {
+        return c.json(
+          {
+            allowed: false,
+            code: "billing_unavailable",
+            usage: null,
+            limit: planFeature.limitValue,
+            balance: null,
+            resetsAt,
+            resetInterval: planFeature.resetInterval,
+            details: {
+              message:
+                "Billing ledger unavailable. Cannot safely evaluate current metered usage right now.",
+            },
+          },
+          503,
+        );
+      }
+
+      const currentUsage = ledgerUsage ?? 0;
+      const usageModel = getUsageModel(planFeature);
+
+      if (usageModel === "usage_based") {
+        const usageBasedGuard = await deps.checkOverageAllowed(
+          db,
+          customer.id,
+          effectiveFeatureId,
+          currentPeriodStart,
+          currentPeriodEnd,
+          0,
+          planFeature.maxOverageUnits,
+          effectiveValue,
+          {
+            usageLedger: c.env.USAGE_LEDGER,
+            organizationId: organizationId || null,
+          },
+        );
+
+        if (!usageBasedGuard.allowed) {
+          return c.json(
+            {
+              allowed: false,
+              code: "limit_exceeded",
+              usage: currentUsage,
+              limit: null,
+              balance: null,
+              resetsAt,
+              resetInterval: planFeature.resetInterval,
+              details: buildDetails(
+                usageBasedGuard.reason || "Usage-based billing is not allowed.",
+                undefined,
+                currentUsage,
+              ),
+            },
+            200,
+          );
+        }
+
+        return c.json(
+          {
+            allowed: true,
+            code: "access_granted",
+            usage: currentUsage,
+            limit: null,
+            balance: null,
+            resetsAt,
+            resetInterval: planFeature.resetInterval,
+            details: buildDetails(
+              `Usage-based access granted for '${feature.slug || feature.id}'. Usage will be billed.`,
+              undefined,
+              currentUsage,
+            ),
+          },
+          200,
+        );
+      }
+
+      // Check Usage Limit
+      // If limitValue is null, it's unlimited
+      if (planFeature.limitValue === null) {
+        return c.json(
+          {
+            allowed: true,
+            code: "access_granted",
+            usage: currentUsage,
+            limit: null,
+            balance: null,
+            resetsAt,
+            resetInterval: planFeature.resetInterval,
+            details: buildDetails(
+              `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`,
+              undefined,
+              currentUsage,
+            ),
+          },
+          200,
+        );
+      }
+
+      if (currentUsage + effectiveValue > planFeature.limitValue) {
+        // During trials, always block at limit — no overage billing for free trials
+        const overageSetting = isTrial
+          ? "block"
+          : planFeature.overage || "block";
+
+        // Add-on credits FIRST — consume purchased credits before overage billing
+        if (creditMapping) {
+          const addonBalance = await getAddonBalance(
+            db,
+            customer.id,
+            creditMapping.creditSystemId,
+            deps,
+          );
+          if (addonBalance >= effectiveValue) {
+            return c.json(
+              {
+                allowed: true,
+                code: "addon_credits_used",
+                usage: currentUsage,
+                limit: planFeature.limitValue,
+                balance: planFeature.limitValue - currentUsage,
+                resetsAt,
+                resetInterval: planFeature.resetInterval,
+                addonCredits: addonBalance,
+                planCredits: {
+                  used: currentUsage,
+                  limit: planFeature.limitValue,
+                  resetsAt,
+                },
+                details: buildDetails(
+                  `Plan credits exhausted. ${effectiveValue} add-on credits will be deducted.`,
+                  {
+                    addonCreditsUsed: effectiveValue,
+                    addonCreditsRemaining: addonBalance,
+                  },
+                  currentUsage,
+                ),
+              },
+              200,
+            );
+          }
+        }
+
+        // If overage is "charge", check guards before allowing
+        if (overageSetting === "charge") {
+          const overageGuard = await deps.checkOverageAllowed(
+            db,
+            customer.id,
+            effectiveFeatureId,
+            currentPeriodStart,
+            currentPeriodEnd,
+            planFeature.limitValue,
+            planFeature.maxOverageUnits,
+            effectiveValue,
+            {
+              usageLedger: c.env.USAGE_LEDGER,
+              organizationId: organizationId || null,
+            },
+          );
+
+          if (overageGuard.allowed) {
+            return c.json(
+              {
+                allowed: true,
+                code: "overage_allowed",
+                usage: currentUsage,
+                limit: planFeature.limitValue,
+                balance: planFeature.limitValue - currentUsage,
+                resetsAt,
+                resetInterval: planFeature.resetInterval,
+                details: buildDetails(
+                  `Usage exceeds limit (${currentUsage}/${planFeature.limitValue}), overage will be billed.`,
+                  {
+                    overage: {
+                      type: overageSetting,
+                      willBeBilled: true,
+                      pricePerUnit:
+                        planFeature.overagePrice || planFeature.pricePerUnit,
+                      billingUnits: planFeature.billingUnits,
+                    },
+                  },
+                  currentUsage,
+                ),
+              },
+              200,
+            );
+          }
+          // Guard failed — fall through to block
+        }
+
+        // Block — unified path
+        const dbBlockAddonCredits = creditMapping
+          ? await getAddonBalance(db, customer.id, creditMapping.creditSystemId)
+          : undefined;
+        return c.json(
+          {
+            allowed: false,
+            code: "limit_exceeded",
+            usage: currentUsage,
+            limit: planFeature.limitValue,
+            balance: planFeature.limitValue - currentUsage,
+            resetsAt,
+            resetInterval: planFeature.resetInterval,
+            ...(dbBlockAddonCredits !== undefined
+              ? { addonCredits: dbBlockAddonCredits }
+              : {}),
+            details: buildDetails(
+              `Usage limit exceeded (${currentUsage}/${planFeature.limitValue}). Resets at ${resetsAt}.`,
+              undefined,
+              currentUsage,
+            ),
+          },
+          200,
+        );
+      }
+
+      // If it costs credits (prepaid balance model), check balance.
+      // NOTE: Credit systems do NOT use credits.balance — they enforce via usage_records pool.
+      // Only planFeature.creditCost triggers the prepaid balance check.
+      if (
+        !creditMapping &&
+        planFeature.creditCost &&
+        planFeature.creditCost > 0
+      ) {
+        const cost = value * planFeature.creditCost;
+        const creditRecord = await db.query.credits.findFirst({
+          where: eq(schema.credits.customerId, customer.id),
+        });
+        const creditBalance = creditRecord?.balance || 0;
+
+        if (creditBalance < cost) {
+          return c.json(
+            {
+              allowed: false,
+              code: "insufficient_credits",
+              usage: currentUsage,
+              limit: planFeature.limitValue,
+              balance: planFeature.limitValue - currentUsage,
+              resetsAt,
+              resetInterval: planFeature.resetInterval,
+              details: buildDetails(
+                `Insufficient credits — balance: ${creditBalance}, required: ${cost}.`,
+                undefined,
+                currentUsage,
+              ),
+            },
+            200,
+          );
+        }
+      }
+
+      // sendEvent: track usage inline (DB-only path, no DO)
+      if (sendEvent) {
+        scheduleUsagePersist(
+          c,
+          db,
+          organizationId,
+          {
+            customerId: customer.id,
+            ...buildUsageLedgerContext({
+              featureId: effectiveFeatureId,
+              featureSlug: effectiveFeatureSlug,
+              featureName: creditMapping
+                ? effectiveFeatureSlug
+                : (feature.name ?? effectiveFeatureSlug),
+              subscription,
+              planFeature,
+            }),
+            entityId: entity || null,
+            amount: effectiveValue,
+            periodStart: currentPeriodStart,
+            periodEnd: currentPeriodEnd,
+          },
+          "check:track-inline-db-only",
+        );
+
+        // Deduct from credits.balance for prepaid model (not credit systems)
+        if (
+          !creditMapping &&
+          planFeature.creditCost &&
+          planFeature.creditCost > 0
+        ) {
+          const cost = value * planFeature.creditCost;
+          await db
+            .update(schema.credits)
+            .set({
+              balance: sql`${schema.credits.balance} - ${cost}`,
+              updatedAt: Date.now(),
+            })
+            .where(eq(schema.credits.customerId, customer.id));
+        }
+      }
+
+      return c.json(
+        {
+          allowed: true,
+          code: "access_granted",
+          usage: currentUsage,
+          limit: planFeature.limitValue,
+          balance: planFeature.limitValue - currentUsage,
+          resetsAt,
+          resetInterval: planFeature.resetInterval,
+          details: buildDetails(
+            `Access granted — used ${currentUsage} of ${planFeature.limitValue}.`,
+            undefined,
+            currentUsage,
+          ),
+        },
+        200,
+      );
+    }
+
+    return c.json(
+      {
         allowed: false,
-        code: "customer_ambiguous",
+        code: "unknown_feature_type",
         usage: null,
         limit: null,
         balance: null,
         resetsAt: null,
         resetInterval: null,
-        details: {
-          message: error.message,
-        },
-      });
-    }
-    throw error;
-  }
-
-  if (!customer) {
-    return c.json({
-      allowed: false,
-      code: "customer_not_found",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: {
-        message: `Customer '${customerId}' not found in this organization.`,
+        details: { message: `Unrecognized feature type '${feature.type}'.` },
       },
-    });
-  }
+      200,
+    );
+  },
+  (result, c) => {
+    if (!result.success) {
+      return c.json(zodErrorToResponse(result.error), 400);
+    }
 
-  const feature = featureResult;
+    return undefined;
+  },
+);
 
-  if (!feature) {
-    return c.json({
-      allowed: false,
-      code: "feature_not_found",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: { message: `Feature '${featureId}' not found.` },
-    });
-  }
+// Track Usage
+app.openapi(
+  trackRoute,
+  async (c) => {
+    const deps = getEntitlementsDependencies(c);
+    const {
+      customer: customerId,
+      feature: featureId,
+      value,
+      customerData,
+      entity,
+    } = c.req.valid("json");
+    const db = c.get("db");
+    const organizationId = c.get("organizationId");
+    const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
+    const now = Date.now();
 
-  // ---------------------------------------------------------------------------
-  // 3 & 4. Check for Manual Overrides FIRST, then fetch Subscriptions
-  // ---------------------------------------------------------------------------
-  // Overrides take precedence over plan features - check them first
-  const now = Date.now();
-  const subsCacheKey = customer.id;
+    if (!organizationId) {
+      return c.json(
+        { success: false, error: "Organization Context Missing" },
+        500,
+      );
+    }
 
-  const [entityValid, subscriptionsResult, manualEntitlement] =
-    await Promise.all([
-      // Validate Entity (if provided, must exist)
+    // 1 & 2. Resolve Customer and Feature in parallel
+    let trackCustomer;
+    let trackFeatureResult;
+    try {
+      [trackCustomer, trackFeatureResult] = await Promise.all([
+        deps.resolveOrCreateCustomer({
+          db,
+          organizationId,
+          customerId,
+          customerData,
+          cache,
+          waitUntil: (p) => c.executionCtx.waitUntil(p),
+        }),
+        (async () => {
+          let f = cache
+            ? await cache.getFeature<typeof schema.features.$inferSelect>(
+                organizationId,
+                featureId,
+              )
+            : null;
+
+          if (!f) {
+            f =
+              (await db.query.features.findFirst({
+                where: and(
+                  eq(schema.features.organizationId, organizationId),
+                  or(
+                    eq(schema.features.id, featureId),
+                    eq(schema.features.slug, featureId),
+                  ),
+                ),
+              })) ?? null;
+
+            if (f && cache) {
+              const featureCacheKeys = [featureId, f.id, f.slug].filter(
+                (key): key is string => !!key && key.length > 0,
+              );
+              const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
+              scheduleCacheOp(
+                c,
+                Promise.all(
+                  uniqueFeatureCacheKeys.map((key) =>
+                    cache.setFeature(organizationId, key, f),
+                  ),
+                ),
+                "setFeature(/track)",
+              );
+            }
+          }
+          return f;
+        })(),
+      ]);
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json(
+          {
+            success: false,
+            allowed: false,
+            code: "customer_ambiguous",
+            usage: null,
+            limit: null,
+            balance: null,
+            resetsAt: null,
+            resetInterval: null,
+            details: {
+              message: error.message,
+            },
+          },
+          409,
+        );
+      }
+      throw error;
+    }
+
+    const customer = trackCustomer;
+
+    if (!customer) {
+      return c.json(
+        {
+          success: false,
+          allowed: false,
+          code: "customer_not_found",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message: `Customer '${customerId}' not found in this organization.`,
+          },
+        },
+        404,
+      );
+    }
+
+    const feature = trackFeatureResult;
+
+    if (!feature) {
+      return c.json(
+        {
+          success: false,
+          allowed: false,
+          code: "feature_not_found",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: { message: `Feature '${featureId}' not found.` },
+        },
+        404,
+      );
+    }
+
+    // 3 & 4. Validate Entity and fetch Subscriptions in parallel
+    const subsCacheKey = customer.id;
+    const [trackEntityValid, trackSubsResult] = await Promise.all([
       entity
         ? db.query.entities.findFirst({
             where: and(
               eq(schema.entities.customerId, customer.id),
               eq(schema.entities.featureId, feature.id),
               eq(schema.entities.entityId, entity),
-              or(
-                eq(schema.entities.status, "active"),
-                eq(schema.entities.status, "pending_removal"),
-              ),
+              eq(schema.entities.status, "active"),
             ),
           })
         : true,
-      // Check Subscription & Plans (cache-first, then DB)
       (async () => {
         let subs = cache
           ? await cache.getSubscriptions<
@@ -818,182 +2282,164 @@ app.post("/check", async (c) => {
             scheduleCacheOp(
               c,
               cache.setSubscriptions(organizationId, subsCacheKey, subs),
-              "setSubscriptions(/check)",
+              "setSubscriptions(/track)",
             );
           }
         }
         return subs;
       })(),
-      // Check for manual entitlement override (runs in parallel)
-      getManualEntitlementForFeature(
-        c,
-        db,
-        cache,
-        organizationId,
-        customer.id,
-        feature.id,
-        now,
-      ),
     ]);
 
-  if (entity && !entityValid) {
-    return c.json({
-      allowed: false,
-      code: "entity_not_found",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: {
-        message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
-      },
-    });
-  }
+    if (entity && !trackEntityValid) {
+      return c.json(
+        {
+          success: false,
+          allowed: false,
+          code: "entity_not_found",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
+          },
+        },
+        404,
+      );
+    }
 
-  let subscriptions = subscriptionsResult;
+    let subscriptions = trackSubsResult;
 
-  // Filter out expired trialing subscriptions and scheduled cancellations past their effective date
-  const expiredTrialIds: string[] = [];
-  const expiredCancelIds: string[] = [];
-  const stalePaidPeriodIds: string[] = [];
-  subscriptions = subscriptions.filter((s: any) => {
-    if (s.status === "trialing") {
-      const trialEnd = s.currentPeriodEnd;
-      const trialEndValid =
-        typeof trialEnd === "number" &&
-        trialEnd > 0 &&
-        trialEnd <= now + MAX_TRIAL_DURATION_MS;
-      if (!trialEndValid || trialEnd < now) {
-        expiredTrialIds.push(s.id);
+    // Filter out expired trialing subscriptions and scheduled cancellations past their effective date
+    const trackNow = Date.now();
+    const trackExpiredTrialIds: string[] = [];
+    const trackExpiredCancelIds: string[] = [];
+    const trackStalePaidPeriodIds: string[] = [];
+    subscriptions = subscriptions.filter((s: any) => {
+      if (s.status === "trialing") {
+        const trialEnd = s.currentPeriodEnd;
+        const trialEndValid =
+          typeof trialEnd === "number" &&
+          trialEnd > 0 &&
+          trialEnd <= trackNow + MAX_TRIAL_DURATION_MS;
+        if (!trialEndValid || trialEnd < trackNow) {
+          trackExpiredTrialIds.push(s.id);
+          return false;
+        }
+      }
+      if (s.cancelAt && s.cancelAt < trackNow && !s.canceledAt) {
+        trackExpiredCancelIds.push(s.id);
         return false;
       }
+      if (
+        isPaidActivePastGracePeriod(
+          {
+            status: s.status,
+            currentPeriodEnd: s.currentPeriodEnd,
+            planType: s.plan?.type,
+          },
+          trackNow,
+        )
+      ) {
+        trackStalePaidPeriodIds.push(s.id);
+        return false;
+      }
+      return true;
+    });
+    if (trackExpiredTrialIds.length > 0) {
+      c.executionCtx.waitUntil(
+        db
+          .update(schema.subscriptions)
+          .set({ status: "expired", updatedAt: trackNow })
+          .where(inArray(schema.subscriptions.id, trackExpiredTrialIds)),
+      );
     }
-    // Scheduled cancellation past effective date — customer should lose access
-    if (s.cancelAt && s.cancelAt < now && !s.canceledAt) {
-      expiredCancelIds.push(s.id);
-      return false;
+    if (trackExpiredCancelIds.length > 0) {
+      c.executionCtx.waitUntil(
+        db
+          .update(schema.subscriptions)
+          .set({
+            status: "canceled",
+            canceledAt: trackNow,
+            updatedAt: trackNow,
+          })
+          .where(inArray(schema.subscriptions.id, trackExpiredCancelIds)),
+      );
+    }
+    if (trackStalePaidPeriodIds.length > 0) {
+      c.executionCtx.waitUntil(
+        db
+          .update(schema.subscriptions)
+          .set({ status: "past_due", updatedAt: trackNow })
+          .where(inArray(schema.subscriptions.id, trackStalePaidPeriodIds)),
+      );
     }
     if (
-      isPaidActivePastGracePeriod(
-        {
-          status: s.status,
-          currentPeriodEnd: s.currentPeriodEnd,
-          planType: s.plan?.type,
-        },
-        now,
-      )
+      trackExpiredTrialIds.length > 0 ||
+      trackExpiredCancelIds.length > 0 ||
+      trackStalePaidPeriodIds.length > 0
     ) {
-      stalePaidPeriodIds.push(s.id);
-      return false;
+      if (cache) {
+        scheduleCacheOp(
+          c,
+          cache.invalidateSubscriptions(organizationId, subsCacheKey),
+          "invalidateSubscriptions(/track)",
+        );
+      }
     }
-    return true;
-  });
-  if (expiredTrialIds.length > 0) {
-    // Fire-and-forget: mark expired trials in DB
-    c.executionCtx.waitUntil(
-      db
-        .update(schema.subscriptions)
-        .set({ status: "expired", updatedAt: now })
-        .where(inArray(schema.subscriptions.id, expiredTrialIds)),
-    );
-  }
-  if (expiredCancelIds.length > 0) {
-    // Fire-and-forget: mark scheduled cancellations as canceled in DB
-    c.executionCtx.waitUntil(
-      db
-        .update(schema.subscriptions)
-        .set({ status: "canceled", canceledAt: now, updatedAt: now })
-        .where(inArray(schema.subscriptions.id, expiredCancelIds)),
-    );
-  }
-  if (stalePaidPeriodIds.length > 0) {
-    // Fire-and-forget: force stale paid subscriptions out of the active set
-    c.executionCtx.waitUntil(
-      db
-        .update(schema.subscriptions)
-        .set({ status: "past_due", updatedAt: now })
-        .where(inArray(schema.subscriptions.id, stalePaidPeriodIds)),
-    );
-  }
-  if (
-    expiredTrialIds.length > 0 ||
-    expiredCancelIds.length > 0 ||
-    stalePaidPeriodIds.length > 0
-  ) {
-    // Invalidate cache so next request gets fresh data
-    if (cache) {
-      scheduleCacheOp(
-        c,
-        cache.invalidateSubscriptions(organizationId, subsCacheKey),
-        "invalidateSubscriptions(/check)",
+
+    if (subscriptions.length === 0) {
+      return c.json(
+        {
+          success: false,
+          allowed: false,
+          code: "no_active_subscription",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message:
+              "No active or trialing subscription found for this customer.",
+          },
+        },
+        400,
       );
     }
-  }
 
-  if (!subscriptions || subscriptions.length === 0) {
-    return c.json({
-      allowed: false,
-      code: "no_active_subscription",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: {
-        message: "No active or trialing subscription found for this customer.",
-      },
-    });
-  }
+    // 4. Find planFeatures (cache-first, then batch DB query)
+    const planIds = subscriptions.map((s: { planId: string }) => s.planId);
+    const pfCacheKey = `${planIds.sort().join(",")}:${feature.id}`;
+    let planFeatures = cache
+      ? await cache.getPlanFeatures<
+          Awaited<ReturnType<typeof db.query.planFeatures.findMany>>
+        >(organizationId, pfCacheKey)
+      : null;
 
-  // 4. Check Plan Features (cache-first, then batch DB query)
-  const planIds = subscriptions.map((s: { planId: string }) => s.planId);
-  const pfCacheKey = `${planIds.sort().join(",")}:${feature.id}`;
-  let planFeatures = cache
-    ? await cache.getPlanFeatures<
-        Awaited<ReturnType<typeof db.query.planFeatures.findMany>>
-      >(organizationId, pfCacheKey)
-    : null;
+    if (!planFeatures) {
+      planFeatures = await db.query.planFeatures.findMany({
+        where: and(
+          inArray(schema.planFeatures.planId, planIds),
+          eq(schema.planFeatures.featureId, feature.id),
+        ),
+      });
 
-  if (!planFeatures) {
-    planFeatures = await db.query.planFeatures.findMany({
-      where: and(
-        inArray(schema.planFeatures.planId, planIds),
-        eq(schema.planFeatures.featureId, feature.id),
-      ),
-    });
-
-    if (cache) {
-      scheduleCacheOp(
-        c,
-        cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures),
-        "setPlanFeatures(/check)",
-      );
+      if (cache) {
+        scheduleCacheOp(
+          c,
+          cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures),
+          "setPlanFeatures(/track)",
+        );
+      }
     }
-  }
 
-  // Find the first subscription that has a matching planFeature
-  let accessGrantingSubscription: (typeof subscriptions)[number] | null = null;
-  let accessGrantingPlanFeature: any = null;
-  let creditMapping: CreditSystemMapping | null = null;
+    let accessGrantingSubscription: (typeof subscriptions)[number] | null =
+      null;
+    let accessGrantingPlanFeature: (typeof planFeatures)[number] | null = null;
+    let trackCreditMapping: CreditSystemMapping | null = null;
 
-  // Check for manual override FIRST - it takes precedence over plan features
-  if (manualEntitlement) {
-    // Found a manual override! Use it instead of plan feature
-    accessGrantingSubscription = subscriptions[0] || {
-      id: "manual",
-      status: "active",
-      currentPeriodStart: now - 30 * 24 * 60 * 60 * 1000,
-      currentPeriodEnd: now + 30 * 24 * 60 * 60 * 1000,
-      plan: { name: "Manual Override" },
-    };
-    accessGrantingPlanFeature = {
-      ...manualEntitlement,
-      planId: (accessGrantingSubscription as any).planId || "manual",
-      usageModel: "included",
-    };
-  } else {
-    // No manual override, check plan features
     for (const pf of planFeatures) {
       const sub = subscriptions.find(
         (s: { planId: string }) => s.planId === pf.planId,
@@ -1005,9 +2451,9 @@ app.post("/check", async (c) => {
       }
     }
 
-    // Credit system fallback: feature may belong to a credit system pool
+    // Credit system fallback
     if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
-      creditMapping = await resolveCreditSystem(
+      trackCreditMapping = await resolveCreditSystem(
         db,
         feature.id,
         planIds,
@@ -1015,390 +2461,235 @@ app.post("/check", async (c) => {
         customer.id,
         now,
       );
-      if (creditMapping) {
-        accessGrantingSubscription = creditMapping.subscription;
-        accessGrantingPlanFeature = creditMapping.planFeature;
+      if (trackCreditMapping) {
+        accessGrantingSubscription = trackCreditMapping.subscription;
+        accessGrantingPlanFeature = trackCreditMapping.planFeature;
       }
     }
-  }
 
-  if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
-    return c.json({
-      allowed: false,
-      code: "feature_not_in_plan",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: {
-        message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.`,
-      },
-    });
-  }
+    const subscription = accessGrantingSubscription;
+    const planFeature = accessGrantingPlanFeature;
 
-  // Use the granting subscription/feature for the rest of the logic
-  const subscription = accessGrantingSubscription;
-  const planFeature = accessGrantingPlanFeature;
+    if (!subscription || !planFeature) {
+      return c.json(
+        {
+          success: false,
+          allowed: false,
+          code: "feature_not_in_plan",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.`,
+          },
+        },
+        400,
+      );
+    }
 
-  // When resolved via credit system, adjust the effective values:
-  // - effectiveFeatureId: track usage against the credit system's feature, not the child
-  // - effectiveValue: multiply by cost (e.g., 1 unit of "dfs" = 20 credits)
-  // - effectiveFeatureKey: use credit system slug for DO tracking
-  const effectiveFeatureId = creditMapping
-    ? creditMapping.creditSystemId
-    : feature.id;
-  const effectiveValue = creditMapping
-    ? value * creditMapping.costPerUnit
-    : value;
-  const effectiveFeatureSlug = creditMapping
-    ? creditMapping.creditSystemSlug
-    : feature.slug || feature.id;
+    // Credit system effective values
+    const trackEffectiveFeatureId = trackCreditMapping
+      ? trackCreditMapping.creditSystemId
+      : feature.id;
+    const trackEffectiveValue = trackCreditMapping
+      ? value * trackCreditMapping.costPerUnit
+      : value;
+    const trackEffectiveSlug = trackCreditMapping
+      ? trackCreditMapping.creditSystemSlug
+      : feature.slug || feature.id;
 
-  // Build reusable details context
-  const isTrial = subscription.status === "trialing";
-  const trialEndsAt =
-    isTrial && subscription.currentPeriodEnd
-      ? new Date(subscription.currentPeriodEnd).toISOString()
-      : null;
-  const planName = (subscription as any).plan?.name || "current plan";
+    // Build reusable details context for track responses
+    const isTrial = subscription.status === "trialing";
+    const trialEndsAt =
+      isTrial && subscription.currentPeriodEnd
+        ? new Date(subscription.currentPeriodEnd).toISOString()
+        : null;
 
-  // Helper to build the details object — only includes truthy optional fields
-  function buildDetails(
-    message: string,
-    extra?: Record<string, unknown>,
-    usageForPricing?: number | null,
-  ) {
-    const pricing = buildPricingDetails(planFeature, usageForPricing);
-    return {
-      message,
-      planName,
-      ...(isTrial ? { trial: true, trialEndsAt } : {}),
-      ...(creditMapping
-        ? {
-            creditSystem: creditMapping.creditSystemSlug,
-            creditCostPerUnit: creditMapping.costPerUnit,
-          }
-        : {}),
-      ...(pricing ? { pricing } : {}),
-      ...extra,
-    };
-  }
+    const trackPlanName = (subscription as any).plan?.name || "current plan";
 
-  // 5. Check Logic based on Type
-  // Boolean features get immediate access UNLESS they're part of a credit system
-  // (credit system children must go through the metered path to consume credits)
-  if (feature.type === "boolean" && !creditMapping) {
-    return c.json({
-      allowed: true,
-      code: "access_granted",
-      usage: null,
-      limit: null,
-      balance: null,
-      resetsAt: null,
-      resetInterval: null,
-      details: buildDetails(
-        isTrial
-          ? `Feature '${feature.slug || feature.id}' enabled on ${planName} via free trial (ends ${trialEndsAt}).`
-          : `Feature '${feature.slug || feature.id}' enabled on ${planName}.`,
-      ),
-    });
-  }
+    function buildTrackDetails(
+      message: string,
+      extra?: Record<string, unknown>,
+      usageForPricing?: number | null,
+    ) {
+      const pricing = buildPricingDetails(planFeature, usageForPricing);
+      return {
+        message,
+        planName: trackPlanName,
+        ...(isTrial ? { trial: true, trialEndsAt } : {}),
+        ...(trackCreditMapping
+          ? {
+              creditSystem: trackCreditMapping.creditSystemSlug,
+              creditCostPerUnit: trackCreditMapping.costPerUnit,
+            }
+          : {}),
+        ...(pricing ? { pricing } : {}),
+        ...extra,
+      };
+    }
 
-  if (feature.type === "metered" || creditMapping) {
-    // Compute reset period once for all response paths
-    const resetPeriod = getResetPeriod(
+    // Use the feature's resetInterval to determine the correct usage period
+    const { periodStart, periodEnd } = getResetPeriod(
       planFeature.resetInterval,
       subscription.currentPeriodStart,
       subscription.currentPeriodEnd,
     );
-    const resetsAt = new Date(resetPeriod.periodEnd).toISOString();
+    const usageModel = getUsageModel(planFeature);
 
-    // ===========================================================================
-    // DO Check (Preferred for atomicity)
-    // ===========================================================================
-    // When credit system resolved, use the credit system slug for DO key
-    // When entity is provided, scope DO feature key and DB queries by entity
-    const featureKey = entity
-      ? `${effectiveFeatureSlug}:${entity}`
-      : effectiveFeatureSlug;
+    try {
+      // ===========================================================================
+      // Use Durable Object for atomic real-time tracking (if available)
+      // ===========================================================================
+      let doResult: {
+        allowed: boolean;
+        balance: number;
+        usage: number;
+        limit: number | null;
+        code: string;
+        rolloverBalance: number;
+      } | null = null;
+      let trackedAsOverage = false;
 
-    if (c.env.USAGE_METER && organizationId) {
-      const doId = c.env.USAGE_METER.idFromName(
-        `${organizationId}:${customer.id}`,
-      );
-      const usageMeter = c.env.USAGE_METER.get(doId);
-      const usageModel = getUsageModel(planFeature);
+      // When credit system resolved, use credit system slug for DO key
+      // When entity is provided, scope DO feature key and DB queries by entity
+      const trackFeatureKey = entity
+        ? `${trackEffectiveSlug}:${entity}`
+        : trackEffectiveSlug;
 
-      // Pass current config inline — single RPC call, no extra round-trip
-      const currentConfig = {
-        limit: planFeature.limitValue,
-        resetInterval: planFeature.resetInterval,
-        resetOnEnable: planFeature.resetOnEnable || false,
-        rolloverEnabled: planFeature.rolloverEnabled || false,
-        rolloverMaxBalance: planFeature.rolloverMaxBalance,
-        usageModel: planFeature.usageModel || "included",
-        creditCost: planFeature.creditCost || 0,
-      };
-
-      let doResult = await usageMeter.check(
-        featureKey,
-        effectiveValue,
-        currentConfig,
-      );
-
-      // If DO has no state yet (fresh/restart), migrate usage from UsageLedgerDO and configure
-      if (doResult.code === "feature_not_found") {
-        const { periodStart: migPeriodStart, periodEnd: migPeriodEnd } =
-          resetPeriod;
-
-        // Query UsageLedgerDO for historical usage (not D1 - DO is source of truth)
-        const ledgerUsage = await sumUsageAmount(
-          {
-            usageLedger: c.env.USAGE_LEDGER,
-            organizationId: organizationId || null,
-          },
-          {
-            customerId: customer.id,
-            featureId: effectiveFeatureId,
-            entityId: entity || undefined,
-            createdAtFrom: migPeriodStart,
-            createdAtTo: migPeriodEnd,
-          },
-        );
-        if (
-          ledgerUsage === null &&
-          hasAuthoritativeUsageLedger(c, organizationId)
-        ) {
-          return c.json(
-            {
-              allowed: false,
-              code: "billing_unavailable",
-              usage: null,
-              limit: null,
-              balance: null,
-              resetsAt,
-              resetInterval: planFeature.resetInterval,
-              details: {
-                message:
-                  "Billing ledger unavailable. Cannot safely initialize metered usage right now.",
-              },
-            },
-            503,
-          );
-        }
-
-        const currentUsage = ledgerUsage ?? 0;
-
-        await usageMeter.configureFeature(featureKey, {
-          ...currentConfig,
-          initialUsage: currentUsage,
-        });
-
-        doResult = await usageMeter.check(featureKey, effectiveValue);
-      }
-
-      if (usageModel === "usage_based") {
-        const usageBasedGuard = await deps.checkOverageAllowed(
-          db,
-          customer.id,
-          effectiveFeatureId,
-          resetPeriod.periodStart,
-          resetPeriod.periodEnd,
-          0,
-          planFeature.maxOverageUnits,
-          effectiveValue,
-          {
-            usageLedger: c.env.USAGE_LEDGER,
-            organizationId: organizationId || null,
-          },
+      if (c.env.USAGE_METER && planFeature) {
+        // Get customer's DO instance by their ID (scoped to org)
+        const doId = c.env.USAGE_METER.idFromName(
+          `${organizationId}:${customer.id}`,
         );
 
-        if (!usageBasedGuard.allowed) {
-          return c.json({
-            allowed: false,
-            code: "limit_exceeded",
-            usage: doResult.usage,
-            limit: null,
-            balance: null,
-            resetsAt,
-            resetInterval: planFeature.resetInterval,
-            details: buildDetails(
-              usageBasedGuard.reason || "Usage-based billing is not allowed.",
-              undefined,
-              doResult.usage,
-            ),
-          });
-        }
-      }
+        const usageMeter = c.env.USAGE_METER.get(doId);
 
-      if (!doResult.allowed) {
-        // During trials, always block at limit — no overage billing for free trials
-        const overageSetting = isTrial
-          ? "block"
-          : planFeature.overage || "block";
+        // Pass current config inline — single RPC call, no extra round-trip
+        const currentConfig = {
+          limit: planFeature.limitValue,
+          resetInterval: planFeature.resetInterval,
+          resetOnEnable: planFeature.resetOnEnable || false,
+          rolloverEnabled: planFeature.rolloverEnabled || false,
+          rolloverMaxBalance: planFeature.rolloverMaxBalance,
+          usageModel: planFeature.usageModel || "included",
+          creditCost: planFeature.creditCost || 0,
+        };
 
-        // Add-on credits FIRST — consume purchased credits before overage billing
-        if (creditMapping) {
-          const addonBalance = await getAddonBalance(
+        if (usageModel === "usage_based") {
+          const usageBasedGuard = await deps.checkOverageAllowed(
             db,
             customer.id,
-            creditMapping.creditSystemId,
-            deps,
-          );
-          if (addonBalance >= effectiveValue) {
-            if (sendEvent) {
-              await tryDeductAddonCredits(
-                db,
-                customer.id,
-                effectiveValue,
-                creditMapping.creditSystemId,
-                deps,
-              );
-              scheduleUsagePersist(
-                c,
-                db,
-                organizationId,
-                {
-                  customerId: customer.id,
-                  ...buildUsageLedgerContext({
-                    featureId: effectiveFeatureId,
-                    featureSlug: effectiveFeatureSlug,
-                    featureName: creditMapping
-                      ? effectiveFeatureSlug
-                      : (feature.name ?? effectiveFeatureSlug),
-                    subscription,
-                    planFeature,
-                  }),
-                  entityId: entity || null,
-                  amount: effectiveValue,
-                  periodStart: resetPeriod.periodStart,
-                  periodEnd: resetPeriod.periodEnd,
-                },
-                "check:addon-fallback",
-              );
-            }
-            const remaining = addonBalance - (sendEvent ? effectiveValue : 0);
-            return c.json({
-              allowed: true,
-              code: "addon_credits_used",
-              usage: doResult.usage,
-              limit: doResult.limit,
-              balance:
-                doResult.limit === null
-                  ? null
-                  : doResult.limit - doResult.usage,
-              resetsAt,
-              resetInterval: planFeature.resetInterval,
-              addonCredits: remaining,
-              planCredits: {
-                used: doResult.usage,
-                limit: doResult.limit,
-                resetsAt,
-              },
-              details: buildDetails(
-                `Plan credits exhausted. ${effectiveValue} add-on credits ${sendEvent ? "deducted" : "will be deducted"}.`,
-                {
-                  addonCreditsUsed: effectiveValue,
-                  addonCreditsRemaining: remaining,
-                },
-                doResult.usage,
-              ),
-            });
-          }
-        }
-
-        // If overage is "charge", check guards before allowing
-        if (overageSetting === "charge") {
-          const overageGuard = await deps.checkOverageAllowed(
-            db,
-            customer.id,
-            effectiveFeatureId,
-            resetPeriod.periodStart,
-            resetPeriod.periodEnd,
-            planFeature.limitValue,
+            trackEffectiveFeatureId,
+            periodStart,
+            periodEnd,
+            0,
             planFeature.maxOverageUnits,
-            effectiveValue,
+            trackEffectiveValue,
             {
               usageLedger: c.env.USAGE_LEDGER,
               organizationId: organizationId || null,
             },
           );
 
-          if (overageGuard.allowed) {
-            return c.json({
-              allowed: true,
-              code: "overage_allowed",
-              usage: doResult.usage,
-              limit: doResult.limit,
-              balance:
-                doResult.limit === null
-                  ? null
-                  : doResult.limit - doResult.usage,
-              resetsAt,
-              resetInterval: planFeature.resetInterval,
-              details: buildDetails(
-                `Usage exceeds limit (${doResult.usage}/${doResult.limit}), overage will be billed.`,
-                {
-                  overage: {
-                    type: overageSetting,
-                    willBeBilled: true,
-                    pricePerUnit:
-                      planFeature.overagePrice || planFeature.pricePerUnit,
-                    billingUnits: planFeature.billingUnits,
-                  },
-                },
-                doResult.usage,
-              ),
-            });
+          if (!usageBasedGuard.allowed) {
+            return c.json(
+              {
+                success: false,
+                allowed: false,
+                code: "limit_exceeded",
+                usage: null,
+                limit: null,
+                balance: null,
+                resetsAt: new Date(periodEnd).toISOString(),
+                resetInterval: planFeature.resetInterval,
+                details: buildTrackDetails(
+                  usageBasedGuard.reason ||
+                    "Usage-based billing is not allowed.",
+                ),
+              },
+              200,
+            );
           }
-          // Guard failed — fall through to block
         }
 
-        // Otherwise block
-        const blockAddonCredits = creditMapping
-          ? await getAddonBalance(
-              db,
-              customer.id,
-              creditMapping.creditSystemId,
-              deps,
-            )
-          : undefined;
-        return c.json({
-          allowed: false,
-          code: "limit_exceeded",
-          usage: doResult.usage,
-          limit: doResult.limit,
-          balance:
-            doResult.limit === null ? null : doResult.limit - doResult.usage,
-          resetsAt,
-          resetInterval: planFeature.resetInterval,
-          ...(blockAddonCredits !== undefined
-            ? { addonCredits: blockAddonCredits }
-            : {}),
-          details: buildDetails(
-            `Usage limit reached (${doResult.usage}/${doResult.limit}). Resets at ${resetsAt}.`,
-            undefined,
-            doResult.usage,
-          ),
-        });
-      }
-
-      // sendEvent: atomically track usage if check passed
-      if (sendEvent) {
-        const trackResult = await usageMeter.track(
-          featureKey,
-          effectiveValue,
+        // Track usage atomically via RPC (config synced inline)
+        doResult = await usageMeter.track(
+          trackFeatureKey,
+          trackEffectiveValue,
           currentConfig,
         );
-        if (trackResult && !trackResult.allowed) {
-          // Add-on credit fallback for race condition (check passed but track failed)
-          if (creditMapping) {
+        if (!doResult) {
+          throw new Error("Usage meter returned no result");
+        }
+
+        // If DO has no state yet (fresh/restart), migrate usage from UsageLedgerDO and configure
+        if (doResult.code === "feature_not_found") {
+          // Query UsageLedgerDO for historical usage (source of truth)
+          const ledgerUsage = await sumUsageAmount(
+            {
+              usageLedger: c.env.USAGE_LEDGER,
+              organizationId: organizationId || null,
+            },
+            {
+              customerId: customer.id,
+              featureId: trackEffectiveFeatureId,
+              entityId: entity || undefined,
+              createdAtFrom: periodStart,
+              createdAtTo: periodEnd,
+            },
+          );
+          if (
+            ledgerUsage === null &&
+            hasAuthoritativeUsageLedger(c, organizationId)
+          ) {
+            return c.json(
+              {
+                success: false,
+                allowed: false,
+                code: "billing_unavailable",
+                usage: null,
+                limit: planFeature.limitValue,
+                balance: null,
+                resetsAt: new Date(periodEnd).toISOString(),
+                resetInterval: planFeature.resetInterval,
+                details: buildTrackDetails(
+                  "Billing ledger unavailable. Cannot safely initialize tracked usage right now.",
+                ),
+              },
+              503,
+            );
+          }
+
+          const currentUsage = ledgerUsage ?? 0;
+
+          await usageMeter.configureFeature(trackFeatureKey, {
+            ...currentConfig,
+            initialUsage: currentUsage,
+          });
+
+          doResult = await usageMeter.track(
+            trackFeatureKey,
+            trackEffectiveValue,
+          );
+        }
+
+        // If DO says not allowed, try addon credits first, then overage
+        if (doResult && !doResult.allowed) {
+          // During trials, always block at limit — no overage billing for free trials
+          const overageSetting = isTrial
+            ? "block"
+            : planFeature.overage || "block";
+
+          // Add-on credits FIRST — consume purchased credits before overage billing
+          if (trackCreditMapping) {
             const deductResult = await tryDeductAddonCredits(
               db,
               customer.id,
-              effectiveValue,
-              creditMapping.creditSystemId,
+              trackEffectiveValue,
+              trackCreditMapping.creditSystemId,
+              deps,
             );
             if (deductResult.deducted) {
               scheduleUsagePersist(
@@ -1408,955 +2699,203 @@ app.post("/check", async (c) => {
                 {
                   customerId: customer.id,
                   ...buildUsageLedgerContext({
-                    featureId: effectiveFeatureId,
-                    featureSlug: effectiveFeatureSlug,
-                    featureName: creditMapping
-                      ? effectiveFeatureSlug
-                      : (feature.name ?? effectiveFeatureSlug),
+                    featureId: trackEffectiveFeatureId,
+                    featureSlug: trackEffectiveSlug,
+                    featureName: trackCreditMapping
+                      ? trackEffectiveSlug
+                      : (feature.name ?? trackEffectiveSlug),
                     subscription,
                     planFeature,
                   }),
                   entityId: entity || null,
-                  amount: effectiveValue,
-                  periodStart: resetPeriod.periodStart,
-                  periodEnd: resetPeriod.periodEnd,
+                  amount: trackEffectiveValue,
+                  periodStart,
+                  periodEnd,
                 },
-                "check:track-race-addon",
+                "track:addon-fallback",
               );
-              return c.json({
-                allowed: true,
-                code: "addon_credits_used",
-                usage:
-                  trackResult.balance !== undefined
-                    ? doResult.limit !== null
-                      ? doResult.limit - trackResult.balance
-                      : null
-                    : doResult.usage,
-                limit: doResult.limit,
-                balance:
-                  doResult.limit === null
-                    ? null
-                    : (trackResult.balance ?? doResult.limit - doResult.usage),
-                resetsAt,
-                resetInterval: planFeature.resetInterval,
-                addonCredits: deductResult.remaining,
-                planCredits: {
-                  used: doResult.usage,
-                  limit: doResult.limit,
-                  resetsAt,
-                },
-                details: buildDetails(
-                  `Plan credits exhausted. ${effectiveValue} add-on credits deducted.`,
-                  {
-                    addonCreditsUsed: effectiveValue,
-                    addonCreditsRemaining: deductResult.remaining,
+              const addonDoUsage = doResult.usage ?? null;
+              return c.json(
+                {
+                  success: true,
+                  allowed: true,
+                  code: "addon_credits_used",
+                  usage: addonDoUsage,
+                  limit: planFeature.limitValue,
+                  balance: doResult.balance,
+                  resetsAt: new Date(periodEnd).toISOString(),
+                  resetInterval: planFeature.resetInterval,
+                  ...(doResult.rolloverBalance > 0
+                    ? { rolloverBalance: doResult.rolloverBalance }
+                    : {}),
+                  addonCredits: deductResult.remaining ?? 0,
+                  planCredits: {
+                    used: addonDoUsage ?? 0,
+                    limit: planFeature.limitValue,
+                    resetsAt: new Date(periodEnd).toISOString(),
                   },
-                  doResult.usage,
-                ),
-              });
-            }
-          }
-          return c.json({
-            allowed: false,
-            code: "limit_exceeded",
-            usage:
-              trackResult.balance !== undefined
-                ? doResult.limit !== null
-                  ? doResult.limit - trackResult.balance
-                  : null
-                : doResult.usage,
-            limit: doResult.limit,
-            balance:
-              doResult.limit === null
-                ? null
-                : (trackResult.balance ?? doResult.limit - doResult.usage),
-            resetsAt,
-            resetInterval: planFeature.resetInterval,
-            details: buildDetails(
-              `Usage tracking denied — insufficient balance (${trackResult.balance} remaining). Resets at ${resetsAt}.`,
-              undefined,
-              doResult.usage,
-            ),
-          });
-        }
-        // Also persist to DB for audit trail
-        scheduleUsagePersist(
-          c,
-          db,
-          organizationId,
-          {
-            customerId: customer.id,
-            ...buildUsageLedgerContext({
-              featureId: effectiveFeatureId,
-              featureSlug: effectiveFeatureSlug,
-              featureName: creditMapping
-                ? effectiveFeatureSlug
-                : (feature.name ?? effectiveFeatureSlug),
-              subscription,
-              planFeature,
-            }),
-            entityId: entity || null,
-            amount: effectiveValue,
-            periodStart: resetPeriod.periodStart,
-            periodEnd: resetPeriod.periodEnd,
-          },
-          "check:track-inline",
-        );
-
-        // Deduct from credits.balance for prepaid model (not credit systems)
-        if (
-          !creditMapping &&
-          planFeature.creditCost &&
-          planFeature.creditCost > 0
-        ) {
-          const cost = value * planFeature.creditCost;
-          c.executionCtx.waitUntil(
-            db
-              .update(schema.credits)
-              .set({
-                balance: sql`${schema.credits.balance} - ${cost}`,
-                updatedAt: Date.now(),
-              })
-              .where(eq(schema.credits.customerId, customer.id)),
-          );
-        }
-      }
-
-      // Include add-on credit balance in response for credit system features
-      const addonCreditsBalance = creditMapping
-        ? await getAddonBalance(db, customer.id, creditMapping.creditSystemId)
-        : undefined;
-
-      return c.json({
-        allowed: true,
-        code: "access_granted",
-        usage: doResult.usage,
-        limit: doResult.limit,
-        balance: doResult.limit === null ? null : doResult.balance,
-        resetsAt,
-        resetInterval: planFeature.resetInterval,
-        ...(doResult.rolloverBalance > 0
-          ? { rolloverBalance: doResult.rolloverBalance }
-          : {}),
-        ...(addonCreditsBalance !== undefined
-          ? { addonCredits: addonCreditsBalance }
-          : {}),
-        ...(creditMapping && doResult.limit !== null
-          ? {
-              planCredits: {
-                used: doResult.usage,
-                limit: doResult.limit,
-                resetsAt,
-              },
-            }
-          : {}),
-        details: buildDetails(
-          usageModel === "usage_based"
-            ? `Usage-based access granted for '${feature.slug || feature.id}'. Usage will be billed.`
-            : doResult.limit === null
-              ? `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`
-              : `Access granted — used ${doResult.usage} of ${doResult.limit}.`,
-          undefined,
-          doResult.usage,
-        ),
-      });
-    }
-    // Calculate current usage for this period using the feature's reset interval
-    const { periodStart: currentPeriodStart, periodEnd: currentPeriodEnd } =
-      getResetPeriod(
-        planFeature.resetInterval,
-        subscription.currentPeriodStart,
-        subscription.currentPeriodEnd,
-      );
-
-    // Sum usage from UsageLedgerDO (source of truth) - not D1
-    const ledgerUsage = await sumUsageAmount(
-      {
-        usageLedger: c.env.USAGE_LEDGER,
-        organizationId: organizationId || null,
-      },
-      {
-        customerId: customer.id,
-        featureId: effectiveFeatureId,
-        entityId: entity || undefined,
-        createdAtFrom: currentPeriodStart,
-        createdAtTo: currentPeriodEnd,
-      },
-    );
-    if (
-      ledgerUsage === null &&
-      hasAuthoritativeUsageLedger(c, organizationId)
-    ) {
-      return c.json(
-        {
-          allowed: false,
-          code: "billing_unavailable",
-          usage: null,
-          limit: planFeature.limitValue,
-          balance: null,
-          resetsAt,
-          resetInterval: planFeature.resetInterval,
-          details: {
-            message:
-              "Billing ledger unavailable. Cannot safely evaluate current metered usage right now.",
-          },
-        },
-        503,
-      );
-    }
-
-    const currentUsage = ledgerUsage ?? 0;
-    const usageModel = getUsageModel(planFeature);
-
-    if (usageModel === "usage_based") {
-      const usageBasedGuard = await deps.checkOverageAllowed(
-        db,
-        customer.id,
-        effectiveFeatureId,
-        currentPeriodStart,
-        currentPeriodEnd,
-        0,
-        planFeature.maxOverageUnits,
-        effectiveValue,
-        {
-          usageLedger: c.env.USAGE_LEDGER,
-          organizationId: organizationId || null,
-        },
-      );
-
-      if (!usageBasedGuard.allowed) {
-        return c.json({
-          allowed: false,
-          code: "limit_exceeded",
-          usage: currentUsage,
-          limit: null,
-          balance: null,
-          resetsAt,
-          resetInterval: planFeature.resetInterval,
-          details: buildDetails(
-            usageBasedGuard.reason || "Usage-based billing is not allowed.",
-            undefined,
-            currentUsage,
-          ),
-        });
-      }
-
-      return c.json({
-        allowed: true,
-        code: "access_granted",
-        usage: currentUsage,
-        limit: null,
-        balance: null,
-        resetsAt,
-        resetInterval: planFeature.resetInterval,
-        details: buildDetails(
-          `Usage-based access granted for '${feature.slug || feature.id}'. Usage will be billed.`,
-          undefined,
-          currentUsage,
-        ),
-      });
-    }
-
-    // Check Usage Limit
-    // If limitValue is null, it's unlimited
-    if (planFeature.limitValue === null) {
-      return c.json({
-        allowed: true,
-        code: "access_granted",
-        usage: currentUsage,
-        limit: null,
-        balance: null,
-        resetsAt,
-        resetInterval: planFeature.resetInterval,
-        details: buildDetails(
-          `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`,
-          undefined,
-          currentUsage,
-        ),
-      });
-    }
-
-    if (currentUsage + effectiveValue > planFeature.limitValue) {
-      // During trials, always block at limit — no overage billing for free trials
-      const overageSetting = isTrial ? "block" : planFeature.overage || "block";
-
-      // Add-on credits FIRST — consume purchased credits before overage billing
-      if (creditMapping) {
-        const addonBalance = await getAddonBalance(
-          db,
-          customer.id,
-          creditMapping.creditSystemId,
-          deps,
-        );
-        if (addonBalance >= effectiveValue) {
-          return c.json({
-            allowed: true,
-            code: "addon_credits_used",
-            usage: currentUsage,
-            limit: planFeature.limitValue,
-            balance: planFeature.limitValue - currentUsage,
-            resetsAt,
-            resetInterval: planFeature.resetInterval,
-            addonCredits: addonBalance,
-            planCredits: {
-              used: currentUsage,
-              limit: planFeature.limitValue,
-              resetsAt,
-            },
-            details: buildDetails(
-              `Plan credits exhausted. ${effectiveValue} add-on credits will be deducted.`,
-              {
-                addonCreditsUsed: effectiveValue,
-                addonCreditsRemaining: addonBalance,
-              },
-              currentUsage,
-            ),
-          });
-        }
-      }
-
-      // If overage is "charge", check guards before allowing
-      if (overageSetting === "charge") {
-        const overageGuard = await deps.checkOverageAllowed(
-          db,
-          customer.id,
-          effectiveFeatureId,
-          currentPeriodStart,
-          currentPeriodEnd,
-          planFeature.limitValue,
-          planFeature.maxOverageUnits,
-          effectiveValue,
-          {
-            usageLedger: c.env.USAGE_LEDGER,
-            organizationId: organizationId || null,
-          },
-        );
-
-        if (overageGuard.allowed) {
-          return c.json({
-            allowed: true,
-            code: "overage_allowed",
-            usage: currentUsage,
-            limit: planFeature.limitValue,
-            balance: planFeature.limitValue - currentUsage,
-            resetsAt,
-            resetInterval: planFeature.resetInterval,
-            details: buildDetails(
-              `Usage exceeds limit (${currentUsage}/${planFeature.limitValue}), overage will be billed.`,
-              {
-                overage: {
-                  type: overageSetting,
-                  willBeBilled: true,
-                  pricePerUnit:
-                    planFeature.overagePrice || planFeature.pricePerUnit,
-                  billingUnits: planFeature.billingUnits,
+                  details: buildTrackDetails(
+                    `Plan credits exhausted. ${trackEffectiveValue} add-on credits deducted.`,
+                    {
+                      addonCreditsUsed: trackEffectiveValue,
+                      addonCreditsRemaining: deductResult.remaining ?? 0,
+                    },
+                    addonDoUsage,
+                  ),
                 },
+                200,
+              );
+            }
+          }
+
+          // If overage is "charge", check guards before allowing
+          if (overageSetting === "charge") {
+            const includedBalanceBeforeOverage = Math.max(
+              0,
+              Math.min(trackEffectiveValue, Number(doResult.balance || 0)),
+            );
+            const requestedOverageUnits = Math.max(
+              0,
+              trackEffectiveValue - includedBalanceBeforeOverage,
+            );
+
+            const overageGuard = await deps.checkOverageAllowed(
+              db,
+              customer.id,
+              trackEffectiveFeatureId,
+              periodStart,
+              periodEnd,
+              planFeature.limitValue,
+              planFeature.maxOverageUnits,
+              requestedOverageUnits,
+              {
+                usageLedger: c.env.USAGE_LEDGER,
+                organizationId: organizationId || null,
               },
-              currentUsage,
-            ),
-          });
-        }
-        // Guard failed — fall through to block
-      }
-
-      // Block — unified path
-      const dbBlockAddonCredits = creditMapping
-        ? await getAddonBalance(db, customer.id, creditMapping.creditSystemId)
-        : undefined;
-      return c.json({
-        allowed: false,
-        code: "limit_exceeded",
-        usage: currentUsage,
-        limit: planFeature.limitValue,
-        balance: planFeature.limitValue - currentUsage,
-        resetsAt,
-        resetInterval: planFeature.resetInterval,
-        ...(dbBlockAddonCredits !== undefined
-          ? { addonCredits: dbBlockAddonCredits }
-          : {}),
-        details: buildDetails(
-          `Usage limit exceeded (${currentUsage}/${planFeature.limitValue}). Resets at ${resetsAt}.`,
-          undefined,
-          currentUsage,
-        ),
-      });
-    }
-
-    // If it costs credits (prepaid balance model), check balance.
-    // NOTE: Credit systems do NOT use credits.balance — they enforce via usage_records pool.
-    // Only planFeature.creditCost triggers the prepaid balance check.
-    if (
-      !creditMapping &&
-      planFeature.creditCost &&
-      planFeature.creditCost > 0
-    ) {
-      const cost = value * planFeature.creditCost;
-      const creditRecord = await db.query.credits.findFirst({
-        where: eq(schema.credits.customerId, customer.id),
-      });
-      const creditBalance = creditRecord?.balance || 0;
-
-      if (creditBalance < cost) {
-        return c.json({
-          allowed: false,
-          code: "insufficient_credits",
-          usage: currentUsage,
-          limit: planFeature.limitValue,
-          balance: planFeature.limitValue - currentUsage,
-          resetsAt,
-          resetInterval: planFeature.resetInterval,
-          details: buildDetails(
-            `Insufficient credits — balance: ${creditBalance}, required: ${cost}.`,
-            undefined,
-            currentUsage,
-          ),
-        });
-      }
-    }
-
-    // sendEvent: track usage inline (DB-only path, no DO)
-    if (sendEvent) {
-      scheduleUsagePersist(
-        c,
-        db,
-        organizationId,
-        {
-          customerId: customer.id,
-          ...buildUsageLedgerContext({
-            featureId: effectiveFeatureId,
-            featureSlug: effectiveFeatureSlug,
-            featureName: creditMapping
-              ? effectiveFeatureSlug
-              : (feature.name ?? effectiveFeatureSlug),
-            subscription,
-            planFeature,
-          }),
-          entityId: entity || null,
-          amount: effectiveValue,
-          periodStart: currentPeriodStart,
-          periodEnd: currentPeriodEnd,
-        },
-        "check:track-inline-db-only",
-      );
-
-      // Deduct from credits.balance for prepaid model (not credit systems)
-      if (
-        !creditMapping &&
-        planFeature.creditCost &&
-        planFeature.creditCost > 0
-      ) {
-        const cost = value * planFeature.creditCost;
-        await db
-          .update(schema.credits)
-          .set({
-            balance: sql`${schema.credits.balance} - ${cost}`,
-            updatedAt: Date.now(),
-          })
-          .where(eq(schema.credits.customerId, customer.id));
-      }
-    }
-
-    return c.json({
-      allowed: true,
-      code: "access_granted",
-      usage: currentUsage,
-      limit: planFeature.limitValue,
-      balance: planFeature.limitValue - currentUsage,
-      resetsAt,
-      resetInterval: planFeature.resetInterval,
-      details: buildDetails(
-        `Access granted — used ${currentUsage} of ${planFeature.limitValue}.`,
-        undefined,
-        currentUsage,
-      ),
-    });
-  }
-
-  return c.json({
-    allowed: false,
-    code: "unknown_feature_type",
-    usage: null,
-    limit: null,
-    balance: null,
-    resetsAt: null,
-    resetInterval: null,
-    details: { message: `Unrecognized feature type '${feature.type}'.` },
-  });
-});
-
-// Track Usage
-app.post("/track", async (c) => {
-  const deps = getEntitlementsDependencies(c);
-  const body = await c.req.json();
-  const parsed = trackSchema.safeParse(body);
-
-  if (!parsed.success) {
-    return c.json(zodErrorToResponse(parsed.error), 400);
-  }
-
-  const {
-    customer: customerId,
-    feature: featureId,
-    value,
-    customerData,
-    entity,
-  } = parsed.data;
-  const db = c.get("db");
-  const organizationId = c.get("organizationId");
-  const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
-  const now = Date.now();
-
-  if (!organizationId) {
-    return c.json(
-      { success: false, error: "Organization Context Missing" },
-      500,
-    );
-  }
-
-  // 1 & 2. Resolve Customer and Feature in parallel
-  let trackCustomer;
-  let trackFeatureResult;
-  try {
-    [trackCustomer, trackFeatureResult] = await Promise.all([
-      deps.resolveOrCreateCustomer({
-        db,
-        organizationId,
-        customerId,
-        customerData,
-        cache,
-        waitUntil: (p) => c.executionCtx.waitUntil(p),
-      }),
-      (async () => {
-        let f = cache
-          ? await cache.getFeature<typeof schema.features.$inferSelect>(
-              organizationId,
-              featureId,
-            )
-          : null;
-
-        if (!f) {
-          f =
-            (await db.query.features.findFirst({
-              where: and(
-                eq(schema.features.organizationId, organizationId),
-                or(
-                  eq(schema.features.id, featureId),
-                  eq(schema.features.slug, featureId),
-                ),
-              ),
-            })) ?? null;
-
-          if (f && cache) {
-            const featureCacheKeys = [featureId, f.id, f.slug].filter(
-              (key): key is string => !!key && key.length > 0,
             );
-            const uniqueFeatureCacheKeys = [...new Set(featureCacheKeys)];
-            scheduleCacheOp(
-              c,
-              Promise.all(
-                uniqueFeatureCacheKeys.map((key) =>
-                  cache.setFeature(organizationId, key, f),
+
+            if (!overageGuard.allowed) {
+              const guardUsage = doResult.usage ?? null;
+              return c.json(
+                {
+                  success: false,
+                  allowed: false,
+                  code: "limit_exceeded",
+                  usage: guardUsage,
+                  limit: planFeature.limitValue,
+                  balance: doResult.balance,
+                  resetsAt: new Date(periodEnd).toISOString(),
+                  resetInterval: planFeature.resetInterval,
+                  ...(doResult.rolloverBalance > 0
+                    ? { rolloverBalance: doResult.rolloverBalance }
+                    : {}),
+                  details: buildTrackDetails(
+                    overageGuard.reason ||
+                      `Overage not allowed. ${requestedOverageUnits} overage units requested.`,
+                    undefined,
+                    guardUsage,
+                  ),
+                },
+                200,
+              );
+            }
+
+            trackedAsOverage = true;
+
+            // Guard passed: consume any remaining included/rollover balance first.
+            if (includedBalanceBeforeOverage > 0) {
+              const consumeIncludedResult = await usageMeter.track(
+                trackFeatureKey,
+                includedBalanceBeforeOverage,
+                currentConfig,
+              );
+
+              if (consumeIncludedResult.allowed) {
+                doResult = consumeIncludedResult;
+              } else {
+                // If balance changed concurrently, re-check guard for full request as overage.
+                const raceOverageGuard = await deps.checkOverageAllowed(
+                  db,
+                  customer.id,
+                  trackEffectiveFeatureId,
+                  periodStart,
+                  periodEnd,
+                  planFeature.limitValue,
+                  planFeature.maxOverageUnits,
+                  trackEffectiveValue,
+                  {
+                    usageLedger: c.env.USAGE_LEDGER,
+                    organizationId: organizationId || null,
+                  },
+                );
+
+                if (!raceOverageGuard.allowed) {
+                  return c.json(
+                    {
+                      success: false,
+                      allowed: false,
+                      code: "limit_exceeded",
+                      usage: doResult.usage ?? null,
+                      limit: planFeature.limitValue,
+                      balance: doResult.balance,
+                      resetsAt: new Date(periodEnd).toISOString(),
+                      resetInterval: planFeature.resetInterval,
+                      ...(doResult.rolloverBalance > 0
+                        ? { rolloverBalance: doResult.rolloverBalance }
+                        : {}),
+                      details: buildTrackDetails(
+                        raceOverageGuard.reason ||
+                          `Overage not allowed. ${trackEffectiveValue} overage units requested.`,
+                        undefined,
+                        doResult.usage ?? null,
+                      ),
+                    },
+                    200,
+                  );
+                }
+              }
+            }
+            // Continue to persist full usage record below.
+          } else {
+            // overage is "block" and addon credits insufficient — block
+            const blockUsage = doResult.usage ?? null;
+            const trackBlockAddonCredits = trackCreditMapping
+              ? await getAddonBalance(
+                  db,
+                  customer.id,
+                  trackCreditMapping.creditSystemId,
+                  deps,
+                )
+              : undefined;
+            return c.json(
+              {
+                success: false,
+                allowed: false,
+                code: "limit_exceeded",
+                usage: blockUsage,
+                limit: planFeature.limitValue,
+                balance: doResult.balance,
+                resetsAt: new Date(periodEnd).toISOString(),
+                resetInterval: planFeature.resetInterval,
+                ...(doResult.rolloverBalance > 0
+                  ? { rolloverBalance: doResult.rolloverBalance }
+                  : {}),
+                ...(trackBlockAddonCredits !== undefined
+                  ? { addonCredits: trackBlockAddonCredits }
+                  : {}),
+                details: buildTrackDetails(
+                  `Usage tracking denied — limit reached (${doResult.balance} remaining). Resets at ${new Date(periodEnd).toISOString()}.`,
+                  undefined,
+                  blockUsage,
                 ),
-              ),
-              "setFeature(/track)",
+              },
+              200,
             );
           }
         }
-        return f;
-      })(),
-    ]);
-  } catch (error) {
-    if (isCustomerResolutionConflictError(error)) {
-      return c.json(
-        {
-          success: false,
-          allowed: false,
-          code: "customer_ambiguous",
-          usage: null,
-          limit: null,
-          balance: null,
-          resetsAt: null,
-          resetInterval: null,
-          details: {
-            message: error.message,
-          },
-        },
-        409,
-      );
-    }
-    throw error;
-  }
-
-  const customer = trackCustomer;
-
-  if (!customer) {
-    return c.json(
-      {
-        success: false,
-        allowed: false,
-        code: "customer_not_found",
-        usage: null,
-        limit: null,
-        balance: null,
-        resetsAt: null,
-        resetInterval: null,
-        details: {
-          message: `Customer '${customerId}' not found in this organization.`,
-        },
-      },
-      404,
-    );
-  }
-
-  const feature = trackFeatureResult;
-
-  if (!feature) {
-    return c.json(
-      {
-        success: false,
-        allowed: false,
-        code: "feature_not_found",
-        usage: null,
-        limit: null,
-        balance: null,
-        resetsAt: null,
-        resetInterval: null,
-        details: { message: `Feature '${featureId}' not found.` },
-      },
-      404,
-    );
-  }
-
-  // 3 & 4. Validate Entity and fetch Subscriptions in parallel
-  const subsCacheKey = customer.id;
-  const [trackEntityValid, trackSubsResult] = await Promise.all([
-    entity
-      ? db.query.entities.findFirst({
-          where: and(
-            eq(schema.entities.customerId, customer.id),
-            eq(schema.entities.featureId, feature.id),
-            eq(schema.entities.entityId, entity),
-            eq(schema.entities.status, "active"),
-          ),
-        })
-      : true,
-    (async () => {
-      let subs = cache
-        ? await cache.getSubscriptions<
-            Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
-          >(organizationId, subsCacheKey)
-        : null;
-
-      if (!subs) {
-        subs = await db.query.subscriptions.findMany({
-          where: and(
-            eq(schema.subscriptions.customerId, customer.id),
-            inArray(schema.subscriptions.status, [
-              "active",
-              "trialing",
-              "pending_cancel",
-            ]),
-          ),
-          with: {
-            plan: true,
-          },
-        });
-
-        if (cache) {
-          scheduleCacheOp(
-            c,
-            cache.setSubscriptions(organizationId, subsCacheKey, subs),
-            "setSubscriptions(/track)",
-          );
-        }
       }
-      return subs;
-    })(),
-  ]);
 
-  if (entity && !trackEntityValid) {
-    return c.json(
-      {
-        success: false,
-        allowed: false,
-        code: "entity_not_found",
-        usage: null,
-        limit: null,
-        balance: null,
-        resetsAt: null,
-        resetInterval: null,
-        details: {
-          message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
-        },
-      },
-      404,
-    );
-  }
-
-  let subscriptions = trackSubsResult;
-
-  // Filter out expired trialing subscriptions and scheduled cancellations past their effective date
-  const trackNow = Date.now();
-  const trackExpiredTrialIds: string[] = [];
-  const trackExpiredCancelIds: string[] = [];
-  const trackStalePaidPeriodIds: string[] = [];
-  subscriptions = subscriptions.filter((s: any) => {
-    if (s.status === "trialing") {
-      const trialEnd = s.currentPeriodEnd;
-      const trialEndValid =
-        typeof trialEnd === "number" &&
-        trialEnd > 0 &&
-        trialEnd <= trackNow + MAX_TRIAL_DURATION_MS;
-      if (!trialEndValid || trialEnd < trackNow) {
-        trackExpiredTrialIds.push(s.id);
-        return false;
-      }
-    }
-    if (s.cancelAt && s.cancelAt < trackNow && !s.canceledAt) {
-      trackExpiredCancelIds.push(s.id);
-      return false;
-    }
-    if (
-      isPaidActivePastGracePeriod(
-        {
-          status: s.status,
-          currentPeriodEnd: s.currentPeriodEnd,
-          planType: s.plan?.type,
-        },
-        trackNow,
-      )
-    ) {
-      trackStalePaidPeriodIds.push(s.id);
-      return false;
-    }
-    return true;
-  });
-  if (trackExpiredTrialIds.length > 0) {
-    c.executionCtx.waitUntil(
-      db
-        .update(schema.subscriptions)
-        .set({ status: "expired", updatedAt: trackNow })
-        .where(inArray(schema.subscriptions.id, trackExpiredTrialIds)),
-    );
-  }
-  if (trackExpiredCancelIds.length > 0) {
-    c.executionCtx.waitUntil(
-      db
-        .update(schema.subscriptions)
-        .set({ status: "canceled", canceledAt: trackNow, updatedAt: trackNow })
-        .where(inArray(schema.subscriptions.id, trackExpiredCancelIds)),
-    );
-  }
-  if (trackStalePaidPeriodIds.length > 0) {
-    c.executionCtx.waitUntil(
-      db
-        .update(schema.subscriptions)
-        .set({ status: "past_due", updatedAt: trackNow })
-        .where(inArray(schema.subscriptions.id, trackStalePaidPeriodIds)),
-    );
-  }
-  if (
-    trackExpiredTrialIds.length > 0 ||
-    trackExpiredCancelIds.length > 0 ||
-    trackStalePaidPeriodIds.length > 0
-  ) {
-    if (cache) {
-      scheduleCacheOp(
-        c,
-        cache.invalidateSubscriptions(organizationId, subsCacheKey),
-        "invalidateSubscriptions(/track)",
-      );
-    }
-  }
-
-  if (subscriptions.length === 0) {
-    return c.json(
-      {
-        success: false,
-        allowed: false,
-        code: "no_active_subscription",
-        usage: null,
-        limit: null,
-        balance: null,
-        resetsAt: null,
-        resetInterval: null,
-        details: {
-          message:
-            "No active or trialing subscription found for this customer.",
-        },
-      },
-      400,
-    );
-  }
-
-  // 4. Find planFeatures (cache-first, then batch DB query)
-  const planIds = subscriptions.map((s: { planId: string }) => s.planId);
-  const pfCacheKey = `${planIds.sort().join(",")}:${feature.id}`;
-  let planFeatures = cache
-    ? await cache.getPlanFeatures<
-        Awaited<ReturnType<typeof db.query.planFeatures.findMany>>
-      >(organizationId, pfCacheKey)
-    : null;
-
-  if (!planFeatures) {
-    planFeatures = await db.query.planFeatures.findMany({
-      where: and(
-        inArray(schema.planFeatures.planId, planIds),
-        eq(schema.planFeatures.featureId, feature.id),
-      ),
-    });
-
-    if (cache) {
-      scheduleCacheOp(
-        c,
-        cache.setPlanFeatures(organizationId, pfCacheKey, planFeatures),
-        "setPlanFeatures(/track)",
-      );
-    }
-  }
-
-  let accessGrantingSubscription: (typeof subscriptions)[number] | null = null;
-  let accessGrantingPlanFeature: (typeof planFeatures)[number] | null = null;
-  let trackCreditMapping: CreditSystemMapping | null = null;
-
-  for (const pf of planFeatures) {
-    const sub = subscriptions.find(
-      (s: { planId: string }) => s.planId === pf.planId,
-    );
-    if (sub) {
-      accessGrantingSubscription = sub;
-      accessGrantingPlanFeature = pf;
-      break;
-    }
-  }
-
-  // Credit system fallback
-  if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
-    trackCreditMapping = await resolveCreditSystem(
-      db,
-      feature.id,
-      planIds,
-      subscriptions,
-      customer.id,
-      now,
-    );
-    if (trackCreditMapping) {
-      accessGrantingSubscription = trackCreditMapping.subscription;
-      accessGrantingPlanFeature = trackCreditMapping.planFeature;
-    }
-  }
-
-  const subscription = accessGrantingSubscription;
-  const planFeature = accessGrantingPlanFeature;
-
-  if (!subscription || !planFeature) {
-    return c.json(
-      {
-        success: false,
-        allowed: false,
-        code: "feature_not_in_plan",
-        usage: null,
-        limit: null,
-        balance: null,
-        resetsAt: null,
-        resetInterval: null,
-        details: {
-          message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.`,
-        },
-      },
-      400,
-    );
-  }
-
-  // Credit system effective values
-  const trackEffectiveFeatureId = trackCreditMapping
-    ? trackCreditMapping.creditSystemId
-    : feature.id;
-  const trackEffectiveValue = trackCreditMapping
-    ? value * trackCreditMapping.costPerUnit
-    : value;
-  const trackEffectiveSlug = trackCreditMapping
-    ? trackCreditMapping.creditSystemSlug
-    : feature.slug || feature.id;
-
-  // Build reusable details context for track responses
-  const isTrial = subscription.status === "trialing";
-  const trialEndsAt =
-    isTrial && subscription.currentPeriodEnd
-      ? new Date(subscription.currentPeriodEnd).toISOString()
-      : null;
-
-  const trackPlanName = (subscription as any).plan?.name || "current plan";
-
-  function buildTrackDetails(
-    message: string,
-    extra?: Record<string, unknown>,
-    usageForPricing?: number | null,
-  ) {
-    const pricing = buildPricingDetails(planFeature, usageForPricing);
-    return {
-      message,
-      planName: trackPlanName,
-      ...(isTrial ? { trial: true, trialEndsAt } : {}),
-      ...(trackCreditMapping
-        ? {
-            creditSystem: trackCreditMapping.creditSystemSlug,
-            creditCostPerUnit: trackCreditMapping.costPerUnit,
-          }
-        : {}),
-      ...(pricing ? { pricing } : {}),
-      ...extra,
-    };
-  }
-
-  // Use the feature's resetInterval to determine the correct usage period
-  const { periodStart, periodEnd } = getResetPeriod(
-    planFeature.resetInterval,
-    subscription.currentPeriodStart,
-    subscription.currentPeriodEnd,
-  );
-  const usageModel = getUsageModel(planFeature);
-
-  try {
-    // ===========================================================================
-    // Use Durable Object for atomic real-time tracking (if available)
-    // ===========================================================================
-    let doResult: {
-      allowed: boolean;
-      balance: number;
-      usage: number;
-      limit: number | null;
-      code: string;
-      rolloverBalance: number;
-    } | null = null;
-    let trackedAsOverage = false;
-
-    // When credit system resolved, use credit system slug for DO key
-    // When entity is provided, scope DO feature key and DB queries by entity
-    const trackFeatureKey = entity
-      ? `${trackEffectiveSlug}:${entity}`
-      : trackEffectiveSlug;
-
-    if (c.env.USAGE_METER && planFeature) {
-      // Get customer's DO instance by their ID (scoped to org)
-      const doId = c.env.USAGE_METER.idFromName(
-        `${organizationId}:${customer.id}`,
-      );
-
-      const usageMeter = c.env.USAGE_METER.get(doId);
-
-      // Pass current config inline — single RPC call, no extra round-trip
-      const currentConfig = {
-        limit: planFeature.limitValue,
-        resetInterval: planFeature.resetInterval,
-        resetOnEnable: planFeature.resetOnEnable || false,
-        rolloverEnabled: planFeature.rolloverEnabled || false,
-        rolloverMaxBalance: planFeature.rolloverMaxBalance,
-        usageModel: planFeature.usageModel || "included",
-        creditCost: planFeature.creditCost || 0,
-      };
-
-      if (usageModel === "usage_based") {
+      if (usageModel === "usage_based" && !doResult) {
         const usageBasedGuard = await deps.checkOverageAllowed(
           db,
           customer.id,
@@ -2373,445 +2912,163 @@ app.post("/track", async (c) => {
         );
 
         if (!usageBasedGuard.allowed) {
-          return c.json({
-            success: false,
-            allowed: false,
-            code: "limit_exceeded",
-            usage: null,
-            limit: null,
-            balance: null,
-            resetsAt: new Date(periodEnd).toISOString(),
-            resetInterval: planFeature.resetInterval,
-            details: buildTrackDetails(
-              usageBasedGuard.reason || "Usage-based billing is not allowed.",
-            ),
-          });
-        }
-      }
-
-      // Track usage atomically via RPC (config synced inline)
-      doResult = await usageMeter.track(
-        trackFeatureKey,
-        trackEffectiveValue,
-        currentConfig,
-      );
-
-      // If DO has no state yet (fresh/restart), migrate usage from UsageLedgerDO and configure
-      if (doResult.code === "feature_not_found") {
-        // Query UsageLedgerDO for historical usage (source of truth)
-        const ledgerUsage = await sumUsageAmount(
-          {
-            usageLedger: c.env.USAGE_LEDGER,
-            organizationId: organizationId || null,
-          },
-          {
-            customerId: customer.id,
-            featureId: trackEffectiveFeatureId,
-            entityId: entity || undefined,
-            createdAtFrom: periodStart,
-            createdAtTo: periodEnd,
-          },
-        );
-        if (
-          ledgerUsage === null &&
-          hasAuthoritativeUsageLedger(c, organizationId)
-        ) {
           return c.json(
             {
               success: false,
               allowed: false,
-              code: "billing_unavailable",
+              code: "limit_exceeded",
               usage: null,
-              limit: planFeature.limitValue,
+              limit: null,
               balance: null,
               resetsAt: new Date(periodEnd).toISOString(),
               resetInterval: planFeature.resetInterval,
               details: buildTrackDetails(
-                "Billing ledger unavailable. Cannot safely initialize tracked usage right now.",
+                usageBasedGuard.reason || "Usage-based billing is not allowed.",
               ),
             },
-            503,
+            200,
           );
         }
-
-        const currentUsage = ledgerUsage ?? 0;
-
-        await usageMeter.configureFeature(trackFeatureKey, {
-          ...currentConfig,
-          initialUsage: currentUsage,
-        });
-
-        doResult = await usageMeter.track(trackFeatureKey, trackEffectiveValue);
       }
 
-      // If DO says not allowed, try addon credits first, then overage
-      if (doResult && !doResult.allowed) {
-        // During trials, always block at limit — no overage billing for free trials
-        const overageSetting = isTrial
-          ? "block"
-          : planFeature.overage || "block";
-
-        // Add-on credits FIRST — consume purchased credits before overage billing
-        if (trackCreditMapping) {
-          const deductResult = await tryDeductAddonCredits(
-            db,
-            customer.id,
-            trackEffectiveValue,
-            trackCreditMapping.creditSystemId,
-            deps,
-          );
-          if (deductResult.deducted) {
-            scheduleUsagePersist(
-              c,
-              db,
-              organizationId,
-              {
-                customerId: customer.id,
-                ...buildUsageLedgerContext({
-                  featureId: trackEffectiveFeatureId,
-                  featureSlug: trackEffectiveSlug,
-                  featureName: trackCreditMapping
-                    ? trackEffectiveSlug
-                    : (feature.name ?? trackEffectiveSlug),
-                  subscription,
-                  planFeature,
-                }),
-                entityId: entity || null,
-                amount: trackEffectiveValue,
-                periodStart,
-                periodEnd,
-              },
-              "track:addon-fallback",
-            );
-            const addonDoUsage = doResult.usage ?? null;
-            return c.json({
-              success: true,
-              allowed: true,
-              code: "addon_credits_used",
-              usage: addonDoUsage,
-              limit: planFeature.limitValue,
-              balance: doResult.balance,
-              resetsAt: new Date(periodEnd).toISOString(),
-              resetInterval: planFeature.resetInterval,
-              ...(doResult.rolloverBalance > 0
-                ? { rolloverBalance: doResult.rolloverBalance }
-                : {}),
-              addonCredits: deductResult.remaining,
-              planCredits: {
-                used: addonDoUsage ?? 0,
-                limit: planFeature.limitValue,
-                resetsAt: new Date(periodEnd).toISOString(),
-              },
-              details: buildTrackDetails(
-                `Plan credits exhausted. ${trackEffectiveValue} add-on credits deducted.`,
-                {
-                  addonCreditsUsed: trackEffectiveValue,
-                  addonCreditsRemaining: deductResult.remaining,
-                },
-                addonDoUsage,
-              ),
-            });
-          }
-        }
-
-        // If overage is "charge", check guards before allowing
-        if (overageSetting === "charge") {
-          const includedBalanceBeforeOverage = Math.max(
-            0,
-            Math.min(trackEffectiveValue, Number(doResult.balance || 0)),
-          );
-          const requestedOverageUnits = Math.max(
-            0,
-            trackEffectiveValue - includedBalanceBeforeOverage,
-          );
-
-          const overageGuard = await deps.checkOverageAllowed(
-            db,
-            customer.id,
-            trackEffectiveFeatureId,
-            periodStart,
-            periodEnd,
-            planFeature.limitValue,
-            planFeature.maxOverageUnits,
-            requestedOverageUnits,
-            {
-              usageLedger: c.env.USAGE_LEDGER,
-              organizationId: organizationId || null,
-            },
-          );
-
-          if (!overageGuard.allowed) {
-            const guardUsage = doResult.usage ?? null;
-            return c.json({
-              success: false,
-              allowed: false,
-              code: "limit_exceeded",
-              usage: guardUsage,
-              limit: planFeature.limitValue,
-              balance: doResult.balance,
-              resetsAt: new Date(periodEnd).toISOString(),
-              resetInterval: planFeature.resetInterval,
-              ...(doResult.rolloverBalance > 0
-                ? { rolloverBalance: doResult.rolloverBalance }
-                : {}),
-              details: buildTrackDetails(
-                overageGuard.reason ||
-                  `Overage not allowed. ${requestedOverageUnits} overage units requested.`,
-                undefined,
-                guardUsage,
-              ),
-            });
-          }
-
-          trackedAsOverage = true;
-
-          // Guard passed: consume any remaining included/rollover balance first.
-          if (includedBalanceBeforeOverage > 0) {
-            const consumeIncludedResult = await usageMeter.track(
-              trackFeatureKey,
-              includedBalanceBeforeOverage,
-              currentConfig,
-            );
-
-            if (consumeIncludedResult.allowed) {
-              doResult = consumeIncludedResult;
-            } else {
-              // If balance changed concurrently, re-check guard for full request as overage.
-              const raceOverageGuard = await deps.checkOverageAllowed(
-                db,
-                customer.id,
-                trackEffectiveFeatureId,
-                periodStart,
-                periodEnd,
-                planFeature.limitValue,
-                planFeature.maxOverageUnits,
-                trackEffectiveValue,
-                {
-                  usageLedger: c.env.USAGE_LEDGER,
-                  organizationId: organizationId || null,
-                },
-              );
-
-              if (!raceOverageGuard.allowed) {
-                return c.json({
-                  success: false,
-                  allowed: false,
-                  code: "limit_exceeded",
-                  usage: doResult.usage ?? null,
-                  limit: planFeature.limitValue,
-                  balance: doResult.balance,
-                  resetsAt: new Date(periodEnd).toISOString(),
-                  resetInterval: planFeature.resetInterval,
-                  ...(doResult.rolloverBalance > 0
-                    ? { rolloverBalance: doResult.rolloverBalance }
-                    : {}),
-                  details: buildTrackDetails(
-                    raceOverageGuard.reason ||
-                      `Overage not allowed. ${trackEffectiveValue} overage units requested.`,
-                    undefined,
-                    doResult.usage ?? null,
-                  ),
-                });
-              }
-            }
-          }
-          // Continue to persist full usage record below.
-        } else {
-          // overage is "block" and addon credits insufficient — block
-          const blockUsage = doResult.usage ?? null;
-          const trackBlockAddonCredits = trackCreditMapping
-            ? await getAddonBalance(
-                db,
-                customer.id,
-                trackCreditMapping.creditSystemId,
-                deps,
-              )
-            : undefined;
-          return c.json({
-            success: false,
-            allowed: false,
-            code: "limit_exceeded",
-            usage: blockUsage,
-            limit: planFeature.limitValue,
-            balance: doResult.balance,
-            resetsAt: new Date(periodEnd).toISOString(),
-            resetInterval: planFeature.resetInterval,
-            ...(doResult.rolloverBalance > 0
-              ? { rolloverBalance: doResult.rolloverBalance }
-              : {}),
-            ...(trackBlockAddonCredits !== undefined
-              ? { addonCredits: trackBlockAddonCredits }
-              : {}),
-            details: buildTrackDetails(
-              `Usage tracking denied — limit reached (${doResult.balance} remaining). Resets at ${new Date(periodEnd).toISOString()}.`,
-              undefined,
-              blockUsage,
-            ),
-          });
-        }
-      }
-    }
-
-    if (usageModel === "usage_based" && !doResult) {
-      const usageBasedGuard = await deps.checkOverageAllowed(
+      // ===========================================================================
+      // Persist to DB asynchronously (for audit trail and backup)
+      // Using waitUntil to avoid blocking the response
+      // ===========================================================================
+      const usagePersistPromise = scheduleUsagePersist(
+        c,
         db,
-        customer.id,
-        trackEffectiveFeatureId,
-        periodStart,
-        periodEnd,
-        0,
-        planFeature.maxOverageUnits,
-        trackEffectiveValue,
+        organizationId,
         {
-          usageLedger: c.env.USAGE_LEDGER,
-          organizationId: organizationId || null,
+          customerId: customer.id,
+          ...buildUsageLedgerContext({
+            featureId: trackEffectiveFeatureId,
+            featureSlug: trackEffectiveSlug,
+            featureName: trackCreditMapping
+              ? trackEffectiveSlug
+              : (feature.name ?? trackEffectiveSlug),
+            subscription,
+            planFeature,
+          }),
+          entityId: entity || null,
+          amount: trackEffectiveValue,
+          periodStart,
+          periodEnd,
         },
+        "track:main",
       );
 
-      if (!usageBasedGuard.allowed) {
-        return c.json({
+      // Deduct Credits if applicable (prepaid balance model)
+      // NOTE: Credit systems do NOT use credits.balance — they enforce via usage_records pool.
+      // This runs regardless of DO availability — credits.balance is a separate DB counter.
+      if (
+        subscription &&
+        !trackCreditMapping &&
+        planFeature.creditCost &&
+        planFeature.creditCost > 0
+      ) {
+        const cost = value * planFeature.creditCost;
+        c.executionCtx.waitUntil(
+          db
+            .update(schema.credits)
+            .set({
+              balance: sql`${schema.credits.balance} - ${cost}`,
+              updatedAt: Date.now(),
+            })
+            .where(eq(schema.credits.customerId, customer.id)),
+        );
+      }
+
+      // Determine if this was an overage usage
+      const isOverage =
+        trackedAsOverage ||
+        !!(doResult && !doResult.allowed && planFeature.overage === "charge");
+
+      const isChargeableUsage = isOverage || usageModel === "usage_based";
+
+      // Threshold trigger: if this usage is chargeable, check if unbilled amount crosses org threshold
+      if (isChargeableUsage && organizationId) {
+        c.executionCtx.waitUntil(
+          usagePersistPromise.then(async () => {
+            try {
+              await evaluateThresholdBillingCandidate({
+                db,
+                organizationId,
+                customerId: customer.id,
+                usageLedger: c.env.USAGE_LEDGER,
+                workflow: c.env.OVERAGE_BILLING_WORKFLOW,
+              });
+            } catch (e) {
+              console.error("[track] Threshold check failed:", e);
+            }
+          }),
+        );
+      }
+
+      const successUsage = doResult ? doResult.usage : null;
+
+      return c.json(
+        {
+          success: true,
+          allowed: true,
+          code: isOverage ? "tracked_overage" : "tracked",
+          usage: successUsage,
+          limit: planFeature.limitValue,
+          balance: doResult?.balance ?? null,
+          resetsAt: new Date(periodEnd).toISOString(),
+          resetInterval: planFeature.resetInterval,
+          ...(doResult && doResult.rolloverBalance > 0
+            ? { rolloverBalance: doResult.rolloverBalance }
+            : {}),
+          details: isOverage
+            ? buildTrackDetails(
+                `Usage tracked as overage (will be billed).`,
+                {
+                  overage: { type: planFeature.overage, willBeBilled: true },
+                },
+                successUsage,
+              )
+            : usageModel === "usage_based"
+              ? buildTrackDetails(
+                  `Usage tracked successfully. This usage is billable.`,
+                  undefined,
+                  successUsage,
+                )
+              : buildTrackDetails(
+                  `Usage tracked successfully (${doResult?.balance ?? "n/a"} remaining).`,
+                  undefined,
+                  successUsage,
+                ),
+        },
+        200,
+      );
+    } catch (e: any) {
+      console.error("Track failed:", e);
+      return c.json(
+        {
           success: false,
           allowed: false,
-          code: "limit_exceeded",
+          code: "internal_error",
           usage: null,
           limit: null,
           balance: null,
-          resetsAt: new Date(periodEnd).toISOString(),
-          resetInterval: planFeature.resetInterval,
-          details: buildTrackDetails(
-            usageBasedGuard.reason || "Usage-based billing is not allowed.",
-          ),
-        });
-      }
-    }
-
-    // ===========================================================================
-    // Persist to DB asynchronously (for audit trail and backup)
-    // Using waitUntil to avoid blocking the response
-    // ===========================================================================
-    const usagePersistPromise = scheduleUsagePersist(
-      c,
-      db,
-      organizationId,
-      {
-        customerId: customer.id,
-        ...buildUsageLedgerContext({
-          featureId: trackEffectiveFeatureId,
-          featureSlug: trackEffectiveSlug,
-          featureName: trackCreditMapping
-            ? trackEffectiveSlug
-            : (feature.name ?? trackEffectiveSlug),
-          subscription,
-          planFeature,
-        }),
-        entityId: entity || null,
-        amount: trackEffectiveValue,
-        periodStart,
-        periodEnd,
-      },
-      "track:main",
-    );
-
-    // Deduct Credits if applicable (prepaid balance model)
-    // NOTE: Credit systems do NOT use credits.balance — they enforce via usage_records pool.
-    // This runs regardless of DO availability — credits.balance is a separate DB counter.
-    if (
-      subscription &&
-      !trackCreditMapping &&
-      planFeature.creditCost &&
-      planFeature.creditCost > 0
-    ) {
-      const cost = value * planFeature.creditCost;
-      c.executionCtx.waitUntil(
-        db
-          .update(schema.credits)
-          .set({
-            balance: sql`${schema.credits.balance} - ${cost}`,
-            updatedAt: Date.now(),
-          })
-          .where(eq(schema.credits.customerId, customer.id)),
-      );
-    }
-
-    // Determine if this was an overage usage
-    const isOverage =
-      trackedAsOverage ||
-      !!(doResult && !doResult.allowed && planFeature.overage === "charge");
-
-    const isChargeableUsage = isOverage || usageModel === "usage_based";
-
-    // Threshold trigger: if this usage is chargeable, check if unbilled amount crosses org threshold
-    if (isChargeableUsage && organizationId) {
-      c.executionCtx.waitUntil(
-        usagePersistPromise.then(async () => {
-          try {
-            await evaluateThresholdBillingCandidate({
-              db,
-              organizationId,
-              customerId: customer.id,
-              usageLedger: c.env.USAGE_LEDGER,
-              workflow: c.env.OVERAGE_BILLING_WORKFLOW,
-            });
-          } catch (e) {
-            console.error("[track] Threshold check failed:", e);
-          }
-        }),
-      );
-    }
-
-    const successUsage = doResult ? doResult.usage : null;
-
-    return c.json({
-      success: true,
-      allowed: true,
-      code: isOverage ? "tracked_overage" : "tracked",
-      usage: successUsage,
-      limit: planFeature.limitValue,
-      balance: doResult?.balance ?? null,
-      resetsAt: new Date(periodEnd).toISOString(),
-      resetInterval: planFeature.resetInterval,
-      ...(doResult && doResult.rolloverBalance > 0
-        ? { rolloverBalance: doResult.rolloverBalance }
-        : {}),
-      details: isOverage
-        ? buildTrackDetails(
-            `Usage tracked as overage (will be billed).`,
-            {
-              overage: { type: planFeature.overage, willBeBilled: true },
-            },
-            successUsage,
-          )
-        : usageModel === "usage_based"
-          ? buildTrackDetails(
-              `Usage tracked successfully. This usage is billable.`,
-              undefined,
-              successUsage,
-            )
-          : buildTrackDetails(
-              `Usage tracked successfully (${doResult?.balance ?? "n/a"} remaining).`,
-              undefined,
-              successUsage,
-            ),
-    });
-  } catch (e: any) {
-    console.error("Track failed:", e);
-    return c.json(
-      {
-        success: false,
-        allowed: false,
-        code: "internal_error",
-        usage: null,
-        limit: null,
-        balance: null,
-        resetsAt: null,
-        resetInterval: null,
-        details: {
-          message: "An internal error occurred while tracking usage.",
+          resetsAt: null,
+          resetInterval: null,
+          details: {
+            message: "An internal error occurred while tracking usage.",
+          },
         },
-      },
-      500,
-    );
-  }
-});
+        500,
+      );
+    }
+  },
+  (result, c) => {
+    if (!result.success) {
+      return c.json(zodErrorToResponse(result.error), 400);
+    }
+
+    return undefined;
+  },
+);
 
 export default app;

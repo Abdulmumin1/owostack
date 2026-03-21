@@ -1,5 +1,4 @@
-import { Hono } from "hono";
-import { z } from "zod";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { resolveOrCreateCustomer } from "../../lib/customers";
@@ -17,6 +16,16 @@ import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 import { ensureCreditPackSynced } from "../../lib/credit-pack-sync";
 import { isCustomerResolutionConflictError } from "../../lib/customer-resolution";
+import {
+  apiKeySecurity,
+  badRequestResponse,
+  conflictResponse,
+  internalServerErrorResponse,
+  jsonContent,
+  metadataSchema,
+  notFoundResponse,
+  unauthorizedResponse,
+} from "../../openapi/common";
 
 export type AddonDependencies = {
   resolveOrCreateCustomer: typeof resolveOrCreateCustomer;
@@ -47,8 +56,51 @@ const addonSchema = z.object({
   pack: z.string(), // Credit pack slug or ID
   quantity: z.number().int().min(1).default(1),
   currency: z.string().min(3).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: metadataSchema.optional(),
   callbackUrl: z.string().url().optional(),
+});
+
+const addonResponseSchema = z
+  .object({
+    success: z.literal(true),
+    requiresCheckout: z.boolean(),
+    checkoutUrl: z.string().url(),
+    quantity: z.number(),
+    credits: z.number(),
+    message: z.string(),
+  })
+  .passthrough();
+
+const purchaseAddonRoute = createRoute({
+  method: "post",
+  path: "/addon",
+  operationId: "addon",
+  tags: ["Add-ons"],
+  summary: "Purchase a credit pack",
+  description:
+    "Creates a checkout session to purchase a credit pack add-on for a customer.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: addonSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Checkout created successfully",
+      ...jsonContent(addonResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
 });
 
 function zodErrorToResponse(zodError: {
@@ -78,10 +130,10 @@ function zodErrorToResponse(zodError: {
 
 export function createAddonRoute(overrides: Partial<AddonDependencies> = {}) {
   const deps = { ...defaultDependencies, ...overrides };
-  const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
   // POST /addon — Purchase a credit pack
-  app.post("/addon", async (c) => {
+  app.openapi(purchaseAddonRoute, async (c) => {
     const authHeader = c.req.header("Authorization");
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {

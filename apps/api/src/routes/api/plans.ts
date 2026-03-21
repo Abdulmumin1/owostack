@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq, and, desc } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
@@ -9,6 +9,13 @@ import {
 } from "../../lib/plan-feature-normalization";
 import { normalizeOneTimePlan } from "../../lib/plans";
 import type { Env, Variables } from "../../index";
+import {
+  apiKeySecurity,
+  jsonContent,
+  notFoundResponse,
+  pricingTierSchema,
+  unauthorizedResponse,
+} from "../../openapi/common";
 
 export type ApiPlansDependencies = {
   verifyApiKey: typeof verifyApiKey;
@@ -18,11 +25,110 @@ const defaultDependencies: ApiPlansDependencies = {
   verifyApiKey,
 };
 
+const planFeatureSchema = z
+  .object({
+    slug: z.string(),
+    name: z.string(),
+    type: z.string(),
+    meterType: z.string(),
+    enabled: z.boolean(),
+    limit: z.number().nullable(),
+    resetInterval: z.string().nullable(),
+    unit: z.string().nullable(),
+    usageModel: z.enum(["included", "usage_based", "prepaid"]).optional(),
+    pricePerUnit: z.number().optional(),
+    billingUnits: z.number().optional(),
+    ratingModel: z.enum(["package", "graduated", "volume"]).optional(),
+    tiers: z.array(pricingTierSchema).optional(),
+    overage: z.string().optional(),
+    overagePrice: z.number().optional(),
+  })
+  .passthrough();
+
+const publicPlanSchema = z
+  .object({
+    id: z.string(),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string().nullable(),
+    price: z.number(),
+    currency: z.string(),
+    interval: z.string(),
+    type: z.string(),
+    billingType: z.string(),
+    isAddon: z.boolean(),
+    planGroup: z.string().nullable(),
+    trialDays: z.number().nullable().optional(),
+    provider: z.string().nullable().optional(),
+    features: z.array(planFeatureSchema),
+  })
+  .passthrough();
+
+const listPlansRoute = createRoute({
+  method: "get",
+  path: "/",
+  operationId: "listPlans",
+  tags: ["Plans"],
+  summary: "List plans",
+  description:
+    "Lists plans for the authenticated organization, with optional filtering by group, interval, currency, and active status.",
+  security: apiKeySecurity,
+  request: {
+    query: z.object({
+      group: z.string().optional(),
+      interval: z.string().optional(),
+      currency: z.string().optional(),
+      includeInactive: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Plans returned successfully",
+      ...jsonContent(
+        z.object({
+          success: z.literal(true),
+          plans: z.array(publicPlanSchema),
+        }),
+      ),
+    },
+    401: unauthorizedResponse,
+  },
+});
+
+const getPlanRoute = createRoute({
+  method: "get",
+  path: "/{slug}",
+  operationId: "getPlan",
+  tags: ["Plans"],
+  summary: "Get a plan",
+  description:
+    "Retrieves a single plan by slug, including its public feature pricing and entitlement configuration.",
+  security: apiKeySecurity,
+  request: {
+    params: z.object({
+      slug: z.string(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Plan returned successfully",
+      ...jsonContent(
+        z.object({
+          success: z.literal(true),
+          plan: publicPlanSchema,
+        }),
+      ),
+    },
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+  },
+});
+
 export function createApiPlansRoute(
   overrides: Partial<ApiPlansDependencies> = {},
 ) {
   const deps = { ...defaultDependencies, ...overrides };
-  const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
   app.use("*", async (c, next) => {
     const authHeader = c.req.header("Authorization");
@@ -43,7 +149,7 @@ export function createApiPlansRoute(
     return await next();
   });
 
-  app.get("/", async (c) => {
+  app.openapi(listPlansRoute, async (c) => {
     const organizationId = c.get("organizationId")!;
     const db = c.get("db");
 
@@ -142,7 +248,7 @@ export function createApiPlansRoute(
     return c.json({ success: true, plans });
   });
 
-  app.get("/:slug", async (c) => {
+  app.openapi(getPlanRoute, async (c) => {
     const organizationId = c.get("organizationId")!;
     const slug = c.req.param("slug");
     const db = c.get("db");

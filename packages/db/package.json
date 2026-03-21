@@ -10,10 +10,12 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
       "import": "./dist/index.js"
     },
     "./schema": {
       "types": "./dist/schema/index.d.ts",
+      "development": "./src/schema/index.ts",
       "import": "./dist/schema/index.js"
     }
   },

@@ -1,5 +1,4 @@
-import { Hono } from "hono";
-import { z } from "zod";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { schema } from "@owostack/db";
 import { eq, and, or } from "drizzle-orm";
 import { verifyApiKey } from "../../lib/api-keys";
@@ -15,8 +14,17 @@ import { sanitizeOneTimePlanFlags } from "../../lib/plans";
 import { syncProviderPlan } from "../../lib/plan-provider-sync";
 import { syncCreditPackProduct } from "../../lib/credit-pack-provider-sync";
 import type { Env, Variables } from "../../index";
+import { zodErrorToResponse } from "../../lib/validation";
+import {
+  apiKeySecurity,
+  badRequestResponse,
+  internalServerErrorResponse,
+  jsonContent,
+  metadataSchema,
+  unauthorizedResponse,
+} from "../../openapi/common";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
@@ -88,7 +96,7 @@ const syncPlanSchema = z.object({
   planGroup: z.string().optional(),
   trialDays: z.number().optional(),
   provider: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: metadataSchema.optional(),
   autoEnable: z.boolean().optional(),
   isAddon: z.boolean().optional(),
   features: z.array(syncPlanFeatureSchema),
@@ -115,7 +123,7 @@ const syncCreditPackSchema = z.object({
   currency: z.string().min(3),
   creditSystem: z.string().min(1),
   provider: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: metadataSchema.optional(),
 });
 
 const syncPayloadSchema = z.object({
@@ -126,6 +134,53 @@ const syncPayloadSchema = z.object({
   plans: z.array(syncPlanSchema),
 });
 
+const syncResultGroupSchema = z.object({
+  created: z.array(z.string()),
+  updated: z.array(z.string()),
+  unchanged: z.array(z.string()),
+});
+
+const syncResponseSchema = z
+  .object({
+    success: z.literal(true),
+    features: syncResultGroupSchema,
+    creditSystems: syncResultGroupSchema,
+    creditPacks: syncResultGroupSchema,
+    plans: syncResultGroupSchema,
+    warnings: z.array(z.string()),
+  })
+  .passthrough();
+
+const syncCatalogRoute = createRoute({
+  method: "post",
+  path: "/",
+  operationId: "sync",
+  tags: ["Catalog"],
+  summary: "Sync catalog from code",
+  description:
+    "Reconciles features, credit systems, credit packs, and plans from an SDK-defined catalog into the database.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: syncPayloadSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Catalog sync completed successfully",
+      ...jsonContent(syncResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
 type SyncPlanDefinition = z.infer<typeof syncPlanSchema>;
 
 /**
@@ -133,12 +188,12 @@ type SyncPlanDefinition = z.infer<typeof syncPlanSchema>;
  *
  * Reconciles features and plans from the SDK catalog with the database.
  */
-app.post("/", async (c) => {
+app.openapi(syncCatalogRoute, async (c) => {
   const body = await c.req.json();
   const parsed = syncPayloadSchema.safeParse(body);
 
   if (!parsed.success) {
-    return c.json({ success: false, error: parsed.error.format() }, 400);
+    return c.json(zodErrorToResponse(parsed.error), 400);
   }
 
   const {
@@ -196,7 +251,7 @@ app.post("/", async (c) => {
   }
 
   const result = {
-    success: true,
+    success: true as const,
     features: {
       created: [] as string[],
       updated: [] as string[],
@@ -871,7 +926,7 @@ app.post("/", async (c) => {
     }
   }
 
-  return c.json(result);
+  return c.json(result, 200);
 });
 
 async function reconcilePlanFeatures(

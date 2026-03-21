@@ -1,5 +1,4 @@
-import { Hono } from "hono";
-import { z } from "zod";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq, and, or, count } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
@@ -10,6 +9,16 @@ import {
 } from "../../lib/customer-resolution";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
+import {
+  apiKeySecurity,
+  badRequestResponse,
+  conflictResponse,
+  internalServerErrorResponse,
+  jsonContent,
+  metadataSchema,
+  notFoundResponse,
+  unauthorizedResponse,
+} from "../../openapi/common";
 
 export type ApiCustomersDependencies = {
   verifyApiKey: typeof verifyApiKey;
@@ -23,7 +32,7 @@ const customerSchema = z.object({
   id: z.string().optional(),
   email: z.string().email(),
   name: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: metadataSchema.optional(),
 });
 
 const addEntitySchema = z.object({
@@ -32,7 +41,7 @@ const addEntitySchema = z.object({
   entity: z.string(),
   name: z.string().optional(),
   email: z.string().email().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: metadataSchema.optional(),
 });
 
 const removeEntitySchema = z.object({
@@ -44,6 +53,203 @@ const removeEntitySchema = z.object({
 const listEntitiesSchema = z.object({
   customer: z.string(),
   feature: z.string().optional(),
+});
+
+const customerResponseSchema = z
+  .object({
+    success: z.literal(true),
+    id: z.string(),
+    email: z.string().email(),
+    name: z.string().nullable().optional(),
+    metadata: metadataSchema.nullable().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .passthrough();
+
+const addEntityResponseSchema = z
+  .object({
+    success: z.literal(true),
+    entityId: z.string(),
+    featureId: z.string(),
+    count: z.number(),
+    limit: z.number().nullable().optional(),
+    remaining: z.number().nullable().optional(),
+    restored: z.boolean().optional(),
+  })
+  .passthrough();
+
+const removeEntityResponseSchema = z
+  .object({
+    success: z.literal(true),
+    entityId: z.string(),
+    count: z.number(),
+  })
+  .passthrough();
+
+const entitySchema = z
+  .object({
+    id: z.string(),
+    featureId: z.string(),
+    name: z.string().nullable(),
+    email: z.string().nullable(),
+    metadata: metadataSchema.nullable(),
+    status: z.string(),
+    createdAt: z.string().datetime(),
+  })
+  .passthrough();
+
+const createCustomerRoute = createRoute({
+  method: "post",
+  path: "/customers",
+  operationId: "createCustomer",
+  tags: ["Customers"],
+  summary: "Create or resolve a customer",
+  description:
+    "Creates a customer if needed, or resolves and updates an existing customer by ID or email.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: customerSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Customer returned successfully",
+      ...jsonContent(customerResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const getCustomerRoute = createRoute({
+  method: "get",
+  path: "/customers/{id}",
+  operationId: "getCustomer",
+  tags: ["Customers"],
+  summary: "Get a customer",
+  description: "Retrieves a customer by ID for the authenticated organization.",
+  security: apiKeySecurity,
+  request: {
+    params: z.object({
+      id: z.string(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Customer returned successfully",
+      ...jsonContent(customerResponseSchema),
+    },
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const addEntityRoute = createRoute({
+  method: "post",
+  path: "/entities",
+  operationId: "addEntity",
+  tags: ["Entities"],
+  summary: "Add an entity",
+  description:
+    "Adds or restores a billable entity such as a seat or licensed member for a feature.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: addEntitySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Entity added or restored successfully",
+      ...jsonContent(addEntityResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const removeEntityRoute = createRoute({
+  method: "post",
+  path: "/entities/remove",
+  operationId: "removeEntity",
+  tags: ["Entities"],
+  summary: "Remove an entity",
+  description:
+    "Marks an entity for removal at period end. Pending removals still count toward billing until then.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: removeEntitySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Entity marked for removal successfully",
+      ...jsonContent(removeEntityResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const listEntitiesRoute = createRoute({
+  method: "get",
+  path: "/entities",
+  operationId: "listEntities",
+  tags: ["Entities"],
+  summary: "List entities",
+  description:
+    "Lists active and pending-removal entities for a customer, optionally filtered by feature.",
+  security: apiKeySecurity,
+  request: {
+    query: z.object({
+      customer: z.string().optional(),
+      feature: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Entities returned successfully",
+      ...jsonContent(
+        z.object({
+          success: z.literal(true),
+          entities: z.array(entitySchema),
+          total: z.number(),
+        }),
+      ),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
 });
 
 async function resolveCustomer(
@@ -63,7 +269,7 @@ export function createApiCustomersRoute(
   overrides: Partial<ApiCustomersDependencies> = {},
 ) {
   const deps = { ...defaultDependencies, ...overrides };
-  const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
   // Middleware for API Key Auth
   app.use("*", async (c, next) => {
@@ -86,7 +292,7 @@ export function createApiCustomersRoute(
   });
 
   // POST /v1/customers - Create or resolve a customer
-  app.post("/customers", async (c) => {
+  app.openapi(createCustomerRoute, async (c) => {
     const db = c.get("db");
     const organizationId = c.get("organizationId")!;
 
@@ -95,10 +301,7 @@ export function createApiCustomersRoute(
       const parsed = customerSchema.safeParse(body);
 
       if (!parsed.success) {
-        return c.json(
-          { success: false, error: zodErrorToResponse(parsed.error) },
-          400,
-        );
+        return c.json(zodErrorToResponse(parsed.error), 400);
       }
 
       const { id, email, name, metadata } = parsed.data;
@@ -185,7 +388,7 @@ export function createApiCustomersRoute(
         metadata: customer.metadata,
         createdAt: customer.createdAt,
         updatedAt: customer.updatedAt,
-      });
+      }, 200);
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);
@@ -199,7 +402,7 @@ export function createApiCustomersRoute(
   });
 
   // GET /v1/customers/:id - Get a customer by ID
-  app.get("/customers/:id", async (c) => {
+  app.openapi(getCustomerRoute, async (c) => {
     const db = c.get("db");
     const organizationId = c.get("organizationId")!;
 
@@ -225,7 +428,7 @@ export function createApiCustomersRoute(
         metadata: customer.metadata,
         createdAt: customer.createdAt,
         updatedAt: customer.updatedAt,
-      });
+      }, 200);
     } catch (error) {
       console.error("[customers] error:", error);
       return c.json({ success: false, error: "Failed to get customer" }, 500);
@@ -233,7 +436,7 @@ export function createApiCustomersRoute(
   });
 
   // POST /v1/entities - Add a new entity
-  app.post("/entities", async (c) => {
+  app.openapi(addEntityRoute, async (c) => {
     const db = c.get("db");
     const organizationId = c.get("organizationId")!;
 
@@ -242,10 +445,7 @@ export function createApiCustomersRoute(
       const parsed = addEntitySchema.safeParse(body);
 
       if (!parsed.success) {
-        return c.json(
-          { success: false, error: zodErrorToResponse(parsed.error) },
-          400,
-        );
+        return c.json(zodErrorToResponse(parsed.error), 400);
       }
 
       const customerId = parsed.data.customer;
@@ -368,7 +568,7 @@ export function createApiCustomersRoute(
             limit,
             remaining: limit !== null ? limit - currentCount : null,
             restored: true,
-          });
+          }, 200);
         }
       }
 
@@ -477,7 +677,7 @@ export function createApiCustomersRoute(
         count: finalCount,
         limit,
         remaining: limit !== null ? limit - finalCount : null,
-      });
+      }, 200);
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);
@@ -488,7 +688,7 @@ export function createApiCustomersRoute(
   });
 
   // POST /v1/entities/remove - Remove an entity
-  app.post("/entities/remove", async (c) => {
+  app.openapi(removeEntityRoute, async (c) => {
     const db = c.get("db");
     const organizationId = c.get("organizationId")!;
 
@@ -497,10 +697,7 @@ export function createApiCustomersRoute(
       const parsed = removeEntitySchema.safeParse(body);
 
       if (!parsed.success) {
-        return c.json(
-          { success: false, error: zodErrorToResponse(parsed.error) },
-          400,
-        );
+        return c.json(zodErrorToResponse(parsed.error), 400);
       }
 
       const {
@@ -570,7 +767,7 @@ export function createApiCustomersRoute(
         success: true,
         entityId,
         count: entityCount[0]?.count || 0,
-      });
+      }, 200);
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);
@@ -581,7 +778,7 @@ export function createApiCustomersRoute(
   });
 
   // GET /v1/entities - List entities
-  app.get("/entities", async (c) => {
+  app.openapi(listEntitiesRoute, async (c) => {
     const db = c.get("db");
     const organizationId = c.get("organizationId")!;
 
@@ -601,10 +798,7 @@ export function createApiCustomersRoute(
         feature: featureSlug,
       });
       if (!parsed.success) {
-        return c.json(
-          { success: false, error: zodErrorToResponse(parsed.error) },
-          400,
-        );
+        return c.json(zodErrorToResponse(parsed.error), 400);
       }
 
       // Resolve customer
@@ -669,7 +863,7 @@ export function createApiCustomersRoute(
         success: true,
         entities: result,
         total: result.length,
-      });
+      }, 200);
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);

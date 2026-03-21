@@ -7,6 +7,8 @@
 
     "---Subscriptions---",
     "attach",
+    "generateSubscriptionCheckout",
+    "activatePendingSubscription",
 
     "---Entitlements---",
     "check",
@@ -14,6 +16,7 @@
 
     "---Add-ons---",
     "addon",
+    "listCreditPacks",
 
     "---Wallet---",
     "getWallet",
@@ -46,6 +49,7 @@
     "listCreditSystems",
 
     "---Webhooks---",
-    "webhook"
+    "webhook",
+    "webhookPaystack"
   ]
 }
