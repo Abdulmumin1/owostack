@@ -1,5 +1,4 @@
-import { Hono } from "hono";
-import { z } from "zod";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq, and, inArray } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
@@ -18,8 +17,17 @@ import {
 } from "../../lib/customer-resolution";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
+import {
+  apiKeySecurity,
+  badRequestResponse,
+  conflictResponse,
+  internalServerErrorResponse,
+  jsonContent,
+  notFoundResponse,
+  unauthorizedResponse,
+} from "../../openapi/common";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
@@ -45,6 +53,175 @@ const customerSchema = z.object({
   customer: z.string(),
 });
 
+const payInvoiceSchema = z.object({
+  callbackUrl: z.string().url().optional(),
+});
+
+const invoiceSummarySchema = z
+  .object({
+    id: z.string(),
+    number: z.string().nullable().optional(),
+    total: z.number().nullable().optional(),
+    currency: z.string().nullable().optional(),
+    status: z.string(),
+  })
+  .passthrough();
+
+const usageResponseSchema = z
+  .object({
+    success: z.literal(true),
+  })
+  .passthrough();
+
+const invoiceResponseSchema = z
+  .object({
+    success: z.boolean(),
+    invoice: z.record(z.string(), z.unknown()).optional(),
+  })
+  .passthrough();
+
+const invoicesResponseSchema = z
+  .object({
+    success: z.literal(true),
+    invoices: z.array(z.record(z.string(), z.unknown())),
+  })
+  .passthrough();
+
+const payInvoiceResponseSchema = z
+  .object({
+    success: z.boolean(),
+    paid: z.boolean().optional(),
+    checkoutUrl: z.string().url().optional(),
+    invoice: invoiceSummarySchema.optional(),
+    code: z.string().optional(),
+    message: z.string().optional(),
+  })
+  .passthrough();
+
+const getUsageRoute = createRoute({
+  method: "get",
+  path: "/usage",
+  operationId: "getBillingUsage",
+  tags: ["Billing"],
+  summary: "Get unbilled usage",
+  description:
+    "Returns the current unbilled usage totals for a customer before invoicing.",
+  security: apiKeySecurity,
+  request: {
+    query: z.object({
+      customer: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Usage returned successfully",
+      ...jsonContent(usageResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const generateInvoiceRoute = createRoute({
+  method: "post",
+  path: "/invoice",
+  operationId: "createInvoice",
+  tags: ["Billing"],
+  summary: "Generate an invoice",
+  description:
+    "Creates an invoice from the customer's current unbilled usage.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: customerSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Invoice generated successfully",
+      ...jsonContent(invoiceResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const listInvoicesRoute = createRoute({
+  method: "get",
+  path: "/invoices",
+  operationId: "listInvoices",
+  tags: ["Billing"],
+  summary: "List invoices",
+  description:
+    "Lists invoices for a customer in the authenticated organization.",
+  security: apiKeySecurity,
+  request: {
+    query: z.object({
+      customer: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Invoices returned successfully",
+      ...jsonContent(invoicesResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const payInvoiceRoute = createRoute({
+  method: "post",
+  path: "/invoice/{id}/pay",
+  operationId: "payInvoice",
+  tags: ["Billing"],
+  summary: "Pay an invoice",
+  description:
+    "Attempts to auto-charge an open invoice, or falls back to a checkout session when supported by the provider.",
+  security: apiKeySecurity,
+  request: {
+    params: z.object({
+      id: z.string(),
+    }),
+    body: {
+      required: false,
+      content: {
+        "application/json": {
+          schema: payInvoiceSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Invoice paid or checkout created successfully",
+      ...jsonContent(payInvoiceResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: {
+      description: "Invoice payment requires operator intervention",
+      ...jsonContent(payInvoiceResponseSchema),
+    },
+    500: internalServerErrorResponse,
+  },
+});
+
 /**
  * Resolve customer by ID, externalId, or email
  */
@@ -64,7 +241,7 @@ async function resolveCustomer(
 /**
  * GET /billing/usage - Get unbilled usage for a customer
  */
-app.get("/usage", async (c) => {
+app.openapi(getUsageRoute, async (c) => {
   const customerId = c.req.query("customer");
 
   if (!customerId) {
@@ -118,7 +295,7 @@ app.get("/usage", async (c) => {
 /**
  * POST /billing/invoice - Generate an invoice for a customer
  */
-app.post("/invoice", async (c) => {
+app.openapi(generateInvoiceRoute, async (c) => {
   const body = await c.req.json();
   const parsed = customerSchema.safeParse(body);
 
@@ -210,7 +387,7 @@ app.post("/invoice", async (c) => {
 /**
  * GET /billing/invoices - List invoices for a customer
  */
-app.get("/invoices", async (c) => {
+app.openapi(listInvoicesRoute, async (c) => {
   const customerId = c.req.query("customer");
 
   if (!customerId) {
@@ -261,11 +438,7 @@ app.get("/invoices", async (c) => {
 /**
  * POST /billing/invoice/:id/pay - Pay an invoice (auto-charge or checkout fallback)
  */
-const payInvoiceSchema = z.object({
-  callbackUrl: z.string().url().optional(),
-});
-
-app.post("/invoice/:id/pay", async (c) => {
+app.openapi(payInvoiceRoute, async (c) => {
   const invoiceId = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
   const parsed = payInvoiceSchema.safeParse(body);

@@ -1,5 +1,4 @@
-import { Hono } from "hono";
-import { z } from "zod";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq, and } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
@@ -15,6 +14,17 @@ import {
 } from "../../lib/customer-resolution";
 import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
+import {
+  apiKeySecurity,
+  badRequestResponse,
+  conflictResponse,
+  internalServerErrorResponse,
+  jsonContent,
+  notFoundResponse,
+  paymentMethodSchema,
+  successResponseSchema,
+  unauthorizedResponse,
+} from "../../openapi/common";
 
 export type WalletDependencies = {
   verifyApiKey: typeof verifyApiKey;
@@ -29,6 +39,126 @@ const defaultDependencies: WalletDependencies = {
   loadProviderAccounts,
   deriveProviderEnvironment,
 };
+
+const walletCardSchema = z
+  .object({
+    id: z.string(),
+    last4: z.string(),
+    brand: z.string(),
+    exp: z.string(),
+    provider: z.string(),
+  })
+  .nullable();
+
+const setupSchema = z.object({
+  customer: z.string(),
+  callbackUrl: z.string().url().optional(),
+  provider: z.string().optional(),
+});
+
+const removeSchema = z.object({
+  customer: z.string(),
+  id: z.string(),
+});
+
+const getWalletRoute = createRoute({
+  method: "get",
+  path: "/wallet",
+  operationId: "getWallet",
+  tags: ["Wallet"],
+  summary: "Get saved payment methods",
+  description:
+    "Returns the authenticated customer's saved payment methods and whether a default valid card is available.",
+  security: apiKeySecurity,
+  request: {
+    query: z.object({
+      customer: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Wallet returned successfully",
+      ...jsonContent(
+        z.object({
+          hasCard: z.boolean(),
+          card: walletCardSchema,
+          methods: z.array(paymentMethodSchema),
+        }),
+      ),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    409: conflictResponse,
+  },
+});
+
+const setupWalletRoute = createRoute({
+  method: "post",
+  path: "/wallet/setup",
+  operationId: "setupWallet",
+  tags: ["Wallet"],
+  summary: "Create a payment-method setup session",
+  description:
+    "Creates a hosted setup flow to capture or authorize a payment method for future charges.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: setupSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Setup session created successfully",
+      ...jsonContent(
+        z.object({
+          url: z.string().url(),
+          reference: z.string(),
+        }),
+      ),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const removeWalletMethodRoute = createRoute({
+  method: "post",
+  path: "/wallet/remove",
+  operationId: "removePaymentMethod",
+  tags: ["Wallet"],
+  summary: "Remove a payment method",
+  description:
+    "Deletes a saved payment method for a customer in the authenticated organization.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: removeSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Payment method removed successfully",
+      ...jsonContent(successResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -78,7 +208,7 @@ async function resolveCustomer(
 
 export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
   const deps = { ...defaultDependencies, ...overrides };
-  const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
   async function resolveAuth(c: any) {
     const authHeader = c.req.header("Authorization");
@@ -105,7 +235,7 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
   // GET /wallet?customer=...
   // ---------------------------------------------------------------------------
 
-  app.get("/wallet", async (c) => {
+  app.openapi(getWalletRoute, async (c) => {
     const auth = await resolveAuth(c);
     if ("error" in auth) return auth.error;
     const { keyRecord } = auth;
@@ -162,12 +292,6 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
   // POST /wallet/setup — generate a card capture checkout URL
   // ---------------------------------------------------------------------------
 
-  const setupSchema = z.object({
-    customer: z.string(),
-    callbackUrl: z.string().url().optional(),
-    provider: z.string().optional(),
-  });
-
   function getCardSetupAmount(providerId: string, currency: string): number {
     // Stripe's API amounts are always in minor units and non-zero charges must meet
     // the settlement minimum. For USD, 100 = $1.00; 10000 would be $100.00.
@@ -189,7 +313,7 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
     return 10000;
   }
 
-  app.post("/wallet/setup", async (c) => {
+  app.openapi(setupWalletRoute, async (c) => {
     const auth = await resolveAuth(c);
     if ("error" in auth) return auth.error;
     const { keyRecord } = auth;
@@ -457,12 +581,7 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
   // POST /wallet/remove — remove a payment method
   // ---------------------------------------------------------------------------
 
-  const removeSchema = z.object({
-    customer: z.string(),
-    id: z.string(),
-  });
-
-  app.post("/wallet/remove", async (c) => {
+  app.openapi(removeWalletMethodRoute, async (c) => {
     const auth = await resolveAuth(c);
     if ("error" in auth) return auth.error;
     const { keyRecord } = auth;

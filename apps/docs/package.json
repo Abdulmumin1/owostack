@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "types:check": "fumadocs-mdx && tsc --noEmit",
     "generate:api": "tsx scripts/generate-openapi.ts",
+    "generate:api:check": "tsx scripts/generate-openapi.ts && git diff --exit-code -- openapi.json content/docs/api-reference",
     "postinstall": "tsx scripts/generate-openapi.ts && fumadocs-mdx"
   },
   "dependencies": {

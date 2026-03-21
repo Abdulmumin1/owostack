@@ -1,10 +1,60 @@
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq, and, desc } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
 import type { Env, Variables } from "../../index";
+import {
+  apiKeySecurity,
+  internalServerErrorResponse,
+  jsonContent,
+  metadataSchema,
+  unauthorizedResponse,
+} from "../../openapi/common";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
+
+const creditPackSchema = z
+  .object({
+    id: z.string(),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string().nullable(),
+    credits: z.number(),
+    price: z.number(),
+    currency: z.string(),
+    creditSystemId: z.string().nullable().optional(),
+    creditSystem: z.string().nullable().optional(),
+    provider: z.string().nullable().optional(),
+    metadata: metadataSchema.nullable().optional(),
+    isActive: z.boolean(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .passthrough();
+
+const listCreditPacksRoute = createRoute({
+  method: "get",
+  path: "/",
+  operationId: "listCreditPacks",
+  tags: ["Credit Systems"],
+  summary: "List credit packs",
+  description:
+    "Lists active credit packs available to the authenticated organization.",
+  security: apiKeySecurity,
+  responses: {
+    200: {
+      description: "Credit packs returned successfully",
+      ...jsonContent(
+        z.object({
+          success: z.literal(true),
+          data: z.array(creditPackSchema),
+        }),
+      ),
+    },
+    401: unauthorizedResponse,
+    500: internalServerErrorResponse,
+  },
+});
 
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
@@ -27,7 +77,7 @@ app.use("*", async (c, next) => {
 });
 
 // GET /credit-packs — list all credit packs for the organization
-app.get("/", async (c) => {
+app.openapi(listCreditPacksRoute, async (c) => {
   const organizationId = c.get("organizationId")!;
   const db = c.get("db");
 

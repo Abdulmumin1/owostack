@@ -1,12 +1,20 @@
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { and, eq, or } from "drizzle-orm";
 import { schema } from "@owostack/db";
+import type { ProviderAccount, ProviderAdapter } from "@owostack/adapters";
 import type { Env, Variables } from "../index";
 import type { AnalyticsEnv } from "../lib/analytics-engine";
 import { WebhookHandler } from "../lib/webhooks";
 import { decrypt } from "../lib/encryption";
 import { WebhookError, errorToResponse } from "../lib/errors";
 import { getProviderRegistry } from "../lib/providers";
+import {
+  badRequestResponse,
+  internalServerErrorResponse,
+  jsonContent,
+  notFoundResponse,
+  unauthorizedResponse,
+} from "../openapi/common";
 
 export type WebhookRouteDependencies = {
   getProviderRegistry: typeof getProviderRegistry;
@@ -14,8 +22,8 @@ export type WebhookRouteDependencies = {
   createWebhookHandler: (params: {
     db: Variables["db"];
     organizationId: string;
-    adapter: unknown;
-    account: unknown;
+    adapter: ProviderAdapter;
+    account: ProviderAccount | undefined;
     trialEndWorkflow: Env["TRIAL_END_WORKFLOW"];
     planUpgradeWorkflow: Env["PLAN_UPGRADE_WORKFLOW"];
     cache: Env["CACHE"];
@@ -56,12 +64,72 @@ export function createWebhookRoutes(
   overrides: Partial<WebhookRouteDependencies> = {},
 ) {
   const deps = { ...defaultDependencies, ...overrides };
-  const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
+
+  const webhookResponseSchema = z
+    .object({
+      success: z.boolean().optional(),
+      received: z.boolean().optional(),
+      skipped: z.boolean().optional(),
+      error: z.string().optional(),
+    })
+    .passthrough();
+
+  const paystackWebhookRoute = createRoute({
+    method: "post",
+    path: "/webhooks/{organizationId}",
+    operationId: "webhookPaystack",
+    tags: ["Webhooks"],
+    summary: "Receive a Paystack webhook",
+    description:
+      "Provider webhook endpoint for Paystack. The organization can be addressed by ID or slug.",
+    security: [],
+    request: {
+      params: z.object({
+        organizationId: z.string(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "Webhook processed or acknowledged successfully",
+        ...jsonContent(webhookResponseSchema),
+      },
+      400: badRequestResponse,
+      401: unauthorizedResponse,
+      404: notFoundResponse,
+      500: internalServerErrorResponse,
+    },
+  });
+
+  const providerWebhookRoute = createRoute({
+    method: "post",
+    path: "/webhooks/{organizationId}/{provider}",
+    operationId: "webhook",
+    tags: ["Webhooks"],
+    summary: "Receive a provider webhook",
+    description:
+      "Provider webhook endpoint for any supported payment adapter. The organization can be addressed by ID or slug.",
+    security: [],
+    request: {
+      params: z.object({
+        organizationId: z.string(),
+        provider: z.string(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "Webhook processed or acknowledged successfully",
+        ...jsonContent(webhookResponseSchema),
+      },
+      400: badRequestResponse,
+      401: unauthorizedResponse,
+      404: notFoundResponse,
+      500: internalServerErrorResponse,
+    },
+  });
 
   async function handleWebhookRequest(
-    c: Parameters<typeof app.post>[1] extends (arg: infer T) => unknown
-      ? T
-      : never,
+    c: any,
     organizationId: string,
     providerId: string,
   ) {
@@ -333,11 +401,11 @@ export function createWebhookRoutes(
     return c.json({ success: true, received: true });
   }
 
-  app.post("/webhooks/:organizationId", async (c) => {
+  app.openapi(paystackWebhookRoute, async (c) => {
     return handleWebhookRequest(c, c.req.param("organizationId"), "paystack");
   });
 
-  app.post("/webhooks/:organizationId/:provider", async (c) => {
+  app.openapi(providerWebhookRoute, async (c) => {
     return handleWebhookRequest(
       c,
       c.req.param("organizationId"),

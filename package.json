@@ -13,6 +13,7 @@
     "deploy": "turbo deploy",
     "land:dev": "pnpm --filter owostack-marketing dev",
     "docs:dev": "pnpm --filter owostack-docs dev",
+    "docs:api:check": "pnpm --filter owostack-docs generate:api:check",
     "db:generate": "pnpm --filter @owostack/db db:generate",
     "db:migrate:local": "pnpm --filter owostack-api db:migrate:local",
     "db:migrate:auth": "pnpm --filter owostack-api db:migrate:auth",
