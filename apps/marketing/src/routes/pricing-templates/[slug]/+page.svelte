@@ -71,7 +71,6 @@
   <Header variant="page" showBorder={true} />
   <main class="mx-auto max-w-5xl px-6 py-12">
     <!-- Hero -->
-     <img src={ogImage} alt="" />
     <div class="mb-16">
       <a
         href="/pricing-templates"

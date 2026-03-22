@@ -3,7 +3,7 @@
   import Logo from "$lib/components/ui/Logo.svelte";
   import Footer from "$lib/components/marketing/Footer.svelte";
 
-  let { children, thumbnail, title } = $props();
+  let { children, thumbnail, title, author } = $props();
 </script>
 
 <div class="min-h-screen bg-bg-primary text-text-primary font-sans">
@@ -27,6 +27,10 @@
   <!-- Blog Post Content -->
   <main class="px-6 py-12">
     <div class="max-w-3xl mx-auto">
+      <div class="flex gap-5 flex-col mb-9">
+        <h1 class="text-4xl">{title || "Blog"}</h1>
+        <p class="italic text-text-muted">by {author}</p>
+      </div>
       {#if thumbnail}
         <div
           class="mb-5 w-full overflow-hidden bg-bg-secondary"

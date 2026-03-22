@@ -7,9 +7,8 @@ category: "Product & Strategy"
 layout: blog
 thumbnail: ""
 draft: true
+author: "yaqeen"
 ---
-
-# The weird pricing trick taking over every AI app
 
 I do not know if "reset-window pricing" is the name that will stick.
 
