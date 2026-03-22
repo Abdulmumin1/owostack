@@ -27,6 +27,40 @@ export const Route = createRootRoute({
         content:
           "Developer-friendly billing infrastructure. 3 API calls. Zero webhooks. Usage metering, subscriptions, and feature gating with multi-provider support.",
       },
+      {
+        property: "og:type",
+        content: "website",
+      },
+      {
+        property: "og:title",
+        content: "Owostack - Billing infrastructure for AI SaaS",
+      },
+      {
+        property: "og:description",
+        content:
+          "Developer-friendly billing infrastructure. 3 API calls. Zero webhooks. Usage metering, subscriptions, and feature gating with multi-provider support.",
+      },
+      {
+        property: "og:image",
+        content: "https://owostack.com/og.png",
+      },
+      {
+        name: "twitter:card",
+        content: "summary_large_image",
+      },
+      {
+        name: "twitter:title",
+        content: "Owostack - Billing infrastructure for AI SaaS",
+      },
+      {
+        name: "twitter:description",
+        content:
+          "Developer-friendly billing infrastructure. 3 API calls. Zero webhooks. Usage metering, subscriptions, and feature gating with multi-provider support.",
+      },
+      {
+        name: "twitter:image",
+        content: "https://owostack.com/og.png",
+      },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

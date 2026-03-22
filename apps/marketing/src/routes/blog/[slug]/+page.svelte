@@ -7,7 +7,6 @@
         title?: string;
         excerpt?: string;
         date?: string;
-        thumbnail?: string;
       };
       slug: string;
       Component: ComponentType;
@@ -15,6 +14,18 @@
   }>();
 
   const { Component } = data;
+  
+  // Dynamic OG generator using Cloudinary
+  function getOgImage(title?: string) {
+    if (!title) return "https://owostack.com/og.png";
+    const cloudName = "dtrqaqezs"; 
+    const baseImageId = "og-plain_unfcap"; 
+    const encodedTitle = encodeURIComponent(encodeURIComponent(title));
+    const overlay = `l_text:Arial_48_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_0`;
+    return `https://res.cloudinary.com/${cloudName}/image/upload/w_1200,h_630,c_fill/${overlay}/${baseImageId}.png`;
+  }
+  
+  let ogImage = $derived(getOgImage(data.metadata?.title));
 </script>
 
 <svelte:head>
@@ -25,14 +36,14 @@
   <meta property="og:url" content={`https://owostack.com/blog/${data.slug}`} />
   <meta property="og:title" content={`${data.metadata?.title || "Blog"} — Owostack`} />
   <meta property="og:description" content={data.metadata?.excerpt || ""} />
-  <meta property="og:image" content={data.metadata?.thumbnail ? `https://owostack.com${data.metadata.thumbnail}` : "https://owostack.com/logo.svg"} />
+  <meta property="og:image" content={ogImage} />
   <meta property="article:published_time" content={data.metadata?.date} />
   <meta property="article:author" content="Owostack Team" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:url" content={`https://owostack.com/blog/${data.slug}`} />
   <meta name="twitter:title" content={`${data.metadata?.title || "Blog"} — Owostack`} />
   <meta name="twitter:description" content={data.metadata?.excerpt || ""} />
-  <meta name="twitter:image" content={data.metadata?.thumbnail ? `https://owostack.com${data.metadata.thumbnail}` : "https://owostack.com/logo.svg"} />
+  <meta name="twitter:image" content={ogImage} />
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",

@@ -51,6 +51,22 @@
     name="description"
     content="Battle-tested pricing models from OpenAI Codex, Clerk, Pinecone, and other companies developers trust. Copy-paste ready for your AI SaaS."
   />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://owostack.com/pricing-templates" />
+  <meta property="og:title" content="Pricing Templates | Owostack" />
+  <meta
+    property="og:description"
+    content="Battle-tested pricing models from OpenAI Codex, Clerk, Pinecone, and other companies developers trust. Copy-paste ready for your AI SaaS."
+  />
+  <meta property="og:image" content="https://owostack.com/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://owostack.com/pricing-templates" />
+  <meta name="twitter:title" content="Pricing Templates | Owostack" />
+  <meta
+    name="twitter:description"
+    content="Battle-tested pricing models from OpenAI Codex, Clerk, Pinecone, and other companies developers trust. Copy-paste ready for your AI SaaS."
+  />
+  <meta name="twitter:image" content="https://owostack.com/og.png" />
 </svelte:head>
 
 <div class="min-h-screen bg-bg-primary text-text-primary">

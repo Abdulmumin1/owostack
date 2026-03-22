@@ -5,7 +5,7 @@ date: "2026-03-12"
 readTime: "8 min read"
 category: "Engineering"
 layout: blog
-thumbnail: "/images/blog/polar-vs-dodo.png"
+thumbnail: ""
 ---
 
 # _Polar vs Dodo Payments for SaaS_

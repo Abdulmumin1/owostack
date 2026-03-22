@@ -23,19 +23,59 @@ export const Route = createFileRoute("/$")({
     await clientLoader.preload(data.path);
     return data;
   },
-  head: ({ loaderData }) => ({
-    meta: [
-      {
-        title: loaderData?.title
-          ? `${loaderData.title} - Owostack`
-          : "Owostack - Billing infrastructure for AI SaaS",
-      },
-      loaderData?.description && {
-        name: "description",
-        content: loaderData.description,
-      },
-    ].filter(Boolean),
-  }),
+  head: ({ loaderData }) => {
+    const title = loaderData?.title
+      ? `${loaderData.title} - Owostack Docs`
+      : "Owostack Docs";
+
+    const description =
+      loaderData?.description ||
+      "Developer-friendly billing infrastructure. 3 API calls. Zero webhooks.";
+
+    const getOgImage = (pageTitle?: string, pageDescription?: string) => {
+      if (!pageTitle) return "https://owostack.com/og.png";
+      const cloudName = "dtrqaqezs";
+      const baseImageId = "og-plain_unfcap";
+      const encodedTitle = encodeURIComponent(encodeURIComponent(pageTitle));
+
+      // Use west gravity to automatically center the block vertically on the left side.
+      // We offset the title slightly up (y=-40) to leave room for the description.
+      let overlay = `l_text:Arial_45_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-40`;
+
+      if (pageDescription) {
+        // truncate description to avoid vertical overflow on the OG image
+        const shortDesc =
+          pageDescription.length > 120
+            ? pageDescription.substring(0, 117) + "..."
+            : pageDescription;
+        const encodedDesc = encodeURIComponent(encodeURIComponent(shortDesc));
+
+        // Stack title and description using west gravity.
+        // The title shifts up slightly (y=-60) and the description shifts down (y=110).
+        // This creates a perfectly centered text block regardless of line breaks.
+        overlay = `l_text:Arial_45_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-60/l_text:Arial_30:${encodedDesc},c_fit,w_480,co_rgb:b3b3b3/fl_layer_apply,g_west,x_70,y_110`;
+      }
+
+      return `https://res.cloudinary.com/${cloudName}/image/upload/w_1200,h_630,c_fill/${overlay}/${baseImageId}.png`;
+    };
+
+    const ogImage = getOgImage(loaderData?.title, loaderData?.description);
+
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:type", content: "article" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:image", content: ogImage },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:title", content: title },
+        { name: "twitter:description", content: description },
+        { name: "twitter:image", content: ogImage },
+      ],
+    };
+  },
 });
 
 const serverLoader = createServerFn({
