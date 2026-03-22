@@ -31,16 +31,44 @@
       console.error("Failed to copy pricing template snippet", error);
     }
   }
+
+  // Dynamic OG generator using Cloudinary
+  function getOgImage(title?: string, description?: string) {
+    if (!title) return "https://owostack.com/og.png";
+    const cloudName = "dtrqaqezs"; 
+    const baseImageId = "og-plain_unfcap"; 
+    const encodedTitle = encodeURIComponent(encodeURIComponent(title + " Pricing Template"));
+    // Use west gravity to center block vertically on the left side
+    let overlay = `l_text:Arial_48_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-40`;
+
+    if (description) {
+      const shortDesc = description.length > 120 ? description.substring(0, 117) + "..." : description;
+      const encodedDesc = encodeURIComponent(encodeURIComponent(shortDesc));
+      // Stack title and description centered on the left panel
+      overlay = `l_text:Arial_48_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-60/l_text:Arial_32:${encodedDesc},c_fit,w_480,co_rgb:b3b3b3/fl_layer_apply,g_west,x_70,y_110`;
+    }
+
+    return `https://res.cloudinary.com/${cloudName}/image/upload/w_1200,h_630,c_fill/${overlay}/${baseImageId}.png`;
+  }
+
+  let ogImage = $derived(getOgImage(template.title, template.summary));
 </script>
 
 <svelte:head>
   <title>{template.title} Template | Owostack</title>
   <meta name="description" content={template.summary} />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content={`${template.title} Template | Owostack`} />
+  <meta property="og:description" content={template.summary} />
+  <meta property="og:image" content={ogImage} />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content={`${template.title} Template | Owostack`} />
+  <meta name="twitter:description" content={template.summary} />
+  <meta name="twitter:image" content={ogImage} />
 </svelte:head>
 
 <div class="min-h-screen bg-bg-primary text-text-primary">
   <Header variant="page" showBorder={true} />
-
   <main class="mx-auto max-w-5xl px-6 py-12">
     <!-- Hero -->
     <div class="mb-16">

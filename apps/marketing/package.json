@@ -14,6 +14,7 @@
     "deploy": "pnpm build &&wrangler deploy"
   },
   "dependencies": {
+    "gsap": "^3.14.2",
     "phosphor-svelte": "^3.1.0"
   },
   "devDependencies": {

@@ -98,14 +98,61 @@
     color: var(--color-accent);
   }
 
-  :global(.prose ul, .prose ol) {
-    margin-bottom: 1rem;
-    padding-left: 1.5rem;
+  :global(.prose ul), :global(.prose ol) {
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+    padding-left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  :global(.prose ul) {
+    list-style-type: none;
+  }
+
+  :global(.prose ol) {
+    list-style-type: none;
+    counter-reset: prose-counter;
   }
 
   :global(.prose li) {
-    margin-bottom: 0.5rem;
+    position: relative;
+    margin-bottom: 0;
     color: var(--color-text-secondary);
+    line-height: 1.7;
+    padding-left: 1.75rem;
+  }
+
+  :global(.prose ul li::before) {
+    content: "->";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-weight: 500;
+  }
+
+  :global(.prose ol li::before) {
+    counter-increment: prose-counter;
+    content: counter(prose-counter) ".";
+    position: absolute;
+    left: 0;
+    top: 0;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    font-size: 0.9em;
+  }
+
+  :global(.prose li strong) {
+    color: var(--color-text-primary);
+    font-weight: 600;
+  }
+
+  :global(.prose li p) {
+    margin-top: 0.5rem;
+    margin-bottom: 0;
   }
 
   :global(.prose code) {

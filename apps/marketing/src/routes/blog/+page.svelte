@@ -5,11 +5,7 @@
   interface BlogPost {
     slug: string;
     title: string;
-    excerpt: string;
     date: string;
-    readTime: string;
-    category: string;
-    thumbnail?: string;
   }
 
   // Import all markdown files and extract metadata
@@ -25,13 +21,11 @@
       return {
         slug,
         title: module.metadata?.title || "Untitled",
-        excerpt: module.metadata?.excerpt || "",
         date: module.metadata?.date || "",
-        readTime: module.metadata?.readTime || "5 min read",
-        category: module.metadata?.category || "General",
-        thumbnail: module.metadata?.thumbnail,
+        draft: !!module.metadata?.draft,
       };
     })
+    .filter((post) => !post.draft)
     .sort(
       (a: BlogPost, b: BlogPost) =>
         new Date(b.date).getTime() - new Date(a.date).getTime(),
@@ -52,7 +46,7 @@
     property="og:description"
     content="Thoughts on billing, subscriptions, and building for AI SaaS."
   />
-  <meta property="og:image" content="https://owostack.com/logo.svg" />
+  <meta property="og:image" content="https://owostack.com/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:url" content="https://owostack.com/blog" />
   <meta name="twitter:title" content="Blog — Owostack" />
@@ -60,55 +54,57 @@
     name="twitter:description"
     content="Thoughts on billing, subscriptions, and building for AI SaaS."
   />
-  <meta name="twitter:image" content="https://owostack.com/logo.svg" />
+  <meta name="twitter:image" content="https://owostack.com/og.png" />
 </svelte:head>
 
 <div class="h-screen flex bg-bg-primary overflow-hidden">
   <!-- Left Side: Abstract Graphic and Context -->
   <div
-    class="hidden lg:flex w-1/3 bg-bg-secondary border-r border-border p-12 flex-col justify-between relative overflow-hidden"
+    class="hidden lg:flex w-[400px] xl:w-[480px] shrink-0 bg-[#E8E6E1] p-12 flex-col justify-between relative overflow-hidden"
   >
     <!-- Abstract Background -->
     <div
-      class="absolute inset-0 opacity-10 pointer-events-none grayscale brightness-50 contrast-125"
+      class="absolute inset-0 pointer-events-none opacity-[0.8]"
     >
       <img
         src="https://mac-file.yaqeen.me/3F36AAD9-image.png"
         alt="Abstract engineering background pattern"
-        class="w-full h-full object-cover"
+        class="w-full h-full object-cover mix-blend-multiply opacity-30"
       />
     </div>
 
     <div class="relative z-10">
-      <div class="mb-12">
-        <a href="/">
-          <Logo size={32} />
+      <div class="mb-16">
+        <a href="/" class="text-text-primary hover:text-accent transition-colors">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12.5 4C12.5 4 11 5 11 7C11 9 13.5 10 13.5 12C13.5 14 11 15 11 17C11 19 12.5 20 12.5 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M7 8L4 12L7 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M17 8L20 12L17 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
         </a>
       </div>
 
       <div class="space-y-4">
-        <h2 class="text-2xl font-bold text-text-primary tracking-tight">
+        <h2 class="text-[28px] font-bold text-[#222] tracking-tight font-display">
           Writings
         </h2>
-        <p class="text-text-secondary text-sm leading-relaxed max-w-xs">
-          Engineering notes and thoughts on building the billing layer for
-          modern AI SaaS.
+        <p class="text-[#555] text-[15px] leading-[1.6] max-w-[280px]">
+          Engineering notes and thoughts on building the billing layer for modern AI SaaS.
         </p>
       </div>
     </div>
-
-    <div class="relative z-10 text-text-muted">@ wwo</div>
+    <div class="relative z-10 text-text-muted text-xs"></div>
   </div>
 
   <!-- Right Side: Content -->
   <div
-    class="flex-1 flex flex-col h-screen overflow-y-auto bg-bg-primary relative"
+    class="flex-1 flex flex-col h-screen overflow-y-auto bg-[#FAFAFA] relative"
   >
     <!-- Header -->
     <header
-      class="px-6 lg:px-12 py-5 border-b border-border/30 sticky top-0 bg-bg-primary/95 backdrop-blur-md z-30"
+      class="px-8 lg:px-16 py-8 sticky top-0 bg-[#FAFAFA] z-30"
     >
-      <div class="flex items-center justify-between max-w-3xl mx-auto">
+      <div class="flex items-center justify-between w-full">
         <div class="lg:hidden">
           <a href="/" class="flex items-center gap-2">
             <Logo size={24} class="text-accent" />
@@ -117,56 +113,40 @@
         </div>
         <div class="hidden lg:block"></div>
         <!-- Spacer -->
-        <nav class="flex items-center gap-6 text-xs text-text-secondary">
+        <nav class="flex items-center gap-6">
           <a
             href="/docs"
-            class="hover:text-text-primary transition-colors font-bold uppercase tracking-widest text-[10px]"
+            class=" text-[11px]"
             >Docs</a
           >
           <a
             href="https://app.owostack.com"
-            class="btn btn-primary text-[10px] uppercase tracking-widest py-2 px-4"
+            class="btn btn-primary"
             >Dashboard</a
           >
         </nav>
       </div>
     </header>
 
-    <main class="flex-1 p-1">
-      <div class="max-w-4xl mx-auto mt-10">
+    <main class="flex-1 px-8 lg:px-16">
+      <div class="max-w-4xl mt-12 lg:mt-24">
         {#if posts.length > 0}
-          <div class="flex flex-col gap-0">
+          <div class="flex flex-col gap-12">
             {#each posts as post (post.slug)}
-              <article class="py-3 border-b border-border/20 group">
-                <div class="flex flex-col sm:flex-row gap-10 items-start">
-                  <div class="flex-1 pt-1">
-                    <h3
-                      class="text-2xl lg:text-3xl font-bold tracking-tight"
-                    >
-                      <a
-                        href={`/blog/${post.slug}`}
-                        class="text-text-primary group-hover:text-accent transition-colors leading-[1.15] block"
-                      >
-                        {post.title}
-                      </a>
-                    </h3>
-                    <p class="text-text-dim text-sm">{post.date}</p>
-                  </div>
-                </div>
+              <article class="group">
+                <a href={`/blog/${post.slug}`} class="block">
+                  <h3 class="text-[28px] lg:text-[32px] font-bold tracking-tight font-display text-[#111] group-hover:text-[#e8a855] transition-colors leading-[1.2] mb-1">
+                    {post.title}
+                  </h3>
+                  <p class="text-[#888] text-[15px] font-mono tracking-tight">{post.date}</p>
+                </a>
               </article>
             {/each}
           </div>
         {:else}
-          <div
-            class="text-center py-24 border border-dashed border-border/30 rounded-sm bg-bg-secondary/30"
-          >
-            <p
-              class="text-text-dim text-xs uppercase tracking-widest font-bold"
-            >
+          <div class="text-center py-24">
+            <p class="text-text-dim text-xs uppercase tracking-widest font-bold">
               Journal is empty
-            </p>
-            <p class="text-[10px] text-text-dim mt-2 italic">
-              Check back soon for new articles.
             </p>
           </div>
         {/if}

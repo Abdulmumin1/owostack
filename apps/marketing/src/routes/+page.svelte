@@ -16,7 +16,7 @@
   import PricingTemplatesSection from "$lib/components/marketing/PricingTemplatesSection.svelte";
   import Footer from "$lib/components/marketing/Footer.svelte";
   import Header from "$lib/components/marketing/Header.svelte";
-  import { onMount } from "svelte";
+  import TextLoop from "$lib/components/ui/TextLoop.svelte";
 
   const phrases: { text: string; icons: (typeof CreditCard)[] }[] = [
     { text: "subscriptions", icons: [CreditCard] },
@@ -30,40 +30,6 @@
       icons: [CreditCard, Coins, Lightning],
     },
   ];
-
-  let currentIndex = $state(0);
-  let visible = $state(true);
-  let containerWidth = $state(0);
-  let innerEl: HTMLSpanElement;
-
-  let interval: ReturnType<typeof setInterval>;
-
-  onMount(() => {
-    // Phrase rotation
-    interval = setInterval(() => {
-      visible = false;
-      setTimeout(() => {
-        currentIndex = (currentIndex + 1) % phrases.length;
-        tick().then(() => {
-          if (innerEl) {
-            containerWidth = innerEl.scrollWidth;
-          }
-          setTimeout(() => {
-            visible = true;
-          }, 50);
-        });
-      }, 300);
-    }, 3000);
-
-    // Initial width calculation
-    if (innerEl) {
-      containerWidth = innerEl.scrollWidth;
-    }
-
-    return () => clearInterval(interval);
-  });
-
-  import { tick } from "svelte";
 </script>
 
 <svelte:head>
@@ -80,7 +46,7 @@
     property="og:description"
     content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
   />
-  <meta property="og:image" content="https://owostack.com/logo.svg" />
+  <meta property="og:image" content="https://owostack.com/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:url" content="https://owostack.com/" />
   <meta name="twitter:title" content="Owostack — Billing Infrastructure for AI SaaS" />
@@ -88,7 +54,7 @@
     name="twitter:description"
     content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
   />
-  <meta name="twitter:image" content="https://owostack.com/logo.svg" />
+  <meta name="twitter:image" content="https://owostack.com/og.png" />
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -203,24 +169,16 @@
         class="text-base md:text-lg text-text-secondary max-w-xl leading-relaxed mb-4"
       >
         <span>Add </span>
-        <span
-          class="inline-flex overflow-hidden align-bottom transition-[width] duration-300 ease-in-out"
-          style="width: {containerWidth}px; height: 1.6em;"
-        >
-          <span
-            bind:this={innerEl}
-            class="inline-flex items-center gap-1.5 transition-all duration-300 ease-in-out text-text-primary font-medium whitespace-nowrap"
-            class:translate-y-0={visible}
-            class:opacity-100={visible}
-            class:translate-y-3={!visible}
-            class:opacity-0={!visible}
-          >
-            {#each phrases[currentIndex].icons as Icon, i (i)}
-              <Icon weight="duotone" />
-            {/each}
-            {phrases[currentIndex].text}
-          </span>
-        </span>
+        <TextLoop items={phrases} class="align-bottom text-text-primary font-medium h-[1.6em]">
+          {#snippet children(phrase)}
+            <span class="inline-flex items-center gap-1.5 whitespace-nowrap">
+              {#each phrase.icons as Icon, i (i)}
+                <Icon weight="duotone" />
+              {/each}
+              {phrase.text}
+            </span>
+          {/snippet}
+        </TextLoop>
         <span> to your app.</span>
       </div>
       <div class="flex flex-wrap items-center gap-2">
