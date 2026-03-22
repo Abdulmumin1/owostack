@@ -46,7 +46,7 @@
     property="og:description"
     content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
   />
-  <meta property="og:image" content="https://owostack.com/og.png" />
+  <meta property="og:image" content="https://owostack.com/og.jpg" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:url" content="https://owostack.com/" />
   <meta name="twitter:title" content="Owostack — Billing Infrastructure for AI SaaS" />
@@ -54,7 +54,7 @@
     name="twitter:description"
     content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
   />
-  <meta name="twitter:image" content="https://owostack.com/og.png" />
+  <meta name="twitter:image" content="https://owostack.com/og.jpg" />
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",

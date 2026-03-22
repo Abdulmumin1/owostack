@@ -15,7 +15,7 @@ I do not know if "reset-window pricing" is the name that will stick.
 
 But the pattern is real and hard to ignore.
 
-The biggest consumer AI products no longer work like old-school SaaS plans where you pay monthly and get one big bucket for the billing cycle. They now sell premium access through rolling windows, staggered resets, and feature-specific caps.
+The old SaaS pattern was simple: pay monthly, get a bucket or infinite access, use it whenever you want. AI products have moved away from that pretty fast. It more of get X usage every Y short time period.
 
 A few current examples:
 
@@ -33,27 +33,32 @@ What these products really need to answer is simpler: how much usage can we incl
 
 That is a big reason these products keep landing on shorter reset windows instead.
 
+Those on twitter have prolly seen tweets calling Cursor subscription a "scam", because it operates purely based on credits, and you burn through them quickly. Your next option is either to upgrade, wait till next billing cycle or purchase add on credits.
+
+While this makes sense for their economic goals, the subscription just feels like an unlock key to their actual pricing model which is addon credits, rather than a value prop in itself.
+
+
 ## Three shifts in AI SaaS pricing
 
 The current pricing docs show three big shifts in how AI companies are packaging their products:
 
-### 1. Capacity management is now a user-facing feature
+### 1. Limits are part of the product now
 
-Rate limits used to be backend rules users only noticed when they hit an error. Now they are part of the product itself.
+This stuff is not hidden in the backend anymore.
 
-OpenAI says limits can change based on system conditions, while Anthropic explains how context length and file attachments affect usage. These are not edge cases anymore. They are part of what the subscription includes.
+OpenAI tells users limits can change when demand is high. Anthropic tells users that longer chats, bigger files, and heavier models use up more of their allowance faster.
 
-### 2. The core product is managed compute, not just software access
+### 2. AI plans are really selling compute access
 
-What people are paying for has changed. A $20/month AI subscription has a very different cost profile from a $20/month project management tool.
+A $20 AI plan is not like a $20 project management tool.
 
-Instead of selling access to a static interface, AI companies are paying for bursty, unpredictable GPU usage. Rolling windows help them cap the cost of heavy users without forcing everyone into strict pay-as-you-go pricing.
+The company is paying for model runs, and that cost can climb fast with heavy users. Shorter reset windows are one way to keep that under control without forcing everyone to pay-as-you-go.
 
 ### 3. Subscriptions and consumption billing are merging
 
 The line between flat-rate subscriptions and usage-based billing is getting blurry.
 
-Anthropic now lets Claude Pro users turn on overage billing, which moves them to standard API rates once their base quota runs out. OpenAI is also adding flexible credits for compute-heavy features like Sora and advanced data analysis.
+Anthropic now lets Claude Pro users turn on overage billing, which moves them to standard API rates once their base quota runs out. OpenAI is also adding flexible add-on credits for which is a prepaid credits that get consumed when your quota runs out before the next reset window. See [OpenAI's Beyond Rate Limits](https://openai.com/index/beyond-rate-limits/)
 
 So the pattern is no longer just:
 
@@ -119,7 +124,7 @@ If I were designing an AI SaaS plan today, I would not start with a giant monthl
 
 That feels much closer to how the business actually works.
 
-That is one of the reasons we built Owostack the way we did.
+That is one of the reasons we built **Owostack** the way we did.
 
 If your product needs quotas that reset every few hours, credits that come back on a rolling basis, or hybrid plans with included usage plus overflow billing, you probably do not want that logic smeared across Stripe webhooks, caches, and feature gates.
 

@@ -33,7 +33,7 @@ export const Route = createFileRoute("/$")({
       "Developer-friendly billing infrastructure. 3 API calls. Zero webhooks.";
 
     const getOgImage = (pageTitle?: string, pageDescription?: string) => {
-      if (!pageTitle) return "https://owostack.com/og.png";
+      if (!pageTitle) return "https://owostack.com/og.jpg";
       const cloudName = "dtrqaqezs";
       const baseImageId = "og-plain_unfcap";
       const encodedTitle = encodeURIComponent(encodeURIComponent(pageTitle));
@@ -56,7 +56,7 @@ export const Route = createFileRoute("/$")({
         overlay = `l_text:Arial_45_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-60/l_text:Arial_30:${encodedDesc},c_fit,w_480,co_rgb:b3b3b3/fl_layer_apply,g_west,x_70,y_110`;
       }
 
-      return `https://res.cloudinary.com/${cloudName}/image/upload/w_1200,h_630,c_fill/${overlay}/${baseImageId}.png`;
+      return `https://res.cloudinary.com/${cloudName}/image/upload/f_jpg,q_70,w_1200,h_630,c_fill/${overlay}/${baseImageId}.png`;
     };
 
     const ogImage = getOgImage(loaderData?.title, loaderData?.description);

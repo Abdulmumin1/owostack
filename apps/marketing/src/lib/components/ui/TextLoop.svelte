@@ -19,7 +19,7 @@
     /**
      * The snippet used to render each item.
      */
-    children: Snippet<[T]>;
+    children?: Snippet<[T]>;
   }
 
   let { items, interval = 2000, class: className = "", children }: Props = $props();
@@ -101,6 +101,10 @@
       in:gsapTransition={{ direction: "in" }}
       out:gsapTransition={{ direction: "out" }}
     >
-      {@render children(items[currentIndex])}
+      {#if children}
+        {@render children(items[currentIndex])}
+      {:else}
+        {items[currentIndex]}
+      {/if}
     </span>{/key}
 </span>
