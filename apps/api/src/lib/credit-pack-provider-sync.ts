@@ -10,6 +10,37 @@ import {
   loadProviderRules,
 } from "./providers";
 
+export interface CreditPackProviderSyncDependencies {
+  resolveProvider: typeof resolveProvider;
+  buildProviderContext: typeof buildProviderContext;
+  deriveProviderEnvironment: typeof deriveProviderEnvironment;
+  getProviderRegistry: typeof getProviderRegistry;
+  loadProviderAccounts: typeof loadProviderAccounts;
+  loadProviderRules: typeof loadProviderRules;
+}
+
+const defaultCreditPackProviderSyncDependencies: CreditPackProviderSyncDependencies =
+  {
+    resolveProvider,
+    buildProviderContext,
+    deriveProviderEnvironment,
+    getProviderRegistry,
+    loadProviderAccounts,
+    loadProviderRules,
+  };
+
+export const creditPackProviderSyncDependencies: CreditPackProviderSyncDependencies =
+  {
+    ...defaultCreditPackProviderSyncDependencies,
+  };
+
+export function resetCreditPackProviderSyncDependencies() {
+  Object.assign(
+    creditPackProviderSyncDependencies,
+    defaultCreditPackProviderSyncDependencies,
+  );
+}
+
 export interface ProviderManagedCreditPack {
   id: string;
   slug: string;
@@ -189,9 +220,14 @@ async function resolveCreditPackProvider(params: {
   preferredProviderId?: string | null;
 }): Promise<ResolvedCreditPackProvider | { issue: CreditPackProviderSyncIssue }> {
   const { context, pack, preferredProviderId } = params;
-  const registry = getProviderRegistry();
-  const providerEnv = deriveProviderEnvironment(context.environment, null);
-  const providerAccounts = await loadProviderAccounts(
+  const registry = creditPackProviderSyncDependencies.getProviderRegistry();
+  const providerEnv =
+    creditPackProviderSyncDependencies.deriveProviderEnvironment(
+      context.environment,
+      null,
+    );
+  const providerAccounts =
+    await creditPackProviderSyncDependencies.loadProviderAccounts(
     context.db,
     context.organizationId,
     context.encryptionKey,
@@ -234,16 +270,22 @@ async function resolveCreditPackProvider(params: {
     };
   }
 
-  const selectionResult = resolveProvider(registry, {
-    organizationId: context.organizationId,
-    environment: providerEnv,
-    context: buildProviderContext({
-      currency: pack.currency,
-      metadata: pack.metadata ?? undefined,
-    }),
-    rules: await loadProviderRules(context.db, context.organizationId),
-    accounts: providerAccounts,
-  });
+  const selectionResult = creditPackProviderSyncDependencies.resolveProvider(
+    registry,
+    {
+      organizationId: context.organizationId,
+      environment: providerEnv,
+      context: creditPackProviderSyncDependencies.buildProviderContext({
+        currency: pack.currency,
+        metadata: pack.metadata ?? undefined,
+      }),
+      rules: await creditPackProviderSyncDependencies.loadProviderRules(
+        context.db,
+        context.organizationId,
+      ),
+      accounts: providerAccounts,
+    },
+  );
 
   if (selectionResult.isOk()) {
     return {

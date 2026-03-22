@@ -11,6 +11,8 @@
     "deploy:live": "wrangler deploy --env live",
     "tail": "wrangler tail",
     "test": "vitest",
+    "test:runtime": "vitest --run test/runtime",
+    "test:runtime:workflows": "vitest --run test/runtime/workflows",
     "db:migrate:local": "wrangler d1 migrations apply owostack --local && wrangler d1 migrations apply owostack-auth --local",
     "db:migrate:auth": "wrangler d1 migrations apply owostack-auth --remote --env live",
     "db:migrate:test": "wrangler d1 migrations apply owostack-test --remote --env test",
