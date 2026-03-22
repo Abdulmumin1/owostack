@@ -42,7 +42,7 @@ export async function resolveProviderAccount(
   providerId: string,
 ): Promise<ProviderAccount | null> {
   const db = createDb(env.DB);
-  const workerEnv = deriveEnvironment(env.ENVIRONMENT);
+  const workerEnv = getRuntimeProviderEnvironment(env.ENVIRONMENT);
 
   // 1. Try provider_accounts table (new multi-provider system)
   //    Filter by environment to avoid using a live secret key with a test
@@ -79,7 +79,7 @@ export async function resolveProviderAccount(
       id: (matched as any).id,
       organizationId: (matched as any).organizationId,
       providerId: (matched as any).providerId,
-      environment: (matched as any).environment || workerEnv,
+      environment: workerEnv,
       credentials,
       createdAt: (matched as any).createdAt,
       updatedAt: (matched as any).updatedAt,
@@ -90,7 +90,9 @@ export async function resolveProviderAccount(
 }
 
 /** Derive "test" | "live" from the worker's ENVIRONMENT var */
-function deriveEnvironment(envVar: string | undefined): "test" | "live" {
+export function getRuntimeProviderEnvironment(
+  envVar: string | undefined,
+): "test" | "live" {
   if (envVar === "live" || envVar === "production") return "live";
   return "test";
 }

@@ -138,7 +138,10 @@ describe("RenewalSetupRetryWorkflow", () => {
     });
 
     await RenewalSetupRetryWorkflow.prototype.run.call(
-      createWorkflowInstance(RenewalSetupRetryWorkflow, { DB: db.DB }),
+      createWorkflowInstance(RenewalSetupRetryWorkflow, {
+        DB: db.DB,
+        ENVIRONMENT: "production",
+      }),
       {
         payload: {
           subscriptionId: "sub_1",
@@ -156,6 +159,7 @@ describe("RenewalSetupRetryWorkflow", () => {
       expect.objectContaining({
         startDate: new Date(periodEnd).toISOString(),
         authorizationCode: "AUTH_123",
+        environment: "live",
       }),
     );
     expect(db.updates).toHaveLength(1);

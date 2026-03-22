@@ -538,6 +538,7 @@ describe("OverageBillingWorkflow", () => {
       createWorkflowInstance(OverageBillingWorkflow, {
         DB: sql.DB,
         ENCRYPTION_KEY: "key",
+        ENVIRONMENT: "production",
       }),
       {
         payload: {
@@ -574,6 +575,7 @@ describe("OverageBillingWorkflow", () => {
         authorizationCode: "AUTH_123",
         amount: 25000,
         reference: "inv_1",
+        environment: "live",
         metadata: expect.objectContaining({
           type: "overage_billing",
           billing_run_id: "run_1",

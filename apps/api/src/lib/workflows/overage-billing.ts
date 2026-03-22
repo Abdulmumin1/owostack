@@ -9,6 +9,7 @@ import {
   intervalToMs,
   invalidateSubscriptionCache,
   resolveProviderAccount,
+  getRuntimeProviderEnvironment,
 } from "./utils";
 import type { ProviderAccount } from "@owostack/adapters";
 import { createDb } from "@owostack/db";
@@ -263,6 +264,9 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
   ): Promise<void> {
     const allowPeriodAdvance = options?.allowPeriodAdvance !== false;
     const now = Date.now();
+    const providerEnvironment = getRuntimeProviderEnvironment(
+      this.env.ENVIRONMENT,
+    );
     const dueSubscriptions = await step.do(
       "load-due-paid-subscriptions",
       async () => {
@@ -375,7 +379,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
           try {
             fetchResult = await adapter.fetchSubscription({
               subscriptionId: subCode,
-              environment: account.environment as "test" | "live",
+              environment: providerEnvironment,
               account: account as unknown as ProviderAccount,
             });
           } catch (error) {
@@ -516,6 +520,9 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
 
   async run(event: WorkflowEvent<OverageBillingParams>, step: WorkflowStep) {
     const { organizationId, customerId, trigger, billingRunId } = event.payload;
+    const providerEnvironment = getRuntimeProviderEnvironment(
+      this.env.ENVIRONMENT,
+    );
 
     console.log(
       `[OverageBilling] Starting: customer=${customerId}, org=${organizationId}, trigger=${trigger}`,
@@ -969,7 +976,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             id: account.id,
             organizationId: account.organizationId,
             providerId: account.providerId,
-            environment: account.environment,
+            environment: providerEnvironment,
             credentials: account.credentials as ResolvedAccount["credentials"],
             createdAt: account.createdAt,
             updatedAt: account.updatedAt,
@@ -1143,7 +1150,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
                   customer_id: customerId,
                   billing_run_id: thresholdRun?.id ?? null,
                 },
-                environment: accountData.environment as "test" | "live",
+                environment: providerEnvironment,
                 account: accountData as unknown as ProviderAccount,
               });
 

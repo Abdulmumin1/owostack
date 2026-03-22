@@ -189,7 +189,10 @@ describe("TrialEndWorkflow", () => {
     const step = createWorkflowStepMock();
 
     await TrialEndWorkflow.prototype.run.call(
-      createWorkflowInstance(TrialEndWorkflow, { DB: db.DB }),
+      createWorkflowInstance(TrialEndWorkflow, {
+        DB: db.DB,
+        ENVIRONMENT: "production",
+      }),
       {
         payload: {
           subscriptionId: "sub_trial_1",
@@ -210,9 +213,15 @@ describe("TrialEndWorkflow", () => {
     expect(chargeAuthorizationMock).toHaveBeenCalledWith(
       expect.objectContaining({
         authorizationCode: "AUTH_paystack",
+        environment: "live",
       }),
     );
     expect(createSubscriptionMock).toHaveBeenCalledTimes(1);
+    expect(createSubscriptionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        environment: "live",
+      }),
+    );
     expect(db.updateBinds).toHaveLength(1);
     expect(db.updateBinds[0][0]).toBe("SUB_live_123");
     expect(db.updateBinds[0][1]).toBe("SUB_live_123");
