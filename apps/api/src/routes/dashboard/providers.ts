@@ -16,6 +16,17 @@ import {
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+export const dashboardProvidersRouteDependencies = {
+  syncPlansToProvider,
+  getProviderRegistry,
+};
+
+export function resetDashboardProvidersRouteDependencies() {
+  dashboardProvidersRouteDependencies.syncPlansToProvider = syncPlansToProvider;
+  dashboardProvidersRouteDependencies.getProviderRegistry =
+    getProviderRegistry;
+}
+
 function zodErrorToResponse(zodError: {
   flatten: () => {
     formErrors: string[];
@@ -259,7 +270,7 @@ app.post("/accounts", async (c) => {
   }
 
   // Eager plan sync — run in background so the response is instant
-  const registry = getProviderRegistry();
+  const registry = dashboardProvidersRouteDependencies.getProviderRegistry();
   const adapter = registry.get(providerId);
   if (adapter) {
     const decryptedCreds = { ...normalizedCredentials };
@@ -276,7 +287,12 @@ app.post("/accounts", async (c) => {
       updatedAt: account.updatedAt,
     };
     c.executionCtx.waitUntil(
-      syncPlansToProvider(db, organizationId, adapter, providerAccount)
+      dashboardProvidersRouteDependencies.syncPlansToProvider(
+        db,
+        organizationId,
+        adapter,
+        providerAccount,
+      )
         .then((r) =>
           console.log(
             `[providers] Plan sync on connect: ${r.synced.length} synced, ${r.failed.length} failed`,

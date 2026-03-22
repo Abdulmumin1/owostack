@@ -5,6 +5,10 @@ export function createRouteTestApp<TVariables extends Record<string, unknown>>(
   variables: TVariables,
 ) {
   const app = new Hono<{ Variables: TVariables }>();
+  const defaultExecutionCtx = {
+    waitUntil(_promise: Promise<unknown>) {},
+    passThroughOnException() {},
+  };
 
   app.use("*", async (c, next) => {
     for (const [key, value] of Object.entries(variables)) {
@@ -14,5 +18,19 @@ export function createRouteTestApp<TVariables extends Record<string, unknown>>(
   });
 
   app.route("/", route);
-  return app;
+
+  const request = (
+    input: string,
+    init?: RequestInit,
+    env?: Record<string, unknown>,
+    executionCtx?: Pick<ExecutionContext, "waitUntil" | "passThroughOnException">,
+  ) => {
+    return app.fetch(
+      new Request(new URL(input, "http://localhost").toString(), init),
+      env,
+      (executionCtx || defaultExecutionCtx) as ExecutionContext,
+    );
+  };
+
+  return Object.assign(app, { request });
 }

@@ -26,6 +26,14 @@ import {
 
 const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
+export const syncRouteDependencies = {
+  verifyApiKey,
+};
+
+export function resetSyncRouteDependencies() {
+  syncRouteDependencies.verifyApiKey = verifyApiKey;
+}
+
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
   const authHeader = c.req.header("Authorization");
@@ -37,7 +45,7 @@ app.use("*", async (c, next) => {
   const apiKey = authHeader.split(" ")[1];
   const authDb = c.get("authDb");
 
-  const keyRecord = await verifyApiKey(authDb, apiKey);
+  const keyRecord = await syncRouteDependencies.verifyApiKey(authDb, apiKey);
   if (!keyRecord) {
     return c.json({ success: false, error: "Invalid API Key" }, 401);
   }

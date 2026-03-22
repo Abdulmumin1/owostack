@@ -44,19 +44,25 @@ export async function resolveProviderAccount(
   const db = createDb(env.DB);
   const workerEnv = getRuntimeProviderEnvironment(env.ENVIRONMENT);
 
-  // 1. Try provider_accounts table (new multi-provider system)
-  //    Filter by environment to avoid using a live secret key with a test
-  //    authorization code (or vice-versa) — auth codes are scoped to the
-  //    specific Paystack integration / secret key.
+  // 1. Try provider_accounts table (new multi-provider system).
+  //    Workflow bindings already point at the runtime-scoped billing DB, so the
+  //    worker ENVIRONMENT is the source of truth. Prefer a row that matches the
+  //    runtime env when present, but fall back to the newest provider row so
+  //    stale persisted environment metadata doesn't break workflows.
   const accounts = await db.query.providerAccounts.findMany({
     where: and(
       eq(schema.providerAccounts.organizationId, organizationId),
       eq(schema.providerAccounts.providerId, providerId),
-      eq(schema.providerAccounts.environment, workerEnv),
     ),
   });
 
-  const matched = accounts[0];
+  const sortedAccounts = [...accounts].sort(
+    (left: any, right: any) =>
+      Number(right.updatedAt || 0) - Number(left.updatedAt || 0),
+  );
+  const matched =
+    sortedAccounts.find((account: any) => account.environment === workerEnv) ??
+    sortedAccounts[0];
 
   if (matched) {
     const credentials = { ...((matched as any).credentials || {}) };
