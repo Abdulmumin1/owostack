@@ -42,7 +42,7 @@ export const Route = createRootRoute({
       },
       {
         property: "og:image",
-        content: "https://owostack.com/og.png",
+        content: "https://owostack.com/og.jpg",
       },
       {
         name: "twitter:card",
@@ -59,7 +59,7 @@ export const Route = createRootRoute({
       },
       {
         name: "twitter:image",
-        content: "https://owostack.com/og.png",
+        content: "https://owostack.com/og.jpg",
       },
     ],
     links: [

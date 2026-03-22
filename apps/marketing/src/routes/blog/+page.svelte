@@ -46,7 +46,7 @@
     property="og:description"
     content="Thoughts on billing, subscriptions, and building for AI SaaS."
   />
-  <meta property="og:image" content="https://owostack.com/og.png" />
+  <meta property="og:image" content="https://owostack.com/og.jpg" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:url" content="https://owostack.com/blog" />
   <meta name="twitter:title" content="Blog — Owostack" />
@@ -54,7 +54,7 @@
     name="twitter:description"
     content="Thoughts on billing, subscriptions, and building for AI SaaS."
   />
-  <meta name="twitter:image" content="https://owostack.com/og.png" />
+  <meta name="twitter:image" content="https://owostack.com/og.jpg" />
 </svelte:head>
 
 <div class="h-screen flex bg-bg-primary overflow-hidden">

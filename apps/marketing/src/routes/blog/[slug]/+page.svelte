@@ -17,12 +17,12 @@
   
   // Dynamic OG generator using Cloudinary
   function getOgImage(title?: string) {
-    if (!title) return "https://owostack.com/og.png";
+    if (!title) return "https://owostack.com/og.jpg";
     const cloudName = "dtrqaqezs"; 
     const baseImageId = "og-plain_unfcap"; 
     const encodedTitle = encodeURIComponent(encodeURIComponent(title));
     const overlay = `l_text:Arial_48_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_0`;
-    return `https://res.cloudinary.com/${cloudName}/image/upload/w_1200,h_630,c_fill/${overlay}/${baseImageId}.png`;
+    return `https://res.cloudinary.com/${cloudName}/image/upload/f_jpg,q_70,w_1200,h_630,c_fill/${overlay}/${baseImageId}.png`;
   }
   
   let ogImage = $derived(getOgImage(data.metadata?.title));
