@@ -18,6 +18,7 @@ import {
   getAdapter,
   invalidateSubscriptionCache,
   resolveProviderAccount,
+  getRuntimeProviderEnvironment,
 } from "./utils";
 
 export type RenewalSetupRetryWorkflowDependencies = {
@@ -169,6 +170,7 @@ async function attemptRenewalSetup(
   deps: RenewalSetupRetryWorkflowDependencies = defaultDependencies,
 ): Promise<RetryAttemptResult> {
   const now = Date.now();
+  const providerEnvironment = getRuntimeProviderEnvironment(env.ENVIRONMENT);
   const subscription = await readSubscription(env, payload.subscriptionId);
   if (!subscription) {
     return { status: "aborted", reason: "subscription_missing" };
@@ -345,7 +347,7 @@ async function attemptRenewalSetup(
     plan: { id: providerPlanCode },
     authorizationCode: paymentMethod.token,
     startDate,
-    environment: account.environment as "test" | "live",
+    environment: providerEnvironment,
     account: account as ProviderAccount,
     metadata: {
       subscription_id: subscription.id,

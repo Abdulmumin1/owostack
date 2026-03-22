@@ -10,6 +10,7 @@ import {
   provisionEntitlements,
   intervalToMs,
   invalidateSubscriptionCache,
+  getRuntimeProviderEnvironment,
 } from "./utils";
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,9 @@ export class DowngradeWorkflow extends WorkflowEntrypoint<
       customerAuthorizationCode,
       newPlanProviderCode,
     } = event.payload;
+    const providerEnvironment = getRuntimeProviderEnvironment(
+      this.env.ENVIRONMENT,
+    );
 
     // Step 1: Sleep until period end
     const waitMs = executeAt - Date.now();
@@ -166,7 +170,7 @@ export class DowngradeWorkflow extends WorkflowEntrypoint<
 
           const result = await adapter.cancelSubscription({
             subscription: { id: providerSubscriptionCode!, status: "active" },
-            environment: account.environment as "test" | "live",
+            environment: providerEnvironment,
             account,
           });
 
@@ -216,7 +220,7 @@ export class DowngradeWorkflow extends WorkflowEntrypoint<
           customer: { id: customerEmail, email: customerEmail },
           plan: { id: newPlanProviderCode },
           authorizationCode: customerAuthorizationCode,
-          environment: account.environment as "test" | "live",
+          environment: providerEnvironment,
           account,
         });
 

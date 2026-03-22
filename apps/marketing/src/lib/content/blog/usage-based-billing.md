@@ -5,7 +5,7 @@ date: "2026-02-15"
 readTime: "6 min read"
 category: "Engineering"
 layout: blog
-thumbnail: "/images/blog/usage-based-billing.png"
+thumbnail: ""
 ---
 
 # \_Just charge customers for what they use\_

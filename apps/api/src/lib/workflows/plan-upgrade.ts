@@ -10,6 +10,7 @@ import {
   provisionEntitlements,
   intervalToMs,
   invalidateSubscriptionCache,
+  getRuntimeProviderEnvironment,
 } from "./utils";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,9 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
       oldProviderSubscriptionCode,
       paidAt,
     } = event.payload;
+    const providerEnvironment = getRuntimeProviderEnvironment(
+      this.env.ENVIRONMENT,
+    );
 
     // Step 1: Cancel old subscription on provider (if applicable)
     if (
@@ -88,7 +92,7 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
 
           const result = await adapter.cancelSubscription({
             subscription: { id: oldProviderSubscriptionCode, status: "active" },
-            environment: account.environment as "test" | "live",
+            environment: providerEnvironment,
             account,
           });
 
@@ -265,7 +269,7 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
               plan: { id: providerPlanCode! },
               authorizationCode: authCode!,
               startDate,
-              environment: account.environment as "test" | "live",
+              environment: providerEnvironment,
               account,
               metadata: { subscription_id: newSubId, switch_type: "upgrade" },
             });

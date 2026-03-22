@@ -9,6 +9,37 @@ import {
 } from "./providers";
 import { getMinimumChargeAmount } from "./provider-minimums";
 
+export interface PlanProviderSyncDependencies {
+  resolveProvider: typeof resolveProvider;
+  getProviderRegistry: typeof getProviderRegistry;
+  buildProviderContext: typeof buildProviderContext;
+  deriveProviderEnvironment: typeof deriveProviderEnvironment;
+  loadProviderAccounts: typeof loadProviderAccounts;
+  loadProviderRules: typeof loadProviderRules;
+  getMinimumChargeAmount: typeof getMinimumChargeAmount;
+}
+
+const defaultPlanProviderSyncDependencies: PlanProviderSyncDependencies = {
+  resolveProvider,
+  getProviderRegistry,
+  buildProviderContext,
+  deriveProviderEnvironment,
+  loadProviderAccounts,
+  loadProviderRules,
+  getMinimumChargeAmount,
+};
+
+export const planProviderSyncDependencies: PlanProviderSyncDependencies = {
+  ...defaultPlanProviderSyncDependencies,
+};
+
+export function resetPlanProviderSyncDependencies() {
+  Object.assign(
+    planProviderSyncDependencies,
+    defaultPlanProviderSyncDependencies,
+  );
+}
+
 export interface ProviderManagedPlan {
   slug: string;
   name: string;
@@ -101,7 +132,10 @@ export async function syncProviderPlan(params: {
     };
   }
 
-  const minimumAmount = getMinimumChargeAmount(target.providerId, plan.currency);
+  const minimumAmount = planProviderSyncDependencies.getMinimumChargeAmount(
+    target.providerId,
+    plan.currency,
+  );
   if (minimumAmount > 0 && plan.price < minimumAmount) {
     const minDisplay = minimumAmount / 100;
     return {
@@ -215,9 +249,12 @@ async function resolveProviderTarget(params: {
   preferredProviderId?: string | null;
 }): Promise<ResolvedProviderTarget | { issue: ProviderPlanSyncIssue }> {
   const { context, plan, preferredProviderId } = params;
-  const registry = getProviderRegistry();
-  const providerEnv = deriveProviderEnvironment(context.environment, null);
-  const providerAccounts = await loadProviderAccounts(
+  const registry = planProviderSyncDependencies.getProviderRegistry();
+  const providerEnv = planProviderSyncDependencies.deriveProviderEnvironment(
+    context.environment,
+    null,
+  );
+  const providerAccounts = await planProviderSyncDependencies.loadProviderAccounts(
     context.db,
     context.organizationId,
     context.encryptionKey,
@@ -260,16 +297,22 @@ async function resolveProviderTarget(params: {
     };
   }
 
-  const selectionResult = resolveProvider(registry, {
-    organizationId: context.organizationId,
-    environment: providerEnv,
-    context: buildProviderContext({
-      currency: plan.currency,
-      metadata: plan.metadata ?? undefined,
-    }),
-    rules: await loadProviderRules(context.db, context.organizationId),
-    accounts: providerAccounts,
-  });
+  const selectionResult = planProviderSyncDependencies.resolveProvider(
+    registry,
+    {
+      organizationId: context.organizationId,
+      environment: providerEnv,
+      context: planProviderSyncDependencies.buildProviderContext({
+        currency: plan.currency,
+        metadata: plan.metadata ?? undefined,
+      }),
+      rules: await planProviderSyncDependencies.loadProviderRules(
+        context.db,
+        context.organizationId,
+      ),
+      accounts: providerAccounts,
+    },
+  );
 
   if (selectionResult.isErr()) {
     return {

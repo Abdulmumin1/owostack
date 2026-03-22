@@ -10,6 +10,7 @@ import {
   intervalToMs,
   provisionEntitlements,
   invalidateSubscriptionCache,
+  getRuntimeProviderEnvironment,
 } from "./utils";
 import type { ProviderAccount } from "@owostack/adapters";
 import {
@@ -112,6 +113,9 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
       currency,
       nativeTrial,
     } = event.payload;
+    const providerEnvironment = getRuntimeProviderEnvironment(
+      this.env.ENVIRONMENT,
+    );
 
     // Step 1: Sleep until trial ends
     console.log(
@@ -290,7 +294,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
           id: account.id,
           organizationId: account.organizationId,
           providerId: account.providerId,
-          environment: account.environment,
+          environment: providerEnvironment,
           credentials: account.credentials as ResolvedAccount["credentials"],
           createdAt: account.createdAt,
           updatedAt: account.updatedAt,
@@ -352,7 +356,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
                 organization_id: organizationId,
                 trial_conversion: true,
               },
-              environment: accountData.environment as "test" | "live",
+              environment: providerEnvironment,
               account: accountData as unknown as ProviderAccount,
             });
 
@@ -517,7 +521,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
                 plan: { id: providerPlanCode! },
                 authorizationCode: resolvedAuthCode,
                 startDate: startDate.toISOString(),
-                environment: accountData.environment as "test" | "live",
+                environment: providerEnvironment,
                 account: accountData as unknown as ProviderAccount,
                 metadata: {
                   subscription_id: subscriptionId,
