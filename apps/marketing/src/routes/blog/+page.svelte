@@ -60,7 +60,7 @@
 <div class="h-screen flex bg-bg-primary overflow-hidden">
   <!-- Left Side: Abstract Graphic and Context -->
   <div
-    class="hidden lg:flex w-[400px] xl:w-[480px] shrink-0 bg-[#E8E6E1] p-12 flex-col justify-between relative overflow-hidden"
+    class="hidden lg:flex w-[400px] xl:w-[480px] shrink-0 bg-bg-secondary p-12 flex-col justify-between relative overflow-hidden border-r border-border/40"
   >
     <!-- Abstract Background -->
     <div
@@ -76,19 +76,15 @@
     <div class="relative z-10">
       <div class="mb-16">
         <a href="/" class="text-text-primary hover:text-accent transition-colors">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12.5 4C12.5 4 11 5 11 7C11 9 13.5 10 13.5 12C13.5 14 11 15 11 17C11 19 12.5 20 12.5 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M7 8L4 12L7 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M17 8L20 12L17 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <Logo size={24} class="text-current" />
         </a>
       </div>
 
       <div class="space-y-4">
-        <h2 class="text-[28px] font-bold text-[#222] tracking-tight font-display">
+        <h2 class="text-[28px] font-bold text-text-primary tracking-tight font-display">
           Writings
         </h2>
-        <p class="text-[#555] text-[15px] leading-[1.6] max-w-[280px]">
+        <p class="text-text-secondary text-[15px] leading-[1.6] max-w-[280px]">
           Engineering notes and thoughts on building the billing layer for modern AI SaaS.
         </p>
       </div>
@@ -98,17 +94,17 @@
 
   <!-- Right Side: Content -->
   <div
-    class="flex-1 flex flex-col h-screen overflow-y-auto bg-[#FAFAFA] relative"
+    class="flex-1 flex flex-col h-screen overflow-y-auto bg-bg-primary relative"
   >
     <!-- Header -->
     <header
-      class="px-8 lg:px-16 py-8 sticky top-0 bg-[#FAFAFA] z-30"
+      class="px-8 lg:px-16 py-8 sticky top-0 bg-bg-primary/90 backdrop-blur-sm border-b border-border/30 z-30"
     >
       <div class="flex items-center justify-between w-full">
         <div class="lg:hidden">
           <a href="/" class="flex items-center gap-2">
             <Logo size={24} class="text-accent" />
-            <span class="text-sm font-bold tracking-tight">Owostack</span>
+            <span class="text-sm font-bold tracking-tight text-text-primary">Owostack</span>
           </a>
         </div>
         <div class="hidden lg:block"></div>
@@ -116,7 +112,7 @@
         <nav class="flex items-center gap-6">
           <a
             href="/docs"
-            class=" text-[11px]"
+            class="text-[11px] text-text-secondary hover:text-text-primary transition-colors"
             >Docs</a
           >
           <a
@@ -129,16 +125,16 @@
     </header>
 
     <main class="flex-1 px-8 lg:px-16">
-      <div class="max-w-4xl mt-12 lg:mt-24">
+      <div class="max-w-4xl">
         {#if posts.length > 0}
-          <div class="flex flex-col gap-12">
+          <div class="flex flex-col gap-6">
             {#each posts as post (post.slug)}
               <article class="group">
                 <a href={`/blog/${post.slug}`} class="block">
-                  <h3 class="text-[28px] lg:text-[32px] font-bold tracking-tight font-display text-[#111] group-hover:text-[#e8a855] transition-colors leading-[1.2] mb-1">
+                  <h3 class="text-[20px] lg:text-[28px] font-bold tracking-tight font-display text-text-primary group-hover:text-accent transition-colors leading-[1.1] mb-1">
                     {post.title}
                   </h3>
-                  <p class="text-[#888] text-[15px] font-mono tracking-tight">{post.date}</p>
+                  <p class="text-text-muted text-[15px] font-mono tracking-tight">{post.date}</p>
                 </a>
               </article>
             {/each}

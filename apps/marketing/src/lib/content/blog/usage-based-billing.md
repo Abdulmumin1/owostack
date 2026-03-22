@@ -6,9 +6,8 @@ readTime: "6 min read"
 category: "Engineering"
 layout: blog
 thumbnail: ""
+author: "yaqeen"
 ---
-
-# \_Just charge customers for what they use\_
 
 Usage-based billing sounds simple, right? "Just charge people for what they use."
 

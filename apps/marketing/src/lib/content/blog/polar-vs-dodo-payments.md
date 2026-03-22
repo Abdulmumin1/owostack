@@ -6,9 +6,9 @@ readTime: "8 min read"
 category: "Engineering"
 layout: blog
 thumbnail: ""
+author: "yaqeen"
 ---
 
-# _Polar vs Dodo Payments for SaaS_
 
 If you are comparing Polar and Dodo Payments, you are already asking a smart question.
 

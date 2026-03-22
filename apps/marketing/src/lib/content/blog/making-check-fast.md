@@ -5,7 +5,8 @@ date: "2026-03-01"
 readTime: "5 min read"
 category: "Engineering"
 layout: blog
-thumbnail: "https://mac-file.yaqeen.me/3B499EC5-Generated%20Image%20March%2004%2C%202026%20-%205_49PM.png"
+thumbnail: ""
+author: "yaqeen"
 ---
 
 A simple principle i've been sticking with for a while is a quote from steve jobs - where he said: "start with the customer experience, then walk up the technology" i don't know if i got that right (could google it though);
