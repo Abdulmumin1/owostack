@@ -45,7 +45,7 @@
       const shortDesc = description.length > 120 ? description.substring(0, 117) + "..." : description;
       const encodedDesc = encodeURIComponent(encodeURIComponent(shortDesc));
       // Stack title and description centered on the left panel
-      overlay = `l_text:Arial_48_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-60/l_text:Arial_32:${encodedDesc},c_fit,w_480,co_rgb:b3b3b3/fl_layer_apply,g_west,x_70,y_110`;
+      overlay = `l_text:Arial_48_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-45/l_text:Arial_32:${encodedDesc},c_fit,w_480,co_rgb:b3b3b3/fl_layer_apply,g_west,x_70,y_110`;
     }
 
     return `https://res.cloudinary.com/${cloudName}/image/upload/f_jpg,q_70,w_1200,h_630,c_fill/${overlay}/${baseImageId}.png`;
@@ -71,6 +71,7 @@
   <Header variant="page" showBorder={true} />
   <main class="mx-auto max-w-5xl px-6 py-12">
     <!-- Hero -->
+     <img src={ogImage} alt="" />
     <div class="mb-16">
       <a
         href="/pricing-templates"

@@ -53,7 +53,7 @@ export const Route = createFileRoute("/$")({
         // Stack title and description using west gravity.
         // The title shifts up slightly (y=-60) and the description shifts down (y=110).
         // This creates a perfectly centered text block regardless of line breaks.
-        overlay = `l_text:Arial_45_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-60/l_text:Arial_30:${encodedDesc},c_fit,w_480,co_rgb:b3b3b3/fl_layer_apply,g_west,x_70,y_110`;
+        overlay = `l_text:Arial_45_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-35/l_text:Arial_30:${encodedDesc},c_fit,w_480,co_rgb:b3b3b3/fl_layer_apply,g_west,x_70,y_110`;
       }
 
       return `https://res.cloudinary.com/${cloudName}/image/upload/f_jpg,q_70,w_1200,h_630,c_fill/${overlay}/${baseImageId}.png`;
