@@ -422,11 +422,11 @@
             >
               <!-- Background Progress -->
               <div
-                class="absolute inset-y-0 left-0 bg-accent/5 dark:bg-accent/10 z-0 transition-all duration-500 ease-out"
+                class="absolute inset-y-0 left-0 bg-accent/10 dark:bg-accent/20 z-0 transition-all duration-500 ease-out"
                 style="width: {pct}%"
               >
                 <!-- Right border edge indicator for the progress bar -->
-                <div class="absolute right-0 top-0 bottom-0 w-[2px] bg-accent/40 dark:bg-accent/30"></div>
+                <div class="absolute right-0 top-0 bottom-0 w-[2px] bg-accent/60 dark:bg-accent/80"></div>
               </div>
 
               <!-- Content -->

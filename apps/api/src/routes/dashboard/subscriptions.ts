@@ -165,6 +165,7 @@ app.get("/", async (c) => {
   const organizationId = c.get("organizationId");
   const limit = Number(c.req.query("limit")) || 25;
   const offset = Number(c.req.query("offset")) || 0;
+  const planId = c.req.query("planId");
 
   if (!organizationId) {
     return c.json({ error: "Organization ID required" }, 400);
@@ -192,6 +193,10 @@ app.get("/", async (c) => {
         if ((sub.metadata as any)?.billing_type === "one_time") return false;
         if ((sub.metadata as any)?.type === "one_time_purchase") return false;
         if (sub.plan?.billingType === "one_time") return false;
+
+        // Filter by planId if provided
+        if (planId && sub.planId !== planId) return false;
+
         return true;
       })
       .map((sub: any) => ({

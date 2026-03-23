@@ -63,12 +63,10 @@
     isLoadingSubscribers = true;
     try {
       const res = await apiFetch(
-        `/api/dashboard/subscriptions?organizationId=${projectId}&limit=100`,
+        `/api/dashboard/subscriptions?organizationId=${projectId}&planId=${planId}&limit=1000`,
       );
       if (res.data?.success) {
-        subscribers = (res.data.data || []).filter(
-          (subscription: any) => subscription.planId === planId,
-        );
+        subscribers = res.data.data || [];
       }
     } catch (error) {
       console.error("Failed to load subscribers", error);
