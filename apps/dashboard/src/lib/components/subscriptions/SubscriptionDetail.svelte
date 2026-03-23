@@ -341,10 +341,21 @@
   }
 
   const renewalSetup = $derived(data?.subscription?.health?.renewalSetup || null);
+  const hasHealthIssue = $derived(!!data?.subscription?.health?.requiresAction);
   const hasRenewalSetupIssue = $derived(
     Array.isArray(data?.subscription?.health?.reasons) &&
       data.subscription.health.reasons.includes("renewal_setup_failed"),
   );
+  const healthAlertTitle = $derived.by(() => {
+    if (!hasHealthIssue) return "";
+    if (hasRenewalSetupIssue) {
+      return renewalSetup?.renewal_setup_status === "scheduled" ||
+        renewalSetup?.renewal_setup_status === "retrying"
+        ? "Renewal setup retry scheduled"
+        : "Renewal setup failed";
+    }
+    return "Billing review needed";
+  });
 
   const isActive = $derived(
     data?.subscription?.status === "active" ||
@@ -379,6 +390,11 @@
 
   const otherPlans = $derived(
     (data?.availablePlans || []).filter((p: any) => p.id !== data?.plan?.id),
+  );
+  const entitlementDiagnostics = $derived(data?.entitlementDiagnostics || null);
+  const hasEntitlementDrift = $derived(!!entitlementDiagnostics?.hasDrift);
+  const hasExtraProvisionedRows = $derived(
+    !!entitlementDiagnostics?.hasExtraProvisionedRows,
   );
 </script>
 
@@ -511,27 +527,22 @@
         </div>
       </div>
     {/if}
-    {#if hasRenewalSetupIssue}
+    {#if hasHealthIssue}
       <div
         class="bg-warning-bg border border-warning rounded p-3 flex items-start gap-2"
       >
         <Warning size={14} class="text-warning mt-0.5 shrink-0" weight="fill" />
         <div class="min-w-0">
-          <p class="text-xs font-semibold text-warning">
-            {renewalSetup?.renewal_setup_status === "scheduled" ||
-            renewalSetup?.renewal_setup_status === "retrying"
-              ? "Renewal setup retry scheduled"
-              : "Renewal setup failed"}
-          </p>
+          <p class="text-xs font-semibold text-warning">{healthAlertTitle}</p>
           <p class="text-[10px] text-text-dim mt-0.5">
             {getHealthMessage(data.subscription)}
           </p>
-          {#if renewalSetup?.renewal_setup_last_error}
+          {#if hasRenewalSetupIssue && renewalSetup?.renewal_setup_last_error}
             <p class="text-[10px] text-text-dim mt-1 font-mono break-all">
               {renewalSetup.renewal_setup_last_error}
             </p>
           {/if}
-          {#if renewalSetup?.renewal_setup_next_attempt_at}
+          {#if hasRenewalSetupIssue && renewalSetup?.renewal_setup_next_attempt_at}
             <p class="text-[10px] text-text-dim mt-1">
               Next attempt {formatDate(renewalSetup.renewal_setup_next_attempt_at)}
             </p>
@@ -740,7 +751,7 @@
       </div>
     {/if}
 
-    {#if data.entitlementDiagnostics?.hasDrift}
+    {#if hasEntitlementDrift}
       <div class="bg-warning-bg/40 border border-warning/20 rounded p-3">
         <div class="flex items-start gap-2">
           <Warning size={14} class="text-warning mt-0.5" weight="fill" />
@@ -749,29 +760,54 @@
               Provisioning Drift
             </p>
             <p class="text-[10px] text-text-dim">
-              The customer's provisioned entitlement rows do not match the active plan.
-              `/check` uses the current plan access shown below.
+              The active plan is missing provisioned entitlement rows. `/check`
+              uses the current plan access shown below.
             </p>
-            {#if data.entitlementDiagnostics.orphanedProvisionedEntitlements?.length > 0}
+            {#if entitlementDiagnostics?.orphanedProvisionedEntitlements?.length > 0}
               <p class="text-[10px] text-text-dim">
-                Provisioned only:
+                Extra rows also present:
                 <span class="text-text-primary">
                   {formatFeatureNames(
-                    data.entitlementDiagnostics.orphanedProvisionedEntitlements,
+                    entitlementDiagnostics.orphanedProvisionedEntitlements,
                   )}
                 </span>
               </p>
             {/if}
-            {#if data.entitlementDiagnostics.missingProvisionedEntitlements?.length > 0}
+            {#if entitlementDiagnostics?.missingProvisionedEntitlements?.length > 0}
               <p class="text-[10px] text-text-dim">
                 Missing provisioned rows:
                 <span class="text-text-primary">
                   {formatFeatureNames(
-                    data.entitlementDiagnostics.missingProvisionedEntitlements,
+                    entitlementDiagnostics.missingProvisionedEntitlements,
                   )}
                 </span>
               </p>
             {/if}
+          </div>
+        </div>
+      </div>
+    {/if}
+    {#if !hasEntitlementDrift && hasExtraProvisionedRows}
+      <div class="bg-info-bg/40 border border-info/20 rounded p-3">
+        <div class="flex items-start gap-2">
+          <Shield size={14} class="text-info mt-0.5" weight="duotone" />
+          <div class="space-y-1">
+            <p class="text-[10px] font-bold text-info uppercase tracking-widest">
+              Extra Provisioned Rows
+            </p>
+            <p class="text-[10px] text-text-dim">
+              The customer still has extra plan-sourced entitlement rows that do
+              not belong to the active plan. `/check` uses the current plan
+              access shown below, so this is not active-plan drift.
+            </p>
+            <p class="text-[10px] text-text-dim">
+              Extra rows:
+              <span class="text-text-primary">
+                {formatFeatureNames(
+                  entitlementDiagnostics?.orphanedProvisionedEntitlements || [],
+                )}
+              </span>
+            </p>
           </div>
         </div>
       </div>

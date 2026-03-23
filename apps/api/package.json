@@ -12,6 +12,8 @@
     "tail": "wrangler tail",
     "test": "vitest",
     "test:runtime": "vitest --run test/runtime",
+    "test:runtime:adapters": "vitest --run test/runtime/adapters",
+    "test:runtime:webhooks": "vitest --run test/runtime/webhooks",
     "test:runtime:workflows": "vitest --run test/runtime/workflows",
     "db:migrate:local": "wrangler d1 migrations apply owostack --local && wrangler d1 migrations apply owostack-auth --local",
     "db:migrate:auth": "wrangler d1 migrations apply owostack-auth --remote --env live",

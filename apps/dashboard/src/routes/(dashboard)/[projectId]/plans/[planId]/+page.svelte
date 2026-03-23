@@ -22,6 +22,10 @@
   let isLoading = $state(true);
   let isSaving = $state(false);
   let isLoadingSubscribers = $state(false);
+  let subscribersCount = $state(0);
+  let subscribersPage = $state(1);
+  const subscribersPageSize = 10;
+  let subscribersStatusFilter = $state("active");
 
   let showAttachFeaturePanel = $state(false);
   let showFeatureConfigPanel = $state(false);
@@ -62,19 +66,32 @@
   async function loadSubscribers() {
     isLoadingSubscribers = true;
     try {
-      const res = await apiFetch(
-        `/api/dashboard/subscriptions?organizationId=${projectId}&limit=100`,
-      );
+      const offset = (subscribersPage - 1) * subscribersPageSize;
+      let url = `/api/dashboard/subscriptions?organizationId=${projectId}&planId=${planId}&limit=${subscribersPageSize}&offset=${offset}`;
+      if (subscribersStatusFilter !== "all") {
+        url += `&status=${subscribersStatusFilter}`;
+      }
+      const res = await apiFetch(url);
       if (res.data?.success) {
-        subscribers = (res.data.data || []).filter(
-          (subscription: any) => subscription.planId === planId,
-        );
+        subscribers = res.data.data || [];
+        subscribersCount = res.data.total || 0;
       }
     } catch (error) {
       console.error("Failed to load subscribers", error);
     } finally {
       isLoadingSubscribers = false;
     }
+  }
+
+  function handleSubscribersPageChange(page: number) {
+    subscribersPage = page;
+    void loadSubscribers();
+  }
+
+  function handleSubscribersFilterChange(status: string) {
+    subscribersStatusFilter = status;
+    subscribersPage = 1;
+    void loadSubscribers();
   }
 
   async function savePlanEdits(payload: Record<string, unknown>) {
@@ -333,9 +350,15 @@
       <PlanSubscribersSection
         {subscribers}
         isLoading={isLoadingSubscribers}
+        totalCount={subscribersCount}
+        currentPage={subscribersPage}
+        pageSize={subscribersPageSize}
+        statusFilter={subscribersStatusFilter}
+        onStatusFilterChange={handleSubscribersFilterChange}
         onAttachCustomer={() => (showAttachCustomerPanel = true)}
         onGenerateCheckout={generateCheckoutLink}
         onActivate={activateSubscription}
+        onPageChange={handleSubscribersPageChange}
       />
     </div>
   {/if}

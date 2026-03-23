@@ -421,14 +421,7 @@
               class="relative overflow-hidden rounded-lg border border-border bg-bg-card hover:border-border-hover transition-colors group"
             >
               <!-- Background Progress -->
-              <div
-                class="absolute inset-y-0 left-0 bg-accent/5 dark:bg-accent/10 z-0 transition-all duration-500 ease-out"
-                style="width: {pct}%"
-              >
-                <!-- Right border edge indicator for the progress bar -->
-                <div class="absolute right-0 top-0 bottom-0 w-[2px] bg-accent/40 dark:bg-accent/30"></div>
-              </div>
-
+             
               <!-- Content -->
               <div class="relative z-10 flex flex-wrap sm:flex-nowrap items-center justify-between px-4 py-3 gap-4">
                 <div class="flex flex-col truncate min-w-0 pr-4 flex-1">

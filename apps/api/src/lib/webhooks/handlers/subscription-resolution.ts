@@ -1,5 +1,5 @@
 import { schema } from "@owostack/db";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import {
   isCustomerResolutionConflictError,
   resolveCustomerByEmail,
@@ -11,6 +11,127 @@ type ResolveSubscriptionCustomerOptions = {
   allowCreate?: boolean;
   logContext: string;
 };
+
+type RecoverableSubscriptionStatus =
+  | "active"
+  | "trialing"
+  | "pending"
+  | "pending_cancel"
+  | "past_due";
+
+type SubscriptionRecoveryStrategy =
+  | "status_event"
+  | "subscription_created"
+  | "customer_link";
+
+type RecoverableSubscription = {
+  id: string;
+  customerId: string;
+  planId: string;
+  status?: string | null;
+  currentPeriodStart?: number | null;
+  currentPeriodEnd?: number | null;
+  createdAt?: number | null;
+  updatedAt?: number | null;
+};
+
+function numberOrZero(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function getRecoveryBucket(
+  subscription: RecoverableSubscription,
+  strategy: SubscriptionRecoveryStrategy,
+  now: number,
+): number {
+  const status = (subscription.status || "").trim().toLowerCase();
+  const hasActiveTrial =
+    status === "trialing" && numberOrZero(subscription.currentPeriodEnd) > now;
+
+  switch (strategy) {
+    case "subscription_created":
+      if (status === "pending") return 60;
+      if (hasActiveTrial) return 50;
+      if (status === "active") return 40;
+      if (status === "pending_cancel") return 30;
+      if (status === "past_due") return 20;
+      if (status === "trialing") return 10;
+      return 0;
+    case "customer_link":
+      if (status === "active") return 60;
+      if (status === "pending_cancel") return 50;
+      if (status === "past_due") return 40;
+      if (hasActiveTrial) return 30;
+      if (status === "trialing") return 10;
+      return 0;
+    case "status_event":
+    default:
+      if (hasActiveTrial) return 60;
+      if (status === "active") return 50;
+      if (status === "pending_cancel") return 40;
+      if (status === "past_due") return 30;
+      if (status === "pending") return 20;
+      if (status === "trialing") return 10;
+      return 0;
+  }
+}
+
+function pickBestSubscriptionRecoveryCandidate(
+  candidates: RecoverableSubscription[],
+  strategy: SubscriptionRecoveryStrategy,
+): RecoverableSubscription | null {
+  if (candidates.length === 0) return null;
+
+  const now = Date.now();
+  return [...candidates].sort((left, right) => {
+    const bucketDiff =
+      getRecoveryBucket(right, strategy, now) -
+      getRecoveryBucket(left, strategy, now);
+    if (bucketDiff !== 0) return bucketDiff;
+
+    const endDiff =
+      numberOrZero(right.currentPeriodEnd) -
+      numberOrZero(left.currentPeriodEnd);
+    if (endDiff !== 0) return endDiff;
+
+    const startDiff =
+      numberOrZero(right.currentPeriodStart) -
+      numberOrZero(left.currentPeriodStart);
+    if (startDiff !== 0) return startDiff;
+
+    const updatedDiff =
+      numberOrZero(right.updatedAt) - numberOrZero(left.updatedAt);
+    if (updatedDiff !== 0) return updatedDiff;
+
+    const createdDiff =
+      numberOrZero(right.createdAt) - numberOrZero(left.createdAt);
+    if (createdDiff !== 0) return createdDiff;
+
+    return left.id.localeCompare(right.id);
+  })[0];
+}
+
+async function findBestRecoverableSubscription(
+  ctx: WebhookContext,
+  where: unknown,
+  strategy: SubscriptionRecoveryStrategy,
+): Promise<any | null> {
+  const subscriptionQuery = ctx.db.query.subscriptions as {
+    findMany?: (args: { where: never }) => Promise<RecoverableSubscription[]>;
+    findFirst: (args: { where: never }) => Promise<RecoverableSubscription | null>;
+  };
+
+  if (typeof subscriptionQuery.findMany === "function") {
+    const candidates = await subscriptionQuery.findMany({
+      where: where as never,
+    });
+    return pickBestSubscriptionRecoveryCandidate(candidates, strategy);
+  }
+
+  return subscriptionQuery.findFirst({
+    where: where as never,
+  });
+}
 
 export function getSubscriptionEventEmail(ctx: WebhookContext): string | null {
   const rawEmail =
@@ -143,4 +264,42 @@ export async function resolveSubscriptionEventPlan(
       eq(schema.plans.organizationId, organizationId),
     ),
   });
+}
+
+export async function findBestSubscriptionForCustomerPlan(
+  ctx: WebhookContext,
+  params: {
+    customerId: string;
+    planId: string;
+    statuses: RecoverableSubscriptionStatus[];
+    strategy: SubscriptionRecoveryStrategy;
+  },
+): Promise<any | null> {
+  return findBestRecoverableSubscription(
+    ctx,
+    and(
+      eq(schema.subscriptions.customerId, params.customerId),
+      eq(schema.subscriptions.planId, params.planId),
+      inArray(schema.subscriptions.status, params.statuses),
+    ),
+    params.strategy,
+  );
+}
+
+export async function findBestSubscriptionForCustomer(
+  ctx: WebhookContext,
+  params: {
+    customerId: string;
+    statuses: RecoverableSubscriptionStatus[];
+    strategy: SubscriptionRecoveryStrategy;
+  },
+): Promise<any | null> {
+  return findBestRecoverableSubscription(
+    ctx,
+    and(
+      eq(schema.subscriptions.customerId, params.customerId),
+      inArray(schema.subscriptions.status, params.statuses),
+    ),
+    params.strategy,
+  );
 }

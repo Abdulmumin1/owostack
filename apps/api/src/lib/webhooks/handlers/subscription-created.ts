@@ -6,6 +6,8 @@ import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
 import type { WebhookContext } from "../types";
 import { safeParseDate } from "../types";
 import {
+  findBestSubscriptionForCustomer,
+  findBestSubscriptionForCustomerPlan,
   getSubscriptionEventPlanCode,
   resolveSubscriptionEventCustomer,
   resolveSubscriptionEventPlan,
@@ -129,16 +131,10 @@ export async function handleSubscriptionCreated(
     );
     // Try to link the subscription code to an existing active sub for this customer
     if (providerCode) {
-      const existingSubForCustomer = await db.query.subscriptions.findFirst({
-        where: and(
-          eq(schema.subscriptions.customerId, dbCustomer.id),
-          or(
-            eq(schema.subscriptions.status, "active"),
-            eq(schema.subscriptions.status, "trialing"),
-            eq(schema.subscriptions.status, "pending_cancel"),
-            eq(schema.subscriptions.status, "past_due"),
-          ),
-        ),
+      const existingSubForCustomer = await findBestSubscriptionForCustomer(ctx, {
+        customerId: dbCustomer.id,
+        statuses: ["active", "trialing", "pending_cancel", "past_due"],
+        strategy: "customer_link",
       });
       if (existingSubForCustomer) {
         const now = Date.now();
@@ -180,16 +176,10 @@ export async function handleSubscriptionCreated(
   if (!dbPlan) {
     // Plan not found — try to link to existing active sub
     if (providerCode) {
-      const existingSubForCustomer = await db.query.subscriptions.findFirst({
-        where: and(
-          eq(schema.subscriptions.customerId, dbCustomer.id),
-          or(
-            eq(schema.subscriptions.status, "active"),
-            eq(schema.subscriptions.status, "trialing"),
-            eq(schema.subscriptions.status, "pending_cancel"),
-            eq(schema.subscriptions.status, "past_due"),
-          ),
-        ),
+      const existingSubForCustomer = await findBestSubscriptionForCustomer(ctx, {
+        customerId: dbCustomer.id,
+        statuses: ["active", "trialing", "pending_cancel", "past_due"],
+        strategy: "customer_link",
       });
       if (existingSubForCustomer) {
         const now = Date.now();
@@ -246,16 +236,11 @@ export async function handleSubscriptionCreated(
   // arrive before we've updated the local DB with the provider sub code.
   // If we find an existing trialing/active sub, update it instead of creating a duplicate.
   if (providerCode) {
-    const existingByPlan = await db.query.subscriptions.findFirst({
-      where: and(
-        eq(schema.subscriptions.customerId, dbCustomer.id),
-        eq(schema.subscriptions.planId, dbPlan.id),
-        or(
-          eq(schema.subscriptions.status, "trialing"),
-          eq(schema.subscriptions.status, "active"),
-          eq(schema.subscriptions.status, "pending"),
-        ),
-      ),
+    const existingByPlan = await findBestSubscriptionForCustomerPlan(ctx, {
+      customerId: dbCustomer.id,
+      planId: dbPlan.id,
+      statuses: ["trialing", "active", "pending"],
+      strategy: "subscription_created",
     });
 
     if (existingByPlan) {
