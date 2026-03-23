@@ -7,6 +7,7 @@ import type { WebhookContext } from "../types";
 import { handleSubscriptionCreated } from "./subscription-created";
 import { safeParseDate } from "../types";
 import {
+  findBestSubscriptionForCustomerPlan,
   resolveSubscriptionEventCustomer,
   resolveSubscriptionEventPlan,
 } from "./subscription-resolution";
@@ -53,18 +54,11 @@ async function recoverSubscriptionForStatusEvent(
   const dbPlan = await resolveSubscriptionEventPlan(ctx);
   if (!dbPlan) return null;
 
-  const recoveredSub = await db.query.subscriptions.findFirst({
-    where: and(
-      eq(schema.subscriptions.customerId, dbCustomer.id),
-      eq(schema.subscriptions.planId, dbPlan.id),
-      or(
-        eq(schema.subscriptions.status, "trialing"),
-        eq(schema.subscriptions.status, "active"),
-        eq(schema.subscriptions.status, "pending"),
-        eq(schema.subscriptions.status, "pending_cancel"),
-        eq(schema.subscriptions.status, "past_due"),
-      ),
-    ),
+  const recoveredSub = await findBestSubscriptionForCustomerPlan(ctx, {
+    customerId: dbCustomer.id,
+    planId: dbPlan.id,
+    statuses: ["trialing", "active", "pending", "pending_cancel", "past_due"],
+    strategy: "status_event",
   });
 
   if (!recoveredSub) return null;

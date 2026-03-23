@@ -437,7 +437,7 @@ select.input {
 .badge {
   @apply inline-flex items-center gap-1
          text-[11px] font-medium
-         px-2 py-0.5
+         px-2 py-0
          rounded-full
          border;
 }

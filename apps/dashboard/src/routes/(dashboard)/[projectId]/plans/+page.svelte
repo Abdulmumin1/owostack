@@ -109,6 +109,31 @@
       openMenuId = null;
     }
   }
+
+  function getCustomerCount(plan: any) {
+    if (typeof plan.customerCount === "number") {
+      return plan.customerCount;
+    }
+
+    if (!plan.subscriptions || plan.subscriptions.length === 0) return 0;
+
+    if (plan.billingType === "one_time") {
+      return new Set(plan.subscriptions.map((s: any) => s.customerId)).size;
+    }
+
+    // For subscriptions, only count unique active customers
+    const activeStatuses = [
+      "active",
+      "trialing",
+      "past_due",
+      "pending_cancel",
+      "non_renewing",
+    ];
+    const activeSubs = plan.subscriptions.filter((s: any) =>
+      activeStatuses.includes(s.status),
+    );
+    return new Set(activeSubs.map((s: any) => s.customerId)).size;
+  }
 </script>
 
 <svelte:window onclick={handleClickOutside} />
@@ -429,7 +454,7 @@
                     </td>
                     <td class="text-[9px] text-text-muted">{plan.slug}</td>
                     <td class="text-[9px] text-text-muted"
-                      >{plan.subscriptions?.length || 0}</td
+                      >{getCustomerCount(plan)}</td
                     >
                     <td class="text-xs text-text-primary font-medium">
                       {formatMoney(plan.price, plan.currency)}
@@ -538,9 +563,9 @@
                         >
                       </div>
                     </td>
-                    <td class="text-[110px] text-text-muted">{plan.slug}</td>
+                    <td class="text-[11px] text-text-muted">{plan.slug}</td>
                     <td class="text-[11px] text-text-muted"
-                      >{plan.subscriptions?.length || 0}</td
+                      >{getCustomerCount(plan)}</td
                     >
                     <td class="text-xs text-text-primary font-medium">
                       {formatMoney(plan.price, plan.currency)}

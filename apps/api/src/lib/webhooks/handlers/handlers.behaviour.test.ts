@@ -386,11 +386,13 @@ describe("Webhook handlers behavior", () => {
       email: "customer@example.com",
       organizationId: "org_1",
     });
-    db.query.subscriptions.findFirst.mockResolvedValue({
-      id: "sub_local_1",
-      paystackSubscriptionId: null,
-      paystackSubscriptionCode: null,
-    });
+    db.query.subscriptions.findMany.mockResolvedValue([
+      {
+        id: "sub_local_1",
+        paystackSubscriptionId: null,
+        paystackSubscriptionCode: null,
+      },
+    ]);
 
     const event = {
       type: "subscription.created",
@@ -428,9 +430,8 @@ describe("Webhook handlers behavior", () => {
       id: "plan_db_1",
       organizationId: "org_1",
     });
-    db.query.subscriptions.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null);
+    db.query.subscriptions.findFirst.mockResolvedValueOnce(null);
+    db.query.subscriptions.findMany.mockResolvedValueOnce([]);
 
     const event = {
       type: "subscription.created",
@@ -519,16 +520,17 @@ describe("Webhook handlers behavior", () => {
   it("subscription.active recovers a trial subscription by customer and plan when the provider code changed", async () => {
     const { db, insertValuesMock, updateSetMock } = createDbMock();
 
-    db.query.subscriptions.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
+    db.query.subscriptions.findFirst.mockResolvedValueOnce(null);
+    db.query.subscriptions.findMany.mockResolvedValueOnce([
+      {
         id: "sub_trial_1",
         customerId: "cus_1",
         planId: "plan_1",
         status: "trialing",
         currentPeriodEnd: Date.now() - 60_000,
         metadata: {},
-      });
+      },
+    ]);
     db.query.customers.findFirst
       .mockResolvedValueOnce({
         id: "cus_1",
@@ -582,12 +584,89 @@ describe("Webhook handlers behavior", () => {
     );
   });
 
+  it("subscription.active prefers the current active row over an expired trial when multiple candidates exist", async () => {
+    const { db, updateSetMock } = createDbMock();
+
+    db.query.subscriptions.findFirst.mockResolvedValueOnce(null);
+    db.query.subscriptions.findMany.mockResolvedValueOnce([
+      {
+        id: "sub_trial_old",
+        customerId: "cus_1",
+        planId: "plan_1",
+        status: "trialing",
+        currentPeriodStart: new Date("2026-01-23T00:00:00.000Z").getTime(),
+        currentPeriodEnd: new Date("2026-02-23T00:00:00.000Z").getTime(),
+        paystackSubscriptionCode: null,
+        metadata: {},
+      },
+      {
+        id: "sub_live_current",
+        customerId: "cus_1",
+        planId: "plan_1",
+        status: "active",
+        currentPeriodStart: new Date("2026-02-23T00:00:00.000Z").getTime(),
+        currentPeriodEnd: new Date("2026-03-23T00:00:00.000Z").getTime(),
+        paystackSubscriptionCode: "legacy_keep",
+        metadata: {},
+      },
+    ]);
+    db.query.customers.findFirst
+      .mockResolvedValueOnce({
+        id: "cus_1",
+        email: "recover@example.com",
+        organizationId: "org_1",
+        providerCustomerId: "cus_stripe_123",
+      })
+      .mockResolvedValueOnce(null);
+    db.query.plans.findFirst.mockResolvedValue({
+      id: "plan_1",
+      organizationId: "org_1",
+      providerPlanId: "price_trial_1",
+    });
+
+    const event = {
+      type: "subscription.active",
+      provider: "stripe",
+      customer: {
+        email: "",
+        providerCustomerId: "cus_stripe_123",
+      },
+      subscription: {
+        providerCode: "sub_live_789",
+        providerSubscriptionId: "sub_live_789",
+        status: "active",
+        startDate: "2026-03-23T00:00:00.000Z",
+        nextPaymentDate: "2026-04-23T00:00:00.000Z",
+      },
+      plan: {
+        providerPlanCode: "price_trial_1",
+      },
+      metadata: {
+        customer_email: "recover@example.com",
+      },
+      raw: { event: "customer.subscription.updated" },
+    };
+
+    await handleSubscriptionStatus("active")(makeCtx(db, event));
+
+    const updatePayload = updateSetMock.mock.calls.find(
+      (call) => call[0].providerSubscriptionCode === "sub_live_789",
+    )?.[0];
+    expect(updatePayload.paystackSubscriptionCode).toBe("legacy_keep");
+    expect(updatePayload.currentPeriodStart).toBe(
+      new Date("2026-03-23T00:00:00.000Z").getTime(),
+    );
+    expect(updatePayload.currentPeriodEnd).toBe(
+      new Date("2026-04-23T00:00:00.000Z").getTime(),
+    );
+  });
+
   it("subscription.active preserves trialing during an active trial but still links the provider code", async () => {
     const { db, insertValuesMock, updateSetMock } = createDbMock();
 
-    db.query.subscriptions.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
+    db.query.subscriptions.findFirst.mockResolvedValueOnce(null);
+    db.query.subscriptions.findMany.mockResolvedValueOnce([
+      {
         id: "sub_trial_2",
         customerId: "cus_1",
         planId: "plan_1",
@@ -595,7 +674,8 @@ describe("Webhook handlers behavior", () => {
         currentPeriodEnd: Date.now() + 60_000,
         providerSubscriptionCode: "trial-temp-1",
         metadata: {},
-      });
+      },
+    ]);
     db.query.customers.findFirst
       .mockResolvedValueOnce({
         id: "cus_1",
@@ -642,6 +722,80 @@ describe("Webhook handlers behavior", () => {
     expect(updatePayload.currentPeriodEnd).toBeUndefined();
   });
 
+  it("subscription.created links the live customer-plan row instead of an expired trial", async () => {
+    const { db, updateSetMock } = createDbMock();
+
+    db.query.customers.findFirst
+      .mockResolvedValueOnce({
+        id: "cus_2",
+        email: "buyer@example.com",
+        organizationId: "org_1",
+        providerId: "stripe",
+        providerCustomerId: "cus_stripe_123",
+        paystackCustomerId: null,
+      })
+      .mockResolvedValueOnce(null);
+    db.query.plans.findFirst.mockResolvedValue({
+      id: "plan_db_2",
+      organizationId: "org_1",
+      providerPlanId: "price_live_1",
+    });
+    db.query.subscriptions.findFirst.mockResolvedValueOnce(null);
+    db.query.subscriptions.findMany.mockResolvedValueOnce([
+      {
+        id: "sub_trial_old",
+        customerId: "cus_2",
+        planId: "plan_db_2",
+        status: "trialing",
+        currentPeriodStart: new Date("2026-01-23T00:00:00.000Z").getTime(),
+        currentPeriodEnd: new Date("2026-02-23T00:00:00.000Z").getTime(),
+        paystackSubscriptionCode: null,
+        metadata: {},
+      },
+      {
+        id: "sub_live_current",
+        customerId: "cus_2",
+        planId: "plan_db_2",
+        status: "active",
+        currentPeriodStart: new Date("2026-02-23T00:00:00.000Z").getTime(),
+        currentPeriodEnd: new Date("2026-03-23T00:00:00.000Z").getTime(),
+        paystackSubscriptionCode: "legacy_keep",
+        metadata: {},
+      },
+    ]);
+
+    const event = {
+      type: "subscription.created",
+      provider: "stripe",
+      customer: {
+        email: "",
+        providerCustomerId: "cus_stripe_123",
+      },
+      subscription: {
+        providerCode: "sub_created_2",
+        providerSubscriptionId: "sub_created_2",
+        startDate: "2026-03-23T00:00:00.000Z",
+        nextPaymentDate: "2026-04-23T00:00:00.000Z",
+      },
+      plan: {
+        providerPlanCode: "price_live_1",
+      },
+      metadata: {
+        customer_email: "buyer@example.com",
+      },
+      raw: { event: "customer.subscription.created" },
+    };
+
+    await handleSubscriptionCreated(makeCtx(db, event));
+
+    const updatePayload = updateSetMock.mock.calls.find(
+      (call) => call[0].providerSubscriptionCode === "sub_created_2",
+    )?.[0];
+    expect(updatePayload.paystackSubscriptionCode).toBe("legacy_keep");
+    expect(updatePayload.status).toBeUndefined();
+    expect(updatePayload.currentPeriodEnd).toBeUndefined();
+  });
+
   it("subscription.created resolves customers from metadata when customer.email is missing", async () => {
     const { db, insertValuesMock, updateSetMock } = createDbMock();
 
@@ -661,9 +815,8 @@ describe("Webhook handlers behavior", () => {
       organizationId: "org_1",
       providerPlanId: "price_live_1",
     });
-    db.query.subscriptions.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null);
+    db.query.subscriptions.findFirst.mockResolvedValueOnce(null);
+    db.query.subscriptions.findMany.mockResolvedValueOnce([]);
 
     const event = {
       type: "subscription.created",

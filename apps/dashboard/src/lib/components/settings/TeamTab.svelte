@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CircleNotch, X, PaperPlaneRight, Clock, Users, UserPlus } from "phosphor-svelte";
+  import { CircleNotch, X, PaperPlaneRight, Clock, Users, UserPlus, ArrowClockwise } from "phosphor-svelte";
   import { authClient } from "$lib/auth-client";
   import { toast } from "svelte-sonner";
   import type { TeamMember } from "./types";
@@ -190,13 +190,13 @@
       </div>
     </div>
 
-    <div class="flex flex-col sm:flex-row gap-3">
+    <div class="flex flex-col sm:flex-row gap-3 items-center">
       <div class="flex-[2] relative">
         <input 
           type="email" 
           placeholder="colleague@example.com"
           bind:value={inviteEmail}
-          class="input !h-10 pr-10"
+          class="input  pr-10"
         />
         {#if inviteEmail}
           <button 
@@ -208,14 +208,14 @@
         {/if}
       </div>
       <div class="flex-1 min-w-[120px]">
-        <select bind:value={inviteRole} class="input !h-10">
+        <select bind:value={inviteRole} class="input ">
           <option value="member">Member</option>
           <option value="admin">Admin</option>
           <option value="owner">Owner</option>
         </select>
       </div>
       <button 
-        class="btn btn-primary px-6 h-10"
+        class="btn btn-primary "
         disabled={!inviteEmail || !organizationId || isInviting}
         onclick={invite}
       >
@@ -245,7 +245,6 @@
       <div class="grid gap-2">
         {#each pendingInvites as invite (invite.id)}
           <div class="group relative overflow-hidden rounded-lg border border-border bg-bg-card hover:border-border-strong transition-all px-4 py-3 flex items-center justify-between">
-            <div class="absolute inset-y-0 left-0 w-1 bg-warning/40"></div>
             
             <div class="flex items-center gap-3 min-w-0">
               <div class="w-9 h-9 rounded-full bg-warning-bg border border-warning/20 flex items-center justify-center text-warning font-bold text-xs shrink-0">
@@ -272,7 +271,7 @@
 
             <div class="flex items-center gap-2 shrink-0 ml-4">
               <button 
-                class="btn btn-muted btn-sm h-8 gap-1.5 px-3"
+                class="btn btn-muted btn-sm gap-1.5 px-3"
                 onclick={() => resendInvite(invite.id)}
                 disabled={resendingInviteId === invite.id}
               >
@@ -280,7 +279,7 @@
                   <CircleNotch size={12} class="animate-spin" />
                   Resending
                 {:else}
-                  <PaperPlaneRight size={12} weight="bold" />
+                  <ArrowClockwise size={12} weight="bold" />
                   Resend
                 {/if}
               </button>

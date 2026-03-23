@@ -15,7 +15,13 @@ import {
   RUNTIME_ROUTE_ENV,
   SimulatedCatalogProviderAdapter,
 } from "../helpers/catalog-runtime";
-import { insertOrganization, insertPlan } from "../helpers/workflow-runtime";
+import {
+  insertCustomer,
+  insertOrganization,
+  insertPlan,
+  insertSubscription,
+} from "../helpers/workflow-runtime";
+import { insertFeature, insertPlanFeature } from "../helpers/overage-runtime";
 
 describe("Plans route runtime integration", () => {
   let businessDb: ReturnType<typeof createRuntimeBusinessDb>;
@@ -377,6 +383,107 @@ describe("Plans route runtime integration", () => {
     });
     expect(plan?.trialDays).toBe(14);
     expect(plan?.trialCardRequired).toBe(true);
+  });
+
+  it("returns distinct customer counts without multiplying subscribers by plan features", async () => {
+    await insertPlan(businessDb.d1, {
+      id: "plan_count_1",
+      organizationId: "org_123",
+      providerId: null,
+      providerPlanId: null,
+      paystackPlanId: null,
+      name: "Pro",
+      slug: "pro",
+      price: 150,
+      currency: "NGN",
+      billingType: "recurring",
+      metadata: {},
+    });
+
+    await insertFeature(businessDb.d1, {
+      id: "feature_ai_1",
+      organizationId: "org_123",
+      name: "AI Generation Credits",
+      slug: "ai-generation-credits",
+    });
+    await insertFeature(businessDb.d1, {
+      id: "feature_models_1",
+      organizationId: "org_123",
+      name: "Premium Models",
+      slug: "premium-models",
+      type: "boolean",
+    });
+
+    await insertPlanFeature(businessDb.d1, {
+      id: "plan_feature_ai_1",
+      planId: "plan_count_1",
+      featureId: "feature_ai_1",
+    });
+    await insertPlanFeature(businessDb.d1, {
+      id: "plan_feature_models_1",
+      planId: "plan_count_1",
+      featureId: "feature_models_1",
+      limitValue: null,
+    });
+
+    await insertCustomer(businessDb.d1, {
+      id: "cust_count_1",
+      organizationId: "org_123",
+      email: "one@example.com",
+    });
+    await insertCustomer(businessDb.d1, {
+      id: "cust_count_2",
+      organizationId: "org_123",
+      email: "two@example.com",
+    });
+    await insertCustomer(businessDb.d1, {
+      id: "cust_count_3",
+      organizationId: "org_123",
+      email: "three@example.com",
+    });
+    await insertCustomer(businessDb.d1, {
+      id: "cust_count_4",
+      organizationId: "org_123",
+      email: "four@example.com",
+    });
+
+    await insertSubscription(businessDb.d1, {
+      id: "sub_count_1",
+      customerId: "cust_count_1",
+      planId: "plan_count_1",
+      status: "active",
+    });
+    await insertSubscription(businessDb.d1, {
+      id: "sub_count_2",
+      customerId: "cust_count_2",
+      planId: "plan_count_1",
+      status: "active",
+    });
+    await insertSubscription(businessDb.d1, {
+      id: "sub_count_3",
+      customerId: "cust_count_3",
+      planId: "plan_count_1",
+      status: "active",
+    });
+    await insertSubscription(businessDb.d1, {
+      id: "sub_count_4",
+      customerId: "cust_count_4",
+      planId: "plan_count_1",
+      status: "canceled",
+    });
+
+    const response = await app.request("/", undefined, RUNTIME_ROUTE_ENV);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const plan = body.data.find((item: any) => item.id === "plan_count_1");
+
+    expect(plan).toMatchObject({
+      id: "plan_count_1",
+      customerCount: 3,
+    });
+    expect(plan.planFeatures).toHaveLength(2);
+    expect(plan.subscriptions).toBeUndefined();
   });
 
   it("clears trial and auto-enable flags for one-time plans on create", async () => {

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import {
   normalizePlanFeaturePricingConfig,
@@ -15,6 +15,13 @@ import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+const ACTIVE_SUBSCRIPTION_STATUSES: string[] = [
+  "active",
+  "trialing",
+  "past_due",
+  "pending_cancel",
+  "non_renewing",
+];
 
 function normalizePlanFeaturePayload(
   data: PlanFeaturePricingConfigInput,
@@ -288,22 +295,74 @@ app.get("/", async (c) => {
   }
 
   const db = c.get("db");
-  const plans = await db.query.plans.findMany({
-    where: eq(schema.plans.organizationId, organizationId),
-    orderBy: [desc(schema.plans.createdAt)],
-    with: {
-      subscriptions: true,
-      planFeatures: {
+  const [plans, recurringCustomerCounts, oneTimeCustomerCounts] =
+    await Promise.all([
+      db.query.plans.findMany({
+        where: eq(schema.plans.organizationId, organizationId),
+        orderBy: [desc(schema.plans.createdAt)],
         with: {
-          feature: true,
+          planFeatures: {
+            with: {
+              feature: true,
+            },
+          },
         },
-      },
-    },
-  });
+      }),
+      db
+        .select({
+          planId: schema.subscriptions.planId,
+          customerCount: sql<number>`count(DISTINCT ${schema.subscriptions.customerId})`,
+        })
+        .from(schema.subscriptions)
+        .innerJoin(
+          schema.customers,
+          eq(schema.subscriptions.customerId, schema.customers.id),
+        )
+        .innerJoin(schema.plans, eq(schema.subscriptions.planId, schema.plans.id))
+        .where(
+          and(
+            eq(schema.customers.organizationId, organizationId),
+            eq(schema.plans.organizationId, organizationId),
+            eq(schema.plans.billingType, "recurring"),
+            inArray(schema.subscriptions.status, ACTIVE_SUBSCRIPTION_STATUSES),
+          ),
+        )
+        .groupBy(schema.subscriptions.planId),
+      db
+        .select({
+          planId: schema.subscriptions.planId,
+          customerCount: sql<number>`count(DISTINCT ${schema.subscriptions.customerId})`,
+        })
+        .from(schema.subscriptions)
+        .innerJoin(
+          schema.customers,
+          eq(schema.subscriptions.customerId, schema.customers.id),
+        )
+        .innerJoin(schema.plans, eq(schema.subscriptions.planId, schema.plans.id))
+        .where(
+          and(
+            eq(schema.customers.organizationId, organizationId),
+            eq(schema.plans.organizationId, organizationId),
+            eq(schema.plans.billingType, "one_time"),
+          ),
+        )
+        .groupBy(schema.subscriptions.planId),
+    ]);
+
+  const customerCountByPlanId = new Map<string, number>();
+  for (const row of recurringCustomerCounts) {
+    customerCountByPlanId.set(row.planId, row.customerCount);
+  }
+  for (const row of oneTimeCustomerCounts) {
+    customerCountByPlanId.set(row.planId, row.customerCount);
+  }
 
   return c.json({
     success: true,
-    data: plans.map((plan) => normalizeOneTimePlan(plan)),
+    data: plans.map((plan) => ({
+      ...normalizeOneTimePlan(plan),
+      customerCount: customerCountByPlanId.get(plan.id) ?? 0,
+    })),
   });
 });
 

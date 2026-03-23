@@ -72,7 +72,6 @@
 <div class="space-y-4">
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-2">
-      <ShieldCheck size={16} class="text-accent" weight="duotone" />
       <h3
         class="text-[10px] font-bold text-text-primary uppercase tracking-[0.15em]"
       >
@@ -120,10 +119,10 @@
                 <span class="text-xs font-bold text-text-primary"
                   >{override.feature?.name}</span
                 >
-                <span
+                <!-- <span
                   class="text-[9px] px-1.5 py-0.5 bg-accent/10 text-accent font-bold rounded uppercase tracking-wider"
                   >Manual</span
-                >
+                > -->
               </div>
               <div class="flex items-center gap-3 text-[10px] text-text-dim">
                 {#if override.feature?.type === "metered"}

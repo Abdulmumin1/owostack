@@ -101,13 +101,14 @@
         class="bg-bg-primary border border-r-0 border-border px-3 py-2 text-text-dim text-xs font-mono h-[38px] flex items-center rounded-l"
         >app.owostack.com/</span
       >
-      <input
+      <span class="rounded-l-none border-l-0 input">{projectSlug}</span>
+      <!-- <input
         type="text"
         id="projectSlug"
         bind:value={projectSlug}
         class="input border-l-0 flex-1 rounded-l-none h-[38px]"
         placeholder="acme-slug"
-      />
+      /> -->
     </div>
   </div>
 
