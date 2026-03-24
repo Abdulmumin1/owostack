@@ -30,7 +30,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     name: "Paystack",
     description: "Accept payments across Africa",
     color: "teal",
-    logoUrl: "https://cdn.brandfetch.io/paystack.com?c=1iduQCu8CNcitTrpDvi",
+    logoUrl: "/images/paystack.png",
     docsUrl: "https://dashboard.paystack.com/#/settings/developers",
     fields: [
       {
@@ -62,7 +62,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     name: "Stripe",
     description: "Global payment infrastructure",
     color: "indigo",
-    logoUrl: "https://cdn.brandfetch.io/stripe.com?c=1iduQCu8CNcitTrpDvi",
+    logoUrl: "/images/stripe.png",
     docsUrl: "https://dashboard.stripe.com/apikeys",
     fields: [
       {
@@ -90,7 +90,7 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     name: "Dodo Payments",
     description: "Global payment processing for digital products",
     color: "violet",
-    logoUrl: "https://cdn.brandfetch.io/dodopayments.com?c=1iduQCu8CNcitTrpDvi",
+    logoUrl: "/images/dodopayments.png",
     docsUrl: "https://app.dodopayments.com/developers/api-keys",
     fields: [
       {

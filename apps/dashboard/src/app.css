@@ -477,6 +477,103 @@ select.input {
   border-color: var(--color-info);
 }
 
+/* Provider badges — use provider brand colors while keeping the global badge shape */
+.provider-badge {
+  --provider-badge-bg: var(--color-bg-card);
+  --provider-badge-text: var(--color-text-primary);
+  --provider-badge-border: var(--color-border);
+  --provider-badge-mark-bg: rgba(255, 255, 255, 0.04);
+  --provider-badge-mark-border: rgba(255, 255, 255, 0.06);
+  @apply inline-flex items-center rounded-full border font-medium leading-none;
+  background: var(--provider-badge-bg);
+  color: var(--provider-badge-text);
+  opacity: 0.8;
+  border-color: var(--provider-badge-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.provider-badge-sm {
+  @apply gap-1.5 p-2 text-xs;
+}
+
+.provider-badge-xs {
+  @apply gap-1 px-1.5 py-0.5 text-[10px];
+}
+
+.provider-badge__logo {
+  @apply shrink-0 rounded-sm object-contain;
+}
+
+.provider-badge__logo-sm {
+  @apply h-4 w-4;
+}
+
+.provider-badge__logo-xs {
+  @apply h-3 w-3;
+}
+
+.provider-badge__mark {
+  @apply inline-flex shrink-0 items-center justify-center rounded-full;
+}
+
+.provider-badge__mark-sm {
+  @apply h-5 w-5;
+}
+
+.provider-badge__mark-xs {
+  @apply h-4.5 w-4.5;
+}
+
+.provider-badge--default {
+  --provider-badge-bg: var(--color-bg-secondary);
+  --provider-badge-text: var(--color-text-secondary);
+  --provider-badge-border: var(--color-border);
+}
+
+.provider-badge--stripe {
+  --provider-badge-bg: color-mix(in srgb, #635bff 8%, var(--color-bg-card));
+  --provider-badge-text: color-mix(
+    in srgb,
+    #635bff 26%,
+    var(--color-text-primary)
+  );
+  --provider-badge-border: color-mix(in srgb, #635bff 22%, var(--color-border));
+  --provider-badge-mark-bg: color-mix(in srgb, #635bff 18%, transparent);
+  --provider-badge-mark-border: color-mix(in srgb, #635bff 26%, transparent);
+}
+
+.provider-badge--paystack {
+  --provider-badge-bg: color-mix(in srgb, #3bb75e 8%, var(--color-bg-card));
+  --provider-badge-text: color-mix(
+    in srgb,
+    #3bb75e 28%,
+    var(--color-text-primary)
+  );
+  --provider-badge-border: color-mix(in srgb, #3bb75e 22%, var(--color-border));
+  --provider-badge-mark-bg: color-mix(in srgb, #3bb75e 16%, transparent);
+  --provider-badge-mark-border: color-mix(in srgb, #3bb75e 24%, transparent);
+}
+
+.provider-badge--dodopayments {
+  --provider-badge-bg: color-mix(in srgb, #ff8b37 7%, var(--color-bg-card));
+  --provider-badge-text: color-mix(
+    in srgb,
+    #ff8b37 24%,
+    var(--color-text-primary)
+  );
+  --provider-badge-border: color-mix(in srgb, #ff8b37 22%, var(--color-border));
+  --provider-badge-mark-bg: color-mix(in srgb, #c6fe1e 22%, transparent);
+  --provider-badge-mark-border: color-mix(in srgb, #c6fe1e 34%, transparent);
+}
+
+.provider-badge--polar {
+  --provider-badge-bg: color-mix(in srgb, #000000 14%, var(--color-bg-card));
+  --provider-badge-text: var(--color-text-primary);
+  --provider-badge-border: color-mix(in srgb, #000000 22%, var(--color-border));
+  --provider-badge-mark-bg: color-mix(in srgb, #000000 22%, transparent);
+  --provider-badge-mark-border: color-mix(in srgb, #000000 32%, transparent);
+}
+
 /* Chip — like PostHog suggestion chips with shadow */
 .chip {
   @apply inline-flex items-center gap-1.5
