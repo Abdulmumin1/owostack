@@ -35,14 +35,19 @@
   // Dynamic OG generator using Cloudinary
   function getOgImage(title?: string, description?: string) {
     if (!title) return "https://owostack.com/og.jpg";
-    const cloudName = "dtrqaqezs"; 
-    const baseImageId = "og-plain_unfcap"; 
-    const encodedTitle = encodeURIComponent(encodeURIComponent(title + " Pricing Template"));
+    const cloudName = "dtrqaqezs";
+    const baseImageId = "og-plain_xvn4jj";
+    const encodedTitle = encodeURIComponent(
+      encodeURIComponent(title + " Pricing Template"),
+    );
     // Use west gravity to center block vertically on the left side
     let overlay = `l_text:Arial_48_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-40`;
 
     if (description) {
-      const shortDesc = description.length > 120 ? description.substring(0, 117) + "..." : description;
+      const shortDesc =
+        description.length > 120
+          ? description.substring(0, 117) + "..."
+          : description;
       const encodedDesc = encodeURIComponent(encodeURIComponent(shortDesc));
       // Stack title and description centered on the left panel
       overlay = `l_text:Arial_48_bold:${encodedTitle},c_fit,w_480,co_rgb:ececec/fl_layer_apply,g_west,x_70,y_-45/l_text:Arial_32:${encodedDesc},c_fit,w_480,co_rgb:b3b3b3/fl_layer_apply,g_west,x_70,y_110`;
@@ -62,7 +67,10 @@
   <meta property="og:description" content={template.summary} />
   <meta property="og:image" content={ogImage} />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content={`${template.title} Template | Owostack`} />
+  <meta
+    name="twitter:title"
+    content={`${template.title} Template | Owostack`}
+  />
   <meta name="twitter:description" content={template.summary} />
   <meta name="twitter:image" content={ogImage} />
 </svelte:head>
@@ -83,10 +91,16 @@
       <!-- Company attribution -->
       <div class="mb-6 flex items-center gap-3">
         <div class="flex items-center justify-center rounded-sm">
-          <InspiredLogo logoUrl={template.logoUrl} alt={template.inspiredBy} size={38} />
+          <InspiredLogo
+            logoUrl={template.logoUrl}
+            alt={template.inspiredBy}
+            size={38}
+          />
         </div>
         <div>
-          <div class="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+          <div
+            class="text-[11px] font-semibold uppercase tracking-wider text-text-muted"
+          >
             Snapshot from {template.inspiredBy}
           </div>
           <div class="mt-0.5 flex items-center gap-1.5 text-xs text-text-dim">
@@ -131,11 +145,16 @@
         <!-- Code -->
         <section>
           <div class="card overflow-hidden !p-0">
-            <div class="flex items-center justify-between border-b border-border/40 px-4 py-2">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-text-dim">Implementation</span>
-              <button 
-                type="button" 
-                class="btn btn-ghost btn-sm gap-2" 
+            <div
+              class="flex items-center justify-between border-b border-border/40 px-4 py-2"
+            >
+              <span
+                class="text-[10px] font-bold uppercase tracking-wider text-text-dim"
+                >Implementation</span
+              >
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm gap-2"
                 onclick={copySnippet}
               >
                 {#if copied}
@@ -149,16 +168,24 @@
             </div>
             <div class="bg-bg-secondary/50 p-6">
               <p class="mb-4 text-xs leading-relaxed text-text-dim">
-                This snippet is the closest Owostack implementation of the live pricing shape above. It is not a literal copy of the vendor's internal billing system.
+                This snippet is the closest Owostack implementation of the live
+                pricing shape above. It is not a literal copy of the vendor's
+                internal billing system.
               </p>
-              <pre class="overflow-x-auto text-[13px] leading-relaxed"><code>{template.builderSnippet}</code></pre>
+              <pre class="overflow-x-auto text-[13px] leading-relaxed"><code
+                  >{template.builderSnippet}</code
+                ></pre>
             </div>
           </div>
         </section>
 
         <!-- Rules -->
         <section>
-          <h3 class="mb-4 text-xs font-bold uppercase tracking-wider text-text-dim">Rules</h3>
+          <h3
+            class="mb-4 text-xs font-bold uppercase tracking-wider text-text-dim"
+          >
+            Rules
+          </h3>
           <div class="space-y-3">
             {#each template.rules as rule}
               <p class="text-sm leading-relaxed text-text-secondary">{rule}</p>
@@ -172,19 +199,31 @@
         <div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-1">
           <!-- Breakdown -->
           <div>
-            <h4 class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim">Pricing</h4>
+            <h4
+              class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim"
+            >
+              Pricing
+            </h4>
             <div class="rounded border border-border/60 bg-bg-card">
               {#each template.breakdown as item}
-                <div class="flex justify-between border-b border-border/40 px-4 py-2.5 text-xs last:border-b-0">
+                <div
+                  class="flex justify-between border-b border-border/40 px-4 py-2.5 text-xs last:border-b-0"
+                >
                   <span class="text-text-dim">{item.label}</span>
-                  <span class="font-semibold text-text-primary">{item.value}</span>
+                  <span class="font-semibold text-text-primary"
+                    >{item.value}</span
+                  >
                 </div>
               {/each}
             </div>
           </div>
 
           <div>
-            <h4 class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim">Source</h4>
+            <h4
+              class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim"
+            >
+              Source
+            </h4>
             <a
               href={template.pricingUrl}
               target="_blank"
@@ -193,18 +232,30 @@
             >
               <div class="flex items-center justify-between gap-3">
                 <span>{template.inspiredBy} pricing page</span>
-                <ArrowUpRight size={14} weight="bold" class="shrink-0 text-text-muted" />
+                <ArrowUpRight
+                  size={14}
+                  weight="bold"
+                  class="shrink-0 text-text-muted"
+                />
               </div>
             </a>
           </div>
 
           <!-- Highlights -->
           <div>
-            <h4 class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim">Benefits</h4>
+            <h4
+              class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim"
+            >
+              Benefits
+            </h4>
             <div class="space-y-2">
               {#each template.highlights as item}
                 <div class="flex gap-2 text-xs text-text-secondary">
-                  <CheckCircle size={14} weight="bold" class="mt-0.5 shrink-0 text-secondary" />
+                  <CheckCircle
+                    size={14}
+                    weight="bold"
+                    class="mt-0.5 shrink-0 text-secondary"
+                  />
                   {item}
                 </div>
               {/each}
@@ -218,16 +269,23 @@
   <!-- CTA Section -->
   <section class="border-t border-border/40 px-6 py-16">
     <div class="mx-auto max-w-5xl">
-      <div class="flex flex-col items-center justify-center gap-6 rounded-lg p-10 md:p-14 text-center">
-        <div class="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
+      <div
+        class="flex flex-col items-center justify-center gap-6 rounded-lg p-10 md:p-14 text-center"
+      >
+        <div
+          class="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent"
+        >
           <DiscordLogo size={24} weight="duotone" />
         </div>
         <div>
-          <h3 class="text-xl font-bold tracking-tight text-text-primary md:text-2xl">
+          <h3
+            class="text-xl font-bold tracking-tight text-text-primary md:text-2xl"
+          >
             Ready to implement this pattern?
           </h3>
           <p class="mt-2 max-w-md text-sm text-text-secondary">
-            Join our Discord for implementation help, or book a call to discuss how {template.inspiredBy}'s pricing model fits your product.
+            Join our Discord for implementation help, or book a call to discuss
+            how {template.inspiredBy}'s pricing model fits your product.
           </p>
         </div>
         <div class="flex flex-wrap justify-center gap-3">

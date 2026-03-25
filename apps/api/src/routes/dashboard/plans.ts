@@ -9,7 +9,10 @@ import {
   type PlanFeaturePricingConfigInput,
   validatePlanFeaturePricingConfig,
 } from "../../lib/plan-feature-normalization";
-import { normalizeOneTimePlan, sanitizeOneTimePlanFlags } from "../../lib/plans";
+import {
+  normalizeOneTimePlan,
+  sanitizeOneTimePlanFlags,
+} from "../../lib/plans";
 import { syncProviderPlan } from "../../lib/plan-provider-sync";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
@@ -318,7 +321,10 @@ app.get("/", async (c) => {
           schema.customers,
           eq(schema.subscriptions.customerId, schema.customers.id),
         )
-        .innerJoin(schema.plans, eq(schema.subscriptions.planId, schema.plans.id))
+        .innerJoin(
+          schema.plans,
+          eq(schema.subscriptions.planId, schema.plans.id),
+        )
         .where(
           and(
             eq(schema.customers.organizationId, organizationId),
@@ -338,7 +344,10 @@ app.get("/", async (c) => {
           schema.customers,
           eq(schema.subscriptions.customerId, schema.customers.id),
         )
-        .innerJoin(schema.plans, eq(schema.subscriptions.planId, schema.plans.id))
+        .innerJoin(
+          schema.plans,
+          eq(schema.subscriptions.planId, schema.plans.id),
+        )
         .where(
           and(
             eq(schema.customers.organizationId, organizationId),
@@ -481,7 +490,8 @@ app.patch("/:id", async (c) => {
             billingType: updated.billingType ?? finalBillingType,
             providerId: updated.providerId,
             providerPlanId: updated.providerPlanId,
-            metadata: (updated.metadata as Record<string, unknown> | null) ?? null,
+            metadata:
+              (updated.metadata as Record<string, unknown> | null) ?? null,
           },
           preferredProviderId: updated.providerId,
           allowUpdate: true,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import {
     ArrowRight,
     Coins,
@@ -17,6 +18,7 @@
   import Footer from "$lib/components/marketing/Footer.svelte";
   import Header from "$lib/components/marketing/Header.svelte";
   import TextLoop from "$lib/components/ui/TextLoop.svelte";
+  import RocketFlame from "$lib/components/RocketFlame.svelte";
 
   const phrases: { text: string; icons: (typeof CreditCard)[] }[] = [
     { text: "subscriptions", icons: [CreditCard] },
@@ -30,6 +32,76 @@
       icons: [CreditCard, Coins, Lightning],
     },
   ];
+
+  let rocketSection: HTMLDivElement;
+  let flameOffsetY = 0;
+  let flameOpacity = 0.8;
+  let textOffsetY = 0;
+  let textScale = 1;
+  let textOpacity = 0.08;
+
+  onMount(() => {
+    if (!rocketSection || typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let frameId = 0;
+
+    const clamp = (value: number, min: number, max: number) =>
+      Math.min(max, Math.max(min, value));
+
+    const updateParallax = () => {
+      frameId = 0;
+
+      if (mediaQuery.matches || !rocketSection) {
+        flameOffsetY = 0;
+        flameOpacity = 0.8;
+        textOffsetY = 0;
+        textScale = 1;
+        textOpacity = 0.08;
+        return;
+      }
+
+      const rect = rocketSection.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const sectionCenter = rect.top + rect.height / 2;
+      const viewportCenter = viewportHeight / 2;
+      const normalized = clamp(
+        (sectionCenter - viewportCenter) / (viewportHeight * 0.85),
+        -1,
+        1,
+      );
+      const proximity = 1 - Math.abs(normalized);
+
+      flameOffsetY = normalized * -44;
+      flameOpacity = 0.7 + proximity * 0.18;
+      textOffsetY = normalized * 30;
+      textScale = 1 + proximity * 0.08;
+      textOpacity = 0.05 + proximity * 0.08;
+    };
+
+    const scheduleUpdate = () => {
+      if (frameId) return;
+      frameId = window.requestAnimationFrame(updateParallax);
+    };
+
+    const handleMotionPreference = () => {
+      scheduleUpdate();
+    };
+
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    mediaQuery.addEventListener("change", handleMotionPreference);
+    scheduleUpdate();
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+      mediaQuery.removeEventListener("change", handleMotionPreference);
+    };
+  });
 </script>
 
 <svelte:head>
@@ -41,7 +113,10 @@
   <link rel="canonical" href="https://owostack.com/" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://owostack.com/" />
-  <meta property="og:title" content="Owostack — Billing Infrastructure for AI SaaS" />
+  <meta
+    property="og:title"
+    content="Owostack — Billing Infrastructure for AI SaaS"
+  />
   <meta
     property="og:description"
     content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
@@ -49,7 +124,10 @@
   <meta property="og:image" content="https://owostack.com/og.jpg" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:url" content="https://owostack.com/" />
-  <meta name="twitter:title" content="Owostack — Billing Infrastructure for AI SaaS" />
+  <meta
+    name="twitter:title"
+    content="Owostack — Billing Infrastructure for AI SaaS"
+  />
   <meta
     name="twitter:description"
     content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
@@ -76,10 +154,9 @@
   class="min-h-screen bg-bg-primary text-text-primary font-sans selection:bg-accent/30 relative overflow-hidden"
 >
   <!-- Abstract Background Art -->
-  <div class="absolute inset-0 pointer-events-none overflow-hidden">
-    <!-- Gradient Orbs -->
-    <!-- <div class="orb orb-1"></div> -->
-
+  <div
+    class="absolute inset-0 pointer-events-none overflow-hidden flex justify-center"
+  >
     <!-- Subtle Grid -->
     <div class="grid-pattern"></div>
 
@@ -169,7 +246,10 @@
         class="text-base md:text-lg text-text-secondary max-w-xl leading-relaxed mb-4"
       >
         <span>Add </span>
-        <TextLoop items={phrases} class="align-bottom text-text-primary font-medium h-[1.6em]">
+        <TextLoop
+          items={phrases}
+          class="align-bottom text-text-primary font-medium h-[1.6em]"
+        >
           {#snippet children(phrase)}
             <span class="inline-flex items-center gap-1.5 whitespace-nowrap">
               {#each phrase.icons as Icon, i (i)}
@@ -182,7 +262,9 @@
         <span> to your app.</span>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <a href="https://app.owostack.com" class="btn btn-primary">Get Started</a>
+        <a href="https://app.owostack.com" class="btn btn-primary"
+          >Get Started</a
+        >
         <a href="https://docs.owostack.com" class="btn btn-secondary">
           Read the docs
           <ArrowRight
@@ -378,13 +460,18 @@
   </section>
 
   <!-- Community Section -->
-  <section class="px-6 py-20 md:py-28 border-t border-border/30 bg-bg-secondary/30">
+  <section
+    class="px-6 py-20 md:py-28 border-t border-border/30 bg-bg-secondary/30"
+  >
     <div class="max-w-4xl mx-auto text-center">
-      <h2 class="text-2xl md:text-3xl font-bold tracking-tight text-text-primary mb-4">
+      <h2
+        class="text-2xl md:text-3xl font-bold tracking-tight text-text-primary mb-4"
+      >
         Building something ambitious?
       </h2>
       <p class="text-text-secondary max-w-lg mx-auto text-sm mb-10">
-        Join our community of builders or book a call to discuss your billing architecture.
+        Join our community of builders or book a call to discuss your billing
+        architecture.
       </p>
       <div class="flex flex-wrap justify-center gap-3">
         <a
@@ -408,6 +495,28 @@
       </div>
     </div>
   </section>
+
+  <div
+    bind:this={rocketSection}
+    class="w-full h-300 relative z-0 overflow-hidden perspective-distant"
+  >
+    <div
+      class="absolute inset-x-0 bottom-10 md:bottom-14 z-0 pointer-events-none text-center px-6 will-change-transform"
+      style={`transform: translate3d(0, ${textOffsetY}px, 0) scale(${textScale}); opacity: ${textOpacity};`}
+    >
+      <p
+        class="text-[2.5rem] leading-none md:text-[5rem] lg:text-[7rem] font-bold tracking-[-0.06em] text-text-primary select-none"
+      >
+        Behind The Checkout
+      </p>
+    </div>
+    <div
+      class="absolute inset-0 will-change-transform"
+      style={`transform: translate3d(0, ${flameOffsetY}px, 0); opacity: ${flameOpacity};`}
+    >
+      <RocketFlame />
+    </div>
+  </div>
 
   <Footer />
 </div>

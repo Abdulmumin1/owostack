@@ -2,10 +2,22 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
 const MIGRATION_FILES = [
-  new URL("../../../../../packages/db/migrations/0000_far_gargoyle.sql", import.meta.url),
-  new URL("../../../../../packages/db/migrations/0001_aromatic_night_thrasher.sql", import.meta.url),
-  new URL("../../../../../packages/db/migrations/0002_lazy_dragon_lord.sql", import.meta.url),
-  new URL("../../../../../packages/db/migrations/0003_absurd_jean_grey.sql", import.meta.url),
+  new URL(
+    "../../../../../packages/db/migrations/0000_far_gargoyle.sql",
+    import.meta.url,
+  ),
+  new URL(
+    "../../../../../packages/db/migrations/0001_aromatic_night_thrasher.sql",
+    import.meta.url,
+  ),
+  new URL(
+    "../../../../../packages/db/migrations/0002_lazy_dragon_lord.sql",
+    import.meta.url,
+  ),
+  new URL(
+    "../../../../../packages/db/migrations/0003_absurd_jean_grey.sql",
+    import.meta.url,
+  ),
 ];
 
 type SqliteRunResult = {
@@ -48,11 +60,15 @@ class BoundStatement {
     return row ? normalizeRow(row as T) : null;
   }
 
-  async all<T>(): Promise<{ results: T[]; success: true; meta: { changes: 0 } }> {
+  async all<T>(): Promise<{
+    results: T[];
+    success: true;
+    meta: { changes: 0 };
+  }> {
     const stmt = this.db.prepare(this.__sql);
-    const rows = stmt.all(...this.__params).map((row: unknown) =>
-      normalizeRow(row),
-    ) as T[];
+    const rows = stmt
+      .all(...this.__params)
+      .map((row: unknown) => normalizeRow(row)) as T[];
     return {
       results: rows,
       success: true,

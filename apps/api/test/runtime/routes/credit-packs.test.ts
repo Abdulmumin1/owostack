@@ -20,7 +20,9 @@ import { insertOrganization } from "../helpers/workflow-runtime";
 
 describe("Credit packs route runtime integration", () => {
   let businessDb: ReturnType<typeof createRuntimeBusinessDb>;
-  let app: ReturnType<typeof createRouteTestApp<{ db: any; organizationId: string }>>;
+  let app: ReturnType<
+    typeof createRouteTestApp<{ db: any; organizationId: string }>
+  >;
   let dodo: SimulatedCatalogProviderAdapter;
 
   beforeEach(async () => {

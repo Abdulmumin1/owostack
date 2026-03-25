@@ -23,7 +23,10 @@ export function createRouteTestApp<TVariables extends Record<string, unknown>>(
     input: string,
     init?: RequestInit,
     env?: Record<string, unknown>,
-    executionCtx?: Pick<ExecutionContext, "waitUntil" | "passThroughOnException">,
+    executionCtx?: Pick<
+      ExecutionContext,
+      "waitUntil" | "passThroughOnException"
+    >,
   ) => {
     return app.fetch(
       new Request(new URL(input, "http://localhost").toString(), init),

@@ -35,7 +35,7 @@ export const Route = createFileRoute("/$")({
     const getOgImage = (pageTitle?: string, pageDescription?: string) => {
       if (!pageTitle) return "https://owostack.com/og.jpg";
       const cloudName = "dtrqaqezs";
-      const baseImageId = "og-plain_unfcap";
+      const baseImageId = "og-plain_xvn4jj";
       const encodedTitle = encodeURIComponent(encodeURIComponent(pageTitle));
 
       // Use west gravity to automatically center the block vertically on the left side.

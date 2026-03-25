@@ -5,7 +5,10 @@ import { openApiDocument } from "../../api/src/openapi/document";
 import { createOpenApiServer } from "../src/lib/openapi-server";
 
 const outputPath = resolve(import.meta.dirname, "../openapi.json");
-const apiReferenceDir = resolve(import.meta.dirname, "../content/docs/api-reference");
+const apiReferenceDir = resolve(
+  import.meta.dirname,
+  "../content/docs/api-reference",
+);
 
 async function cleanGeneratedReferencePages(dir: string) {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -31,7 +34,9 @@ await cleanGeneratedReferencePages(apiReferenceDir);
 await writeFile(outputPath, `${JSON.stringify(openApiDocument, null, 2)}\n`);
 
 await generateFiles({
-  input: createOpenApiServer(openApiDocument as unknown as Record<string, unknown>),
+  input: createOpenApiServer(
+    openApiDocument as unknown as Record<string, unknown>,
+  ),
   output: apiReferenceDir,
   includeDescription: true,
 });

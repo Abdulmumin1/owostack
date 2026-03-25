@@ -380,15 +380,18 @@ export function createApiCustomersRoute(
         }
       }
 
-      return c.json({
-        success: true,
-        id: customer.id,
-        email: customer.email,
-        name: customer.name,
-        metadata: customer.metadata,
-        createdAt: customer.createdAt,
-        updatedAt: customer.updatedAt,
-      }, 200);
+      return c.json(
+        {
+          success: true,
+          id: customer.id,
+          email: customer.email,
+          name: customer.name,
+          metadata: customer.metadata,
+          createdAt: customer.createdAt,
+          updatedAt: customer.updatedAt,
+        },
+        200,
+      );
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);
@@ -420,15 +423,18 @@ export function createApiCustomersRoute(
         return c.json({ success: false, error: "Customer not found" }, 404);
       }
 
-      return c.json({
-        success: true,
-        id: customer.id,
-        email: customer.email,
-        name: customer.name,
-        metadata: customer.metadata,
-        createdAt: customer.createdAt,
-        updatedAt: customer.updatedAt,
-      }, 200);
+      return c.json(
+        {
+          success: true,
+          id: customer.id,
+          email: customer.email,
+          name: customer.name,
+          metadata: customer.metadata,
+          createdAt: customer.createdAt,
+          updatedAt: customer.updatedAt,
+        },
+        200,
+      );
     } catch (error) {
       console.error("[customers] error:", error);
       return c.json({ success: false, error: "Failed to get customer" }, 500);
@@ -560,15 +566,18 @@ export function createApiCustomersRoute(
 
           const currentCount = entityCount[0]?.count || 0;
 
-          return c.json({
-            success: true,
-            entityId: existingEntity.entityId,
-            featureId: featureSlug,
-            count: currentCount,
-            limit,
-            remaining: limit !== null ? limit - currentCount : null,
-            restored: true,
-          }, 200);
+          return c.json(
+            {
+              success: true,
+              entityId: existingEntity.entityId,
+              featureId: featureSlug,
+              count: currentCount,
+              limit,
+              remaining: limit !== null ? limit - currentCount : null,
+              restored: true,
+            },
+            200,
+          );
         }
       }
 
@@ -670,14 +679,17 @@ export function createApiCustomersRoute(
         throw err;
       }
 
-      return c.json({
-        success: true,
-        entityId,
-        featureId: featureSlug,
-        count: finalCount,
-        limit,
-        remaining: limit !== null ? limit - finalCount : null,
-      }, 200);
+      return c.json(
+        {
+          success: true,
+          entityId,
+          featureId: featureSlug,
+          count: finalCount,
+          limit,
+          remaining: limit !== null ? limit - finalCount : null,
+        },
+        200,
+      );
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);
@@ -763,11 +775,14 @@ export function createApiCustomersRoute(
           ),
         );
 
-      return c.json({
-        success: true,
-        entityId,
-        count: entityCount[0]?.count || 0,
-      }, 200);
+      return c.json(
+        {
+          success: true,
+          entityId,
+          count: entityCount[0]?.count || 0,
+        },
+        200,
+      );
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);
@@ -859,11 +874,14 @@ export function createApiCustomersRoute(
         }),
       );
 
-      return c.json({
-        success: true,
-        entities: result,
-        total: result.length,
-      }, 200);
+      return c.json(
+        {
+          success: true,
+          entities: result,
+          total: result.length,
+        },
+        200,
+      );
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);

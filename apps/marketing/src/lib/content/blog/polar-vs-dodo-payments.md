@@ -9,7 +9,6 @@ thumbnail: ""
 author: "yaqeen"
 ---
 
-
 If you are comparing Polar and Dodo Payments, you are already asking a smart question.
 
 Both are attractive because they promise the same thing founders want from billing infrastructure: less tax pain, less payments plumbing, less time lost in subscription edge cases.

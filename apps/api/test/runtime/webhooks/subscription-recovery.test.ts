@@ -156,7 +156,10 @@ describe("Webhook subscription recovery runtime integration", () => {
 
     expect(activeResult.isOk()).toBe(true);
 
-    const trialAfterRenewal = await loadSubscription(businessDb.d1, "sub_trial_old");
+    const trialAfterRenewal = await loadSubscription(
+      businessDb.d1,
+      "sub_trial_old",
+    );
     const liveAfterRenewal = await loadSubscription(
       businessDb.d1,
       "sub_live_current",

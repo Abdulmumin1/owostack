@@ -10,16 +10,18 @@ import { hashApiKey } from "../../../src/lib/api-keys";
 import { TEST_ENCRYPTION_KEY, insertProviderAccount } from "./workflow-runtime";
 
 type CreatePlanParams = Parameters<ProviderAdapter["createPlan"]>[0];
-type UpdatePlanParams = NonNullable<ProviderAdapter["updatePlan"]> extends (
-  params: infer TParams,
-) => unknown
-  ? TParams
-  : never;
-type CreateProductParams = NonNullable<
-  ProviderAdapter["createProduct"]
-> extends (params: infer TParams) => unknown
-  ? TParams
-  : never;
+type UpdatePlanParams =
+  NonNullable<ProviderAdapter["updatePlan"]> extends (
+    params: infer TParams,
+  ) => unknown
+    ? TParams
+    : never;
+type CreateProductParams =
+  NonNullable<ProviderAdapter["createProduct"]> extends (
+    params: infer TParams,
+  ) => unknown
+    ? TParams
+    : never;
 
 export type CatalogProviderOperation =
   | {
@@ -134,7 +136,9 @@ export class SimulatedCatalogProviderAdapter implements ProviderAdapter {
     }
 
     return Result.ok({
-      id: this.options.createPlanId || `${this.id}_plan_${this.operations.length}`,
+      id:
+        this.options.createPlanId ||
+        `${this.id}_plan_${this.operations.length}`,
     });
   }
 
@@ -222,9 +226,7 @@ export class SimulatedCatalogProviderAdapter implements ProviderAdapter {
   }
 }
 
-export function createSimulatedProviderRegistry(
-  adapters: ProviderAdapter[],
-) {
+export function createSimulatedProviderRegistry(adapters: ProviderAdapter[]) {
   const registry = createProviderRegistry();
   for (const adapter of adapters) {
     registry.register(adapter);

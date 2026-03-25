@@ -218,7 +218,9 @@ async function resolveCreditPackProvider(params: {
   context: CreditPackProviderSyncContext;
   pack: ProviderManagedCreditPack;
   preferredProviderId?: string | null;
-}): Promise<ResolvedCreditPackProvider | { issue: CreditPackProviderSyncIssue }> {
+}): Promise<
+  ResolvedCreditPackProvider | { issue: CreditPackProviderSyncIssue }
+> {
   const { context, pack, preferredProviderId } = params;
   const registry = creditPackProviderSyncDependencies.getProviderRegistry();
   const providerEnv =
@@ -228,10 +230,10 @@ async function resolveCreditPackProvider(params: {
     );
   const providerAccounts =
     await creditPackProviderSyncDependencies.loadProviderAccounts(
-    context.db,
-    context.organizationId,
-    context.encryptionKey,
-  );
+      context.db,
+      context.organizationId,
+      context.encryptionKey,
+    );
 
   const requestedProviderId = preferredProviderId ?? pack.providerId ?? null;
   if (requestedProviderId) {

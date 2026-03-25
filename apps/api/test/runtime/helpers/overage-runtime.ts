@@ -113,7 +113,10 @@ class SimulatedUsageLedgerStub {
         ) {
           return false;
         }
-        if (query.entityId !== undefined && record.entityId !== query.entityId) {
+        if (
+          query.entityId !== undefined &&
+          record.entityId !== query.entityId
+        ) {
           return false;
         }
         if (query.unbilledOnly && record.invoiceId !== null) return false;
@@ -160,7 +163,10 @@ class SimulatedUsageLedgerStub {
       if (record.customerId !== _customerId || record.invoiceId !== null) {
         continue;
       }
-      totals.set(record.featureId, (totals.get(record.featureId) || 0) + record.amount);
+      totals.set(
+        record.featureId,
+        (totals.get(record.featureId) || 0) + record.amount,
+      );
     }
     return [...totals.entries()].map(([featureId, totalUsage]) => ({
       featureId,
@@ -186,7 +192,8 @@ class SimulatedUsageLedgerStub {
     >();
 
     for (const record of this.records) {
-      if (record.customerId !== customerId || record.invoiceId !== null) continue;
+      if (record.customerId !== customerId || record.invoiceId !== null)
+        continue;
       if (
         typeof usageCutoffAt === "number" &&
         record.createdAt > usageCutoffAt
@@ -208,7 +215,10 @@ class SimulatedUsageLedgerStub {
       const existing = grouped.get(key);
       if (existing) {
         existing.totalUsage += record.amount;
-        existing.lastCreatedAt = Math.max(existing.lastCreatedAt, record.createdAt);
+        existing.lastCreatedAt = Math.max(
+          existing.lastCreatedAt,
+          record.createdAt,
+        );
         continue;
       }
 
@@ -248,7 +258,9 @@ export class SimulatedUsageLedgerNamespace {
   }
 
   listRecords(organizationId: string) {
-    return (this.recordsByOrg.get(`org:${organizationId}`) || []).map(cloneRecord);
+    return (this.recordsByOrg.get(`org:${organizationId}`) || []).map(
+      cloneRecord,
+    );
   }
 }
 
@@ -411,9 +423,11 @@ export async function insertBillingRun(
       params.usageWindowEnd ?? 2500,
       params.invoiceId ?? null,
       params.failureReason ?? null,
-      params.metadata ? JSON.stringify(params.metadata) : JSON.stringify({
-        effectiveThreshold: params.thresholdAmount ?? 20000,
-      }),
+      params.metadata
+        ? JSON.stringify(params.metadata)
+        : JSON.stringify({
+            effectiveThreshold: params.thresholdAmount ?? 20000,
+          }),
       now,
       now,
     )
@@ -462,16 +476,18 @@ export async function insertInvoice(
       params.subtotal ?? 25000,
       params.total ?? 25000,
       params.amountPaid ?? 0,
-      params.amountDue ?? (params.total ?? 25000),
+      params.amountDue ?? params.total ?? 25000,
       params.periodStart ?? 1000,
       params.periodEnd ?? 2000,
       params.usageWindowStart ?? null,
       params.usageWindowEnd ?? 2500,
       params.usageCutoffAt ?? 2500,
       now + 7 * 24 * 60 * 60 * 1000,
-      params.metadata ? JSON.stringify(params.metadata) : JSON.stringify({
-        sourceTrigger: "threshold",
-      }),
+      params.metadata
+        ? JSON.stringify(params.metadata)
+        : JSON.stringify({
+            sourceTrigger: "threshold",
+          }),
       now,
       now,
     )
@@ -529,49 +545,52 @@ export async function seedOverageWorkflowBase(
     planFeature?: Parameters<typeof insertPlanFeature>[1];
   } = {},
 ) {
-    const organizationId = params.organizationId || "org_1";
-    const customerId = params.customer?.id || "cust_1";
-    const planId = params.plan?.id || "plan_1";
+  const organizationId = params.organizationId || "org_1";
+  const customerId = params.customer?.id || "cust_1";
+  const planId = params.plan?.id || "plan_1";
 
-    await seedWorkflowBase(db, {
-      organizationId,
-      providerAccount: params.providerAccount,
-      customer: params.customer,
-      plan: {
-        currency: "USD",
-        ...(params.plan || {}),
-      },
-      paymentMethods:
-        params.paymentMethod === null
-          ? []
-          : params.paymentMethod
-            ? [params.paymentMethod]
-            : [
-                {
-                  id: "pm_1",
-                  providerId: "paystack",
-                  token: "AUTH_123",
-                  isDefault: 1,
-                },
-              ],
-    });
+  await seedWorkflowBase(db, {
+    organizationId,
+    providerAccount: params.providerAccount,
+    customer: params.customer,
+    plan: {
+      currency: "USD",
+      ...(params.plan || {}),
+    },
+    paymentMethods:
+      params.paymentMethod === null
+        ? []
+        : params.paymentMethod
+          ? [params.paymentMethod]
+          : [
+              {
+                id: "pm_1",
+                providerId: "paystack",
+                token: "AUTH_123",
+                isDefault: 1,
+              },
+            ],
+  });
 
-    await insertSubscription(db, {
-      id: "sub_1",
-      customerId,
-      planId,
-      providerId: params.subscription?.providerId ?? params.paymentMethod?.providerId ?? "paystack",
-      providerSubscriptionCode: "sub_code_1",
-      status: "active",
-      ...(params.subscription || {}),
-    });
-    await insertFeature(db, {
-      organizationId,
-      ...(params.feature || {}),
-    });
-    await insertPlanFeature(db, {
-      planId,
-      featureId: params.feature?.id || "feature_1",
-      ...(params.planFeature || {}),
-    });
-  }
+  await insertSubscription(db, {
+    id: "sub_1",
+    customerId,
+    planId,
+    providerId:
+      params.subscription?.providerId ??
+      params.paymentMethod?.providerId ??
+      "paystack",
+    providerSubscriptionCode: "sub_code_1",
+    status: "active",
+    ...(params.subscription || {}),
+  });
+  await insertFeature(db, {
+    organizationId,
+    ...(params.feature || {}),
+  });
+  await insertPlanFeature(db, {
+    planId,
+    featureId: params.feature?.id || "feature_1",
+    ...(params.planFeature || {}),
+  });
+}

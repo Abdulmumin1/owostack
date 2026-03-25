@@ -2,10 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import subscriptionsRoute from "../../../src/routes/dashboard/subscriptions";
 import { createRouteTestApp } from "../../helpers/route-harness";
 import { createRuntimeBusinessDb } from "../helpers/business-db";
-import {
-  insertFeature,
-  insertPlanFeature,
-} from "../helpers/overage-runtime";
+import { insertFeature, insertPlanFeature } from "../helpers/overage-runtime";
 import {
   insertCustomer,
   insertOrganization,
@@ -146,9 +143,9 @@ describe("Subscriptions route runtime integration", () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.data.entitlements.map((entry: any) => entry.featureSlug)).toEqual(
-      ["thirdpen", "dearfutureself"],
-    );
+    expect(
+      body.data.entitlements.map((entry: any) => entry.featureSlug),
+    ).toEqual(["thirdpen", "dearfutureself"]);
     expect(body.data.entitlementDiagnostics).toMatchObject({
       hasDrift: false,
       hasExtraProvisionedRows: true,

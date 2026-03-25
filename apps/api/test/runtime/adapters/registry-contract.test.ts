@@ -1124,7 +1124,9 @@ function createDodoFixture(): AdapterContractFixture {
               assert(request) {
                 expectJsonRequest(request, secretKey);
                 expect(request.json<Record<string, any>>()).toEqual({
-                  product_cart: [{ product_id: "prod_dodo_plan_1", quantity: 1 }],
+                  product_cart: [
+                    { product_id: "prod_dodo_plan_1", quantity: 1 },
+                  ],
                   customer: {
                     email: "dodo-checkout@example.com",
                     customer_id: "cust_dodo_1",
@@ -1183,7 +1185,9 @@ function createDodoFixture(): AdapterContractFixture {
               assert(request) {
                 expectJsonRequest(request, secretKey);
                 expect(request.json<Record<string, any>>()).toEqual({
-                  product_cart: [{ product_id: "prod_dodo_plan_1", quantity: 1 }],
+                  product_cart: [
+                    { product_id: "prod_dodo_plan_1", quantity: 1 },
+                  ],
                   customer: {
                     email: "dodo-subscription@example.com",
                     customer_id: "cust_dodo_1",
@@ -1195,7 +1199,8 @@ function createDodoFixture(): AdapterContractFixture {
               },
               respond: jsonResponse({
                 session_id: "sess_dodo_subscription_1",
-                checkout_url: "https://checkout.dodopayments.com/subscription_1",
+                checkout_url:
+                  "https://checkout.dodopayments.com/subscription_1",
               }),
             },
           ]);
@@ -1217,8 +1222,7 @@ function createDodoFixture(): AdapterContractFixture {
             id: "sess_dodo_subscription_1",
             status: "pending",
             metadata: {
-              checkout_url:
-                "https://checkout.dodopayments.com/subscription_1",
+              checkout_url: "https://checkout.dodopayments.com/subscription_1",
               origin: "contract",
             },
           });
@@ -1932,7 +1936,9 @@ function createStripeFixture(): AdapterContractFixture {
               assert(request) {
                 expectFormRequest(request, secretKey);
                 const body = request.form();
-                expect(body.get("email")).toBe("stripe-subscription@example.com");
+                expect(body.get("email")).toBe(
+                  "stripe-subscription@example.com",
+                );
                 expect(body.get("metadata[origin]")).toBe("contract");
               },
               respond: jsonResponse({
@@ -1949,7 +1955,9 @@ function createStripeFixture(): AdapterContractFixture {
                 const body = request.form();
                 expect(body.get("customer")).toBe("cus_created_1");
                 expect(body.get("items[0][price]")).toBe("price_stripe_plan_1");
-                expect(body.get("default_payment_method")).toBe("pm_contract_1");
+                expect(body.get("default_payment_method")).toBe(
+                  "pm_contract_1",
+                );
                 expect(body.get("trial_end")).toBe(futureTrialEndSeconds);
                 expect(body.get("metadata[origin]")).toBe("contract");
               },
