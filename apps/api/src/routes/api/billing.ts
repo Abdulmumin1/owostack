@@ -131,8 +131,7 @@ const generateInvoiceRoute = createRoute({
   operationId: "createInvoice",
   tags: ["Billing"],
   summary: "Generate an invoice",
-  description:
-    "Creates an invoice from the customer's current unbilled usage.",
+  description: "Creates an invoice from the customer's current unbilled usage.",
   security: apiKeySecurity,
   request: {
     body: {

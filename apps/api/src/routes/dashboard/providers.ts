@@ -23,8 +23,7 @@ export const dashboardProvidersRouteDependencies = {
 
 export function resetDashboardProvidersRouteDependencies() {
   dashboardProvidersRouteDependencies.syncPlansToProvider = syncPlansToProvider;
-  dashboardProvidersRouteDependencies.getProviderRegistry =
-    getProviderRegistry;
+  dashboardProvidersRouteDependencies.getProviderRegistry = getProviderRegistry;
 }
 
 function zodErrorToResponse(zodError: {
@@ -287,12 +286,8 @@ app.post("/accounts", async (c) => {
       updatedAt: account.updatedAt,
     };
     c.executionCtx.waitUntil(
-      dashboardProvidersRouteDependencies.syncPlansToProvider(
-        db,
-        organizationId,
-        adapter,
-        providerAccount,
-      )
+      dashboardProvidersRouteDependencies
+        .syncPlansToProvider(db, organizationId, adapter, providerAccount)
         .then((r) =>
           console.log(
             `[providers] Plan sync on connect: ${r.synced.length} synced, ${r.failed.length} failed`,

@@ -41,7 +41,9 @@ function createFetchRecorder(queue: QueuedResponse[]) {
 describe("Dashboard provider validation runtime integration", () => {
   let originalFetch: typeof globalThis.fetch;
   let businessDb: ReturnType<typeof createRuntimeBusinessDb>;
-  let app: ReturnType<typeof createRouteTestApp<{ db: any; organizationId: string }>>;
+  let app: ReturnType<
+    typeof createRouteTestApp<{ db: any; organizationId: string }>
+  >;
   let planSyncCalls: Array<{ organizationId: string; providerId: string }>;
 
   beforeEach(async () => {

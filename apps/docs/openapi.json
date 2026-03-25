@@ -77,31 +77,17 @@
         "properties": {
           "usageModel": {
             "type": "string",
-            "enum": [
-              "included",
-              "usage_based",
-              "prepaid"
-            ]
+            "enum": ["included", "usage_based", "prepaid"]
           },
           "ratingModel": {
             "type": "string",
-            "enum": [
-              "package",
-              "graduated",
-              "volume"
-            ]
+            "enum": ["package", "graduated", "volume"]
           },
           "pricePerUnit": {
-            "type": [
-              "number",
-              "null"
-            ]
+            "type": ["number", "null"]
           },
           "billingUnits": {
-            "type": [
-              "number",
-              "null"
-            ]
+            "type": ["number", "null"]
           },
           "currentTier": {
             "type": "object",
@@ -113,10 +99,7 @@
                 "type": "number"
               },
               "endsAt": {
-                "type": [
-                  "number",
-                  "null"
-                ]
+                "type": ["number", "null"]
               },
               "unitPrice": {
                 "type": "number"
@@ -125,12 +108,7 @@
                 "type": "number"
               }
             },
-            "required": [
-              "index",
-              "startsAt",
-              "endsAt",
-              "unitPrice"
-            ]
+            "required": ["index", "startsAt", "endsAt", "unitPrice"]
           }
         }
       },
@@ -153,12 +131,7 @@
             "type": "number"
           }
         },
-        "required": [
-          "tier",
-          "units",
-          "unitPrice",
-          "amount"
-        ]
+        "required": ["tier", "units", "unitPrice", "amount"]
       },
       "CustomerData": {
         "type": "object",
@@ -175,9 +148,7 @@
             "additionalProperties": {}
           }
         },
-        "required": [
-          "email"
-        ]
+        "required": ["email"]
       },
       "PaymentMethod": {
         "type": "object",
@@ -187,10 +158,7 @@
           },
           "type": {
             "type": "string",
-            "enum": [
-              "card",
-              "provider_managed"
-            ]
+            "enum": ["card", "provider_managed"]
           },
           "provider": {
             "type": "string"
@@ -202,10 +170,7 @@
             "type": "boolean"
           },
           "card": {
-            "type": [
-              "object",
-              "null"
-            ],
+            "type": ["object", "null"],
             "properties": {
               "id": {
                 "type": "string"
@@ -223,32 +188,16 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "last4",
-              "brand",
-              "exp",
-              "provider"
-            ]
+            "required": ["id", "last4", "brand", "exp", "provider"]
           }
         },
-        "required": [
-          "id",
-          "type",
-          "provider",
-          "isDefault",
-          "isValid",
-          "card"
-        ]
+        "required": ["id", "type", "provider", "isDefault", "isValid", "card"]
       },
       "PricingTier": {
         "type": "object",
         "properties": {
           "upTo": {
-            "type": [
-              "number",
-              "null"
-            ]
+            "type": ["number", "null"]
           },
           "unitPrice": {
             "type": "number"
@@ -257,9 +206,7 @@
             "type": "number"
           }
         },
-        "required": [
-          "upTo"
-        ]
+        "required": ["upTo"]
       }
     },
     "parameters": {}
@@ -268,9 +215,7 @@
     "/v1/subscriptions/{id}/activate": {
       "get": {
         "operationId": "activatePendingSubscription",
-        "tags": [
-          "Subscriptions"
-        ],
+        "tags": ["Subscriptions"],
         "summary": "Redirect to a fresh checkout session",
         "description": "Public activation URL for a pending subscription. Generates a fresh provider checkout session and redirects the customer to it.",
         "security": [],
@@ -306,9 +251,7 @@
     "/v1/subscriptions/{id}/checkout": {
       "post": {
         "operationId": "generateSubscriptionCheckout",
-        "tags": [
-          "Subscriptions"
-        ],
+        "tags": ["Subscriptions"],
         "summary": "Generate checkout for a pending subscription",
         "description": "Generates a payment checkout URL for an existing pending subscription. Useful for collecting payment details before activating.",
         "parameters": [
@@ -365,9 +308,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "success"
-                  ],
+                  "required": ["success"],
                   "additionalProperties": {}
                 }
               }
@@ -398,10 +339,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -443,10 +381,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -488,10 +423,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -533,10 +465,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -559,9 +488,7 @@
     "/v1/attach": {
       "post": {
         "operationId": "attach",
-        "tags": [
-          "Subscriptions"
-        ],
+        "tags": ["Subscriptions"],
         "summary": "Subscribe a customer to a plan",
         "description": "Creates or switches a subscription for a customer. Handles free plans, upgrades, downgrades, and trial flows. Returns a checkout URL if payment is required.",
         "security": [
@@ -601,10 +528,7 @@
                     "format": "uri"
                   }
                 },
-                "required": [
-                  "customer",
-                  "product"
-                ]
+                "required": ["customer", "product"]
               }
             }
           }
@@ -634,20 +558,12 @@
                       "type": "integer"
                     },
                     "trial_ends_at": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": ["string", "null"],
                       "format": "date-time"
                     },
                     "type": {
                       "type": "string",
-                      "enum": [
-                        "new",
-                        "upgrade",
-                        "downgrade",
-                        "lateral"
-                      ]
+                      "enum": ["new", "upgrade", "downgrade", "lateral"]
                     },
                     "message": {
                       "type": "string"
@@ -665,15 +581,10 @@
                       "type": "string"
                     },
                     "accessCode": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     }
                   },
-                  "required": [
-                    "success"
-                  ],
+                  "required": ["success"],
                   "additionalProperties": {}
                 }
               }
@@ -704,10 +615,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -749,10 +657,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -794,10 +699,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -839,10 +741,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -884,10 +783,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -910,9 +806,7 @@
     "/v1/check": {
       "post": {
         "operationId": "check",
-        "tags": [
-          "Entitlements"
-        ],
+        "tags": ["Entitlements"],
         "summary": "Check feature entitlements",
         "description": "Check whether a customer is allowed to use a feature and get current usage and limits. Optionally track usage atomically if allowed via sendEvent.",
         "security": [
@@ -949,10 +843,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "customer",
-                  "feature"
-                ]
+                "required": ["customer", "feature"]
               }
             }
           }
@@ -972,35 +863,20 @@
                       "type": "string"
                     },
                     "usage": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "limit": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "balance": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "resetsAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": ["string", "null"],
                       "format": "date-time"
                     },
                     "resetInterval": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "addonCredits": {
                       "type": "number"
@@ -1024,10 +900,7 @@
                       "additionalProperties": {}
                     }
                   },
-                  "required": [
-                    "allowed",
-                    "code"
-                  ],
+                  "required": ["allowed", "code"],
                   "additionalProperties": {}
                 }
               }
@@ -1058,10 +931,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -1103,10 +973,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -1148,10 +1015,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -1193,10 +1057,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -1227,35 +1088,20 @@
                       "type": "string"
                     },
                     "usage": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "limit": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "balance": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "resetsAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": ["string", "null"],
                       "format": "date-time"
                     },
                     "resetInterval": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "addonCredits": {
                       "type": "number"
@@ -1279,10 +1125,7 @@
                       "additionalProperties": {}
                     }
                   },
-                  "required": [
-                    "allowed",
-                    "code"
-                  ],
+                  "required": ["allowed", "code"],
                   "additionalProperties": {}
                 }
               }
@@ -1294,9 +1137,7 @@
     "/v1/track": {
       "post": {
         "operationId": "track",
-        "tags": [
-          "Entitlements"
-        ],
+        "tags": ["Entitlements"],
         "summary": "Record metered usage",
         "description": "Track usage for a feature and return the resulting entitlement state after the increment.",
         "security": [
@@ -1333,10 +1174,7 @@
                     "additionalProperties": {}
                   }
                 },
-                "required": [
-                  "customer",
-                  "feature"
-                ]
+                "required": ["customer", "feature"]
               }
             }
           }
@@ -1356,35 +1194,20 @@
                       "type": "string"
                     },
                     "usage": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "limit": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "balance": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "resetsAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": ["string", "null"],
                       "format": "date-time"
                     },
                     "resetInterval": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "addonCredits": {
                       "type": "number"
@@ -1408,10 +1231,7 @@
                       "additionalProperties": {}
                     }
                   },
-                  "required": [
-                    "allowed",
-                    "code"
-                  ],
+                  "required": ["allowed", "code"],
                   "additionalProperties": {}
                 }
               }
@@ -1433,35 +1253,20 @@
                           "type": "string"
                         },
                         "usage": {
-                          "type": [
-                            "number",
-                            "null"
-                          ]
+                          "type": ["number", "null"]
                         },
                         "limit": {
-                          "type": [
-                            "number",
-                            "null"
-                          ]
+                          "type": ["number", "null"]
                         },
                         "balance": {
-                          "type": [
-                            "number",
-                            "null"
-                          ]
+                          "type": ["number", "null"]
                         },
                         "resetsAt": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
+                          "type": ["string", "null"],
                           "format": "date-time"
                         },
                         "resetInterval": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         },
                         "addonCredits": {
                           "type": "number"
@@ -1485,10 +1290,7 @@
                           "additionalProperties": {}
                         }
                       },
-                      "required": [
-                        "allowed",
-                        "code"
-                      ],
+                      "required": ["allowed", "code"],
                       "additionalProperties": {}
                     },
                     {
@@ -1512,10 +1314,7 @@
                                   "type": "string"
                                 }
                               },
-                              "required": [
-                                "code",
-                                "message"
-                              ],
+                              "required": ["code", "message"],
                               "additionalProperties": {}
                             }
                           ]
@@ -1559,10 +1358,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -1593,35 +1389,20 @@
                       "type": "string"
                     },
                     "usage": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "limit": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "balance": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "resetsAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": ["string", "null"],
                       "format": "date-time"
                     },
                     "resetInterval": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "addonCredits": {
                       "type": "number"
@@ -1645,10 +1426,7 @@
                       "additionalProperties": {}
                     }
                   },
-                  "required": [
-                    "allowed",
-                    "code"
-                  ],
+                  "required": ["allowed", "code"],
                   "additionalProperties": {}
                 }
               }
@@ -1668,35 +1446,20 @@
                       "type": "string"
                     },
                     "usage": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "limit": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "balance": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "resetsAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": ["string", "null"],
                       "format": "date-time"
                     },
                     "resetInterval": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "addonCredits": {
                       "type": "number"
@@ -1720,10 +1483,7 @@
                       "additionalProperties": {}
                     }
                   },
-                  "required": [
-                    "allowed",
-                    "code"
-                  ],
+                  "required": ["allowed", "code"],
                   "additionalProperties": {}
                 }
               }
@@ -1745,35 +1505,20 @@
                           "type": "string"
                         },
                         "usage": {
-                          "type": [
-                            "number",
-                            "null"
-                          ]
+                          "type": ["number", "null"]
                         },
                         "limit": {
-                          "type": [
-                            "number",
-                            "null"
-                          ]
+                          "type": ["number", "null"]
                         },
                         "balance": {
-                          "type": [
-                            "number",
-                            "null"
-                          ]
+                          "type": ["number", "null"]
                         },
                         "resetsAt": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
+                          "type": ["string", "null"],
                           "format": "date-time"
                         },
                         "resetInterval": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         },
                         "addonCredits": {
                           "type": "number"
@@ -1797,10 +1542,7 @@
                           "additionalProperties": {}
                         }
                       },
-                      "required": [
-                        "allowed",
-                        "code"
-                      ],
+                      "required": ["allowed", "code"],
                       "additionalProperties": {}
                     },
                     {
@@ -1824,10 +1566,7 @@
                                   "type": "string"
                                 }
                               },
-                              "required": [
-                                "code",
-                                "message"
-                              ],
+                              "required": ["code", "message"],
                               "additionalProperties": {}
                             }
                           ]
@@ -1860,35 +1599,20 @@
                       "type": "string"
                     },
                     "usage": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "limit": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "balance": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "resetsAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": ["string", "null"],
                       "format": "date-time"
                     },
                     "resetInterval": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "addonCredits": {
                       "type": "number"
@@ -1912,10 +1636,7 @@
                       "additionalProperties": {}
                     }
                   },
-                  "required": [
-                    "allowed",
-                    "code"
-                  ],
+                  "required": ["allowed", "code"],
                   "additionalProperties": {}
                 }
               }
@@ -1927,9 +1648,7 @@
     "/v1/addon": {
       "post": {
         "operationId": "addon",
-        "tags": [
-          "Add-ons"
-        ],
+        "tags": ["Add-ons"],
         "summary": "Purchase a credit pack",
         "description": "Creates a checkout session to purchase a credit pack add-on for a customer.",
         "security": [
@@ -1968,10 +1687,7 @@
                     "format": "uri"
                   }
                 },
-                "required": [
-                  "customer",
-                  "pack"
-                ]
+                "required": ["customer", "pack"]
               }
             }
           }
@@ -1986,9 +1702,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "requiresCheckout": {
                       "type": "boolean"
@@ -2045,10 +1759,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2090,10 +1801,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2135,10 +1843,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2180,10 +1885,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2225,10 +1927,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2251,9 +1950,7 @@
     "/v1/billing/usage": {
       "get": {
         "operationId": "getBillingUsage",
-        "tags": [
-          "Billing"
-        ],
+        "tags": ["Billing"],
         "summary": "Get unbilled usage",
         "description": "Returns the current unbilled usage totals for a customer before invoicing.",
         "security": [
@@ -2281,14 +1978,10 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     }
                   },
-                  "required": [
-                    "success"
-                  ],
+                  "required": ["success"],
                   "additionalProperties": {}
                 }
               }
@@ -2319,10 +2012,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2364,10 +2054,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2409,10 +2096,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2454,10 +2138,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2499,10 +2180,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2525,9 +2203,7 @@
     "/v1/billing/invoice": {
       "post": {
         "operationId": "createInvoice",
-        "tags": [
-          "Billing"
-        ],
+        "tags": ["Billing"],
         "summary": "Generate an invoice",
         "description": "Creates an invoice from the customer's current unbilled usage.",
         "security": [
@@ -2546,9 +2222,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "customer"
-                ]
+                "required": ["customer"]
               }
             }
           }
@@ -2569,9 +2243,7 @@
                       "additionalProperties": {}
                     }
                   },
-                  "required": [
-                    "success"
-                  ],
+                  "required": ["success"],
                   "additionalProperties": {}
                 }
               }
@@ -2602,10 +2274,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2647,10 +2316,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2692,10 +2358,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2737,10 +2400,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2782,10 +2442,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2808,9 +2465,7 @@
     "/v1/billing/invoices": {
       "get": {
         "operationId": "listInvoices",
-        "tags": [
-          "Billing"
-        ],
+        "tags": ["Billing"],
         "summary": "List invoices",
         "description": "Lists invoices for a customer in the authenticated organization.",
         "security": [
@@ -2838,9 +2493,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "invoices": {
                       "type": "array",
@@ -2850,10 +2503,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "success",
-                    "invoices"
-                  ],
+                  "required": ["success", "invoices"],
                   "additionalProperties": {}
                 }
               }
@@ -2884,10 +2534,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2929,10 +2576,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -2974,10 +2618,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -3019,10 +2660,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -3064,10 +2702,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -3090,9 +2725,7 @@
     "/v1/billing/invoice/{id}/pay": {
       "post": {
         "operationId": "payInvoice",
-        "tags": [
-          "Billing"
-        ],
+        "tags": ["Billing"],
         "summary": "Pay an invoice",
         "description": "Attempts to auto-charge an open invoice, or falls back to a checkout session when supported by the provider.",
         "security": [
@@ -3151,31 +2784,19 @@
                           "type": "string"
                         },
                         "number": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         },
                         "total": {
-                          "type": [
-                            "number",
-                            "null"
-                          ]
+                          "type": ["number", "null"]
                         },
                         "currency": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         },
                         "status": {
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "id",
-                        "status"
-                      ],
+                      "required": ["id", "status"],
                       "additionalProperties": {}
                     },
                     "code": {
@@ -3185,9 +2806,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "success"
-                  ],
+                  "required": ["success"],
                   "additionalProperties": {}
                 }
               }
@@ -3218,10 +2837,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -3263,10 +2879,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -3308,10 +2921,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -3352,31 +2962,19 @@
                           "type": "string"
                         },
                         "number": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         },
                         "total": {
-                          "type": [
-                            "number",
-                            "null"
-                          ]
+                          "type": ["number", "null"]
                         },
                         "currency": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         },
                         "status": {
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "id",
-                        "status"
-                      ],
+                      "required": ["id", "status"],
                       "additionalProperties": {}
                     },
                     "code": {
@@ -3386,9 +2984,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "success"
-                  ],
+                  "required": ["success"],
                   "additionalProperties": {}
                 }
               }
@@ -3419,10 +3015,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -3445,9 +3038,7 @@
     "/v1/sync": {
       "post": {
         "operationId": "sync",
-        "tags": [
-          "Catalog"
-        ],
+        "tags": ["Catalog"],
         "summary": "Sync catalog from code",
         "description": "Reconciles features, credit systems, credit packs, and plans from an SDK-defined catalog into the database.",
         "security": [
@@ -3476,10 +3067,7 @@
                         },
                         "type": {
                           "type": "string",
-                          "enum": [
-                            "metered",
-                            "boolean"
-                          ]
+                          "enum": ["metered", "boolean"]
                         },
                         "name": {
                           "type": "string",
@@ -3487,17 +3075,10 @@
                         },
                         "meterType": {
                           "type": "string",
-                          "enum": [
-                            "consumable",
-                            "non_consumable"
-                          ]
+                          "enum": ["consumable", "non_consumable"]
                         }
                       },
-                      "required": [
-                        "slug",
-                        "type",
-                        "name"
-                      ]
+                      "required": ["slug", "type", "name"]
                     }
                   },
                   "creditSystems": {
@@ -3530,18 +3111,11 @@
                                 "minimum": 0
                               }
                             },
-                            "required": [
-                              "feature",
-                              "creditCost"
-                            ]
+                            "required": ["feature", "creditCost"]
                           }
                         }
                       },
-                      "required": [
-                        "slug",
-                        "name",
-                        "features"
-                      ]
+                      "required": ["slug", "name", "features"]
                     }
                   },
                   "creditPacks": {
@@ -3621,10 +3195,7 @@
                         },
                         "billingType": {
                           "type": "string",
-                          "enum": [
-                            "recurring",
-                            "one_time"
-                          ],
+                          "enum": ["recurring", "one_time"],
                           "default": "recurring"
                         },
                         "planGroup": {
@@ -3659,32 +3230,21 @@
                                 "type": "boolean"
                               },
                               "limit": {
-                                "type": [
-                                  "number",
-                                  "null"
-                                ]
+                                "type": ["number", "null"]
                               },
                               "reset": {
                                 "type": "string"
                               },
                               "usageModel": {
                                 "type": "string",
-                                "enum": [
-                                  "included",
-                                  "usage_based",
-                                  "prepaid"
-                                ]
+                                "enum": ["included", "usage_based", "prepaid"]
                               },
                               "pricePerUnit": {
                                 "type": "number"
                               },
                               "ratingModel": {
                                 "type": "string",
-                                "enum": [
-                                  "package",
-                                  "graduated",
-                                  "volume"
-                                ]
+                                "enum": ["package", "graduated", "volume"]
                               },
                               "tiers": {
                                 "type": "array",
@@ -3692,10 +3252,7 @@
                                   "type": "object",
                                   "properties": {
                                     "upTo": {
-                                      "type": [
-                                        "number",
-                                        "null"
-                                      ]
+                                      "type": ["number", "null"]
                                     },
                                     "unitPrice": {
                                       "type": "number"
@@ -3704,17 +3261,12 @@
                                       "type": "number"
                                     }
                                   },
-                                  "required": [
-                                    "upTo"
-                                  ]
+                                  "required": ["upTo"]
                                 }
                               },
                               "overage": {
                                 "type": "string",
-                                "enum": [
-                                  "block",
-                                  "charge"
-                                ]
+                                "enum": ["block", "charge"]
                               },
                               "overagePrice": {
                                 "type": "number"
@@ -3729,10 +3281,7 @@
                                 "type": "number"
                               }
                             },
-                            "required": [
-                              "slug",
-                              "enabled"
-                            ]
+                            "required": ["slug", "enabled"]
                           }
                         }
                       },
@@ -3747,10 +3296,7 @@
                     }
                   }
                 },
-                "required": [
-                  "features",
-                  "plans"
-                ]
+                "required": ["features", "plans"]
               }
             }
           }
@@ -3765,9 +3311,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "features": {
                       "type": "object",
@@ -3791,11 +3335,7 @@
                           }
                         }
                       },
-                      "required": [
-                        "created",
-                        "updated",
-                        "unchanged"
-                      ]
+                      "required": ["created", "updated", "unchanged"]
                     },
                     "creditSystems": {
                       "type": "object",
@@ -3819,11 +3359,7 @@
                           }
                         }
                       },
-                      "required": [
-                        "created",
-                        "updated",
-                        "unchanged"
-                      ]
+                      "required": ["created", "updated", "unchanged"]
                     },
                     "creditPacks": {
                       "type": "object",
@@ -3847,11 +3383,7 @@
                           }
                         }
                       },
-                      "required": [
-                        "created",
-                        "updated",
-                        "unchanged"
-                      ]
+                      "required": ["created", "updated", "unchanged"]
                     },
                     "plans": {
                       "type": "object",
@@ -3875,11 +3407,7 @@
                           }
                         }
                       },
-                      "required": [
-                        "created",
-                        "updated",
-                        "unchanged"
-                      ]
+                      "required": ["created", "updated", "unchanged"]
                     },
                     "warnings": {
                       "type": "array",
@@ -3926,10 +3454,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -3971,10 +3496,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4016,10 +3538,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4042,9 +3561,7 @@
     "/v1/wallet": {
       "get": {
         "operationId": "getWallet",
-        "tags": [
-          "Wallet"
-        ],
+        "tags": ["Wallet"],
         "summary": "Get saved payment methods",
         "description": "Returns the authenticated customer's saved payment methods and whether a default valid card is available.",
         "security": [
@@ -4074,10 +3591,7 @@
                       "type": "boolean"
                     },
                     "card": {
-                      "type": [
-                        "object",
-                        "null"
-                      ],
+                      "type": ["object", "null"],
                       "properties": {
                         "id": {
                           "type": "string"
@@ -4095,13 +3609,7 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "id",
-                        "last4",
-                        "brand",
-                        "exp",
-                        "provider"
-                      ]
+                      "required": ["id", "last4", "brand", "exp", "provider"]
                     },
                     "methods": {
                       "type": "array",
@@ -4110,11 +3618,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "hasCard",
-                    "card",
-                    "methods"
-                  ]
+                  "required": ["hasCard", "card", "methods"]
                 }
               }
             }
@@ -4144,10 +3648,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4189,10 +3690,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4234,10 +3732,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4260,9 +3755,7 @@
     "/v1/wallet/setup": {
       "post": {
         "operationId": "setupWallet",
-        "tags": [
-          "Wallet"
-        ],
+        "tags": ["Wallet"],
         "summary": "Create a payment-method setup session",
         "description": "Creates a hosted setup flow to capture or authorize a payment method for future charges.",
         "security": [
@@ -4288,9 +3781,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "customer"
-                ]
+                "required": ["customer"]
               }
             }
           }
@@ -4311,10 +3802,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "url",
-                    "reference"
-                  ]
+                  "required": ["url", "reference"]
                 }
               }
             }
@@ -4344,10 +3832,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4389,10 +3874,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4434,10 +3916,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4479,10 +3958,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4524,10 +4000,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4550,9 +4023,7 @@
     "/v1/wallet/remove": {
       "post": {
         "operationId": "removePaymentMethod",
-        "tags": [
-          "Wallet"
-        ],
+        "tags": ["Wallet"],
         "summary": "Remove a payment method",
         "description": "Deletes a saved payment method for a customer in the authenticated organization.",
         "security": [
@@ -4574,10 +4045,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "customer",
-                  "id"
-                ]
+                "required": ["customer", "id"]
               }
             }
           }
@@ -4592,14 +4060,10 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     }
                   },
-                  "required": [
-                    "success"
-                  ],
+                  "required": ["success"],
                   "additionalProperties": {}
                 }
               }
@@ -4630,10 +4094,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4675,10 +4136,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4720,10 +4178,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4765,10 +4220,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -4791,9 +4243,7 @@
     "/v1/plans": {
       "get": {
         "operationId": "listPlans",
-        "tags": [
-          "Plans"
-        ],
+        "tags": ["Plans"],
         "summary": "List plans",
         "description": "Lists plans for the authenticated organization, with optional filtering by group, interval, currency, and active status.",
         "security": [
@@ -4845,9 +4295,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "plans": {
                       "type": "array",
@@ -4864,10 +4312,7 @@
                             "type": "string"
                           },
                           "description": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "price": {
                             "type": "number"
@@ -4888,22 +4333,13 @@
                             "type": "boolean"
                           },
                           "planGroup": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "trialDays": {
-                            "type": [
-                              "number",
-                              "null"
-                            ]
+                            "type": ["number", "null"]
                           },
                           "provider": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "features": {
                             "type": "array",
@@ -4926,30 +4362,17 @@
                                   "type": "boolean"
                                 },
                                 "limit": {
-                                  "type": [
-                                    "number",
-                                    "null"
-                                  ]
+                                  "type": ["number", "null"]
                                 },
                                 "resetInterval": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
+                                  "type": ["string", "null"]
                                 },
                                 "unit": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
+                                  "type": ["string", "null"]
                                 },
                                 "usageModel": {
                                   "type": "string",
-                                  "enum": [
-                                    "included",
-                                    "usage_based",
-                                    "prepaid"
-                                  ]
+                                  "enum": ["included", "usage_based", "prepaid"]
                                 },
                                 "pricePerUnit": {
                                   "type": "number"
@@ -4959,11 +4382,7 @@
                                 },
                                 "ratingModel": {
                                   "type": "string",
-                                  "enum": [
-                                    "package",
-                                    "graduated",
-                                    "volume"
-                                  ]
+                                  "enum": ["package", "graduated", "volume"]
                                 },
                                 "tiers": {
                                   "type": "array",
@@ -5010,10 +4429,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "success",
-                    "plans"
-                  ]
+                  "required": ["success", "plans"]
                 }
               }
             }
@@ -5043,10 +4459,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -5069,9 +4482,7 @@
     "/v1/plans/{slug}": {
       "get": {
         "operationId": "getPlan",
-        "tags": [
-          "Plans"
-        ],
+        "tags": ["Plans"],
         "summary": "Get a plan",
         "description": "Retrieves a single plan by slug, including its public feature pricing and entitlement configuration.",
         "security": [
@@ -5099,9 +4510,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "plan": {
                       "type": "object",
@@ -5116,10 +4525,7 @@
                           "type": "string"
                         },
                         "description": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         },
                         "price": {
                           "type": "number"
@@ -5140,22 +4546,13 @@
                           "type": "boolean"
                         },
                         "planGroup": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         },
                         "trialDays": {
-                          "type": [
-                            "number",
-                            "null"
-                          ]
+                          "type": ["number", "null"]
                         },
                         "provider": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         },
                         "features": {
                           "type": "array",
@@ -5178,30 +4575,17 @@
                                 "type": "boolean"
                               },
                               "limit": {
-                                "type": [
-                                  "number",
-                                  "null"
-                                ]
+                                "type": ["number", "null"]
                               },
                               "resetInterval": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ]
+                                "type": ["string", "null"]
                               },
                               "unit": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ]
+                                "type": ["string", "null"]
                               },
                               "usageModel": {
                                 "type": "string",
-                                "enum": [
-                                  "included",
-                                  "usage_based",
-                                  "prepaid"
-                                ]
+                                "enum": ["included", "usage_based", "prepaid"]
                               },
                               "pricePerUnit": {
                                 "type": "number"
@@ -5211,11 +4595,7 @@
                               },
                               "ratingModel": {
                                 "type": "string",
-                                "enum": [
-                                  "package",
-                                  "graduated",
-                                  "volume"
-                                ]
+                                "enum": ["package", "graduated", "volume"]
                               },
                               "tiers": {
                                 "type": "array",
@@ -5261,10 +4641,7 @@
                       "additionalProperties": {}
                     }
                   },
-                  "required": [
-                    "success",
-                    "plan"
-                  ]
+                  "required": ["success", "plan"]
                 }
               }
             }
@@ -5294,10 +4671,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -5339,10 +4713,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -5365,9 +4736,7 @@
     "/v1/customers": {
       "post": {
         "operationId": "createCustomer",
-        "tags": [
-          "Customers"
-        ],
+        "tags": ["Customers"],
         "summary": "Create or resolve a customer",
         "description": "Creates a customer if needed, or resolves and updates an existing customer by ID or email.",
         "security": [
@@ -5397,9 +4766,7 @@
                     "additionalProperties": {}
                   }
                 },
-                "required": [
-                  "email"
-                ]
+                "required": ["email"]
               }
             }
           }
@@ -5414,9 +4781,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "id": {
                       "type": "string"
@@ -5426,16 +4791,10 @@
                       "format": "email"
                     },
                     "name": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "metadata": {
-                      "type": [
-                        "object",
-                        "null"
-                      ],
+                      "type": ["object", "null"],
                       "additionalProperties": {}
                     },
                     "createdAt": {
@@ -5482,10 +4841,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -5527,10 +4883,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -5572,10 +4925,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -5617,10 +4967,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -5643,9 +4990,7 @@
     "/v1/customers/{id}": {
       "get": {
         "operationId": "getCustomer",
-        "tags": [
-          "Customers"
-        ],
+        "tags": ["Customers"],
         "summary": "Get a customer",
         "description": "Retrieves a customer by ID for the authenticated organization.",
         "security": [
@@ -5673,9 +5018,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "id": {
                       "type": "string"
@@ -5685,16 +5028,10 @@
                       "format": "email"
                     },
                     "name": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "metadata": {
-                      "type": [
-                        "object",
-                        "null"
-                      ],
+                      "type": ["object", "null"],
                       "additionalProperties": {}
                     },
                     "createdAt": {
@@ -5741,10 +5078,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -5786,10 +5120,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -5831,10 +5162,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -5857,9 +5185,7 @@
     "/v1/entities": {
       "post": {
         "operationId": "addEntity",
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Add an entity",
         "description": "Adds or restores a billable entity such as a seat or licensed member for a feature.",
         "security": [
@@ -5895,11 +5221,7 @@
                     "additionalProperties": {}
                   }
                 },
-                "required": [
-                  "customer",
-                  "feature",
-                  "entity"
-                ]
+                "required": ["customer", "feature", "entity"]
               }
             }
           }
@@ -5914,9 +5236,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "entityId": {
                       "type": "string"
@@ -5928,27 +5248,16 @@
                       "type": "number"
                     },
                     "limit": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "remaining": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
+                      "type": ["number", "null"]
                     },
                     "restored": {
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "success",
-                    "entityId",
-                    "featureId",
-                    "count"
-                  ],
+                  "required": ["success", "entityId", "featureId", "count"],
                   "additionalProperties": {}
                 }
               }
@@ -5979,10 +5288,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6024,10 +5330,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6069,10 +5372,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6114,10 +5414,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6159,10 +5456,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6183,9 +5477,7 @@
       },
       "get": {
         "operationId": "listEntities",
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "List entities",
         "description": "Lists active and pending-removal entities for a customer, optionally filtered by feature.",
         "security": [
@@ -6221,9 +5513,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "entities": {
                       "type": "array",
@@ -6237,22 +5527,13 @@
                             "type": "string"
                           },
                           "name": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "email": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "metadata": {
-                            "type": [
-                              "object",
-                              "null"
-                            ],
+                            "type": ["object", "null"],
                             "additionalProperties": {}
                           },
                           "status": {
@@ -6279,11 +5560,7 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "success",
-                    "entities",
-                    "total"
-                  ]
+                  "required": ["success", "entities", "total"]
                 }
               }
             }
@@ -6313,10 +5590,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6358,10 +5632,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6403,10 +5674,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6448,10 +5716,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6493,10 +5758,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6519,9 +5781,7 @@
     "/v1/entities/remove": {
       "post": {
         "operationId": "removeEntity",
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Remove an entity",
         "description": "Marks an entity for removal at period end. Pending removals still count toward billing until then.",
         "security": [
@@ -6546,11 +5806,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "customer",
-                  "feature",
-                  "entity"
-                ]
+                "required": ["customer", "feature", "entity"]
               }
             }
           }
@@ -6565,9 +5821,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "entityId": {
                       "type": "string"
@@ -6576,11 +5830,7 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "success",
-                    "entityId",
-                    "count"
-                  ],
+                  "required": ["success", "entityId", "count"],
                   "additionalProperties": {}
                 }
               }
@@ -6611,10 +5861,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6656,10 +5903,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6701,10 +5945,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6746,10 +5987,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6791,10 +6029,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6817,9 +6052,7 @@
     "/v1/credit-systems": {
       "get": {
         "operationId": "listCreditSystems",
-        "tags": [
-          "Credit Systems"
-        ],
+        "tags": ["Credit Systems"],
         "summary": "List credit systems",
         "description": "Lists credit systems and their feature-to-credit-cost mappings for the authenticated organization.",
         "security": [
@@ -6837,9 +6070,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "creditSystems": {
                       "type": "array",
@@ -6853,10 +6084,7 @@
                             "type": "string"
                           },
                           "description": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "features": {
                             "type": "array",
@@ -6870,27 +6098,16 @@
                                   "type": "number"
                                 }
                               },
-                              "required": [
-                                "feature",
-                                "creditCost"
-                              ]
+                              "required": ["feature", "creditCost"]
                             }
                           }
                         },
-                        "required": [
-                          "slug",
-                          "name",
-                          "description",
-                          "features"
-                        ],
+                        "required": ["slug", "name", "description", "features"],
                         "additionalProperties": {}
                       }
                     }
                   },
-                  "required": [
-                    "success",
-                    "creditSystems"
-                  ]
+                  "required": ["success", "creditSystems"]
                 }
               }
             }
@@ -6920,10 +6137,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6965,10 +6179,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -6991,9 +6202,7 @@
     "/v1/credit-packs": {
       "get": {
         "operationId": "listCreditPacks",
-        "tags": [
-          "Credit Systems"
-        ],
+        "tags": ["Credit Systems"],
         "summary": "List credit packs",
         "description": "Lists active credit packs available to the authenticated organization.",
         "security": [
@@ -7011,9 +6220,7 @@
                   "properties": {
                     "success": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     },
                     "data": {
                       "type": "array",
@@ -7030,10 +6237,7 @@
                             "type": "string"
                           },
                           "description": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "credits": {
                             "type": "number"
@@ -7045,28 +6249,16 @@
                             "type": "string"
                           },
                           "creditSystemId": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "creditSystem": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "provider": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "metadata": {
-                            "type": [
-                              "object",
-                              "null"
-                            ],
+                            "type": ["object", "null"],
                             "additionalProperties": {}
                           },
                           "isActive": {
@@ -7095,10 +6287,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "success",
-                    "data"
-                  ]
+                  "required": ["success", "data"]
                 }
               }
             }
@@ -7128,10 +6317,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -7173,10 +6359,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -7199,9 +6382,7 @@
     "/webhooks/{organizationId}": {
       "post": {
         "operationId": "webhookPaystack",
-        "tags": [
-          "Webhooks"
-        ],
+        "tags": ["Webhooks"],
         "summary": "Receive a Paystack webhook",
         "description": "Provider webhook endpoint for Paystack. The organization can be addressed by ID or slug.",
         "security": [],
@@ -7266,10 +6447,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -7311,10 +6489,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -7356,10 +6531,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -7401,10 +6573,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -7427,9 +6596,7 @@
     "/webhooks/{organizationId}/{provider}": {
       "post": {
         "operationId": "webhook",
-        "tags": [
-          "Webhooks"
-        ],
+        "tags": ["Webhooks"],
         "summary": "Receive a provider webhook",
         "description": "Provider webhook endpoint for any supported payment adapter. The organization can be addressed by ID or slug.",
         "security": [],
@@ -7502,10 +6669,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -7547,10 +6711,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -7592,10 +6753,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]
@@ -7637,10 +6795,7 @@
                               "type": "string"
                             }
                           },
-                          "required": [
-                            "code",
-                            "message"
-                          ],
+                          "required": ["code", "message"],
                           "additionalProperties": {}
                         }
                       ]

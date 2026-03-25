@@ -193,8 +193,12 @@ describe("RenewalSetupRetryWorkflow runtime integration", () => {
 
       const metadata = JSON.parse(subscription?.metadata || "{}");
 
-      expect(subscription?.provider_subscription_code).toBe("trial-placeholder");
-      expect(subscription?.paystack_subscription_code).toBe("trial-placeholder");
+      expect(subscription?.provider_subscription_code).toBe(
+        "trial-placeholder",
+      );
+      expect(subscription?.paystack_subscription_code).toBe(
+        "trial-placeholder",
+      );
       expect(subscription?.cancel_at).toBe(
         new Date("2026-04-05T17:00:15.000Z").getTime(),
       );

@@ -308,7 +308,8 @@ app.openapi(syncCatalogRoute, async (c) => {
         providerPlanId: plan.providerPlanId ?? null,
         metadata: planDef.metadata ?? null,
       },
-      preferredProviderId: planDef.provider ?? defaultProvider ?? plan.providerId,
+      preferredProviderId:
+        planDef.provider ?? defaultProvider ?? plan.providerId,
       allowUpdate: hasPlanChanges,
     });
 
@@ -753,8 +754,10 @@ app.openapi(syncCatalogRoute, async (c) => {
         type: planDef.price === 0 ? "free" : "paid",
         billingType: planDef.billingType,
         providerId: desiredProviderId,
-        providerPlanId: planDef.billingType === "one_time" ? null : existing.providerPlanId,
-        paystackPlanId: planDef.billingType === "one_time" ? null : existing.paystackPlanId,
+        providerPlanId:
+          planDef.billingType === "one_time" ? null : existing.providerPlanId,
+        paystackPlanId:
+          planDef.billingType === "one_time" ? null : existing.paystackPlanId,
         metadata: planDef.metadata ?? null,
         autoEnable: planDef.autoEnable ?? false,
         isAddon: planDef.isAddon ?? false,

@@ -22,21 +22,21 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
   try {
     // Check if user is using a premium model but doesn't have access
-    if (modelId !== 'gemini') {
-        const modelCheck = await owo.check({
-            customer: userId,
-            feature: 'premium-models'
-        });
-        if (!modelCheck.allowed) {
-            return json(
-                {
-                    error: `Upgrade to Pro to use Premium Models (${modelId}).`,
-                    allowed: false,
-                    code: modelCheck.code,
-                },
-                { status: 403 },
-            );
-        }
+    if (modelId !== "gemini") {
+      const modelCheck = await owo.check({
+        customer: userId,
+        feature: "premium-models",
+      });
+      if (!modelCheck.allowed) {
+        return json(
+          {
+            error: `Upgrade to Pro to use Premium Models (${modelId}).`,
+            allowed: false,
+            code: modelCheck.code,
+          },
+          { status: 403 },
+        );
+      }
     }
 
     // 1. Pre-generation access check (owo.check)
@@ -68,16 +68,16 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
     });
 
     const updatedCheck = await owo.check({
-        customer: userId,
-        feature: featureId,
-        value: 0
+      customer: userId,
+      feature: featureId,
+      value: 0,
     });
 
     return json({
       message: textResponse,
       tracked: true,
       cost,
-      checkResult: updatedCheck
+      checkResult: updatedCheck,
     });
   } catch (error: any) {
     return json({ error: error.message }, { status: 500 });

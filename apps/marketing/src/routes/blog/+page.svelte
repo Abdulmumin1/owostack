@@ -60,14 +60,12 @@
 <div class="h-screen flex bg-bg-primary overflow-hidden">
   <!-- Left Side: Abstract Graphic and Context -->
   <div
-    class="hidden lg:flex w-[400px] xl:w-[480px] shrink-0 bg-bg-secondary p-12 flex-col justify-between relative overflow-hidden border-r border-border/40"
+    class="hidden lg:flex w-100 xl:w-150 shrink-0 bg-bg-secondary p-12 flex-col justify-between relative overflow-hidden border-r border-border/40"
   >
     <!-- Abstract Background -->
-    <div
-      class="absolute inset-0 pointer-events-none opacity-[0.8]"
-    >
+    <div class="absolute inset-0 pointer-events-none opacity-[0.8]">
       <img
-        src="https://mac-file.yaqeen.me/3F36AAD9-image.png"
+        src="https://mac-file.yaqeen.me/9987E2C7-Generated%20Image%20March%2024%2C%202026%20-%206_24PM.jpg"
         alt="Abstract engineering background pattern"
         class="w-full h-full object-cover mix-blend-multiply opacity-30"
       />
@@ -75,17 +73,23 @@
 
     <div class="relative z-10">
       <div class="mb-16">
-        <a href="/" class="text-text-primary hover:text-accent transition-colors">
+        <a
+          href="/"
+          class="text-text-primary hover:text-accent transition-colors"
+        >
           <Logo size={24} class="text-current" />
         </a>
       </div>
 
       <div class="space-y-4">
-        <h2 class="text-[28px] font-bold text-text-primary tracking-tight font-display">
+        <h2
+          class="text-[28px] font-bold text-text-primary tracking-tight font-display"
+        >
           Writings
         </h2>
         <p class="text-text-secondary text-[15px] leading-[1.6] max-w-[280px]">
-          Engineering notes and thoughts on building the billing layer for modern AI SaaS.
+          Engineering notes and thoughts on building the billing engine for
+          modern AI SaaS.
         </p>
       </div>
     </div>
@@ -104,7 +108,9 @@
         <div class="lg:hidden">
           <a href="/" class="flex items-center gap-2">
             <Logo size={24} class="text-accent" />
-            <span class="text-sm font-bold tracking-tight text-text-primary">Owostack</span>
+            <span class="text-sm font-bold tracking-tight text-text-primary"
+              >Owostack</span
+            >
           </a>
         </div>
         <div class="hidden lg:block"></div>
@@ -115,9 +121,7 @@
             class="text-[11px] text-text-secondary hover:text-text-primary transition-colors"
             >Docs</a
           >
-          <a
-            href="https://app.owostack.com"
-            class="btn btn-primary"
+          <a href="https://app.owostack.com" class="btn btn-primary"
             >Dashboard</a
           >
         </nav>
@@ -131,17 +135,25 @@
             {#each posts as post (post.slug)}
               <article class="group">
                 <a href={`/blog/${post.slug}`} class="block">
-                  <h3 class="text-[20px] lg:text-[28px] font-bold tracking-tight font-display text-text-primary group-hover:text-accent transition-colors leading-[1.1] mb-1">
+                  <h3
+                    class="text-[20px] lg:text-[28px] font-bold tracking-tight font-display text-text-primary group-hover:text-accent transition-colors leading-[1.1] mb-1"
+                  >
                     {post.title}
                   </h3>
-                  <p class="text-text-muted text-[15px] font-mono tracking-tight">{post.date}</p>
+                  <p
+                    class="text-text-muted text-[15px] font-mono tracking-tight"
+                  >
+                    {post.date}
+                  </p>
                 </a>
               </article>
             {/each}
           </div>
         {:else}
           <div class="text-center py-24">
-            <p class="text-text-dim text-xs uppercase tracking-widest font-bold">
+            <p
+              class="text-text-dim text-xs uppercase tracking-widest font-bold"
+            >
               Journal is empty
             </p>
           </div>

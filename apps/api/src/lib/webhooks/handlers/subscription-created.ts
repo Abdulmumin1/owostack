@@ -131,11 +131,14 @@ export async function handleSubscriptionCreated(
     );
     // Try to link the subscription code to an existing active sub for this customer
     if (providerCode) {
-      const existingSubForCustomer = await findBestSubscriptionForCustomer(ctx, {
-        customerId: dbCustomer.id,
-        statuses: ["active", "trialing", "pending_cancel", "past_due"],
-        strategy: "customer_link",
-      });
+      const existingSubForCustomer = await findBestSubscriptionForCustomer(
+        ctx,
+        {
+          customerId: dbCustomer.id,
+          statuses: ["active", "trialing", "pending_cancel", "past_due"],
+          strategy: "customer_link",
+        },
+      );
       if (existingSubForCustomer) {
         const now = Date.now();
         const renewalSetupRecovery = buildRenewalSetupRecoveryUpdate(
@@ -176,11 +179,14 @@ export async function handleSubscriptionCreated(
   if (!dbPlan) {
     // Plan not found — try to link to existing active sub
     if (providerCode) {
-      const existingSubForCustomer = await findBestSubscriptionForCustomer(ctx, {
-        customerId: dbCustomer.id,
-        statuses: ["active", "trialing", "pending_cancel", "past_due"],
-        strategy: "customer_link",
-      });
+      const existingSubForCustomer = await findBestSubscriptionForCustomer(
+        ctx,
+        {
+          customerId: dbCustomer.id,
+          statuses: ["active", "trialing", "pending_cancel", "past_due"],
+          strategy: "customer_link",
+        },
+      );
       if (existingSubForCustomer) {
         const now = Date.now();
         const renewalSetupRecovery = buildRenewalSetupRecoveryUpdate(

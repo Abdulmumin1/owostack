@@ -36,7 +36,6 @@ Those on twitter have prolly seen tweets calling Cursor subscription a "scam", b
 
 While this makes sense for their economic goals, the subscription just feels like an unlock key to their actual pricing model which is addon credits, rather than a value prop in itself.
 
-
 ## Three shifts in AI SaaS pricing
 
 The current pricing docs show three big shifts in how AI companies are packaging their products:

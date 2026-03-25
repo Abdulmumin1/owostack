@@ -266,7 +266,8 @@ app.patch("/:id", async (c) => {
     updates.currency = parsed.data.currency;
   if (parsed.data.creditSystemId !== undefined)
     updates.creditSystemId = parsed.data.creditSystemId;
-  if (parsed.data.providerId !== undefined) updates.providerId = parsed.data.providerId;
+  if (parsed.data.providerId !== undefined)
+    updates.providerId = parsed.data.providerId;
   if (parsed.data.isActive !== undefined)
     updates.isActive = parsed.data.isActive;
   if (parsed.data.metadata !== undefined)

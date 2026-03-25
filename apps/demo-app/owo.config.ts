@@ -1,9 +1,4 @@
-import {
-  Owostack,
-  metered,
-  boolean,
-  plan,
-} from "owostack";
+import { Owostack, metered, boolean, plan } from "owostack";
 
 export const aiCredits = metered("ai-credits", {
   name: "AI Generation Credits",

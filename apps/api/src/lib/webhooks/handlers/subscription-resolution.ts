@@ -118,7 +118,9 @@ async function findBestRecoverableSubscription(
 ): Promise<any | null> {
   const subscriptionQuery = ctx.db.query.subscriptions as {
     findMany?: (args: { where: never }) => Promise<RecoverableSubscription[]>;
-    findFirst: (args: { where: never }) => Promise<RecoverableSubscription | null>;
+    findFirst: (args: {
+      where: never;
+    }) => Promise<RecoverableSubscription | null>;
   };
 
   if (typeof subscriptionQuery.findMany === "function") {

@@ -45,7 +45,9 @@ type ChargeAuthorizationParams = Parameters<
 type CreateSubscriptionParams = Parameters<
   ProviderAdapter["createSubscription"]
 >[0];
-type FetchSubscriptionParams = Parameters<ProviderAdapter["fetchSubscription"]>[0];
+type FetchSubscriptionParams = Parameters<
+  ProviderAdapter["fetchSubscription"]
+>[0];
 
 type ProviderBehavior<TParams, TValue> = (
   params: TParams,
@@ -200,7 +202,9 @@ export class SimulatedProviderAdapter implements ProviderAdapter {
     return Result.ok({
       id: params.subscriptionId,
       status: "active",
-      nextPaymentDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      nextPaymentDate: new Date(
+        Date.now() + 30 * 24 * 60 * 60 * 1000,
+      ).toISOString(),
       startDate: new Date(Date.now()).toISOString(),
       metadata: {},
     });
@@ -405,9 +409,7 @@ export async function insertPlan(
       params.organizationId || "org_1",
       params.providerId === undefined ? "paystack" : params.providerId,
       params.providerPlanId ?? "plan_remote_1",
-      params.providerMetadata
-        ? JSON.stringify(params.providerMetadata)
-        : null,
+      params.providerMetadata ? JSON.stringify(params.providerMetadata) : null,
       params.paystackPlanId ?? "plan_remote_1",
       params.name || "Growth",
       params.slug || "growth",

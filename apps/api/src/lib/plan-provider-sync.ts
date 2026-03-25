@@ -88,7 +88,9 @@ interface ResolvedProviderTarget {
   account: ProviderAccount;
 }
 
-export function isProviderManagedPlan(plan: Pick<ProviderManagedPlan, "type" | "billingType">) {
+export function isProviderManagedPlan(
+  plan: Pick<ProviderManagedPlan, "type" | "billingType">,
+) {
   return plan.type === "paid" && plan.billingType === "recurring";
 }
 
@@ -112,7 +114,8 @@ export async function syncProviderPlan(params: {
       action: "skipped",
       providerId: plan.providerId,
       providerPlanId: plan.providerPlanId,
-      paystackPlanId: plan.providerId === "paystack" ? plan.providerPlanId : null,
+      paystackPlanId:
+        plan.providerId === "paystack" ? plan.providerPlanId : null,
     };
   }
 
@@ -127,7 +130,8 @@ export async function syncProviderPlan(params: {
       action: "skipped",
       providerId: plan.providerId,
       providerPlanId: plan.providerPlanId,
-      paystackPlanId: plan.providerId === "paystack" ? plan.providerPlanId : null,
+      paystackPlanId:
+        plan.providerId === "paystack" ? plan.providerPlanId : null,
       issue: target.issue,
     };
   }
@@ -254,11 +258,12 @@ async function resolveProviderTarget(params: {
     context.environment,
     null,
   );
-  const providerAccounts = await planProviderSyncDependencies.loadProviderAccounts(
-    context.db,
-    context.organizationId,
-    context.encryptionKey,
-  );
+  const providerAccounts =
+    await planProviderSyncDependencies.loadProviderAccounts(
+      context.db,
+      context.organizationId,
+      context.encryptionKey,
+    );
   const requestedProviderId = preferredProviderId ?? plan.providerId ?? null;
 
   if (requestedProviderId) {

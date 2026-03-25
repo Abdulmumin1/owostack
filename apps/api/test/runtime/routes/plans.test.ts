@@ -25,7 +25,9 @@ import { insertFeature, insertPlanFeature } from "../helpers/overage-runtime";
 
 describe("Plans route runtime integration", () => {
   let businessDb: ReturnType<typeof createRuntimeBusinessDb>;
-  let app: ReturnType<typeof createRouteTestApp<{ db: any; organizationId: string }>>;
+  let app: ReturnType<
+    typeof createRouteTestApp<{ db: any; organizationId: string }>
+  >;
   let paystack: SimulatedCatalogProviderAdapter;
   let dodo: SimulatedCatalogProviderAdapter;
   let stripe: SimulatedCatalogProviderAdapter;
