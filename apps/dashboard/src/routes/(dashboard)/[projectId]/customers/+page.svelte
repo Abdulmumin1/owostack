@@ -13,6 +13,7 @@
     Trash,
     Users,
   } from "phosphor-svelte";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { fade } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
@@ -166,6 +167,20 @@
     }
 
     return [1, "...", current - 1, current, current + 1, "...", total];
+  }
+
+  function customerDetailHref(customerId: string) {
+    return `/${organizationId}/customers/${customerId}`;
+  }
+
+  function openCustomer(customerId: string) {
+    if (selectedCustomerId === customerId) {
+      void goto(customerDetailHref(customerId));
+      return;
+    }
+
+    selectedCustomerId = customerId;
+    openMenuId = null;
   }
 </script>
 
@@ -360,10 +375,7 @@
               customer.id
                 ? 'bg-bg-secondary'
                 : ''} {openMenuId === customer.id ? 'relative z-20' : ''}"
-              onclick={() => {
-                selectedCustomerId = customer.id;
-                openMenuId = null;
-              }}
+              onclick={() => openCustomer(customer.id)}
             >
               <td class="px-6 py-4">
                 <div class="flex items-center gap-3">
