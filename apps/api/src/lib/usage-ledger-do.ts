@@ -419,6 +419,7 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
   async listRecentUsageForCustomer(
     customerId: string,
     limit: number = 20,
+    planId?: string | null,
   ): Promise<
     Array<{
       id: string;
@@ -429,21 +430,27 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
   > {
     this.ensureSchema();
 
+    let sqlText = `SELECT id, feature_id, amount, created_at
+         FROM usage_records
+         WHERE customer_id = ?`;
+    const bindings: Array<string | number> = [customerId];
+
+    if (planId) {
+      sqlText += " AND plan_id = ?";
+      bindings.push(planId);
+    }
+
+    sqlText += ` ORDER BY created_at DESC
+         LIMIT ?`;
+    bindings.push(Math.max(1, Math.min(limit, 100)));
+
     const rows = this.ctx.storage.sql
       .exec<{
         id: string;
         feature_id: string;
         amount: number;
         created_at: number;
-      }>(
-        `SELECT id, feature_id, amount, created_at
-         FROM usage_records
-         WHERE customer_id = ?
-         ORDER BY created_at DESC
-         LIMIT ?`,
-        customerId,
-        Math.max(1, Math.min(limit, 100)),
-      )
+      }>(sqlText, ...bindings)
       .toArray();
 
     return rows.map((row) => ({
@@ -457,6 +464,7 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
   async featureUsageSummaryForCustomer(
     customerId: string,
     createdAtFrom: number,
+    planId?: string | null,
   ): Promise<
     Array<{
       featureId: string;
@@ -466,23 +474,28 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
   > {
     this.ensureSchema();
 
+    let sqlText = `SELECT feature_id,
+                COALESCE(SUM(amount), 0) AS total_usage,
+                COUNT(*) AS record_count
+         FROM usage_records
+         WHERE customer_id = ?
+           AND created_at >= ?`;
+    const bindings: Array<string | number> = [customerId, createdAtFrom];
+
+    if (planId) {
+      sqlText += " AND plan_id = ?";
+      bindings.push(planId);
+    }
+
+    sqlText += ` GROUP BY feature_id
+         ORDER BY total_usage DESC`;
+
     const rows = this.ctx.storage.sql
       .exec<{
         feature_id: string;
         total_usage: number;
         record_count: number;
-      }>(
-        `SELECT feature_id,
-                COALESCE(SUM(amount), 0) AS total_usage,
-                COUNT(*) AS record_count
-         FROM usage_records
-         WHERE customer_id = ?
-           AND created_at >= ?
-         GROUP BY feature_id
-         ORDER BY total_usage DESC`,
-        customerId,
-        createdAtFrom,
-      )
+      }>(sqlText, ...bindings)
       .toArray();
 
     return rows.map((row) => ({

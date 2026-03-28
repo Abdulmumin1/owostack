@@ -1,17 +1,17 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { goto } from "$app/navigation";
-  import { onMount } from "svelte";
+  import CustomerDetail from "$lib/components/customers/CustomerDetail.svelte";
 
-  const organizationId = $derived(page.params.projectId);
-
-  // This page is deprecated — customer details are now shown in the sidebar.
-  // Redirect to the customers list.
-  onMount(() => {
-    goto(`/${organizationId}/customers`, { replaceState: true });
-  });
+  const customerId = $derived(page.params.customerId ?? "");
+  const planId = $derived(page.url.searchParams.get("planId"));
 </script>
 
-<div class="flex items-center justify-center py-24 text-zinc-500 text-xs">
-  Redirecting...
+<svelte:head>
+  <title>Customer Details - Owostack</title>
+</svelte:head>
+
+<div class="max-w-6xl mx-auto">
+  {#if customerId}
+    <CustomerDetail {customerId} {planId} variant="page" />
+  {/if}
 </div>

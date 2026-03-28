@@ -13,12 +13,27 @@
   import { page } from "$app/state";
   import GrantOverrideModal from "../entitlements/GrantOverrideModal.svelte";
 
-  let { customerId }: { customerId: string } = $props();
+  let {
+    customerId,
+    allowedFeatureIds = null,
+  }: {
+    customerId: string;
+    allowedFeatureIds?: string[] | null;
+  } = $props();
 
   const organizationId = $derived(page.params.projectId);
   let overrides = $state<any[]>([]);
   let isLoading = $state(false);
   let isOverrideModalOpen = $state(false);
+  const allowedFeatureIdSet = $derived(
+    allowedFeatureIds ? new Set(allowedFeatureIds) : null,
+  );
+  const visibleOverrides = $derived.by(() => {
+    if (!allowedFeatureIdSet) return overrides;
+    return overrides.filter((override) =>
+      allowedFeatureIdSet.has(override.feature?.id),
+    );
+  });
 
   async function loadOverrides() {
     if (!organizationId) return;
@@ -71,13 +86,9 @@
 
 <div class="space-y-4">
   <div class="flex items-center justify-between">
-    <div class="flex items-center gap-2">
-      <h3
-        class="text-[10px] font-bold text-text-primary uppercase tracking-[0.15em]"
-      >
-        Entitlement Overrides
-      </h3>
-    </div>
+    <h3 class="text-[10px] font-bold text-text-primary uppercase tracking-[0.15em]">
+      Entitlement Overrides
+    </h3>
     <button
       class="text-[10px] font-bold text-accent hover:text-accent-hover flex items-center gap-1 transition-colors uppercase tracking-widest"
       onclick={() => (isOverrideModalOpen = true)}
@@ -92,24 +103,22 @@
       <Clock size={12} class="animate-spin" />
       Loading overrides...
     </div>
-  {:else if overrides.length === 0}
-    <div
-      class="bg-bg-secondary/50 border border-border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center space-y-2"
-    >
-
-      <div>
-        <p class="text-[11px] font-medium text-text-dim">
-          No manual overrides granted
-        </p>
-        <p class="text-[10px] text-text-dim/60 mt-1 max-w-[200px]">
-          Overrides allow you to grant specific features regardless of the
-          customer's plan.
-        </p>
-      </div>
+  {:else if visibleOverrides.length === 0}
+    <div class="bg-transparent border border-border/50 border-dashed rounded-xl py-10 px-6 flex flex-col items-center justify-center text-center">
+      <p class="text-xs font-medium text-text-primary">
+        {allowedFeatureIdSet
+          ? "No overrides for this plan"
+          : "No manual overrides granted"}
+      </p>
+      <p class="text-xs text-text-dim mt-1.5 max-w-[280px]">
+        {allowedFeatureIdSet
+          ? "Only overrides for features attached to this plan are shown here."
+          : "Overrides allow you to grant specific features regardless of the customer's plan."}
+      </p>
     </div>
   {:else}
     <div class="grid gap-2">
-      {#each overrides as override}
+      {#each visibleOverrides as override}
         <div
           class="bg-bg-card border border-border rounded-lg p-3 group hover:border-accent/30 transition-all"
         >

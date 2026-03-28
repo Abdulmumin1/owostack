@@ -1,57 +1,121 @@
 # Owostack
 
-> Billing infrastructure for AI SaaS. 3 API calls. Zero webhooks.
+> Billing engine for AI SaaS.
 
-**Stack**: Cloudflare + SvelteKit
+\> Yes, the infra is built entirely on the cloudflare stack. heavy use of DO and Workflows.
+
+\> Yes, self hosting is pretty much easy and would run work perfectly with free workers plan.
+
+\> optional events log uses cf data platform or analytics engine. (use AE if you're smol)
+
+\> yes u can use /check as middleware, and maybe a smol cache on ur end. (the endpoint is average 175ms response time)
+
+\> No, tests are not 100% of core data paths yet.
 
 ## What is Owostack?
 
-Owostack is a developer-friendly billing infrastructure that lets you implement subscriptions, usage-based billing, and feature gating with just **3 API calls** and **zero webhook code**.
+Owostack is a developer-friendly billing engine that lets you implement subscriptions, usage-based billing, and feature gating.
 
 Owostack supports multiple payment gateways while providing first-class features for:
 
 - **Usage Metering** (track tokens, API calls, seats)
-- **Flexible Resets** (hourly, daily, monthly quotas)
+- **Flexible Resets** (minutes, hourly, daily, monthly quotas, yearly, custom)
 - **Credit Systems** (shared balances across features)
-- **Multi-provider** (Paystack, Dodo Payments, Polar)
-- **Edge-native** (Cloudflare Workers for global speed)
+- **Add-on** (purchased against credit systems, or could be plan based addons)
+- **Multi-provider** payment provider is abstracted into an adapter mechanism. (currently implemented - Paystack,  Stripe & Dodo Payments)
 
 ## Quick Start
 
 ```bash
 # Install SDK
-pnpm add owostack
+bun add owostack
 ```
 
-```typescript
-// Initialize
-import { Owostack } from "owostack";
+### 1. Define your features
+Create a config file (e.g. `owo.config.ts`) or run `bunx owosk init`.
+define your features using metered(), boolean(), and entity():
 
-const owo = new Owostack({
-  secretKey: process.env.OWOSTACK_SECRET_KEY,
+```ts
+import { metered, boolean, entity } from "owostack";
+apiCalls = metered("api-calls", { name: "API Calls" });
+analytics = boolean("analytics", { name: "Analytics Dashboard" });
+seats = entity("seats", { name: "Team Seats" });
+````
+
+### 2. Define your plans.
+
+Define plans and configure features.
+
+```ts
+export default new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  catalog: [
+    plan("starter", {
+      name: "Starter",
+      price: 0,
+      currency: "NGN",
+      interval: "monthly",
+      autoEnable:true,
+      features: [
+        apiCalls.limit(1000),
+        analytics.off(),
+        seats.limit(3),
+      ],
+    }),
+    plan("pro", {
+      name: "Pro",
+      price: 500000,
+      currency: "NGN",
+      interval: "monthly",
+      features: [
+        apiCalls.limit(50000, { overage: "charge", overagePrice: 100 }),
+        analytics.on(),
+        seats.limit(20),
+      ],
+    }),
+    plan("enterprise", {
+      name: "Enterprise",
+      price: 2000000,
+      currency: "NGN",
+      interval: "monthly",
+      features: [apiCalls.unlimited(), analytics.on(), seats.unlimited()],
+    }),
+  ],
 });
+```
 
+### 3. Sync to the API
+Using the CLI
+
+```bash
+npx owosk sync --config ./owo.config.ts
+```
+
+### 4. Runtime primitives.
+This are the calls that would be sprinkled all over ur codebase.
+
+```ts
 // 1. Checkout (attach)
 const { url } = await owo.attach({
-  customer: "customer@example.com",
+  customer: "user_123",
   product: "pro_plan",
 });
 
 // 2. Check access (check)
 const { allowed } = await owo.check({
-  customer: "customer@example.com",
+  customer: "user_123",
   feature: "api_calls",
 });
 
 // 3. Track usage (track)
 await owo.track({
-  customer: "customer@example.com",
+  customer: "user_123",
   feature: "api_calls",
   value: 1,
 });
 ```
 
-That's it. No webhooks, no state syncing, no billing logic.
+That's it. No webhooks (yet), no state syncing, no custom billig logic.
 
 ## Monorepo Structure
 
@@ -89,35 +153,17 @@ pnpm --filter owostack-dashboard dev
 pnpm --filter owostack-marketing dev
 ```
 
-## Repository Status
+## Credits
 
-This is an active monorepo. Some packages are intended for public consumption (`owostack`, `owosk`, `@owostack/types`) while others are internal implementation packages that support the API, dashboard, and docs.
+This entire project might not directly be a fork of [autumnpricing](https://github.com/useautumn/autumn), but has heavily taken concepts from their implementation. even UX of the dashboard.
 
-## Optional: Cloudflare Analytics Engine
+Thanks Autumn!
 
-`apps/api` now writes lightweight request and billing analytics to Workers Analytics Engine when an `ANALYTICS` dataset binding is present.
+[autumpricing](https://useautumn.com)
+[autumpricing github](https://github.com/useautumn/autumn)
+[autumpricing dashboard](https://app.useautumn.com)
+[autumpricing docs](https://docs.useautumn.com)
 
-- Local/dev dataset: `owostack_api_dev`
-- Test dataset: `owostack_api_test`
-- Live dataset: `owostack_api_live`
-
-You can query it with Cloudflare SQL API for latency trends, cache hit rates, and invoice flow outcomes without growing D1 with extra telemetry rows.
-
-Dashboard Events now read from Analytics Engine (instead of D1) and require:
-
-- `CF_ACCOUNT_ID`
-- `CF_ANALYTICS_READ_TOKEN` (Cloudflare API token with `Analytics:Read`)
-
-## Usage Ledger (Durable Object SQLite)
-
-High-volume usage metering now supports a per-organization Durable Object SQLite ledger (`USAGE_LEDGER`) for track/check/invoice paths.
-
-- Durable Object class: `UsageLedgerDO`
-- Binding: `USAGE_LEDGER`
-- Wrangler migration tag: `v2`
-
-This reduces reliance on D1 `usage_records` for overage and invoice-critical calculations while keeping fallback compatibility.
-
-## License
-
-Apache-2.0
+[owostack blog](https://owostack.com)
+[owostack dashboard](https://app.owostack.com)
+[owostack docs](https://docs.owostack.com)
