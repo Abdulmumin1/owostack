@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { apiFetch } from "$lib/auth-client";
   import CreateCustomerModal from "$lib/components/customers/CreateCustomerModal.svelte";
@@ -313,6 +314,12 @@
     }
   }
 
+  function openSubscriberCustomer(customerId: string) {
+    const params = new URLSearchParams();
+    params.set("planId", planId ?? "");
+    void goto(`/${projectId}/customers/${customerId}?${params.toString()}`);
+  }
+
   $effect(() => {
     if (planId) {
       void loadData();
@@ -358,6 +365,7 @@
         onAttachCustomer={() => (showAttachCustomerPanel = true)}
         onGenerateCheckout={generateCheckoutLink}
         onActivate={activateSubscription}
+        onOpenCustomer={openSubscriberCustomer}
         onPageChange={handleSubscribersPageChange}
       />
     </div>

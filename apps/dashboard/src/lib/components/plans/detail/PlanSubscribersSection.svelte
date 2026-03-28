@@ -19,6 +19,7 @@
     onAttachCustomer = () => {},
     onGenerateCheckout = (_subscriptionId: string) => {},
     onActivate = (_subscriptionId: string) => {},
+    onOpenCustomer = (_customerId: string) => {},
     onPageChange = (_page: number) => {},
   }: {
     subscribers?: any[];
@@ -31,6 +32,7 @@
     onAttachCustomer?: () => void;
     onGenerateCheckout?: (subscriptionId: string) => void;
     onActivate?: (subscriptionId: string) => void;
+    onOpenCustomer?: (customerId: string) => void;
     onPageChange?: (page: number) => void;
   } = $props();
 
@@ -104,7 +106,16 @@
     {:else if subscribers.length > 0}
       {#each subscribers as subscriber}
         <div
-          class="p-4 flex items-center justify-between hover:bg-bg-card-hover transition-colors group"
+          role="button"
+          tabindex="0"
+          class="p-4 flex items-center justify-between hover:bg-bg-card-hover transition-colors group cursor-pointer"
+          onclick={() => onOpenCustomer(subscriber.customerId)}
+          onkeydown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onOpenCustomer(subscriber.customerId);
+            }
+          }}
         >
           <div class="flex items-center gap-3 min-w-0">
             <div
@@ -127,13 +138,19 @@
             {#if subscriber.status === "pending"}
               <button
                 class="text-xs font-semibold text-warning hover:underline uppercase p-0"
-                onclick={() => onGenerateCheckout(subscriber.id)}
+                onclick={(event) => {
+                  event.stopPropagation();
+                  onGenerateCheckout(subscriber.id);
+                }}
               >
                 Link
               </button>
               <button
                 class="text-xs font-semibold text-text-secondary hover:text-text-primary uppercase p-0"
-                onclick={() => onActivate(subscriber.id)}
+                onclick={(event) => {
+                  event.stopPropagation();
+                  onActivate(subscriber.id);
+                }}
               >
                 Act
               </button>

@@ -143,6 +143,7 @@ export async function listRecentUsageForCustomer(
   opts: UsageLedgerOptions,
   customerId: string,
   limit = 20,
+  planId?: string | null,
 ): Promise<Array<{
   id: string;
   featureId: string;
@@ -153,7 +154,7 @@ export async function listRecentUsageForCustomer(
   if (!stub) return null;
 
   try {
-    return await stub.listRecentUsageForCustomer(customerId, limit);
+    return await stub.listRecentUsageForCustomer(customerId, limit, planId);
   } catch (error) {
     console.error("[usage-ledger] listRecentUsageForCustomer failed:", error);
     return null;
@@ -164,6 +165,7 @@ export async function featureUsageSummaryForCustomer(
   opts: UsageLedgerOptions,
   customerId: string,
   createdAtFrom: number,
+  planId?: string | null,
 ): Promise<Array<{
   featureId: string;
   totalUsage: number;
@@ -173,7 +175,11 @@ export async function featureUsageSummaryForCustomer(
   if (!stub) return null;
 
   try {
-    return await stub.featureUsageSummaryForCustomer(customerId, createdAtFrom);
+    return await stub.featureUsageSummaryForCustomer(
+      customerId,
+      createdAtFrom,
+      planId,
+    );
   } catch (error) {
     console.error(
       "[usage-ledger] featureUsageSummaryForCustomer failed:",
