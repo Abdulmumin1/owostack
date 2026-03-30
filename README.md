@@ -2,7 +2,7 @@
 
 > Billing engine for AI SaaS.
 
-\> Yes, the infra is built entirely on the cloudflare stack. heavy use of DO and Workflows.
+\> Yes, the infra is built entirely on cloudflare stack. heavy use of Durable Objects and Workflows.
 
 \> Yes, self hosting is pretty much easy and would run work perfectly with free workers plan.
 
@@ -160,10 +160,15 @@ This entire project might not directly be a fork of [autumnpricing](https://gith
 Thanks Autumn!
 
 [autumpricing](https://useautumn.com)
+
 [autumpricing github](https://github.com/useautumn/autumn)
+
 [autumpricing dashboard](https://app.useautumn.com)
+
 [autumpricing docs](https://docs.useautumn.com)
 
 [owostack blog](https://owostack.com)
+
 [owostack dashboard](https://app.owostack.com)
+
 [owostack docs](https://docs.owostack.com)
