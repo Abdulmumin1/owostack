@@ -6,7 +6,6 @@ readTime: "6 min read"
 category: "Product & Strategy"
 layout: blog
 thumbnail: ""
-draft: true
 author: "yaqeen"
 ---
 

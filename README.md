@@ -4,7 +4,7 @@
 
 \> Yes, the infra is built entirely on cloudflare stack. heavy use of Durable Objects and Workflows.
 
-\> Yes, self hosting is pretty much easy and would run work perfectly with free workers plan.
+\> Yes, self hosting is pretty much easy and would run perfectly with free workers plan.
 
 \> optional events log uses cf data platform or analytics engine. (use AE if you're smol)
 
