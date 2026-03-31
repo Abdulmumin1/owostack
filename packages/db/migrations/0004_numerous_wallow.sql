@@ -1,0 +1,1 @@
+ALTER TABLE `plan_features` ADD `trial_limit_value` integer;
