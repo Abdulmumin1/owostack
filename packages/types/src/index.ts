@@ -753,6 +753,9 @@ export interface MeteredFeatureConfig {
   /** Limit for this plan (null = unlimited) */
   limit?: number | null;
 
+  /** Limit for this plan during a trial period (null = unlimited) */
+  trialLimit?: number | null;
+
   /** Reset interval (default: "monthly") */
   reset?: ResetInterval;
 
@@ -1033,6 +1036,9 @@ export interface PublicPlanFeature {
   /** Usage limit (null = unlimited) */
   limit: number | null;
 
+  /** Trial usage limit (null = unlimited) */
+  trialLimit?: number | null;
+
   /** Reset interval */
   resetInterval: string | null;
 
@@ -1159,6 +1165,7 @@ export interface SyncPayload {
       slug: string;
       enabled: boolean;
       limit?: number | null;
+      trialLimit?: number | null;
       reset?: ResetInterval;
       usageModel?: "included" | "usage_based" | "prepaid";
       pricePerUnit?: number;
