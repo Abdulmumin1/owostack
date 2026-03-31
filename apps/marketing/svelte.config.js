@@ -28,6 +28,13 @@ const config = {
     alias: {
       $components: "src/lib/components",
     },
+    prerender: {
+      entries: ["*"],
+      handleHttpError: ({ path, message }) => {
+        console.warn(`Prerender error for ${path}: ${message}`);
+        return "fail";
+      },
+    },
   },
 };
 

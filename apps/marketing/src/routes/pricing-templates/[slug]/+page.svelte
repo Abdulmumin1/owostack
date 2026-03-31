@@ -62,17 +62,49 @@
 <svelte:head>
   <title>{template.title} Template | Owostack</title>
   <meta name="description" content={template.summary} />
+  <link
+    rel="canonical"
+    href={`https://owostack.com/pricing-templates/${template.slug}`}
+  />
   <meta property="og:type" content="article" />
   <meta property="og:title" content={`${template.title} Template | Owostack`} />
   <meta property="og:description" content={template.summary} />
   <meta property="og:image" content={ogImage} />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@owostack" />
   <meta
     name="twitter:title"
     content={`${template.title} Template | Owostack`}
   />
   <meta name="twitter:description" content={template.summary} />
   <meta name="twitter:image" content={ogImage} />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "TechArticle",
+      "headline": "{template.title} Template",
+      "description": "{template.summary}",
+      "image": "{ogImage}",
+      "author": {
+        "@type": "Organization",
+        "name": "Owostack"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Owostack",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://owostack.com/logo.svg"
+        }
+      },
+      "mainEntityOfPage": {
+        "@type": "WebPage",
+        "@id": "https://owostack.com/pricing-templates/{template.slug}"
+      }
+    }
+  </script>
 </svelte:head>
 
 <div class="min-h-screen bg-bg-primary text-text-primary">
@@ -299,7 +331,7 @@
             Join Discord
           </a>
           <a
-            href="https://cal.com/yaqeen/30min"
+            href="/talk-to-founder"
             class="btn btn-primary gap-2"
             target="_blank"
             rel="noopener noreferrer"

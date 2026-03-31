@@ -122,7 +122,10 @@
     content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
   />
   <meta property="og:image" content="https://owostack.com/og.jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@owostack" />
   <meta name="twitter:url" content="https://owostack.com/" />
   <meta
     name="twitter:title"
@@ -484,10 +487,8 @@
           Join Discord
         </a>
         <a
-          href="https://cal.com/yaqeen/30min"
+          href="/talk-to-founder"
           class="btn btn-primary gap-2"
-          target="_blank"
-          rel="noopener noreferrer"
         >
           <Calendar size={16} weight="duotone" />
           Talk to Founder

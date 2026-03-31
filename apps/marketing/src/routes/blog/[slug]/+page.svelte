@@ -40,9 +40,13 @@
   />
   <meta property="og:description" content={data.metadata?.excerpt || ""} />
   <meta property="og:image" content={ogImage} />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta property="article:published_time" content={data.metadata?.date} />
   <meta property="article:author" content="Owostack Team" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@owostack" />
+  <meta name="twitter:creator" content="@owostack" />
   <meta name="twitter:url" content={`https://owostack.com/blog/${data.slug}`} />
   <meta
     name="twitter:title"
