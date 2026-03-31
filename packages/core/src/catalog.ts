@@ -744,6 +744,8 @@ export function buildSyncPayload(
           enabled: f.enabled,
           // Boolean features have no limit concept (null), metered features use limit from config
           limit: f.featureType === "boolean" ? null : (f.config?.limit ?? null),
+          trialLimit:
+            f.featureType === "boolean" ? null : (f.config?.trialLimit ?? null),
           // Boolean features have no reset interval
           ...(f.featureType !== "boolean" && {
             reset: f.config?.reset || "monthly",
