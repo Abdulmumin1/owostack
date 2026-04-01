@@ -55,6 +55,7 @@
   let configRolloverEnabled = $state<boolean>(false);
   let configRolloverMaxBalance = $state<string>("");
   let showTrialConfig = $state<boolean>(false);
+  let lastFeatureId = $state<string | null>(null);
 
   function createTierRow(
     tier?: Partial<{ upTo: number | null; unitPrice?: number; flatFee?: number }>,
@@ -262,7 +263,12 @@
 
   $effect(() => {
     if (open && feature) {
-      initializeForm(feature);
+      if (feature.id !== lastFeatureId) {
+        lastFeatureId = feature.id;
+        initializeForm(feature);
+      }
+    } else {
+      lastFeatureId = null;
     }
   });
 

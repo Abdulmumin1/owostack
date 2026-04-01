@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-    CheckCircle,
-    Lightning,
-  } from "phosphor-svelte";
+  import { CheckCircle, Lightning } from "phosphor-svelte";
   import ProgressBar from "$lib/components/ui/ProgressBar.svelte";
 
   let {
@@ -61,9 +58,6 @@
       <h3 class="text-[13px] font-medium text-text-primary">
         {item.featureName}
       </h3>
-      {#if item.isTrialing}
-        <span class="badge badge-info text-[9px] uppercase">Trial</span>
-      {/if}
     </div>
 
     <div class="flex items-center gap-2 text-[13px] text-text-primary">
@@ -79,8 +73,13 @@
 
   {#if showsProgress}
     <div class="flex items-center gap-4">
-      <div class="w-full bg-bg-secondary rounded-full h-[3px] overflow-hidden opacity-60">
-        <div class="bg-text-secondary h-full rounded-full" style="width: {(progressValue / progressMax) * 100}%"></div>
+      <div
+        class="w-full bg-bg-secondary rounded-full h-2 overflow-hidden opacity-60"
+      >
+        <div
+          class="bg-accent h-full rounded-full"
+          style="width: {(progressValue / progressMax) * 100}%"
+        ></div>
       </div>
       <div class="text-[10px] text-text-dim shrink-0 whitespace-nowrap">
         {formatNumber(item.balance)} / {formatNumber(item.limit)}

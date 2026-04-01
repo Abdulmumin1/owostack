@@ -3664,6 +3664,12 @@
                                   "null"
                                 ]
                               },
+                              "trialLimit": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
                               "reset": {
                                 "type": "string"
                               },
