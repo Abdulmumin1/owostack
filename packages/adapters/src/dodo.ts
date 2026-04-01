@@ -523,6 +523,34 @@ export const dodoAdapter: ProviderAdapter = {
       ...(subscriptionData ? { subscription_data: subscriptionData } : {}),
     });
 
+    // If the provider returned a customer-not-found error, retry without the
+    // customer_id so the provider creates a fresh customer record.
+    if (response.isErr() && isRealCustomerId) {
+      const errMsg = String((response.error as any)?.message ?? "");
+      if (errMsg.includes("not found") || errMsg.includes("NOT_FOUND")) {
+        console.warn(
+          `[dodo] Customer ${custId} not found on provider, retrying without customer_id`,
+        );
+        const retry = await clientResult.value.createCheckoutSession({
+          product_cart: [{ product_id: productId, quantity }],
+          customer: params.customer
+            ? { email: params.customer.email }
+            : undefined,
+          return_url: params.callbackUrl,
+          metadata: coerceMetadata(params.metadata),
+          ...(subscriptionData ? { subscription_data: subscriptionData } : {}),
+        });
+
+        if (retry.isErr()) return retry;
+
+        return Result.ok({
+          url: retry.value.checkout_url,
+          reference: retry.value.session_id,
+          accessCode: null,
+        });
+      }
+    }
+
     if (response.isErr()) return response;
 
     return Result.ok({
