@@ -4,7 +4,12 @@ import { eq, and, or } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { resolveOrCreateCustomer } from "../../lib/customers";
 import { verifyApiKey } from "../../lib/api-keys";
-import { executeSwitch, provisionEntitlements } from "../../lib/plan-switch";
+import {
+  executeSwitch,
+  provisionEntitlements,
+  findSwitchableSubscription,
+  cancelSubscription,
+} from "../../lib/plan-switch";
 import { hasPaymentMethod } from "../../lib/overage-guards";
 import type { ProviderContext } from "../../lib/plan-switch";
 import { ensurePlanSynced } from "../../lib/plan-sync";
@@ -368,6 +373,21 @@ export function createCheckoutRoute(
               `[TRIAL] Creating no-card trial: plan=${plan.id}, customer=${customerRecord.id}, duration=${trialDays} ${trialUnit}, endsAt=${new Date(trialEndMs).toISOString()}`,
             );
 
+            // Cancel any existing subscription in the same plan group
+            const oldSub = await findSwitchableSubscription(
+              db,
+              customerRecord.id,
+              { planGroup: plan.planGroup, isAddon: plan.isAddon },
+            );
+            const oldPlanId =
+              oldSub && oldSub.planId !== plan.id ? oldSub.planId : undefined;
+            if (oldSub && oldSub.planId !== plan.id) {
+              await cancelSubscription(db, oldSub, providerCtx);
+              console.log(
+                `[TRIAL] Canceled existing subscription ${oldSub.id} (plan=${oldPlanId}) in same group before trial`,
+              );
+            }
+
             let subscriptionId;
 
             if (existingSub && existingSub.status === "pending") {
@@ -446,7 +466,12 @@ export function createCheckoutRoute(
             }
 
             // Provision entitlements so trial users can access features
-            await deps.provisionEntitlements(db, customerRecord.id, plan.id);
+            await deps.provisionEntitlements(
+              db,
+              customerRecord.id,
+              plan.id,
+              oldPlanId,
+            );
 
             console.log(
               `[TRIAL] No-card trial activated: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
@@ -532,6 +557,21 @@ export function createCheckoutRoute(
                   ? now + trialDays * 60 * 1000
                   : now + trialDays * 24 * 60 * 60 * 1000;
 
+              // Cancel any existing subscription in the same plan group
+              const oldSub = await findSwitchableSubscription(
+                db,
+                customerRecord.id,
+                { planGroup: plan.planGroup, isAddon: plan.isAddon },
+              );
+              const oldPlanId =
+                oldSub && oldSub.planId !== plan.id ? oldSub.planId : undefined;
+              if (oldSub && oldSub.planId !== plan.id) {
+                await cancelSubscription(db, oldSub, providerCtx);
+                console.log(
+                  `[TRIAL] Canceled existing subscription ${oldSub.id} (plan=${oldPlanId}) in same group before card-required trial`,
+                );
+              }
+
               const trialCode = `trial-${crypto.randomUUID().slice(0, 8)}`;
 
               // Find existing pending sub if it exists to prevent duplicates
@@ -616,7 +656,12 @@ export function createCheckoutRoute(
                 );
               }
 
-              await deps.provisionEntitlements(db, customerRecord.id, plan.id);
+              await deps.provisionEntitlements(
+                db,
+                customerRecord.id,
+                plan.id,
+                oldPlanId,
+              );
 
               return c.json(
                 {
