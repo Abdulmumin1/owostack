@@ -78,4 +78,57 @@ describe("plan-feature-normalization", () => {
       }),
     ).toBe("Usage-based package pricing requires pricePerUnit.");
   });
+
+  describe("trialLimitValue", () => {
+    it("clears trialLimitValue for usage-based features", () => {
+      expect(
+        normalizePlanFeaturePricingConfig({
+          usageModel: "usage_based",
+          limitValue: 1000,
+          trialLimitValue: 500,
+        }),
+      ).toEqual({
+        usageModel: "usage_based",
+        limitValue: null,
+        trialLimitValue: null,
+      });
+    });
+
+    it("preserves trialLimitValue for included features", () => {
+      expect(
+        normalizePlanFeaturePricingConfig({
+          usageModel: "included",
+          limitValue: 10000,
+          trialLimitValue: 1000,
+        }),
+      ).toEqual({
+        usageModel: "included",
+        limitValue: 10000,
+        trialLimitValue: 1000,
+      });
+    });
+
+    it("handles null trialLimitValue", () => {
+      expect(
+        normalizePlanFeaturePricingConfig({
+          usageModel: "included",
+          limitValue: 10000,
+          trialLimitValue: null,
+        }),
+      ).toEqual({
+        usageModel: "included",
+        limitValue: 10000,
+        trialLimitValue: null,
+      });
+    });
+
+    it("preserves trialLimitValue when not explicitly set", () => {
+      const result = normalizePlanFeaturePricingConfig({
+        usageModel: "included",
+        limitValue: 10000,
+      });
+      expect(result.limitValue).toBe(10000);
+      expect(result.trialLimitValue).toBeUndefined();
+    });
+  });
 });
