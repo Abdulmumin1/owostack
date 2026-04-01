@@ -54,6 +54,7 @@
   let configMaxOverageUnits = $state<string>("");
   let configRolloverEnabled = $state<boolean>(false);
   let configRolloverMaxBalance = $state<string>("");
+  let showTrialConfig = $state<boolean>(false);
 
   function createTierRow(
     tier?: Partial<{ upTo: number | null; unitPrice?: number; flatFee?: number }>,
@@ -187,14 +188,15 @@
   }
 
   function initializeForm(currentFeature: any) {
-    configLimitValue =
-      currentFeature.limitValue === null || currentFeature.limitValue === undefined
-        ? ""
-        : String(currentFeature.limitValue);
+    const rawLimit = currentFeature.limitValue ?? currentFeature.limit_value;
+    configLimitValue = rawLimit === null || rawLimit === undefined ? "" : String(rawLimit);
+
+    const rawTrialLimit = currentFeature.trialLimitValue ?? currentFeature.trial_limit_value;
     configTrialLimitValue =
-      currentFeature.trialLimitValue === null || currentFeature.trialLimitValue === undefined
+      rawTrialLimit === null || rawTrialLimit === undefined || isNaN(Number(rawTrialLimit))
         ? ""
-        : String(currentFeature.trialLimitValue);
+        : String(rawTrialLimit);
+    showTrialConfig = configTrialLimitValue !== "";
 
     const rawInterval = currentFeature.resetInterval || "monthly";
     const intervalAliases: Record<string, string> = {
@@ -640,30 +642,50 @@
             </div>
           </div>
 
-          <div class="space-y-2.5 pt-2">
-            <div class="flex items-center justify-between px-1">
-              <label for="trialLimitValueConfig" class="text-[11px] font-bold text-text-dim uppercase tracking-wider">
-                Trial Grant Amount
-              </label>
-              <span class="text-[10px] text-text-muted">Optional</span>
-            </div>
-            <p class="text-[11px] text-text-muted px-1">
-              Different limit during trial period. Leave empty to use the same as regular grant.
-            </p>
+          <div class="space-y-3 pt-1">
+            {#if !showTrialConfig}
+              <button
+                type="button"
+                class="flex items-center gap-2 px-1 text-[11px] font-bold text-accent hover:text-accent-hover transition-colors uppercase tracking-wider"
+                onclick={() => (showTrialConfig = true)}
+              >
+                <Plus size={12} weight="bold" /> Set Different Trial Grant
+              </button>
+            {:else}
+              <div class="space-y-2.5 pt-1" transition:fly={{ y: 5, duration: 150 }}>
+                <div class="flex items-center justify-between px-1">
+                  <label for="trialLimitValueConfig" class="text-[11px] font-bold text-text-dim uppercase tracking-wider">
+                    Trial Grant Amount
+                  </label>
+                  <button
+                    type="button"
+                    class="text-[11px] font-bold text-error/80 hover:text-error transition-colors uppercase tracking-wider"
+                    onclick={() => {
+                      showTrialConfig = false;
+                      configTrialLimitValue = "";
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <p class="text-[11px] text-text-muted px-1">
+                  Custom limit applied during the trial period only.
+                </p>
 
-            <div class="input-icon-wrapper">
-              <input
-                id="trialLimitValueConfig"
-                name="trialLimitValue"
-                type="number"
-                placeholder="e.g. 50 (for trial)"
-                class="input !h-10 !text-sm !pr-16"
-                bind:value={configTrialLimitValue}
-              />
-              <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-dim pointer-events-none capitalize">
-                {feature?.feature?.unit || "units"}
+                <div class="input-icon-wrapper">
+                  <input
+                    id="trialLimitValueConfig"
+                    type="number"
+                    placeholder="e.g. 50"
+                    class="input !h-10 !text-sm !pr-16"
+                    bind:value={configTrialLimitValue}
+                  />
+                  <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-dim pointer-events-none capitalize">
+                    {feature?.feature?.unit || "units"}
+                  </div>
+                </div>
               </div>
-            </div>
+            {/if}
           </div>
         {:else}
           <div class="rounded-lg border border-border bg-bg-card p-4">

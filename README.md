@@ -22,7 +22,7 @@ Owostack supports multiple payment gateways while providing first-class features
 - **Flexible Resets** (minutes, hourly, daily, monthly quotas, yearly, custom)
 - **Credit Systems** (shared balances across features)
 - **Add-on** (purchased against credit systems, or could be plan based addons)
-- **Multi-provider** payment provider is abstracted into an adapter mechanism. (currently implemented - Paystack,  Stripe & Dodo Payments)
+- **Multi-provider** payment provider is abstracted into an adapter mechanism. (currently implemented - Paystack, Stripe & Dodo Payments)
 
 ## Quick Start
 
@@ -32,6 +32,7 @@ bun add owostack
 ```
 
 ### 1. Define your features
+
 Create a config file (e.g. `owo.config.ts`) or run `bunx owosk init`.
 define your features using metered(), boolean(), and entity():
 
@@ -40,7 +41,7 @@ import { metered, boolean, entity } from "owostack";
 apiCalls = metered("api-calls", { name: "API Calls" });
 analytics = boolean("analytics", { name: "Analytics Dashboard" });
 seats = entity("seats", { name: "Team Seats" });
-````
+```
 
 ### 2. Define your plans.
 
@@ -55,12 +56,8 @@ export default new Owostack({
       price: 0,
       currency: "NGN",
       interval: "monthly",
-      autoEnable:true,
-      features: [
-        apiCalls.limit(1000),
-        analytics.off(),
-        seats.limit(3),
-      ],
+      autoEnable: true,
+      features: [apiCalls.limit(1000), analytics.off(), seats.limit(3)],
     }),
     plan("pro", {
       name: "Pro",
@@ -85,6 +82,7 @@ export default new Owostack({
 ```
 
 ### 3. Sync to the API
+
 Using the CLI
 
 ```bash
@@ -92,6 +90,7 @@ npx owosk sync --config ./owo.config.ts
 ```
 
 ### 4. Runtime primitives.
+
 This are the calls that would be sprinkled all over ur codebase.
 
 ```ts
