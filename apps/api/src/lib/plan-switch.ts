@@ -1,6 +1,7 @@
 import { eq, and, inArray } from "drizzle-orm";
 import { createDb, schema } from "@owostack/db";
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
+import { ensurePlanSynced } from "./plan-sync";
 // Workflow type (any since it's a Cloudflare Workflow binding)
 type WorkflowBinding = {
   create: (opts: { params: Record<string, unknown> }) => Promise<unknown>;
@@ -417,7 +418,32 @@ async function handleUpgrade(
     customer.providerCustomerId ||
     customer.paystackCustomerId ||
     customer.email;
-  const planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
+  let planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
+
+  // Lazy plan sync for upgrades
+  if (
+    !planRef &&
+    provider &&
+    newPlan.type === "paid" &&
+    newPlan.billingType === "recurring"
+  ) {
+    try {
+      const syncedId = await ensurePlanSynced(
+        db,
+        newPlan,
+        provider.adapter,
+        provider.account,
+      );
+      if (syncedId) {
+        planRef = syncedId;
+      }
+    } catch (e) {
+      console.warn(
+        `[plan-switch] Lazy plan sync (upgrade) failed for ${newPlan.id}:`,
+        e,
+      );
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Native plan change — providers like Dodo handle proration internally.
@@ -854,7 +880,30 @@ async function handleNewSubscription(
     customer.providerCustomerId ||
     customer.paystackCustomerId ||
     customer.email;
-  const planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
+  let planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
+
+  // Lazy plan sync: if provider is available but plan has no provider ID,
+  // create the plan on the provider first (e.g. Dodo requires a product_id)
+  if (
+    !planRef &&
+    provider &&
+    newPlan.type === "paid" &&
+    newPlan.billingType === "recurring"
+  ) {
+    try {
+      const syncedId = await ensurePlanSynced(
+        db,
+        newPlan,
+        provider.adapter,
+        provider.account,
+      );
+      if (syncedId) {
+        planRef = syncedId;
+      }
+    } catch (e) {
+      console.warn(`[plan-switch] Lazy plan sync failed for ${newPlan.id}:`, e);
+    }
+  }
 
   // If card on file and provider available, create subscription directly.
   // Skip for providers that use checkout-based subscriptions (supportsNativeTrials) —
