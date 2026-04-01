@@ -425,10 +425,7 @@ async function handleUpgrade(
   const providerId = resolveProviderId(provider, options.metadata);
   const authCode =
     customer.providerAuthorizationCode || customer.paystackAuthorizationCode;
-  const customerRef =
-    customer.providerCustomerId ||
-    customer.paystackCustomerId ||
-    customer.email;
+  const customerRef = resolveCustomerRef(customer, provider);
   let planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
 
   // Lazy plan sync for upgrades
@@ -622,10 +619,7 @@ async function createUpgradeCheckout(
     };
   }
 
-  const customerRef =
-    customer.providerCustomerId ||
-    customer.paystackCustomerId ||
-    customer.email;
+  const customerRef = resolveCustomerRef(customer, provider);
 
   // NOTE: Do NOT pass `plan` here. We charge the prorated amount as a one-time
   // payment; the webhook handler creates the new subscription when the charge succeeds.
@@ -823,10 +817,7 @@ async function handleOneTimePurchase(
     };
   }
 
-  const customerRef =
-    customer.providerCustomerId ||
-    customer.paystackCustomerId ||
-    customer.email;
+  const customerRef = resolveCustomerRef(customer, provider);
 
   // Always use checkout for one-time purchases (auto-charge reserved for overages only)
   if (!provider) {
@@ -887,10 +878,7 @@ async function handleNewSubscription(
   const providerId = resolveProviderId(provider, options.metadata);
   const authCode =
     customer.providerAuthorizationCode || customer.paystackAuthorizationCode;
-  const customerRef =
-    customer.providerCustomerId ||
-    customer.paystackCustomerId ||
-    customer.email;
+  const customerRef = resolveCustomerRef(customer, provider);
   let planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
 
   // Lazy plan sync: if provider is available but plan has no provider ID,
@@ -1014,6 +1002,39 @@ async function handleNewSubscription(
 // =============================================================================
 // Helpers
 // =============================================================================
+
+/**
+ * Resolve the correct customer reference for a given provider.
+ *
+ * The customers table has `providerCustomerId` (generic) and
+ * `paystackCustomerId` (Paystack-specific). In a multi-provider setup
+ * `providerCustomerId` may hold a Paystack ID (CUS_xxx) while the
+ * checkout targets Dodo or Stripe. Passing the wrong provider's ID
+ * causes a 404 on the target provider.
+ */
+function resolveCustomerRef(
+  customer: any,
+  provider: ProviderContext | null,
+): string {
+  const adapterId = provider?.adapter?.id;
+
+  if (adapterId === "paystack") {
+    return (
+      customer.paystackCustomerId ||
+      customer.providerCustomerId ||
+      customer.email
+    );
+  }
+
+  // For non-Paystack providers: if providerCustomerId looks like a Paystack ID
+  // (uppercase CUS_ prefix), skip it and use email instead
+  const genericId = customer.providerCustomerId;
+  if (genericId && /^CUS_/i.test(genericId)) {
+    return customer.email;
+  }
+
+  return genericId || customer.email;
+}
 
 export async function findSwitchableSubscription(
   db: DB,
