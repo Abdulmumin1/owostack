@@ -87,6 +87,45 @@ For native-trial providers, Owostack passes the trial period to the provider.
 For Paystack, Owostack uses an auth/capture-style card verification flow when a
 card is required, then manages the trial lifecycle itself.
 
+## Trial-specific limits
+
+You can set different usage limits for metered features during the trial period. This is useful for giving customers a taste of your product without providing full access.
+
+```ts
+plan("pro", {
+  name: "Pro",
+  price: 2000,
+  currency: "USD",
+  interval: "monthly",
+  trialDays: 14,
+  features: [
+    metered("api-calls").limit(10000).trialLimit(1000),
+    metered("ai-tokens").limit(50000).trialLimit(5000),
+  ],
+});
+```
+
+In this example:
+
+- During the 14-day trial: customers get 1,000 API calls and 5,000 AI tokens
+- After trial converts: customers get 10,000 API calls and 50,000 AI tokens
+
+If you don't set a `trialLimit`, the regular `limit` applies during both trial and active periods.
+
+### How it works
+
+When a customer is in a trial period:
+
+1. `owo.check()` automatically uses the trial limit
+2. `owo.track()` counts against the trial limit
+3. The dashboard shows a "Trial" badge on the customer's entitlements
+
+When the trial ends:
+
+1. The trial-end workflow resets usage meters to use regular limits
+2. The customer's next `check()` call sees the full limit
+3. Any remaining trial balance does not roll over
+
 ## Check trial status
 
 `check()` works normally during the trial:
@@ -97,8 +136,10 @@ const access = await owo.check({
   feature: "api-calls",
 });
 
-console.log(access.allowed);  // true
-console.log(access.balance);  // 10000
+console.log(access.allowed); // true
+console.log(access.balance); // 1000 (during trial)
+console.log(access.details?.trial); // true
+console.log(access.details?.trialEndsAt); // "2026-03-20T12:00:00Z"
 ```
 
 The subscription status remains `trialing` until the trial ends.
