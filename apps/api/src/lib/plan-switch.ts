@@ -313,6 +313,17 @@ export async function executeSwitch(
   }
 
   // =========================================================================
+  // UPGRADE from FREE — treat as new subscription (no proration needed)
+  // Providers like Dodo don't support raw-amount checkouts, so the proration
+  // flow (createUpgradeCheckout with plan: null) would fail. Since the old
+  // plan is free, there's nothing to prorate — just cancel and subscribe.
+  // =========================================================================
+  if (switchType === "upgrade" && existingSub && existingSub.plan.price === 0) {
+    await cancelSubscription(db, existingSub, provider);
+    return handleNewSubscription(db, customer, newPlan, provider, options);
+  }
+
+  // =========================================================================
   // UPGRADE — immediate switch, prorated charge
   // =========================================================================
   if (switchType === "upgrade") {
