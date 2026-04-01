@@ -66,6 +66,7 @@ const syncPlanFeatureSchema = z.object({
   slug: z.string().min(1),
   enabled: z.boolean(),
   limit: z.number().nullable().optional(),
+  trialLimit: z.number().nullable().optional(),
   reset: z.string().optional(),
   usageModel: z.enum(["included", "usage_based", "prepaid"]).optional(),
   pricePerUnit: z.number().optional(),

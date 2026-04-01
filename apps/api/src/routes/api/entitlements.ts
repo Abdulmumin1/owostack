@@ -1229,7 +1229,7 @@ app.openapi(
 
     // Calculate effective limit considering trial status
     const effectiveLimit =
-      isTrial && planFeature.trialLimitValue !== undefined
+      isTrial && planFeature.trialLimitValue != null
         ? planFeature.trialLimitValue
         : planFeature.limitValue;
 
@@ -2522,6 +2522,12 @@ app.openapi(
         : null;
 
     const trackPlanName = (subscription as any).plan?.name || "current plan";
+
+    // Calculate effective limit considering trial status
+    const effectiveLimit =
+      isTrial && planFeature.trialLimitValue != null
+        ? planFeature.trialLimitValue
+        : planFeature.limitValue;
 
     function buildTrackDetails(
       message: string,
