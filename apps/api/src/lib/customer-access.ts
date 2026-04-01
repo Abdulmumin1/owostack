@@ -470,6 +470,11 @@ export async function buildCustomerAccessSnapshot(
             })
           : null;
 
+      const isTrialing = entry.subscription?.status === "trialing";
+      const planTrialLimitValue = entry.planFeature?.trialLimitValue ?? null;
+      const effectiveLimit =
+        balanceState?.limit ?? entry.effectiveEntitlement.limitValue ?? null;
+
       return {
         featureId: entry.featureId,
         featureName: entry.featureName,
@@ -479,6 +484,7 @@ export async function buildCustomerAccessSnapshot(
         planId: entry.planFeature?.planId ?? null,
         planName: entry.subscription?.planName ?? null,
         planLimitValue: entry.planFeature?.limitValue ?? null,
+        planTrialLimitValue,
         planResetInterval: entry.planFeature?.resetInterval ?? null,
         entitlementLimitValue: entry.effectiveEntitlement.limitValue ?? null,
         entitlementResetInterval:
@@ -494,8 +500,12 @@ export async function buildCustomerAccessSnapshot(
         grantedReason: entry.manualEntitlement?.grantedReason ?? null,
         balance: balanceState?.balance ?? null,
         usage: balanceState?.usage ?? null,
-        limit:
-          balanceState?.limit ?? entry.effectiveEntitlement.limitValue ?? null,
+        limit: effectiveLimit,
+        isTrialing,
+        isTrialLimit:
+          isTrialing &&
+          planTrialLimitValue !== null &&
+          effectiveLimit === planTrialLimitValue,
         rolloverBalance: balanceState?.rolloverBalance ?? 0,
         addonBalance: addonBalanceByFeatureId.get(entry.featureId) ?? null,
       };
