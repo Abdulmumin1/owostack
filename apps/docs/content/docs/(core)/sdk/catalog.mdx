@@ -55,6 +55,33 @@ apiCalls.limit(50000, {
 | `config.billingUnits`    | `number`                                   | `1`          | Package size for billing                         |
 | `config.creditCost`      | `number`                                   | —            | Cost in credits per unit                         |
 
+#### `.trialLimit(value)`
+
+Set a different usage limit for the trial period. When a customer is in a trial, this limit applies instead of the regular limit.
+
+```ts
+apiCalls.limit(10000).trialLimit(1000);
+```
+
+| Parameter | Type     | Required | Description                          |
+| --------- | -------- | -------- | ------------------------------------ |
+| `value`   | `number` | Yes      | Trial usage limit (null = unlimited) |
+
+**Example:** Give customers 1,000 API calls during their 14-day trial, then 10,000 calls per month once they convert:
+
+```ts
+plan("pro", {
+  name: "Pro",
+  price: 2000,
+  currency: "USD",
+  interval: "monthly",
+  trialDays: 14,
+  features: [apiCalls.limit(10000).trialLimit(1000)],
+});
+```
+
+If you don't set a trial limit, the regular limit applies during both trial and active periods.
+
 #### `.unlimited()`
 
 Create a plan feature entry with no limit.

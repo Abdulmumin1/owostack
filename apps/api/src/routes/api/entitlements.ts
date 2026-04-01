@@ -76,10 +76,18 @@ function getUsageModel(
   return "included";
 }
 
-function getGuardIncluded(planFeature: any): number | null {
-  return getUsageModel(planFeature) === "usage_based"
-    ? 0
-    : planFeature.limitValue;
+function getGuardIncluded(
+  planFeature: any,
+  isTrial: boolean = false,
+): number | null {
+  if (getUsageModel(planFeature) === "usage_based") {
+    return 0;
+  }
+  // Use trialLimitValue when on trial, fall back to limitValue
+  if (isTrial && planFeature.trialLimitValue !== undefined) {
+    return planFeature.trialLimitValue;
+  }
+  return planFeature.limitValue;
 }
 
 function buildPricingDetails(
@@ -814,6 +822,7 @@ app.openapi(
           organizationId,
           customerId,
           customerData,
+          autoApplyPlansOnCreate: true,
           cache,
           waitUntil: (p) => c.executionCtx.waitUntil(p),
         }),
@@ -1219,6 +1228,12 @@ app.openapi(
         : null;
     const planName = (subscription as any).plan?.name || "current plan";
 
+    // Calculate effective limit considering trial status
+    const effectiveLimit =
+      isTrial && planFeature.trialLimitValue != null
+        ? planFeature.trialLimitValue
+        : planFeature.limitValue;
+
     // Helper to build the details object — only includes truthy optional fields
     function buildDetails(
       message: string,
@@ -1291,7 +1306,7 @@ app.openapi(
 
         // Pass current config inline — single RPC call, no extra round-trip
         const currentConfig = {
-          limit: planFeature.limitValue,
+          limit: effectiveLimit,
           resetInterval: planFeature.resetInterval,
           resetOnEnable: planFeature.resetOnEnable || false,
           rolloverEnabled: planFeature.rolloverEnabled || false,
@@ -1776,7 +1791,7 @@ app.openapi(
             allowed: false,
             code: "billing_unavailable",
             usage: null,
-            limit: planFeature.limitValue,
+            limit: effectiveLimit,
             balance: null,
             resetsAt,
             resetInterval: planFeature.resetInterval,
@@ -1849,7 +1864,7 @@ app.openapi(
 
       // Check Usage Limit
       // If limitValue is null, it's unlimited
-      if (planFeature.limitValue === null) {
+      if (effectiveLimit === null) {
         return c.json(
           {
             allowed: true,
@@ -1869,7 +1884,7 @@ app.openapi(
         );
       }
 
-      if (currentUsage + effectiveValue > planFeature.limitValue) {
+      if (currentUsage + effectiveValue > effectiveLimit) {
         // During trials, always block at limit — no overage billing for free trials
         const overageSetting = isTrial
           ? "block"
@@ -1889,14 +1904,14 @@ app.openapi(
                 allowed: true,
                 code: "addon_credits_used",
                 usage: currentUsage,
-                limit: planFeature.limitValue,
-                balance: planFeature.limitValue - currentUsage,
+                limit: effectiveLimit,
+                balance: effectiveLimit - currentUsage,
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
                 addonCredits: addonBalance,
                 planCredits: {
                   used: currentUsage,
-                  limit: planFeature.limitValue,
+                  limit: effectiveLimit,
                   resetsAt,
                 },
                 details: buildDetails(
@@ -1936,8 +1951,8 @@ app.openapi(
                 allowed: true,
                 code: "overage_allowed",
                 usage: currentUsage,
-                limit: planFeature.limitValue,
-                balance: planFeature.limitValue - currentUsage,
+                limit: effectiveLimit,
+                balance: effectiveLimit - currentUsage,
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
                 details: buildDetails(
@@ -1969,8 +1984,8 @@ app.openapi(
             allowed: false,
             code: "limit_exceeded",
             usage: currentUsage,
-            limit: planFeature.limitValue,
-            balance: planFeature.limitValue - currentUsage,
+            limit: effectiveLimit,
+            balance: effectiveLimit - currentUsage,
             resetsAt,
             resetInterval: planFeature.resetInterval,
             ...(dbBlockAddonCredits !== undefined
@@ -2006,8 +2021,8 @@ app.openapi(
               allowed: false,
               code: "insufficient_credits",
               usage: currentUsage,
-              limit: planFeature.limitValue,
-              balance: planFeature.limitValue - currentUsage,
+              limit: effectiveLimit,
+              balance: effectiveLimit - currentUsage,
               resetsAt,
               resetInterval: planFeature.resetInterval,
               details: buildDetails(
@@ -2068,8 +2083,8 @@ app.openapi(
           allowed: true,
           code: "access_granted",
           usage: currentUsage,
-          limit: planFeature.limitValue,
-          balance: planFeature.limitValue - currentUsage,
+          limit: effectiveLimit,
+          balance: effectiveLimit - currentUsage,
           resetsAt,
           resetInterval: planFeature.resetInterval,
           details: buildDetails(
@@ -2139,6 +2154,7 @@ app.openapi(
           organizationId,
           customerId,
           customerData,
+          autoApplyPlansOnCreate: true,
           cache,
           waitUntil: (p) => c.executionCtx.waitUntil(p),
         }),
@@ -2509,6 +2525,12 @@ app.openapi(
 
     const trackPlanName = (subscription as any).plan?.name || "current plan";
 
+    // Calculate effective limit considering trial status
+    const effectiveLimit =
+      isTrial && planFeature.trialLimitValue != null
+        ? planFeature.trialLimitValue
+        : planFeature.limitValue;
+
     function buildTrackDetails(
       message: string,
       extra?: Record<string, unknown>,
@@ -2568,7 +2590,7 @@ app.openapi(
 
         // Pass current config inline — single RPC call, no extra round-trip
         const currentConfig = {
-          limit: planFeature.limitValue,
+          limit: effectiveLimit,
           resetInterval: planFeature.resetInterval,
           resetOnEnable: planFeature.resetOnEnable || false,
           rolloverEnabled: planFeature.rolloverEnabled || false,
@@ -2650,7 +2672,7 @@ app.openapi(
                 allowed: false,
                 code: "billing_unavailable",
                 usage: null,
-                limit: planFeature.limitValue,
+                limit: effectiveLimit,
                 balance: null,
                 resetsAt: new Date(periodEnd).toISOString(),
                 resetInterval: planFeature.resetInterval,
@@ -2721,7 +2743,7 @@ app.openapi(
                   allowed: true,
                   code: "addon_credits_used",
                   usage: addonDoUsage,
-                  limit: planFeature.limitValue,
+                  limit: effectiveLimit,
                   balance: doResult.balance,
                   resetsAt: new Date(periodEnd).toISOString(),
                   resetInterval: planFeature.resetInterval,
@@ -2731,7 +2753,7 @@ app.openapi(
                   addonCredits: deductResult.remaining ?? 0,
                   planCredits: {
                     used: addonDoUsage ?? 0,
-                    limit: planFeature.limitValue,
+                    limit: effectiveLimit,
                     resetsAt: new Date(periodEnd).toISOString(),
                   },
                   details: buildTrackDetails(
@@ -2782,7 +2804,7 @@ app.openapi(
                   allowed: false,
                   code: "limit_exceeded",
                   usage: guardUsage,
-                  limit: planFeature.limitValue,
+                  limit: effectiveLimit,
                   balance: doResult.balance,
                   resetsAt: new Date(periodEnd).toISOString(),
                   resetInterval: planFeature.resetInterval,
@@ -2836,7 +2858,7 @@ app.openapi(
                       allowed: false,
                       code: "limit_exceeded",
                       usage: doResult.usage ?? null,
-                      limit: planFeature.limitValue,
+                      limit: effectiveLimit,
                       balance: doResult.balance,
                       resetsAt: new Date(periodEnd).toISOString(),
                       resetInterval: planFeature.resetInterval,
@@ -2873,7 +2895,7 @@ app.openapi(
                 allowed: false,
                 code: "limit_exceeded",
                 usage: blockUsage,
-                limit: planFeature.limitValue,
+                limit: effectiveLimit,
                 balance: doResult.balance,
                 resetsAt: new Date(periodEnd).toISOString(),
                 resetInterval: planFeature.resetInterval,
@@ -3013,7 +3035,7 @@ app.openapi(
           allowed: true,
           code: isOverage ? "tracked_overage" : "tracked",
           usage: successUsage,
-          limit: planFeature.limitValue,
+          limit: effectiveLimit,
           balance: doResult?.balance ?? null,
           resetsAt: new Date(periodEnd).toISOString(),
           resetInterval: planFeature.resetInterval,

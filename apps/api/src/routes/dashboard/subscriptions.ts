@@ -264,6 +264,7 @@ app.get("/:id", async (c) => {
           featureType: schema.features.type,
           unit: schema.features.unit,
           limitValue: schema.planFeatures.limitValue,
+          trialLimitValue: schema.planFeatures.trialLimitValue,
           resetInterval: schema.planFeatures.resetInterval,
         })
         .from(schema.planFeatures)

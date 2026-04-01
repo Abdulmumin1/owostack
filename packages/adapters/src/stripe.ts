@@ -827,6 +827,41 @@ export const stripeAdapter: ProviderAdapter = {
 
     const response =
       await clientResult.value.createCheckoutSession(sessionBody);
+
+    // If the customer ID belongs to a different provider, Stripe returns
+    // "No such customer". Retry without the customer ID — use email instead.
+    if (response.isErr() && customerId) {
+      const errMsg = String((response.error as any)?.message ?? "");
+      if (errMsg.includes("No such customer") || errMsg.includes("not found")) {
+        console.warn(
+          `[stripe] Customer ${customerId} not found on Stripe, retrying with email`,
+        );
+        delete sessionBody.customer;
+        sessionBody.customer_email = params.customer.email;
+        if (!isSubscriptionCheckout) {
+          sessionBody.customer_creation = "always";
+        }
+
+        const retry =
+          await clientResult.value.createCheckoutSession(sessionBody);
+        if (retry.isErr()) return retry;
+
+        if (!retry.value.url) {
+          return Result.err({
+            code: "request_failed",
+            message: "Stripe checkout session response missing URL",
+            providerId: PROVIDER_ID,
+          });
+        }
+
+        return Result.ok({
+          url: retry.value.url,
+          reference: retry.value.id,
+          accessCode: null,
+        });
+      }
+    }
+
     if (response.isErr()) return response;
 
     if (!response.value.url) {

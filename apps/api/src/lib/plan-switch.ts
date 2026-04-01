@@ -1,6 +1,7 @@
 import { eq, and, inArray } from "drizzle-orm";
 import { createDb, schema } from "@owostack/db";
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
+import { ensurePlanSynced } from "./plan-sync";
 // Workflow type (any since it's a Cloudflare Workflow binding)
 type WorkflowBinding = {
   create: (opts: { params: Record<string, unknown> }) => Promise<unknown>;
@@ -312,6 +313,17 @@ export async function executeSwitch(
   }
 
   // =========================================================================
+  // UPGRADE from FREE — treat as new subscription (no proration needed)
+  // Providers like Dodo don't support raw-amount checkouts, so the proration
+  // flow (createUpgradeCheckout with plan: null) would fail. Since the old
+  // plan is free, there's nothing to prorate — just cancel and subscribe.
+  // =========================================================================
+  if (switchType === "upgrade" && existingSub && existingSub.plan.price === 0) {
+    await cancelSubscription(db, existingSub, provider);
+    return handleNewSubscription(db, customer, newPlan, provider, options);
+  }
+
+  // =========================================================================
   // UPGRADE — immediate switch, prorated charge
   // =========================================================================
   if (switchType === "upgrade") {
@@ -417,7 +429,32 @@ async function handleUpgrade(
     customer.providerCustomerId ||
     customer.paystackCustomerId ||
     customer.email;
-  const planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
+  let planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
+
+  // Lazy plan sync for upgrades
+  if (
+    !planRef &&
+    provider &&
+    newPlan.type === "paid" &&
+    newPlan.billingType === "recurring"
+  ) {
+    try {
+      const syncedId = await ensurePlanSynced(
+        db,
+        newPlan,
+        provider.adapter,
+        provider.account,
+      );
+      if (syncedId) {
+        planRef = syncedId;
+      }
+    } catch (e) {
+      console.warn(
+        `[plan-switch] Lazy plan sync (upgrade) failed for ${newPlan.id}:`,
+        e,
+      );
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Native plan change — providers like Dodo handle proration internally.
@@ -854,7 +891,30 @@ async function handleNewSubscription(
     customer.providerCustomerId ||
     customer.paystackCustomerId ||
     customer.email;
-  const planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
+  let planRef = newPlan.providerPlanId || newPlan.paystackPlanId;
+
+  // Lazy plan sync: if provider is available but plan has no provider ID,
+  // create the plan on the provider first (e.g. Dodo requires a product_id)
+  if (
+    !planRef &&
+    provider &&
+    newPlan.type === "paid" &&
+    newPlan.billingType === "recurring"
+  ) {
+    try {
+      const syncedId = await ensurePlanSynced(
+        db,
+        newPlan,
+        provider.adapter,
+        provider.account,
+      );
+      if (syncedId) {
+        planRef = syncedId;
+      }
+    } catch (e) {
+      console.warn(`[plan-switch] Lazy plan sync failed for ${newPlan.id}:`, e);
+    }
+  }
 
   // If card on file and provider available, create subscription directly.
   // Skip for providers that use checkout-based subscriptions (supportsNativeTrials) —
@@ -955,7 +1015,7 @@ async function handleNewSubscription(
 // Helpers
 // =============================================================================
 
-async function findSwitchableSubscription(
+export async function findSwitchableSubscription(
   db: DB,
   customerId: string,
   newPlan: { planGroup: string | null; isAddon: boolean | null },
@@ -990,7 +1050,7 @@ async function findSwitchableSubscription(
   return subs.find((s: any) => !s.plan.isAddon) || null;
 }
 
-async function cancelSubscription(
+export async function cancelSubscription(
   db: DB,
   sub: any,
   provider: ProviderContext | null,

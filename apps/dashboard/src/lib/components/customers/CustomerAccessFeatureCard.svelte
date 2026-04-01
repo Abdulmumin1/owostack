@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-    CheckCircle,
-    Lightning,
-  } from "phosphor-svelte";
+  import { CheckCircle, Lightning } from "phosphor-svelte";
   import ProgressBar from "$lib/components/ui/ProgressBar.svelte";
 
   let {
@@ -15,6 +12,7 @@
       unit?: string | null;
       planName?: string | null;
       planLimitValue?: number | null;
+      planTrialLimitValue?: number | null;
       planResetInterval?: string | null;
       entitlementLimitValue?: number | null;
       entitlementResetInterval?: string | null;
@@ -23,6 +21,8 @@
       grantedReason?: string | null;
       balance?: number | null;
       limit?: number | null;
+      isTrialing?: boolean;
+      isTrialLimit?: boolean;
       rolloverBalance?: number;
       addonBalance?: number | null;
     };
@@ -73,11 +73,19 @@
 
   {#if showsProgress}
     <div class="flex items-center gap-4">
-      <div class="w-full bg-bg-secondary rounded-full h-[3px] overflow-hidden opacity-60">
-        <div class="bg-text-secondary h-full rounded-full" style="width: {(progressValue / progressMax) * 100}%"></div>
+      <div
+        class="w-full bg-bg-secondary rounded-full h-2 overflow-hidden opacity-60"
+      >
+        <div
+          class="bg-accent h-full rounded-full"
+          style="width: {(progressValue / progressMax) * 100}%"
+        ></div>
       </div>
       <div class="text-[10px] text-text-dim shrink-0 whitespace-nowrap">
         {formatNumber(item.balance)} / {formatNumber(item.limit)}
+        {#if item.isTrialLimit}
+          <span class="text-info ml-1">(trial)</span>
+        {/if}
       </div>
     </div>
   {/if}

@@ -77,10 +77,7 @@ export function eventMatchesCustomerPlanScope(
 
 export function filterDashboardEventsToPlanScope<
   T extends { data?: Record<string, unknown> | null },
->(
-  events: T[],
-  params: ScopeMatchParams & { limit?: number },
-): T[] {
+>(events: T[], params: ScopeMatchParams & { limit?: number }): T[] {
   const filtered = events.filter((event) =>
     eventMatchesCustomerPlanScope(event.data, params),
   );

@@ -325,6 +325,7 @@ app.get("/:id", async (c) => {
                 featureType: schema.features.type,
                 unit: schema.features.unit,
                 limitValue: schema.planFeatures.limitValue,
+                trialLimitValue: schema.planFeatures.trialLimitValue,
                 resetInterval: schema.planFeatures.resetInterval,
                 usageModel: schema.planFeatures.usageModel,
                 creditCost: schema.planFeatures.creditCost,
@@ -659,7 +660,10 @@ app.get("/:id", async (c) => {
         const d = new Date(u.createdAt);
         d.setHours(0, 0, 0, 0);
         const time = d.getTime();
-        usageByDay.set(time, (usageByDay.get(time) || 0) + (Number(u.amount) || 0));
+        usageByDay.set(
+          time,
+          (usageByDay.get(time) || 0) + (Number(u.amount) || 0),
+        );
       });
     }
 
@@ -678,7 +682,10 @@ app.get("/:id", async (c) => {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       days.push({
-        label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        label: d.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
         value: usageByDay.get(d.getTime()) || 0,
       });
     }
@@ -717,7 +724,8 @@ app.get("/:id", async (c) => {
         const allItems = invoiceItemsByInvoiceId.get(invoice.id) ?? [];
         const scopedItems = requestedPlanId
           ? allItems.filter(
-              (item) => item.featureId && scopedFeatureIdSet.has(item.featureId),
+              (item) =>
+                item.featureId && scopedFeatureIdSet.has(item.featureId),
             )
           : allItems;
 
@@ -765,14 +773,13 @@ app.get("/:id", async (c) => {
           products:
             productDescriptions.length > 0
               ? productDescriptions
-              : [
-                  invoice.description ||
-                    invoice.number ||
-                    "Usage charges",
-                ],
+              : [invoice.description || invoice.number || "Usage charges"],
         };
       })
-      .filter((invoice: any): invoice is NonNullable<typeof invoice> => invoice !== null);
+      .filter(
+        (invoice: any): invoice is NonNullable<typeof invoice> =>
+          invoice !== null,
+      );
 
     const response = {
       success: true,

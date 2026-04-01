@@ -77,15 +77,15 @@ export class Owostack {
 
     // Mode-based URLs
     if (config.mode === "sandbox") {
-      return "https://sandbox.owostack.com";
+      return "https://sandbox.owostack.com/v1";
     }
 
     if (config.mode === "live") {
-      return "https://api.owostack.com";
+      return "https://api.owostack.com/v1";
     }
 
     // Default fallback
-    return "https://api.owostack.com";
+    return "https://api.owostack.com/v1";
   }
 
   /**
