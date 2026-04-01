@@ -76,10 +76,18 @@ function getUsageModel(
   return "included";
 }
 
-function getGuardIncluded(planFeature: any): number | null {
-  return getUsageModel(planFeature) === "usage_based"
-    ? 0
-    : planFeature.limitValue;
+function getGuardIncluded(
+  planFeature: any,
+  isTrial: boolean = false,
+): number | null {
+  if (getUsageModel(planFeature) === "usage_based") {
+    return 0;
+  }
+  // Use trialLimitValue when on trial, fall back to limitValue
+  if (isTrial && planFeature.trialLimitValue !== undefined) {
+    return planFeature.trialLimitValue;
+  }
+  return planFeature.limitValue;
 }
 
 function buildPricingDetails(
@@ -1218,6 +1226,12 @@ app.openapi(
         ? new Date(subscription.currentPeriodEnd).toISOString()
         : null;
     const planName = (subscription as any).plan?.name || "current plan";
+
+    // Calculate effective limit considering trial status
+    const effectiveLimit =
+      isTrial && planFeature.trialLimitValue !== undefined
+        ? planFeature.trialLimitValue
+        : planFeature.limitValue;
 
     // Helper to build the details object — only includes truthy optional fields
     function buildDetails(
