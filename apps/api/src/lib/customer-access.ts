@@ -22,6 +22,7 @@ export type CustomerAccessPlanFeature = {
   featureType: string;
   unit: string | null;
   limitValue: number | null;
+  trialLimitValue?: number | null;
   resetInterval: string;
   usageModel: string | null;
   creditCost: number | null;
@@ -58,6 +59,7 @@ export type CustomerAccessItem = {
   planId: string | null;
   planName: string | null;
   planLimitValue: number | null;
+  planTrialLimitValue?: number | null;
   planResetInterval: string | null;
   entitlementLimitValue: number | null;
   entitlementResetInterval: string | null;
@@ -67,6 +69,8 @@ export type CustomerAccessItem = {
   balance: number | null;
   usage: number | null;
   limit: number | null;
+  isTrialing?: boolean;
+  isTrialLimit?: boolean;
   rolloverBalance: number;
   addonBalance: number | null;
 };
@@ -123,7 +127,9 @@ export function filterAccessGrantingSubscriptions(
   now: number = Date.now(),
 ): CustomerAccessSubscription[] {
   return subscriptions.filter((subscription) => {
-    if (!["active", "trialing", "pending_cancel"].includes(subscription.status)) {
+    if (
+      !["active", "trialing", "pending_cancel"].includes(subscription.status)
+    ) {
       return false;
     }
 
@@ -240,10 +246,10 @@ export function composeCustomerAccessEntries(params: {
       }
 
       const subscription = planFeature
-        ? params.subscriptions.find(
+        ? (params.subscriptions.find(
             (candidate) => candidate.planId === planFeature.planId,
-          ) ?? null
-        : params.subscriptions[0] ?? null;
+          ) ?? null)
+        : (params.subscriptions[0] ?? null);
 
       return {
         featureId,
@@ -258,20 +264,17 @@ export function composeCustomerAccessEntries(params: {
         subscription,
       };
     })
-    .filter(
-      (
-        entry,
-      ): entry is NonNullable<typeof entry> => entry !== null,
-    )
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
     .sort((left, right) => {
       const leftIndex =
-        left.planFeature && left.subscription?.planId === left.planFeature.planId
-          ? subscriptionOrder.get(left.planFeature.planId) ?? Infinity
+        left.planFeature &&
+        left.subscription?.planId === left.planFeature.planId
+          ? (subscriptionOrder.get(left.planFeature.planId) ?? Infinity)
           : Infinity;
       const rightIndex =
         right.planFeature &&
         right.subscription?.planId === right.planFeature.planId
-          ? subscriptionOrder.get(right.planFeature.planId) ?? Infinity
+          ? (subscriptionOrder.get(right.planFeature.planId) ?? Infinity)
           : Infinity;
       if (leftIndex !== rightIndex) {
         return leftIndex - rightIndex;
@@ -281,31 +284,36 @@ export function composeCustomerAccessEntries(params: {
     });
 }
 
-async function resolveMeteredBalance(
-  params: {
-    env: CustomerAccessEnv;
-    organizationId: string | null;
-    customerId: string;
-    featureId: string;
-    featureSlug: string | null;
-    limitValue: number | null;
-    resetInterval: string | null;
-    usageModel: string | null;
-    creditCost: number | null;
-    resetOnEnable: boolean | null;
-    rolloverEnabled: boolean | null;
-    rolloverMaxBalance: number | null;
-    subscription: CustomerAccessSubscription | null;
-  },
-): Promise<{
+async function resolveMeteredBalance(params: {
+  env: CustomerAccessEnv;
+  organizationId: string | null;
+  customerId: string;
+  featureId: string;
+  featureSlug: string | null;
+  limitValue: number | null;
+  trialLimitValue?: number | null;
+  resetInterval: string | null;
+  usageModel: string | null;
+  creditCost: number | null;
+  resetOnEnable: boolean | null;
+  rolloverEnabled: boolean | null;
+  rolloverMaxBalance: number | null;
+  subscription: CustomerAccessSubscription | null;
+}): Promise<{
   balance: number | null;
   usage: number | null;
   limit: number | null;
   rolloverBalance: number;
 }> {
+  const isTrialing = params.subscription?.status === "trialing";
+  const activeLimit =
+    isTrialing && params.trialLimitValue != null
+      ? params.trialLimitValue
+      : params.limitValue;
+
   const resetInterval = params.resetInterval || "monthly";
   const currentConfig: UsageMeterConfig = {
-    limit: params.limitValue,
+    limit: activeLimit,
     resetInterval,
     resetOnEnable: params.resetOnEnable ?? false,
     rolloverEnabled: params.rolloverEnabled ?? false,
@@ -336,7 +344,8 @@ async function resolveMeteredBalance(
 
       if (result.code === "feature_not_found") {
         const subscriptionWindowStart =
-          params.subscription?.currentPeriodStart ?? defaultWindowStart(Date.now());
+          params.subscription?.currentPeriodStart ??
+          defaultWindowStart(Date.now());
         const subscriptionWindowEnd =
           params.subscription?.currentPeriodEnd ?? defaultWindowEnd(Date.now());
         const resetWindow = getResetPeriod(
@@ -409,9 +418,9 @@ async function resolveMeteredBalance(
   const usage = ledgerUsage ?? 0;
 
   return {
-    balance: Math.max(0, params.limitValue - usage),
+    balance: activeLimit !== null ? Math.max(0, activeLimit - usage) : null,
     usage,
-    limit: params.limitValue,
+    limit: activeLimit,
     rolloverBalance: 0,
   };
 }
@@ -449,6 +458,7 @@ export async function buildCustomerAccessSnapshot(
               featureId: entry.featureId,
               featureSlug: entry.featureSlug,
               limitValue: entry.effectiveEntitlement.limitValue ?? null,
+              trialLimitValue: entry.planFeature?.trialLimitValue ?? null,
               resetInterval:
                 entry.manualEntitlement?.resetInterval ??
                 entry.planEntitlement?.resetInterval ??
@@ -463,6 +473,11 @@ export async function buildCustomerAccessSnapshot(
             })
           : null;
 
+      const isTrialing = entry.subscription?.status === "trialing";
+      const planTrialLimitValue = entry.planFeature?.trialLimitValue ?? null;
+      const effectiveLimit =
+        balanceState?.limit ?? entry.effectiveEntitlement.limitValue ?? null;
+
       return {
         featureId: entry.featureId,
         featureName: entry.featureName,
@@ -472,6 +487,7 @@ export async function buildCustomerAccessSnapshot(
         planId: entry.planFeature?.planId ?? null,
         planName: entry.subscription?.planName ?? null,
         planLimitValue: entry.planFeature?.limitValue ?? null,
+        planTrialLimitValue,
         planResetInterval: entry.planFeature?.resetInterval ?? null,
         entitlementLimitValue: entry.effectiveEntitlement.limitValue ?? null,
         entitlementResetInterval:
@@ -481,14 +497,18 @@ export async function buildCustomerAccessSnapshot(
           null,
         entitlementExpiresAt:
           "expiresAt" in entry.effectiveEntitlement
-            ? entry.effectiveEntitlement.expiresAt ?? null
+            ? (entry.effectiveEntitlement.expiresAt ?? null)
             : null,
         entitlementSource: entry.manualEntitlement ? "manual" : "plan",
         grantedReason: entry.manualEntitlement?.grantedReason ?? null,
         balance: balanceState?.balance ?? null,
         usage: balanceState?.usage ?? null,
-        limit:
-          balanceState?.limit ?? entry.effectiveEntitlement.limitValue ?? null,
+        limit: effectiveLimit,
+        isTrialing,
+        isTrialLimit:
+          isTrialing &&
+          planTrialLimitValue !== null &&
+          effectiveLimit === planTrialLimitValue,
         rolloverBalance: balanceState?.rolloverBalance ?? 0,
         addonBalance: addonBalanceByFeatureId.get(entry.featureId) ?? null,
       };

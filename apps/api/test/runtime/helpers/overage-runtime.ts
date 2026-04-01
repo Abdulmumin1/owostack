@@ -273,6 +273,7 @@ export async function insertFeature(
     name?: string;
     type?: string;
     meterType?: string;
+    unit?: string;
     source?: string;
   } = {},
 ) {
@@ -280,8 +281,8 @@ export async function insertFeature(
   await db
     .prepare(
       `INSERT INTO features
-       (id, organization_id, name, slug, type, meter_type, source, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, organization_id, name, slug, type, meter_type, unit, source, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       params.id || "feature_1",
@@ -290,6 +291,7 @@ export async function insertFeature(
       params.slug || "agent-runs",
       params.type || "metered",
       params.meterType || "consumable",
+      params.unit || null,
       params.source || "dashboard",
       now,
     )
@@ -303,6 +305,7 @@ export async function insertPlanFeature(
     planId?: string;
     featureId?: string;
     limitValue?: number | null;
+    trialLimitValue?: number | null;
     resetInterval?: string;
     resetOnEnable?: number;
     rolloverEnabled?: number;
@@ -326,14 +329,15 @@ export async function insertPlanFeature(
   await db
     .prepare(
       `INSERT INTO plan_features
-       (id, plan_id, feature_id, limit_value, reset_interval, reset_on_enable, rollover_enabled, rollover_max_balance, usage_model, price_per_unit, billing_units, rating_model, tiers, max_purchase_limit, credit_cost, overage, overage_price, max_overage_units)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, plan_id, feature_id, limit_value, trial_limit_value, reset_interval, reset_on_enable, rollover_enabled, rollover_max_balance, usage_model, price_per_unit, billing_units, rating_model, tiers, max_purchase_limit, credit_cost, overage, overage_price, max_overage_units)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       params.id || "plan_feature_1",
       params.planId || "plan_1",
       params.featureId || "feature_1",
       params.limitValue ?? 1000,
+      params.trialLimitValue ?? null,
       params.resetInterval || "monthly",
       params.resetOnEnable ?? 1,
       params.rolloverEnabled ?? 0,

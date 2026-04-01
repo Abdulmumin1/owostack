@@ -955,7 +955,7 @@ async function handleNewSubscription(
 // Helpers
 // =============================================================================
 
-async function findSwitchableSubscription(
+export async function findSwitchableSubscription(
   db: DB,
   customerId: string,
   newPlan: { planGroup: string | null; isAddon: boolean | null },
@@ -990,7 +990,7 @@ async function findSwitchableSubscription(
   return subs.find((s: any) => !s.plan.isAddon) || null;
 }
 
-async function cancelSubscription(
+export async function cancelSubscription(
   db: DB,
   sub: any,
   provider: ProviderContext | null,

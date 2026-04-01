@@ -94,6 +94,11 @@ app.get("/export", async (c) => {
                 usageModel,
                 pf.limitValue ?? null,
               ) ?? null,
+            trialLimitValue:
+              normalizePlanFeatureLimitValue(
+                usageModel,
+                pf.trialLimitValue ?? null,
+              ) ?? null,
             resetInterval: normalizePlanFeatureResetInterval(pf.resetInterval),
             resetOnEnable: pf.resetOnEnable,
             rolloverEnabled: pf.rolloverEnabled,
@@ -176,6 +181,10 @@ app.post("/import", async (c) => {
           limitValue: normalizePlanFeatureLimitValue(
             usageModel,
             planFeature.limitValue ?? null,
+          ),
+          trialLimitValue: normalizePlanFeatureLimitValue(
+            usageModel,
+            planFeature.trialLimitValue ?? null,
           ),
           resetInterval:
             normalizePlanFeatureResetInterval(
@@ -345,6 +354,10 @@ app.post("/import", async (c) => {
                 usageModel,
                 pf.limitValue ?? null,
               ),
+              trialLimitValue: normalizePlanFeatureLimitValue(
+                usageModel,
+                pf.trialLimitValue ?? null,
+              ),
               resetInterval:
                 normalizePlanFeatureResetInterval(
                   pf.resetInterval || "monthly",
@@ -425,6 +438,10 @@ app.post("/import", async (c) => {
             limitValue: normalizePlanFeatureLimitValue(
               usageModel,
               pf.limitValue ?? null,
+            ),
+            trialLimitValue: normalizePlanFeatureLimitValue(
+              usageModel,
+              pf.trialLimitValue ?? null,
             ),
             resetInterval:
               normalizePlanFeatureResetInterval(

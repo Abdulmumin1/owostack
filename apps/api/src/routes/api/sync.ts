@@ -66,6 +66,7 @@ const syncPlanFeatureSchema = z.object({
   slug: z.string().min(1),
   enabled: z.boolean(),
   limit: z.number().nullable().optional(),
+  trialLimit: z.number().nullable().optional(),
   reset: z.string().optional(),
   usageModel: z.enum(["included", "usage_based", "prepaid"]).optional(),
   pricePerUnit: z.number().optional(),
@@ -985,6 +986,7 @@ async function reconcilePlanFeatures(
     const values = isBoolean
       ? {
           limitValue: null,
+          trialLimitValue: null,
           resetInterval: "never",
           usageModel,
           pricePerUnit: null,
@@ -1000,6 +1002,10 @@ async function reconcilePlanFeatures(
           limitValue: normalizePlanFeatureLimitValue(
             usageModel,
             fd.limit ?? null,
+          ),
+          trialLimitValue: normalizePlanFeatureLimitValue(
+            usageModel,
+            fd.trialLimit ?? null,
           ),
           resetInterval:
             normalizePlanFeatureResetInterval(fd.reset ?? "monthly") ??
@@ -1018,6 +1024,7 @@ async function reconcilePlanFeatures(
     if (existing) {
       const isChanged =
         existing.limitValue !== values.limitValue ||
+        existing.trialLimitValue !== values.trialLimitValue ||
         existing.resetInterval !== values.resetInterval ||
         existing.usageModel !== values.usageModel ||
         existing.pricePerUnit !== values.pricePerUnit ||

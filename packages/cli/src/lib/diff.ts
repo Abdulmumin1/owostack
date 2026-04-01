@@ -36,6 +36,7 @@ function normalizeFeature(pf: any, creditSystemSlugs: Set<string>) {
     slug: pf.slug,
     enabled: pf.enabled,
     limit: pf.limit ?? null,
+    trialLimit: pf.trialLimit ?? null,
     // Handle both SDK 'reset' and API 'resetInterval'
     reset: normalizeReset(pf.reset || pf.resetInterval),
     usageModel: isCreditSystemFeature ? "included" : usageModel,
@@ -197,6 +198,7 @@ export function diffPlans(
         const featureFields: Array<keyof typeof lf> = [
           "enabled",
           "limit",
+          "trialLimit",
           "reset",
           "usageModel",
           "pricePerUnit",
