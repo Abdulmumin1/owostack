@@ -113,6 +113,7 @@ interface PublicPlanFeature {
   type: "metered" | "boolean" | "static";
   enabled: boolean;
   limit: number | null; // null = unlimited
+  trialLimit?: number | null; // limit during trial period
   resetInterval: string | null;
   unit: string | null; // "call", "message", "GB", etc.
   usageModel?: "included" | "usage_based" | "prepaid";
