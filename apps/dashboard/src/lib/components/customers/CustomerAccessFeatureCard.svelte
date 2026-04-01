@@ -15,6 +15,7 @@
       unit?: string | null;
       planName?: string | null;
       planLimitValue?: number | null;
+      planTrialLimitValue?: number | null;
       planResetInterval?: string | null;
       entitlementLimitValue?: number | null;
       entitlementResetInterval?: string | null;
@@ -23,6 +24,8 @@
       grantedReason?: string | null;
       balance?: number | null;
       limit?: number | null;
+      isTrialing?: boolean;
+      isTrialLimit?: boolean;
       rolloverBalance?: number;
       addonBalance?: number | null;
     };
@@ -58,6 +61,9 @@
       <h3 class="text-[13px] font-medium text-text-primary">
         {item.featureName}
       </h3>
+      {#if item.isTrialing}
+        <span class="badge badge-info text-[9px] uppercase">Trial</span>
+      {/if}
     </div>
 
     <div class="flex items-center gap-2 text-[13px] text-text-primary">
@@ -78,6 +84,9 @@
       </div>
       <div class="text-[10px] text-text-dim shrink-0 whitespace-nowrap">
         {formatNumber(item.balance)} / {formatNumber(item.limit)}
+        {#if item.isTrialLimit}
+          <span class="text-info ml-1">(trial)</span>
+        {/if}
       </div>
     </div>
   {/if}
