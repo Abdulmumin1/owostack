@@ -23,6 +23,8 @@ export const load: PageServerLoad = async ({ parent }) => {
         .catch(() => null),
     ]);
 
+    console.log(checkRes);
+
     return {
       invoices: invoicesRes?.invoices || [],
       plans: plansRes?.plans || [],
