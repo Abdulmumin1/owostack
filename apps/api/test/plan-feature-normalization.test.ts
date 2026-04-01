@@ -48,6 +48,7 @@ describe("plan-feature-normalization", () => {
       usageModel: "usage_based",
       ratingModel: "volume",
       limitValue: null,
+      trialLimitValue: null,
       pricePerUnit: null,
       billingUnits: 1,
       overage: "charge",
@@ -91,6 +92,7 @@ describe("plan-feature-normalization", () => {
         usageModel: "usage_based",
         limitValue: null,
         trialLimitValue: null,
+        overage: "charge",
       });
     });
 

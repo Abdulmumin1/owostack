@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCustomerAccessSnapshot,
   type CustomerAccessPlanFeature,
-} from "../../../src/lib/customer-access";
+} from "../../src/lib/customer-access";
 
 describe("customer-access trial limit integration", () => {
   const baseSubscription = {

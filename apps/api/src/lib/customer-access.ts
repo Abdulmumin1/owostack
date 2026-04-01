@@ -59,6 +59,7 @@ export type CustomerAccessItem = {
   planId: string | null;
   planName: string | null;
   planLimitValue: number | null;
+  planTrialLimitValue?: number | null;
   planResetInterval: string | null;
   entitlementLimitValue: number | null;
   entitlementResetInterval: string | null;
@@ -68,6 +69,8 @@ export type CustomerAccessItem = {
   balance: number | null;
   usage: number | null;
   limit: number | null;
+  isTrialing?: boolean;
+  isTrialLimit?: boolean;
   rolloverBalance: number;
   addonBalance: number | null;
 };
