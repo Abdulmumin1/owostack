@@ -43,6 +43,7 @@
   } = $props();
 
   let configLimitValue = $state<string>("");
+  let configTrialLimitValue = $state<string>("");
   let configResetInterval = $state<string>("monthly");
   let configUsageModel = $state<"included" | "usage_based">("included");
   let configRatingModel = $state<RatingModel>("package");
@@ -190,6 +191,10 @@
       currentFeature.limitValue === null || currentFeature.limitValue === undefined
         ? ""
         : String(currentFeature.limitValue);
+    configTrialLimitValue =
+      currentFeature.trialLimitValue === null || currentFeature.trialLimitValue === undefined
+        ? ""
+        : String(currentFeature.trialLimitValue);
 
     const rawInterval = currentFeature.resetInterval || "monthly";
     const intervalAliases: Record<string, string> = {
@@ -302,6 +307,11 @@
         String(configLimitValue).trim() === ""
           ? null
           : Number(configLimitValue),
+      trialLimitValue:
+        configUsageModel === "usage_based" ||
+        String(configTrialLimitValue).trim() === ""
+          ? null
+          : Number(configTrialLimitValue),
       resetInterval: configResetInterval,
       pricePerUnit:
         configUsageModel === "usage_based" && configRatingModel === "package"
@@ -623,6 +633,32 @@
                 placeholder="e.g. 100"
                 class="input !h-10 !text-sm !pr-16"
                 bind:value={configLimitValue}
+              />
+              <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-dim pointer-events-none capitalize">
+                {feature?.feature?.unit || "units"}
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-2.5 pt-2">
+            <div class="flex items-center justify-between px-1">
+              <label for="trialLimitValueConfig" class="text-[11px] font-bold text-text-dim uppercase tracking-wider">
+                Trial Grant Amount
+              </label>
+              <span class="text-[10px] text-text-muted">Optional</span>
+            </div>
+            <p class="text-[11px] text-text-muted px-1">
+              Different limit during trial period. Leave empty to use the same as regular grant.
+            </p>
+
+            <div class="input-icon-wrapper">
+              <input
+                id="trialLimitValueConfig"
+                name="trialLimitValue"
+                type="number"
+                placeholder="e.g. 50 (for trial)"
+                class="input !h-10 !text-sm !pr-16"
+                bind:value={configTrialLimitValue}
               />
               <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-dim pointer-events-none capitalize">
                 {feature?.feature?.unit || "units"}
