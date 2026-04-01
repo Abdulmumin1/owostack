@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { ArrowRight, CheckCircle, Copy, Info, DiscordLogo, Calendar } from "phosphor-svelte";
+  import {
+    ArrowRight,
+    CheckCircle,
+    Copy,
+    Info,
+    DiscordLogo,
+    Calendar,
+  } from "phosphor-svelte";
   import {
     getPricingTemplates,
     type PricingTemplate,
@@ -14,11 +21,15 @@
   const groupedTemplates = [
     {
       label: "Subscription",
-      items: templates.filter((t) => t.category.toLowerCase().includes("subscription")),
+      items: templates.filter((t) =>
+        t.category.toLowerCase().includes("subscription"),
+      ),
     },
     {
       label: "Usage-based",
-      items: templates.filter((t) => t.category.toLowerCase().includes("usage")),
+      items: templates.filter((t) =>
+        t.category.toLowerCase().includes("usage"),
+      ),
     },
     {
       label: "Hybrid & Others",
@@ -51,6 +62,7 @@
     name="description"
     content="Battle-tested pricing models from OpenAI Codex, Clerk, Pinecone, and other companies developers trust. Copy-paste ready for your AI SaaS."
   />
+  <link rel="canonical" href="https://owostack.com/pricing-templates" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://owostack.com/pricing-templates" />
   <meta property="og:title" content="Pricing Templates | Owostack" />
@@ -59,7 +71,10 @@
     content="Battle-tested pricing models from OpenAI Codex, Clerk, Pinecone, and other companies developers trust. Copy-paste ready for your AI SaaS."
   />
   <meta property="og:image" content="https://owostack.com/og.jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@owostack" />
   <meta name="twitter:url" content="https://owostack.com/pricing-templates" />
   <meta name="twitter:title" content="Pricing Templates | Owostack" />
   <meta
@@ -75,12 +90,17 @@
   <main class="mx-auto max-w-6xl px-6 py-20 md:py-28">
     <!-- Hero Section -->
     <section class="mb-24">
-      <h1 class="max-w-3xl text-3xl font-bold leading-[0.9] tracking-tighter md:text-5xl">
+      <h1
+        class="max-w-3xl text-3xl font-bold leading-[0.9] tracking-tighter md:text-5xl"
+      >
         The same pricing models used by Codex, Notion, and Figma.
       </h1>
-      <p class="mt-8 max-w-2xl text-base leading-relaxed text-text-secondary md:text-lg">
-        These aren't theoretical. These are the exact patterns powering the AI infrastructure
-        you use every day—Cursor, Pinecone, Replicate, Clerk. Copy them in one click.
+      <p
+        class="mt-8 max-w-2xl text-base leading-relaxed text-text-secondary md:text-lg"
+      >
+        These aren't theoretical. These are the exact patterns powering the AI
+        infrastructure you use every day—Cursor, Pinecone, Replicate, Clerk.
+        Copy them in one click.
       </p>
     </section>
 
@@ -89,35 +109,55 @@
       {#each groupedTemplates as group}
         <section>
           <div class="mb-12 flex items-center gap-4">
-            <h2 class="text-[11px] font-bold uppercase tracking-[0.24em] text-text-muted">{group.label}</h2>
+            <h2
+              class="text-[11px] font-bold uppercase tracking-[0.24em] text-text-muted"
+            >
+              {group.label}
+            </h2>
             <div class="h-px flex-1 bg-border/40"></div>
           </div>
 
           <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {#each group.items as template}
-              <article class="card card-elevated card-interactive flex flex-col p-8">
+              <article
+                class="card card-elevated card-interactive flex flex-col p-8"
+              >
                 <div class="mb-6 flex items-start justify-between">
-                  <div class="flex items-center justify-center rounded-sm overflow-hidden text-text-muted">
-                    <InspiredLogo logoUrl={template.logoUrl} alt={template.inspiredBy} size={40} />
+                  <div
+                    class="flex items-center justify-center rounded-sm overflow-hidden text-text-muted"
+                  >
+                    <InspiredLogo
+                      logoUrl={template.logoUrl}
+                      alt={template.inspiredBy}
+                      size={40}
+                    />
                   </div>
-                  <div class="rounded-full border border-border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-dim">
+                  <div
+                    class="rounded-full border border-border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-dim"
+                  >
                     {template.category}
                   </div>
                 </div>
 
                 <!-- Company attribution with social proof -->
                 <div class="mb-3 flex items-center gap-2">
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                  <span
+                    class="text-[10px] font-semibold uppercase tracking-wider text-text-muted"
+                  >
                     Used by {template.inspiredBy}
                   </span>
                 </div>
-                
-                <div class="mb-4 flex items-center gap-1.5 text-[10px] text-text-dim">
+
+                <div
+                  class="mb-4 flex items-center gap-1.5 text-[10px] text-text-dim"
+                >
                   <CheckCircle size={10} class="text-secondary" weight="fill" />
                   <span>{template.socialProof}</span>
                 </div>
 
-                <h3 class="mb-4 text-2xl font-bold tracking-tight text-text-primary">
+                <h3
+                  class="mb-4 text-2xl font-bold tracking-tight text-text-primary"
+                >
                   {template.title}
                 </h3>
                 <p class="mb-10 text-sm leading-relaxed text-text-secondary">
@@ -125,11 +165,21 @@
                 </p>
 
                 <div class="mt-auto space-y-4">
-                  <div class="rounded-lg border border-border bg-bg-secondary/30">
+                  <div
+                    class="rounded-lg border border-border bg-bg-secondary/30"
+                  >
                     {#each template.breakdown.slice(0, 2) as item}
-                      <div class="grid grid-cols-[0.8fr_1.2fr] gap-3 border-b border-border/40 p-3 last:border-b-0">
-                        <div class="text-[10px] font-semibold uppercase tracking-wide text-text-dim">{item.label}</div>
-                        <div class="text-xs font-semibold text-text-primary">{item.value}</div>
+                      <div
+                        class="grid grid-cols-[0.8fr_1.2fr] gap-3 border-b border-border/40 p-3 last:border-b-0"
+                      >
+                        <div
+                          class="text-[10px] font-semibold uppercase tracking-wide text-text-dim"
+                        >
+                          {item.label}
+                        </div>
+                        <div class="text-xs font-semibold text-text-primary">
+                          {item.value}
+                        </div>
                       </div>
                     {/each}
                   </div>
@@ -141,7 +191,11 @@
                       onclick={() => copyTemplate(template)}
                     >
                       {#if copiedSlug === template.slug}
-                        <CheckCircle size={14} weight="fill" class="text-secondary" />
+                        <CheckCircle
+                          size={14}
+                          weight="fill"
+                          class="text-secondary"
+                        />
                         Copied
                       {:else}
                         <Copy size={14} />
@@ -169,14 +223,22 @@
     <section class="mt-40 border border-border/40 bg-bg-card p-10 md:p-16">
       <div class="grid gap-12 lg:grid-cols-2 lg:items-center">
         <div>
-          <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-sm border border-border bg-bg-secondary text-accent">
+          <div
+            class="mb-4 flex h-10 w-10 items-center justify-center rounded-sm border border-border bg-bg-secondary text-accent"
+          >
             <Info size={20} weight="duotone" />
           </div>
-          <h2 class="text-3xl font-bold tracking-tight text-text-primary md:text-4xl">
+          <h2
+            class="text-3xl font-bold tracking-tight text-text-primary md:text-4xl"
+          >
             Custom pricing?
           </h2>
-          <p class="mt-4 text-sm leading-relaxed text-text-secondary md:text-base">
-            These templates cover 90% of SaaS models. If you're building something truly unique, our SDK handles arbitrary metering and complex entitlement logic without breaking a sweat.
+          <p
+            class="mt-4 text-sm leading-relaxed text-text-secondary md:text-base"
+          >
+            These templates cover 90% of SaaS models. If you're building
+            something truly unique, our SDK handles arbitrary metering and
+            complex entitlement logic without breaking a sweat.
           </p>
         </div>
         <div class="flex lg:justify-end">
@@ -191,14 +253,21 @@
   <!-- CTA Section -->
   <section class="border-t border-border/40 px-6 py-16">
     <div class="mx-auto max-w-6xl">
-      <div class="flex flex-col items-center justify-center gap-6 rounded-lg p-10 md:p-16 text-center">
-        <div class="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
+      <div
+        class="flex flex-col items-center justify-center gap-6 rounded-lg p-10 md:p-16 text-center"
+      >
+        <div
+          class="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent"
+        >
           <DiscordLogo size={24} weight="duotone" />
         </div>
         <div>
-          <h3 class="text-xl font-bold text-text-primary">Building something ambitious?</h3>
+          <h3 class="text-xl font-bold text-text-primary">
+            Building something ambitious?
+          </h3>
           <p class="mt-2 max-w-md text-sm text-text-secondary">
-            Join our Discord community for support, or book a 30-min call to discuss your specific billing needs.
+            Join our Discord community for support, or book a 30-min call to
+            discuss your specific billing needs.
           </p>
         </div>
         <div class="flex flex-wrap justify-center gap-3">
@@ -212,9 +281,8 @@
             Join Discord
           </a>
           <a
-            href="https://cal.com/yaqeen/30min"
+            href="/talk-to-founder"
             class="btn btn-primary gap-2"
-            target="_blank"
             rel="noopener noreferrer"
           >
             <Calendar size={16} weight="duotone" />

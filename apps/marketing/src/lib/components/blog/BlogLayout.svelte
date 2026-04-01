@@ -1,28 +1,12 @@
 <script lang="ts">
-  import { ArrowLeft } from "phosphor-svelte";
-  import Logo from "$lib/components/ui/Logo.svelte";
   import Footer from "$lib/components/marketing/Footer.svelte";
+  import Header from "$lib/components/marketing/Header.svelte";
 
   let { children, thumbnail, title, author } = $props();
 </script>
 
 <div class="min-h-screen bg-bg-primary text-text-primary font-sans">
-  <!-- Header -->
-  <header class="px-6 py-5 border-b border-border/30">
-    <div class="max-w-4xl mx-auto flex items-center justify-between">
-      <a href="/" class="flex items-center gap-2">
-        <Logo size={24} class="text-accent" />
-        <span class="text-sm font-bold tracking-tight">Owostack</span>
-      </a>
-      <a
-        href="/blog"
-        class="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary transition-colors"
-      >
-        <ArrowLeft size={14} />
-        Back to Blog
-      </a>
-    </div>
-  </header>
+  <Header variant="page" showBorder={true} />
 
   <!-- Blog Post Content -->
   <main class="px-6 py-12">
@@ -38,7 +22,8 @@
           <img
             src={thumbnail}
             alt={title || "Blog cover"}
-            class="w-full h-auto  object-cover"
+            class="w-full h-auto object-cover"
+            loading="lazy"
           />
         </div>
       {/if}
