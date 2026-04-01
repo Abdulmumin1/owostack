@@ -721,6 +721,32 @@ export const dodoAdapter: ProviderAdapter = {
       metadata: coerceMetadata(params.metadata),
     });
 
+    // Retry without customer_id on 404 (wrong provider's customer ID)
+    if (response.isErr() && params.customer.id) {
+      const errMsg = String((response.error as any)?.message ?? "");
+      if (errMsg.includes("not found") || errMsg.includes("NOT_FOUND")) {
+        console.warn(
+          `[dodo] Customer ${params.customer.id} not found in createSubscription, retrying without customer_id`,
+        );
+        const retry = await clientResult.value.createCheckoutSession({
+          product_cart: [{ product_id: productId, quantity: 1 }],
+          customer: { email: params.customer.email },
+          metadata: coerceMetadata(params.metadata),
+        });
+
+        if (retry.isErr()) return retry;
+
+        return Result.ok({
+          id: retry.value.session_id,
+          status: "pending" as const,
+          metadata: {
+            checkout_url: retry.value.checkout_url,
+            ...params.metadata,
+          },
+        });
+      }
+    }
+
     if (response.isErr()) return response;
 
     // Return session_id as the subscription ref — the actual subscription_id
