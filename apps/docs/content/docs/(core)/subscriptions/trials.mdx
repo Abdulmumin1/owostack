@@ -99,8 +99,14 @@ plan("pro", {
   interval: "monthly",
   trialDays: 14,
   features: [
-    metered("api-calls").limit(10000).trialLimit(1000),
-    metered("ai-tokens").limit(50000).trialLimit(5000),
+    metered("api-calls").limit(10000, 
+      reset:"monthly",
+      trialLimit:5000
+    )
+    metered("ai-tokens").limit(50000,
+      reset:"monthly"
+      trialLimit:10000
+    ),
   ],
 });
 ```

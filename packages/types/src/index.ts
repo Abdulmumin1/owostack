@@ -1105,6 +1105,9 @@ export interface PublicPlan {
   /** Trial period in days (0 = no trial) */
   trialDays: number;
 
+  /** Whether a card is required to start the trial */
+  trialCardRequired: boolean;
+
   /** Features included in this plan */
   features: PublicPlanFeature[];
 }
