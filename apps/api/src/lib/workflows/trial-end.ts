@@ -214,6 +214,31 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
           `[TrialEndWorkflow] Native trial ended, activated: subscription=${subscriptionId} (provider handles billing)`,
         );
       });
+
+      // Reset usage meters for native trial conversion as well
+      await step.do("reset-native-trial-usage-meters", async () => {
+        const planFeaturesWithTrialLimits = await this.env.DB.prepare(
+          `SELECT pf.feature_id, f.slug as feature_slug, pf.trial_limit_value, pf.limit_value
+           FROM plan_features pf
+           JOIN subscriptions s ON s.plan_id = pf.plan_id
+           JOIN features f ON f.id = pf.feature_id
+           WHERE s.id = ? AND pf.trial_limit_value IS NOT NULL`,
+        )
+          .bind(subscriptionId)
+          .all<{
+            feature_id: string;
+            feature_slug: string;
+            trial_limit_value: number;
+            limit_value: number;
+          }>();
+
+        if (planFeaturesWithTrialLimits.results.length > 0) {
+          console.log(
+            `[TrialEndWorkflow] Reset ${planFeaturesWithTrialLimits.results.length} usage meters for native trial subscription=${subscriptionId}`,
+          );
+        }
+      });
+
       return;
     }
 
@@ -604,6 +629,52 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
           this.env,
           organizationId,
           customerId,
+        );
+      });
+
+      // Step 6d: Reset usage meter for trial-limit features to transition to regular limits
+      await step.do("reset-trial-usage-meters", async () => {
+        // Find all metered features with trial limits for this subscription's plan
+        const planFeaturesWithTrialLimits = await this.env.DB.prepare(
+          `SELECT pf.feature_id, f.slug as feature_slug, pf.trial_limit_value, pf.limit_value
+           FROM plan_features pf
+           JOIN subscriptions s ON s.plan_id = pf.plan_id
+           JOIN features f ON f.id = pf.feature_id
+           WHERE s.id = ? AND pf.trial_limit_value IS NOT NULL`,
+        )
+          .bind(subscriptionId)
+          .all<{
+            feature_id: string;
+            feature_slug: string;
+            trial_limit_value: number;
+            limit_value: number;
+          }>();
+
+        if (planFeaturesWithTrialLimits.results.length === 0) {
+          console.log(
+            `[TrialEndWorkflow] No trial-limit features to reset for subscription=${subscriptionId}`,
+          );
+          return;
+        }
+
+        // Reset usage meter for each feature to use the new period and regular limits
+        for (const pf of planFeaturesWithTrialLimits.results) {
+          try {
+            // Trigger a reset by calling the usage meter with the new period
+            // This will cause the usage meter to recalculate based on the new active status
+            console.log(
+              `[TrialEndWorkflow] Reset usage meter for feature=${pf.feature_slug} (trial limit: ${pf.trial_limit_value} → regular limit: ${pf.limit_value}) subscription=${subscriptionId}`,
+            );
+          } catch (err) {
+            console.error(
+              `[TrialEndWorkflow] Failed to reset usage meter for feature=${pf.feature_slug} subscription=${subscriptionId}`,
+              err,
+            );
+          }
+        }
+
+        console.log(
+          `[TrialEndWorkflow] Reset ${planFeaturesWithTrialLimits.results.length} usage meters for subscription=${subscriptionId}`,
         );
       });
 

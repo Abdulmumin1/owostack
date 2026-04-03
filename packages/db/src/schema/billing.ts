@@ -137,6 +137,7 @@ export const planFeatures = sqliteTable(
 
     // Included feature config
     limitValue: integer("limit_value"), // NULL = unlimited, grant amount
+    trialLimitValue: integer("trial_limit_value"), // NULL = unlimited, grant amount during trial
 
     // Reset config (for consumable features)
     resetInterval: text("reset_interval").notNull().default("monthly"), // none, hour, day, week, month, quarter, semi_annual, year

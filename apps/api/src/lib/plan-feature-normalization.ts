@@ -60,6 +60,7 @@ export function normalizePlanFeatureLimitValue(
 
 export interface PlanFeaturePricingConfigInput {
   limitValue?: number | null;
+  trialLimitValue?: number | null;
   resetInterval?: string | null;
   usageModel?: string | null;
   pricePerUnit?: number | null;
@@ -92,6 +93,13 @@ export function normalizePlanFeaturePricingConfig<
     normalized.limitValue = normalizePlanFeatureLimitValue(
       usageModel,
       config.limitValue,
+    );
+  }
+
+  if ("trialLimitValue" in normalized || usageModel === "usage_based") {
+    normalized.trialLimitValue = normalizePlanFeatureLimitValue(
+      usageModel,
+      config.trialLimitValue,
     );
   }
 

@@ -56,6 +56,7 @@ function buildPlanFeatureConfigSnapshot(
   return normalizePlanFeaturePayload(
     {
       limitValue: data.limitValue ?? null,
+      trialLimitValue: data.trialLimitValue ?? null,
       resetInterval: data.resetInterval ?? "monthly",
       resetOnEnable: data.resetOnEnable ?? true,
       rolloverEnabled: data.rolloverEnabled ?? false,
@@ -583,6 +584,7 @@ app.patch("/features/:planFeatureId", async (c) => {
       parsed.data.usageModel ?? existing.usageModel ?? "included";
     const normalizedData = buildPlanFeatureConfigSnapshot(
       {
+        trialLimitValue: existing.trialLimitValue,
         limitValue: existing.limitValue,
         resetInterval: existing.resetInterval,
         resetOnEnable: existing.resetOnEnable,
@@ -646,6 +648,7 @@ const addFeatureSchema = z.object({
   featureId: z.string(),
   // Included feature config
   limitValue: z.number().optional().nullable(),
+  trialLimitValue: z.number().optional().nullable(),
 
   // Reset config
   resetInterval: z
@@ -722,6 +725,7 @@ app.post("/:planId/features", async (c) => {
   const {
     featureId,
     limitValue,
+    trialLimitValue,
     resetInterval,
     resetOnEnable,
     rolloverEnabled,
@@ -743,6 +747,7 @@ app.post("/:planId/features", async (c) => {
     const normalizedValues = buildPlanFeatureConfigSnapshot(
       {
         limitValue,
+        trialLimitValue,
         resetInterval,
         resetOnEnable,
         rolloverEnabled,

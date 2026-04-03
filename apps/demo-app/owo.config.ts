@@ -26,6 +26,21 @@ export const owo = new Owostack({
         premiumModels.on(),
       ],
     }),
+    plan("pro-plus", {
+      name: "Pro",
+      price: 35000,
+      currency: "NGN",
+      interval: "monthly",
+      planGroup: "main",
+      provider: "paystack",
+      features: [
+        aiCredits.limit(500, {
+          reset: "daily",
+          trialLimit: 200,
+        }),
+        premiumModels.on(),
+      ],
+    }),
     plan("starter", {
       name: "Starter",
       price: 0,

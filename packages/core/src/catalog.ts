@@ -693,6 +693,45 @@ export function buildSyncPayload(
     }
   }
 
+  // Also collect features referenced by credit systems (they may not be
+  // directly attached to any plan but still need to exist in the DB)
+  for (const entry of catalog) {
+    if (entry._type !== "credit_system") continue;
+    for (const csFeature of entry.features) {
+      const featureSlug = csFeature.feature;
+      if (!featureMap.has(featureSlug)) {
+        const handle = _featureRegistry.get(featureSlug);
+        featureMap.set(featureSlug, {
+          slug: featureSlug,
+          type: "metered" as const,
+          name: handle?.featureName || slugToName(featureSlug),
+        });
+      }
+    }
+  }
+
+  // Also check credit systems discovered via plan features (not directly in catalog)
+  for (const entry of catalog) {
+    if (entry._type !== "plan") continue;
+    for (const f of entry.features) {
+      const csHandle = _creditSystemRegistry.get(f.slug);
+      if (csHandle) {
+        const def = csHandle._buildDefinition();
+        for (const csFeature of def.features) {
+          const featureSlug = csFeature.feature;
+          if (!featureMap.has(featureSlug)) {
+            const handle = _featureRegistry.get(featureSlug);
+            featureMap.set(featureSlug, {
+              slug: featureSlug,
+              type: "metered" as const,
+              name: handle?.featureName || slugToName(featureSlug),
+            });
+          }
+        }
+      }
+    }
+  }
+
   const creditSystems: SyncPayload["creditSystems"] = catalog
     .filter((e): e is CreditSystemDefinition => e._type === "credit_system")
     .map((cs) => ({
@@ -744,6 +783,8 @@ export function buildSyncPayload(
           enabled: f.enabled,
           // Boolean features have no limit concept (null), metered features use limit from config
           limit: f.featureType === "boolean" ? null : (f.config?.limit ?? null),
+          trialLimit:
+            f.featureType === "boolean" ? null : (f.config?.trialLimit ?? null),
           // Boolean features have no reset interval
           ...(f.featureType !== "boolean" && {
             reset: f.config?.reset || "monthly",

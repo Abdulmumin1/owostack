@@ -18,6 +18,10 @@ const MIGRATION_FILES = [
     "../../../../../packages/db/migrations/0003_absurd_jean_grey.sql",
     import.meta.url,
   ),
+  new URL(
+    "../../../../../packages/db/migrations/0004_numerous_wallow.sql",
+    import.meta.url,
+  ),
 ];
 
 type SqliteRunResult = {

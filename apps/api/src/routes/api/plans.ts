@@ -33,6 +33,7 @@ const planFeatureSchema = z
     meterType: z.string(),
     enabled: z.boolean(),
     limit: z.number().nullable(),
+    trialLimit: z.number().nullable().optional(),
     resetInterval: z.string().nullable(),
     unit: z.string().nullable(),
     usageModel: z.enum(["included", "usage_based", "prepaid"]).optional(),
@@ -59,6 +60,7 @@ const publicPlanSchema = z
     isAddon: z.boolean(),
     planGroup: z.string().nullable(),
     trialDays: z.number().nullable().optional(),
+    trialCardRequired: z.boolean().nullable().optional(),
     provider: z.string().nullable().optional(),
     features: z.array(planFeatureSchema),
   })
@@ -205,6 +207,7 @@ export function createApiPlansRoute(
         isAddon: p.isAddon ?? false,
         planGroup: p.planGroup || null,
         trialDays: p.trialDays,
+        trialCardRequired: p.trialCardRequired ?? false,
         provider: p.providerId || null,
         autoEnable: p.autoEnable,
         features: (p.planFeatures || []).map((pf: any) => {
@@ -228,6 +231,12 @@ export function createApiPlansRoute(
               : (normalizePlanFeatureLimitValue(
                   usageModel,
                   pf.limitValue ?? null,
+                ) ?? null),
+            trialLimit: isBoolean
+              ? null
+              : (normalizePlanFeatureLimitValue(
+                  usageModel,
+                  pf.trialLimitValue ?? null,
                 ) ?? null),
             resetInterval: isBoolean
               ? null
@@ -285,6 +294,7 @@ export function createApiPlansRoute(
       isAddon: p.isAddon ?? false,
       planGroup: p.planGroup || null,
       trialDays: p.trialDays,
+      trialCardRequired: p.trialCardRequired ?? false,
       features: (p.planFeatures || []).map((pf: any) => {
         const featureType = pf.feature?.type ?? "metered";
         const isBoolean = featureType === "boolean";
@@ -304,6 +314,12 @@ export function createApiPlansRoute(
             : (normalizePlanFeatureLimitValue(
                 usageModel,
                 pf.limitValue ?? null,
+              ) ?? null),
+          trialLimit: isBoolean
+            ? null
+            : (normalizePlanFeatureLimitValue(
+                usageModel,
+                pf.trialLimitValue ?? null,
               ) ?? null),
           resetInterval: isBoolean
             ? null

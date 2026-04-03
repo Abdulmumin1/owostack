@@ -3664,6 +3664,12 @@
                                   "null"
                                 ]
                               },
+                              "trialLimit": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
                               "reset": {
                                 "type": "string"
                               },
@@ -4899,6 +4905,12 @@
                               "null"
                             ]
                           },
+                          "trialCardRequired": {
+                            "type": [
+                              "boolean",
+                              "null"
+                            ]
+                          },
                           "provider": {
                             "type": [
                               "string",
@@ -4926,6 +4938,12 @@
                                   "type": "boolean"
                                 },
                                 "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "trialLimit": {
                                   "type": [
                                     "number",
                                     "null"
@@ -5151,6 +5169,12 @@
                             "null"
                           ]
                         },
+                        "trialCardRequired": {
+                          "type": [
+                            "boolean",
+                            "null"
+                          ]
+                        },
                         "provider": {
                           "type": [
                             "string",
@@ -5178,6 +5202,12 @@
                                 "type": "boolean"
                               },
                               "limit": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "trialLimit": {
                                 "type": [
                                   "number",
                                   "null"
