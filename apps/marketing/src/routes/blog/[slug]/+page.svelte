@@ -55,12 +55,12 @@
   <meta name="twitter:description" content={data.metadata?.excerpt || ""} />
   <meta name="twitter:image" content={ogImage} />
   <script type="application/ld+json">
-    {
+    {@html JSON.stringify({
       "@context": "https://schema.org",
       "@type": "BlogPosting",
-      "headline": "{data.metadata?.title || 'Blog'}",
-      "description": "{data.metadata?.excerpt || ""}",
-      "datePublished": "{data.metadata?.date}",
+      "headline": data.metadata?.title || "Blog",
+      "description": data.metadata?.excerpt || "",
+      "datePublished": data.metadata?.date,
       "author": {
         "@type": "Organization",
         "name": "Owostack"
@@ -73,7 +73,7 @@
           "url": "https://owostack.com/logo.svg"
         }
       }
-    }
+    })}
   </script>
 </svelte:head>
 

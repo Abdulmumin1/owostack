@@ -32,7 +32,7 @@
   />
   <meta name="twitter:image" content="https://owostack.com/og.jpg" />
   <script type="application/ld+json">
-    {
+    {@html JSON.stringify({
       "@context": "https://schema.org",
       "@type": "ContactPage",
       "name": "Talk to Founder",
@@ -47,7 +47,7 @@
           "contactType": "Founder"
         }
       }
-    }
+    })}
   </script>
 </svelte:head>
 
