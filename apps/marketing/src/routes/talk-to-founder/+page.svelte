@@ -3,6 +3,23 @@
   import Footer from "$lib/components/marketing/Footer.svelte";
 
   const calLink = "https://cal.com/yaqeen/30min";
+  const structuredData = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "ContactPage",
+    name: "Talk to Founder",
+    description:
+      "Book a call with the Owostack founder to discuss your billing architecture.",
+    url: "https://owostack.com/talk-to-founder",
+    mainEntity: {
+      "@type": "Organization",
+      name: "Owostack",
+      url: "https://owostack.com",
+      contactPoint: {
+        "@type": "ContactPoint",
+        contactType: "Founder",
+      },
+    },
+  }).replace(/</g, "\\u003c");
 </script>
 
 <svelte:head>
@@ -31,24 +48,7 @@
     content="Book a call with the Owostack founder to discuss your billing architecture."
   />
   <meta name="twitter:image" content="https://owostack.com/og.jpg" />
-  <script type="application/ld+json">
-    {@html JSON.stringify({
-      "@context": "https://schema.org",
-      "@type": "ContactPage",
-      "name": "Talk to Founder",
-      "description": "Book a call with the Owostack founder to discuss your billing architecture.",
-      "url": "https://owostack.com/talk-to-founder",
-      "mainEntity": {
-        "@type": "Organization",
-        "name": "Owostack",
-        "url": "https://owostack.com",
-        "contactPoint": {
-          "@type": "ContactPoint",
-          "contactType": "Founder"
-        }
-      }
-    })}
-  </script>
+  {@html `<script type="application/ld+json">${structuredData}</script>`}
 </svelte:head>
 
 <div
