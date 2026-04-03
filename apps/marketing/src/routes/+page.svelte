@@ -137,7 +137,7 @@
   />
   <meta name="twitter:image" content="https://owostack.com/og.jpg" />
   <script type="application/ld+json">
-    {
+    {@html JSON.stringify({
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "Owostack",
@@ -149,7 +149,7 @@
         "price": "0",
         "priceCurrency": "USD"
       }
-    }
+    })}
   </script>
 </svelte:head>
 

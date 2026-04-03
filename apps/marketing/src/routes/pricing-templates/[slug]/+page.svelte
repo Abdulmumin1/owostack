@@ -81,12 +81,12 @@
   <meta name="twitter:description" content={template.summary} />
   <meta name="twitter:image" content={ogImage} />
   <script type="application/ld+json">
-    {
+    {@html JSON.stringify({
       "@context": "https://schema.org",
       "@type": "TechArticle",
-      "headline": "{template.title} Template",
-      "description": "{template.summary}",
-      "image": "{ogImage}",
+      "headline": `${template.title} Template`,
+      "description": template.summary,
+      "image": ogImage,
       "author": {
         "@type": "Organization",
         "name": "Owostack"
@@ -101,9 +101,9 @@
       },
       "mainEntityOfPage": {
         "@type": "WebPage",
-        "@id": "https://owostack.com/pricing-templates/{template.slug}"
+        "@id": `https://owostack.com/pricing-templates/${template.slug}`
       }
-    }
+    })}
   </script>
 </svelte:head>
 
