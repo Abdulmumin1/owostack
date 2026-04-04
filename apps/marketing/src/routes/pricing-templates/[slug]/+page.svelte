@@ -57,6 +57,31 @@
   }
 
   let ogImage = $derived(getOgImage(template.title, template.summary));
+  let structuredData = $derived.by(() =>
+    JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "TechArticle",
+      headline: `${template.title} Template`,
+      description: template.summary,
+      image: ogImage,
+      author: {
+        "@type": "Organization",
+        name: "Owostack",
+      },
+      publisher: {
+        "@type": "Organization",
+        name: "Owostack",
+        logo: {
+          "@type": "ImageObject",
+          url: "https://owostack.com/logo.svg",
+        },
+      },
+      mainEntityOfPage: {
+        "@type": "WebPage",
+        "@id": `https://owostack.com/pricing-templates/${template.slug}`,
+      },
+    }).replace(/</g, "\\u003c"),
+  );
 </script>
 
 <svelte:head>
@@ -80,31 +105,7 @@
   />
   <meta name="twitter:description" content={template.summary} />
   <meta name="twitter:image" content={ogImage} />
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "TechArticle",
-      "headline": "{template.title} Template",
-      "description": "{template.summary}",
-      "image": "{ogImage}",
-      "author": {
-        "@type": "Organization",
-        "name": "Owostack"
-      },
-      "publisher": {
-        "@type": "Organization",
-        "name": "Owostack",
-        "logo": {
-          "@type": "ImageObject",
-          "url": "https://owostack.com/logo.svg"
-        }
-      },
-      "mainEntityOfPage": {
-        "@type": "WebPage",
-        "@id": "https://owostack.com/pricing-templates/{template.slug}"
-      }
-    }
-  </script>
+  {@html `<script type="application/ld+json">${structuredData}</script>`}
 </svelte:head>
 
 <div class="min-h-screen bg-bg-primary text-text-primary">

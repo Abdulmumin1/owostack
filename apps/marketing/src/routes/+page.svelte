@@ -102,6 +102,21 @@
       mediaQuery.removeEventListener("change", handleMotionPreference);
     };
   });
+
+  const structuredData = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "Owostack",
+    applicationCategory: "BusinessApplication",
+    operatingSystem: "Web",
+    description:
+      "Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls.",
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "USD",
+    },
+  }).replace(/</g, "\\u003c");
 </script>
 
 <svelte:head>
@@ -136,21 +151,7 @@
     content="Owostack - Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls."
   />
   <meta name="twitter:image" content="https://owostack.com/og.jpg" />
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Owostack",
-      "applicationCategory": "BusinessApplication",
-      "operatingSystem": "Web",
-      "description": "Billing Infrastructure for AI SaaS. Subscriptions, usage-based billing, and feature gating in 3 API calls.",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      }
-    }
-  </script>
+  {@html `<script type="application/ld+json">${structuredData}</script>`}
 </svelte:head>
 
 <div

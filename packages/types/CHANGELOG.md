@@ -1,5 +1,11 @@
 # @owostack/types
 
+## 0.3.3
+
+### Patch Changes
+
+- [#119](https://github.com/Abdulmumin1/owostack/pull/119) [`372581d`](https://github.com/Abdulmumin1/owostack/commit/372581d3c9353ab8d7b7a7a094f06347db7f625f) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Add `trialLimit` support for metered features. Trial limits allow different usage caps during trial periods vs active subscriptions. CLI diff now detects trialLimit changes.
+
 ## 0.3.2
 
 ### Patch Changes

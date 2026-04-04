@@ -26,6 +26,27 @@
   }
 
   let ogImage = $derived(getOgImage(data.metadata?.title));
+  let structuredData = $derived.by(() =>
+    JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      headline: data.metadata?.title || "Blog",
+      description: data.metadata?.excerpt || "",
+      datePublished: data.metadata?.date,
+      author: {
+        "@type": "Organization",
+        name: "Owostack",
+      },
+      publisher: {
+        "@type": "Organization",
+        name: "Owostack",
+        logo: {
+          "@type": "ImageObject",
+          url: "https://owostack.com/logo.svg",
+        },
+      },
+    }).replace(/</g, "\\u003c"),
+  );
 </script>
 
 <svelte:head>
@@ -54,27 +75,7 @@
   />
   <meta name="twitter:description" content={data.metadata?.excerpt || ""} />
   <meta name="twitter:image" content={ogImage} />
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "BlogPosting",
-      "headline": "{data.metadata?.title || 'Blog'}",
-      "description": "{data.metadata?.excerpt || ""}",
-      "datePublished": "{data.metadata?.date}",
-      "author": {
-        "@type": "Organization",
-        "name": "Owostack"
-      },
-      "publisher": {
-        "@type": "Organization",
-        "name": "Owostack",
-        "logo": {
-          "@type": "ImageObject",
-          "url": "https://owostack.com/logo.svg"
-        }
-      }
-    }
-  </script>
+  {@html `<script type="application/ld+json">${structuredData}</script>`}
 </svelte:head>
 
 <Component />

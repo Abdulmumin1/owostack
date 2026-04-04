@@ -1,65 +1,105 @@
 ---
-title: "Just charge customers for what they use they said!"
-excerpt: "Lessons learned from implementing real-time metering for thousands of AI SaaS customers."
+title: "What usage-based billing looks like once you actually have to build it"
+excerpt: "Usage-based billing sounds clean in theory. In practice, the hard part is not charging for usage. It is deciding access correctly while traffic, pricing, and user expectations keep moving."
 date: "2026-02-15"
-readTime: "6 min read"
+readTime: "7 min read"
 category: "Engineering"
 layout: blog
 thumbnail: ""
 author: "yaqeen"
 ---
 
-Usage-based billing sounds simple, right? "Just charge people for what they use."
+The phrase always sounds simpler than the work.
 
-Oh sweet summer child.
+Just charge people for what they use.
 
-![This is fine dog meme - everything is on fire](https://media.giphy.com/media/QMHoU66sBXqqLqYvGO/giphy.gif)
+That sounds reasonable right until you have to build the part that decides, in
+real time, whether a customer is still allowed to do the thing they are trying
+to do.
 
-After working on billing integration contracts for a number of AI SaaS companies, I can tell you that "simple" billing has approximately 47 different ways to ruin your weekend. Let's talk about the ones that matter.
+That is usually when teams realize they are not building a pricing page problem.
+They are building a systems problem.
 
---
+The moment usage actually matters, a lot of questions show up all at once.
 
-Real-time metering means your billing system should:
+What happens if two requests hit the meter at the same time?
+What happens if the customer is right at the limit?
+What happens if pricing is tiered, or there is overage, or there are credits on
+top of a subscription?
+What do you show the user when they run out?
 
-1. **Track usage atomically** - No double-counting, no lost events
-2. **Enforce limits instantly** - Customers hit limits at the exact moment they exceed them
-3. **Handle burst traffic** - Some workloads especially AI can generate thousands of events per second
-4. **Support complex pricing** - Tiered pricing, volume discounts, minimum commitments, generous rate limits
-5. **Show real-time usage** - Customers need to see their current consumption
+That is the part people usually mean when they say usage-based billing is hard.
 
-## Common Pitfalls
+## The moment it stops being simple
 
-### Race Conditions
+I think the cleanest way to understand the problem is to imagine a normal API
+request.
 
-When multiple API calls happen simultaneously, naive usage tracking creates race conditions:
+A customer makes a call. Your app needs to decide if they should be allowed
+through. If yes, you need to record usage. If no, you need to tell them why.
 
-```javascript
-// BAD: Read-modify-write without locking
+That sounds small enough.
+
+But now make it real.
+
+That customer might have multiple requests landing together. They might have a
+monthly included allowance with daily resets. They might be allowed into overage
+after the included amount. They might have prepaid credits that should be used
+before you block anything. They might open the dashboard right after and expect
+to see the same number you used to make the decision.
+
+So the problem is no longer "count usage."
+
+The problem is: can the billing system make the same answer hold up across
+entitlements, enforcement, pricing, invoices, and UI?
+
+That is where a lot of implementations start drifting.
+
+## Where teams usually get hurt
+
+The first problem is race conditions.
+
+If you read a usage counter, check whether it is still under the limit, then
+write the new value in a second step, you have already made the system easier to
+break under concurrency.
+
+```js
 const usage = await db.usage.findOne({ customerId });
+
 if (usage.consumed < usage.limit) {
   await db.usage.updateOne({ customerId }, { $inc: { consumed: 1 } });
   return { allowed: true };
 }
 ```
 
-Two simultaneous requests can both read the same value, both increment, and both return `allowed: true` even though the limit should have been exceeded after the first.
+That code looks normal. It is also enough for two requests to read the same
+value, both decide they are allowed, and both increment.
 
-### Eventual Consistency
+The second problem is eventual consistency.
 
-Some billing systems use event streaming with eventual consistency. This works for analytics, but not for enforcing limits. A customer might exceed their quota by 1000 requests before the system catches up.
+For analytics, delayed updates are fine. For enforcement, they are not. If the
+system catches up a few seconds later, the customer may already be well past the
+limit you thought you were enforcing.
 
-### Inaccurate Forecasting
+The third problem is product trust.
 
-Customers need to know three things: How much have I used this billing period? How much will I owe at current usage rates? And when will I hit my limit? Delayed or inaccurate usage data makes this impossible.
+If the dashboard says one thing, the API says another, and support has to piece
+together what happened from logs, users stop trusting the pricing long before
+they start trusting it.
 
-## \_What Works\_
+## What the system actually needs to do
 
-### Atomic Operations
+At minimum, a real usage billing system has to do a few things at once.
 
-Database-level atomic operations prevent race conditions:
+It has to track usage safely.
+It has to enforce access at the right moment.
+It has to keep pricing logic consistent with the thing that generated the bill.
+And it has to explain the state back to the user in a way that does not feel
+made up.
 
-```javascript
-// GOOD: Atomic findAndModify with limit check
+That usually means atomic decisions first.
+
+```js
 const result = await db.usage.findOneAndUpdate(
   {
     customerId,
@@ -72,29 +112,42 @@ const result = await db.usage.findOneAndUpdate(
 return { allowed: result !== null };
 ```
 
-This uses the database's atomic compare-and-swap to ensure only one concurrent request succeeds when at the limit.
+That does not solve everything, but it solves an important class of bugs. The
+read and the write are now part of one decision.
 
-### Pre-aggregation
+After that, you still need the surrounding structure.
 
-For high-volume metering, pre-aggregate events in memory before writing to the database. Batch 1000 events into one database update, use sliding windows to handle bursty traffic, and flush aggregates every few seconds. This reduces database load while maintaining accuracy.
+If traffic is high, you probably need some form of aggregation or batching so
+the storage layer does not become the product bottleneck.
+If pricing is more complex than flat pay-as-you-go, the usage decision also has
+to understand included amounts, overage rules, tiering, and resets.
+If the user is near a limit, the product should be able to tell them more than
+just "denied."
 
-### Real-Time Dashboards
+## Reset intervals matter more than they look
 
-Customers need immediate visibility. Show current period usage with progress bars, projected bills based on current usage trends, alerts at 50%, 80%, and 100% of limits, plus historical usage patterns so customers can understand their consumption habits.
+One thing that keeps showing up in AI products is that monthly-only resets are
+too blunt.
 
-### Reset Intervals: \_Rate limits\_ as we call it
+A customer can use a lot of value in one afternoon. If your only mental model is
+"this plan resets next month," your pricing starts creating product problems.
 
-Most billing systems only reset usage monthly. But AI SaaS doesn't work like that. Your customers might need hourly resets for high-throughput inference jobs, daily resets for API quotas, weekly resets for batch processing, or monthly for standard subscriptions. Some even need custom intervals.
+That is why reset intervals matter.
 
-Imagine a customer hitting their claude limit same day they subscribed. With monthly billing, they wait until next month or upgrade. With hourly resets, they get fresh quota in 5 hours. No angry support tickets. No lost revenue from customers who just needed to wait.
+Sometimes the right model is monthly.
+Sometimes it is daily.
+Sometimes it is hourly.
 
-\_ Claude rate limit is still annoying for me though 🫠\_
+That changes the user experience quite a lot.
 
-With Owostack, you configure reset intervals when defining your features in the catalog:
+"You are out till next month" is one kind of product.
+"You are out for now, resets in 47 minutes" is another.
 
-```typescript
+That difference affects support, retention, and how fair the plan feels.
 
-// Define a metered feature
+In **[Owostack](https://owostack.com)**, reset intervals are part of the feature config itself:
+
+```ts
 const apiCalls = metered("api_calls", { name: "API Calls" });
 
 plan("pro", {
@@ -103,89 +156,81 @@ plan("pro", {
   currency: "USD",
   interval: "monthly",
   features: [
-    // 1000 calls per hour, then block
-    apiCalls.included(1000, { reset: "hourly", overage: "block" }),
+    apiCalls.included(1000, {
+      reset: "hourly",
+      overage: "block",
+    }),
   ],
-}),
+});
 ```
 
-Now when you check usage:
+And when the app checks access, it can also get the next reset time back:
 
-```typescript
+```ts
 const { allowed, balance, resetsAt } = await owo.check({
   customer: "user@acme.com",
   feature: "api_calls",
 });
 
-// Customer sees: "847 calls remaining, resets at 3:00 PM"
 console.log(
   `${balance} calls remaining, resets at ${new Date(resetsAt).toLocaleTimeString()}`,
 );
 ```
 
-The SDK returns `resetsAt` as an ISO timestamp. You format it however you want.
+That does not just help the backend. It gives the product something useful to
+say.
 
-This changes the conversation from "You can't use this until next month" to "You're at your limit, but it'll reset in 47 minutes."
+## Why this touches more than billing
 
-### Graceful Degradation
+Once a meter controls access, usage-based billing stops being isolated billing
+logic.
 
-When the metering system is temporarily unavailable, fail open for existing customers so you don't block service. Fail closed for new signups to prevent abuse. Queue events for later processing. And alert the team immediately.
+It is now part of product behavior.
 
-## Owostack's Approach
+It affects what the API allows.
+It affects what the dashboard shows.
+It affects support conversations.
+It affects whether a user feels they hit a fair limit or a broken one.
 
-We handle all of this complexity for you. Check usage and track in separate calls:
+That is why I think the human part gets missed too often. A hard limit with no
+context feels worse than a limit with a clear reset time, current balance, and a
+sane path forward.
 
-```typescript
-// Check if customer can use feature
-const { allowed, balance, resetsAt } = await owo.check({
-  customer: "user@acme.com",
-  feature: "api_calls",
-});
+The customer usually does not care whether your internal model is called
+"included usage" or "prepaid credits." They care whether the product makes sense
+the moment they hit the edge.
 
-if (!allowed) {
-  return {
-    error: "Quota exceeded",
-    message: `Resets at ${new Date(resetsAt).toLocaleTimeString()}`,
-  };
-}
+## What we ended up caring about
 
-// Record actual usage
-await owo.track({
-  customer: "user@acme.com",
-  feature: "api_calls",
-  value: tokensUsed,
-});
-```
+Inside Owostack, the things that matter most here are pretty consistent.
 
-Or combine check and track atomically:
+- atomic metering, so access decisions hold up under concurrency
+- one pricing model that feeds both enforcement and billing
+- support for reset intervals beyond monthly
+- clear runtime responses like `resetsAt`, not just allow or deny
+- room for credits, overage, and hybrid pricing without rewriting the model
 
-```typescript
-// Check AND track in one atomic operation
-const { allowed, balance } = await owo.check({
-  customer: "user@acme.com",
-  feature: "api_calls",
-  sendEvent: true, // atomically track if allowed
-});
-```
+That is the difference between a meter that only counts events and a billing
+layer you can actually build a product on top of.
 
-Behind the scenes, we use distributed locks for atomic operations, pre-aggregate high-volume events, maintain real-time usage dashboards, handle provider-specific quirks, and manage reset intervals automatically.
+## The point
 
-## Pricing Models That Work
+Usage-based billing is not hard because multiplication is hard.
 
-Different AI products need different pricing strategies. Pure usage or pay-as-you-go works well for sporadic usage and experimentation, though customers may experience bill shock from unexpected spikes. Subscription plus overage charges work for predictable baselines with variable spikes, though customers generally dislike overage surprises. Prepaid credits appeal to budget-conscious customers and work well for gift cards or enterprise procurement, though they add credit management complexity. Tiered pricing incentivizes higher usage by offering better rates at higher volumes, though it can be complex to implement and explain.
+It is hard because once usage matters, the billing system is suddenly
+responsible for product truth.
 
-## The Human Element
+It has to decide access correctly.
+It has to count correctly.
+It has to price correctly.
+And it has to explain itself clearly enough that users do not feel like the
+numbers came from nowhere.
 
-Most billing systems treat limits as hard stops. But humans don't work that way. They need context.
+That is the part people usually leave out when they say, "just charge for what
+they use."
 
-With flexible reset intervals, you can show "resets in 47 minutes" instead of just "quota exceeded." Offer soft limits with warnings at 80% and 90%. Let customers finish current batch jobs even if they hit the limit mid-job. And suggest upgrades when someone consistently hits hourly limits.
+OpenAI wrote about some of this in [Beyond Rate Limits](https://openai.com/index/beyond-rate-limits/).
 
-Your support team will thank you. Your customers will stay longer.
-
-## Conclusion
-
-Usage-based billing is \_really\_ hard, but a rewarding experience. Any product doing this needs: real-time visibility so customers know what they're spending, flexible reset intervals or \_rate limits\_ instead of forcing everyone into monthly cycles.
-
-OpenAI recently publised how they built their billing system: [Beyond Rate Limits](https://openai.com/index/beyond-rate-limits/).
-
-Or you could just use Owostack and get back to building your actual product.
+That piece makes the same thing obvious in a different way:
+once usage becomes the product, billing logic and product logic stop being clean
+separate boxes.
