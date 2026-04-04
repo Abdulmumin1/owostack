@@ -48,6 +48,34 @@ function pricingSnapshotKey(snapshot?: UsagePricingSnapshot | null) {
 class SimulatedUsageLedgerStub {
   constructor(private readonly records: StoredUsageRecord[]) {}
 
+  private matchesScope(
+    record: StoredUsageRecord,
+    scope?: {
+      planId?: string | null;
+      subscriptionIds?: string[] | null;
+    },
+  ) {
+    const subscriptionIds = (scope?.subscriptionIds ?? []).filter(
+      (subscriptionId): subscriptionId is string =>
+        typeof subscriptionId === "string" && subscriptionId.length > 0,
+    );
+
+    if (subscriptionIds.length > 0) {
+      if (record.subscriptionId && subscriptionIds.includes(record.subscriptionId))
+        return true;
+      if (scope?.planId && record.subscriptionId === null) {
+        return record.planId === scope.planId;
+      }
+      return false;
+    }
+
+    if (scope?.planId) {
+      return record.planId === scope.planId;
+    }
+
+    return true;
+  }
+
   async appendUsage(record: UsageLedgerRecord) {
     this.records.push({
       id: record.id || crypto.randomUUID(),
@@ -83,6 +111,8 @@ class SimulatedUsageLedgerStub {
     createdAtFrom?: number;
     createdAtTo?: number;
     entityId?: string | null;
+    subscriptionId?: string | null;
+    planId?: string | null;
     unbilledOnly?: boolean;
   }) {
     return this.records
@@ -119,6 +149,15 @@ class SimulatedUsageLedgerStub {
         ) {
           return false;
         }
+        if (
+          query.subscriptionId !== undefined &&
+          record.subscriptionId !== query.subscriptionId
+        ) {
+          return false;
+        }
+        if (query.planId !== undefined && record.planId !== query.planId) {
+          return false;
+        }
         if (query.unbilledOnly && record.invoiceId !== null) return false;
         return true;
       })
@@ -132,6 +171,9 @@ class SimulatedUsageLedgerStub {
     periodEnd: number;
     usageCutoffAt: number;
     invoiceId: string;
+    subscriptionId?: string | null;
+    planId?: string | null;
+    pricingSnapshot?: UsagePricingSnapshot | null;
   }) {
     let updated = 0;
     for (const record of this.records) {
@@ -140,6 +182,22 @@ class SimulatedUsageLedgerStub {
       if (record.periodStart < query.periodStart) continue;
       if (record.periodEnd > query.periodEnd) continue;
       if (record.createdAt > query.usageCutoffAt) continue;
+      if (
+        query.subscriptionId !== undefined &&
+        record.subscriptionId !== query.subscriptionId
+      ) {
+        continue;
+      }
+      if (query.planId !== undefined && record.planId !== query.planId) {
+        continue;
+      }
+      if (
+        query.pricingSnapshot !== undefined &&
+        pricingSnapshotKey(record.pricingSnapshot) !==
+          pricingSnapshotKey(query.pricingSnapshot)
+      ) {
+        continue;
+      }
       if (record.invoiceId !== null) continue;
       record.invoiceId = query.invoiceId;
       updated += 1;
@@ -237,6 +295,70 @@ class SimulatedUsageLedgerStub {
     }
 
     return [...grouped.values()];
+  }
+
+  async listRecentUsageForCustomer(
+    customerId: string,
+    limit: number = 20,
+    scope?: {
+      planId?: string | null;
+      subscriptionIds?: string[] | null;
+    },
+  ) {
+    return this.records
+      .filter(
+        (record) =>
+          record.customerId === customerId && this.matchesScope(record, scope),
+      )
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .slice(0, Math.max(1, Math.min(limit, 100)))
+      .map((record) => ({
+        id: record.id || crypto.randomUUID(),
+        featureId: record.featureId,
+        amount: record.amount,
+        createdAt: record.createdAt,
+      }));
+  }
+
+  async featureUsageSummaryForCustomer(
+    customerId: string,
+    createdAtFrom: number,
+    scope?: {
+      planId?: string | null;
+      subscriptionIds?: string[] | null;
+    },
+  ) {
+    const grouped = new Map<
+      string,
+      {
+        featureId: string;
+        totalUsage: number;
+        recordCount: number;
+      }
+    >();
+
+    for (const record of this.records) {
+      if (record.customerId !== customerId) continue;
+      if (record.createdAt < createdAtFrom) continue;
+      if (!this.matchesScope(record, scope)) continue;
+
+      const existing = grouped.get(record.featureId);
+      if (existing) {
+        existing.totalUsage += record.amount;
+        existing.recordCount += 1;
+        continue;
+      }
+
+      grouped.set(record.featureId, {
+        featureId: record.featureId,
+        totalUsage: record.amount,
+        recordCount: 1,
+      });
+    }
+
+    return [...grouped.values()].sort(
+      (left, right) => right.totalUsage - left.totalUsage,
+    );
   }
 }
 

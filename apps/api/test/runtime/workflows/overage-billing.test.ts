@@ -9,12 +9,15 @@ import {
   insertBillingRun,
   insertInvoice,
   insertOverageSettings,
+  insertPlanFeature,
   insertPaymentAttempt,
   seedOverageWorkflowBase,
   SimulatedUsageLedgerNamespace,
 } from "../helpers/overage-runtime";
 import {
   buildWorkflowEnv,
+  insertPlan,
+  insertSubscription,
   runWorkflow,
   SimulatedProviderAdapter,
 } from "../helpers/workflow-runtime";
@@ -33,6 +36,15 @@ async function appendMeteredUsage(
     periodStart?: number;
     periodEnd?: number;
     createdAt?: number;
+    pricingSnapshot?: {
+      usageModel: "included" | "usage_based" | "prepaid";
+      ratingModel: "package" | "graduated" | "volume";
+      included: number | null;
+      pricePerUnit: number | null;
+      billingUnits: number | null;
+      overagePrice: number | null;
+      tiers: null;
+    } | null;
   } = {},
 ) {
   const stub = usageLedger.get(
@@ -50,6 +62,7 @@ async function appendMeteredUsage(
     periodStart: record.periodStart ?? 1000,
     periodEnd: record.periodEnd ?? 2000,
     createdAt: record.createdAt ?? 2500,
+    pricingSnapshot: record.pricingSnapshot ?? null,
   });
 }
 
@@ -265,6 +278,316 @@ describe("OverageBillingWorkflow runtime integration", () => {
           reference: expect.any(String),
         },
       ]);
+    } finally {
+      OverageBillingWorkflow.dependencies = previousDependencies;
+      db.close();
+    }
+  });
+
+  it("bills old-plan and new-plan overage as separate invoice lines during a plan switch", async () => {
+    const db = createSqliteD1Database();
+    const appDb = createDb(db);
+    const usageLedger = new SimulatedUsageLedgerNamespace();
+    const adapter = new SimulatedProviderAdapter({
+      expectedEnvironment: "live",
+    });
+    const previousDependencies = OverageBillingWorkflow.dependencies;
+
+    OverageBillingWorkflow.dependencies = {
+      ...previousDependencies,
+      getAdapter: (providerId) =>
+        providerId === "paystack" ? adapter : getAdapter(providerId),
+    };
+
+    try {
+      await seedOverageWorkflowBase(db, {
+        customer: {
+          id: "cust_1",
+          email: "customer@example.com",
+        },
+        providerAccount: {
+          providerId: "paystack",
+          environment: "test",
+        },
+        plan: {
+          id: "plan_new",
+          currency: "USD",
+        },
+        paymentMethod: {
+          id: "pm_1",
+          providerId: "paystack",
+          token: "AUTH_123",
+          isDefault: 1,
+        },
+        subscription: {
+          id: "sub_new",
+          planId: "plan_new",
+          providerId: "paystack",
+          providerSubscriptionCode: "sub_code_new",
+          status: "active",
+        },
+        planFeature: {
+          planId: "plan_new",
+          featureId: "feature_1",
+          limitValue: 1000,
+          billingUnits: 100,
+          overagePrice: 8000,
+          overage: "charge",
+        },
+      });
+
+      await insertPlan(db, {
+        id: "plan_old",
+        organizationId: "org_1",
+        name: "Legacy",
+        slug: "legacy",
+        currency: "USD",
+      });
+      await insertPlanFeature(db, {
+        id: "plan_feature_old",
+        planId: "plan_old",
+        featureId: "feature_1",
+        limitValue: 1000,
+        billingUnits: 100,
+        overagePrice: 4000,
+        overage: "charge",
+      });
+      await insertSubscription(db, {
+        id: "sub_old",
+        customerId: "cust_1",
+        planId: "plan_old",
+        providerId: "paystack",
+        providerSubscriptionCode: "sub_code_old",
+        status: "canceled",
+      });
+      await insertOverageSettings(db, {
+        organizationId: "org_1",
+        autoCollect: 1,
+      });
+      await insertBillingRun(db, {
+        id: "run_switch",
+        organizationId: "org_1",
+        customerId: "cust_1",
+        usageWindowEnd: 2500,
+      });
+      await appendMeteredUsage(usageLedger, {
+        subscriptionId: "sub_old",
+        planId: "plan_old",
+        amount: 1500,
+        createdAt: 2000,
+        pricingSnapshot: {
+          usageModel: "included",
+          ratingModel: "package",
+          included: 1000,
+          pricePerUnit: null,
+          billingUnits: 100,
+          overagePrice: 4000,
+          tiers: null,
+        },
+      });
+      await appendMeteredUsage(usageLedger, {
+        subscriptionId: "sub_new",
+        planId: "plan_new",
+        amount: 1300,
+        createdAt: 2400,
+        pricingSnapshot: {
+          usageModel: "included",
+          ratingModel: "package",
+          included: 1000,
+          pricePerUnit: null,
+          billingUnits: 100,
+          overagePrice: 8000,
+          tiers: null,
+        },
+      });
+
+      await runWorkflow(
+        OverageBillingWorkflow,
+        buildWorkflowEnv(db, {
+          ENVIRONMENT: "production",
+          USAGE_LEDGER: usageLedger as unknown as DurableObjectNamespace<any>,
+        }),
+        {
+          organizationId: "org_1",
+          customerId: "cust_1",
+          trigger: "threshold",
+          billingRunId: "run_switch",
+        },
+      );
+
+      const invoice = await appDb.query.invoices.findFirst({
+        where: eq(schema.invoices.customerId, "cust_1"),
+        with: {
+          items: true,
+        },
+      });
+      const usageRecords = usageLedger.listRecords("org_1");
+
+      expect(invoice).toMatchObject({
+        status: "paid",
+        currency: "USD",
+        subtotal: 44000,
+        total: 44000,
+        amountPaid: 44000,
+        amountDue: 0,
+      });
+      expect(invoice?.subscriptionId ?? null).toBeNull();
+      expect(invoice?.items).toHaveLength(2);
+      expect(
+        (invoice?.items || []).map((item) => item.amount).sort((a, b) => a - b),
+      ).toEqual([20000, 24000]);
+      expect(
+        (invoice?.items || [])
+          .map((item) => (item.metadata || {}) as Record<string, unknown>)
+          .map((metadata) => metadata.billingGroupKey),
+      ).toHaveLength(2);
+      expect(usageRecords).toEqual([
+        expect.objectContaining({
+          subscriptionId: "sub_old",
+          planId: "plan_old",
+          invoiceId: invoice?.id,
+        }),
+        expect.objectContaining({
+          subscriptionId: "sub_new",
+          planId: "plan_new",
+          invoiceId: invoice?.id,
+        }),
+      ]);
+    } finally {
+      OverageBillingWorkflow.dependencies = previousDependencies;
+      db.close();
+    }
+  });
+
+  it("keeps separate invoice lines when pricing snapshots change within one subscription window", async () => {
+    const db = createSqliteD1Database();
+    const appDb = createDb(db);
+    const usageLedger = new SimulatedUsageLedgerNamespace();
+    const adapter = new SimulatedProviderAdapter({
+      expectedEnvironment: "live",
+    });
+    const previousDependencies = OverageBillingWorkflow.dependencies;
+
+    OverageBillingWorkflow.dependencies = {
+      ...previousDependencies,
+      getAdapter: (providerId) =>
+        providerId === "paystack" ? adapter : getAdapter(providerId),
+    };
+
+    try {
+      await seedOverageWorkflowBase(db, {
+        customer: {
+          id: "cust_1",
+          email: "customer@example.com",
+        },
+        providerAccount: {
+          providerId: "paystack",
+          environment: "test",
+        },
+        plan: {
+          id: "plan_1",
+          currency: "USD",
+        },
+        paymentMethod: {
+          id: "pm_1",
+          providerId: "paystack",
+          token: "AUTH_123",
+          isDefault: 1,
+        },
+        subscription: {
+          id: "sub_1",
+          providerId: "paystack",
+          providerSubscriptionCode: "sub_code_1",
+          status: "active",
+        },
+        planFeature: {
+          planId: "plan_1",
+          featureId: "feature_1",
+          limitValue: 1000,
+          billingUnits: 100,
+          overagePrice: 8000,
+          overage: "charge",
+        },
+      });
+      await insertOverageSettings(db, {
+        organizationId: "org_1",
+        autoCollect: 1,
+      });
+      await insertBillingRun(db, {
+        id: "run_snapshot",
+        organizationId: "org_1",
+        customerId: "cust_1",
+        usageWindowEnd: 2500,
+      });
+      await appendMeteredUsage(usageLedger, {
+        subscriptionId: "sub_1",
+        planId: "plan_1",
+        amount: 1500,
+        createdAt: 2000,
+        pricingSnapshot: {
+          usageModel: "included",
+          ratingModel: "package",
+          included: 1000,
+          pricePerUnit: null,
+          billingUnits: 100,
+          overagePrice: 4000,
+          tiers: null,
+        },
+      });
+      await appendMeteredUsage(usageLedger, {
+        subscriptionId: "sub_1",
+        planId: "plan_1",
+        amount: 1300,
+        createdAt: 2400,
+        pricingSnapshot: {
+          usageModel: "included",
+          ratingModel: "package",
+          included: 1000,
+          pricePerUnit: null,
+          billingUnits: 100,
+          overagePrice: 8000,
+          tiers: null,
+        },
+      });
+
+      await runWorkflow(
+        OverageBillingWorkflow,
+        buildWorkflowEnv(db, {
+          ENVIRONMENT: "production",
+          USAGE_LEDGER: usageLedger as unknown as DurableObjectNamespace<any>,
+        }),
+        {
+          organizationId: "org_1",
+          customerId: "cust_1",
+          trigger: "threshold",
+          billingRunId: "run_snapshot",
+        },
+      );
+
+      const invoice = await appDb.query.invoices.findFirst({
+        where: eq(schema.invoices.customerId, "cust_1"),
+        with: {
+          items: true,
+        },
+      });
+
+      expect(invoice).toMatchObject({
+        status: "paid",
+        subtotal: 44000,
+        total: 44000,
+      });
+      expect(invoice?.items).toHaveLength(2);
+      expect(
+        (invoice?.items || []).map((item) => item.amount).sort((a, b) => a - b),
+      ).toEqual([20000, 24000]);
+      expect(
+        new Set(
+          (invoice?.items || []).map(
+            (item) =>
+              ((item.metadata || {}) as Record<string, unknown>).billingGroupKey,
+          ),
+        ).size,
+      ).toBe(2);
     } finally {
       OverageBillingWorkflow.dependencies = previousDependencies;
       db.close();

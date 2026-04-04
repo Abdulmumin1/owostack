@@ -9,6 +9,7 @@ import {
   validatePlanFeaturePricingConfig,
 } from "../../lib/plan-feature-normalization";
 import { normalizeOverageSettings } from "../../lib/overage-billing-interval";
+import { shouldResetUsageOnPlanEnable } from "../../lib/usage-scope";
 import type { Env, Variables } from "../../index";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -100,7 +101,6 @@ app.get("/export", async (c) => {
                 pf.trialLimitValue ?? null,
               ) ?? null,
             resetInterval: normalizePlanFeatureResetInterval(pf.resetInterval),
-            resetOnEnable: pf.resetOnEnable,
             rolloverEnabled: pf.rolloverEnabled,
             rolloverMaxBalance: pf.rolloverMaxBalance,
             usageModel,
@@ -190,7 +190,10 @@ app.post("/import", async (c) => {
             normalizePlanFeatureResetInterval(
               planFeature.resetInterval || "monthly",
             ) ?? "monthly",
-          resetOnEnable: planFeature.resetOnEnable ?? true,
+          resetOnEnable: shouldResetUsageOnPlanEnable({
+            usageModel,
+            resetOnEnable: planFeature.resetOnEnable,
+          }),
           rolloverEnabled: planFeature.rolloverEnabled ?? false,
           rolloverMaxBalance: planFeature.rolloverMaxBalance ?? null,
           usageModel,
@@ -362,7 +365,10 @@ app.post("/import", async (c) => {
                 normalizePlanFeatureResetInterval(
                   pf.resetInterval || "monthly",
                 ) ?? "monthly",
-              resetOnEnable: pf.resetOnEnable ?? true,
+              resetOnEnable: shouldResetUsageOnPlanEnable({
+                usageModel,
+                resetOnEnable: pf.resetOnEnable,
+              }),
               rolloverEnabled: pf.rolloverEnabled ?? false,
               rolloverMaxBalance: pf.rolloverMaxBalance ?? null,
               usageModel,
@@ -447,7 +453,10 @@ app.post("/import", async (c) => {
               normalizePlanFeatureResetInterval(
                 pf.resetInterval || "monthly",
               ) ?? "monthly",
-            resetOnEnable: pf.resetOnEnable ?? true,
+            resetOnEnable: shouldResetUsageOnPlanEnable({
+              usageModel,
+              resetOnEnable: pf.resetOnEnable,
+            }),
             rolloverEnabled: pf.rolloverEnabled ?? false,
             rolloverMaxBalance: pf.rolloverMaxBalance ?? null,
             usageModel,

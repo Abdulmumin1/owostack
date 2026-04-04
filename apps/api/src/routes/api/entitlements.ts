@@ -10,12 +10,13 @@ import { getResetPeriod } from "../../lib/reset-period";
 import { zodErrorToResponse } from "../../lib/validation";
 import { getScopedBalance, deductScopedBalance } from "../../lib/addon-credits";
 import { trackUsageEvent } from "../../lib/analytics-engine";
-import { appendUsageRecord, sumUsageAmount } from "../../lib/usage-ledger";
+import { appendUsageRecord } from "../../lib/usage-ledger";
 import {
   checkOverageAllowed,
   getOrgOverageSettings,
   getUnbilledOverageAmount,
 } from "../../lib/overage-guards";
+import { sumScopedUsageAmount } from "../../lib/scoped-usage";
 import { evaluateThresholdBillingCandidate } from "../../lib/threshold-billing";
 import { isPaidActivePastGracePeriod } from "../../lib/subscription-health";
 import {
@@ -23,6 +24,12 @@ import {
   normalizeRatingModel,
 } from "../../lib/usage-rating";
 import { buildUsagePricingSnapshot } from "../../lib/usage-pricing-snapshot";
+import {
+  resolveLegacyUsageLedgerScope,
+  resolveUsageLedgerScope,
+  resolveUsagePlanScope,
+  shouldResetUsageOnPlanEnable,
+} from "../../lib/usage-scope";
 import { isCustomerResolutionConflictError } from "../../lib/customer-resolution";
 import {
   apiKeySecurity,
@@ -1287,6 +1294,16 @@ app.openapi(
         subscription.currentPeriodEnd,
       );
       const resetsAt = new Date(resetPeriod.periodEnd).toISOString();
+      const resetsOnPlanEnable = shouldResetUsageOnPlanEnable(planFeature);
+      const usagePlanScope = resolveUsagePlanScope(planFeature, subscription);
+      const usageLedgerScope = resolveUsageLedgerScope(
+        planFeature,
+        subscription,
+      );
+      const legacyUsageLedgerScope = resolveLegacyUsageLedgerScope(
+        planFeature,
+        subscription,
+      );
 
       // ===========================================================================
       // DO Check (Preferred for atomicity)
@@ -1308,11 +1325,12 @@ app.openapi(
         const currentConfig = {
           limit: effectiveLimit,
           resetInterval: planFeature.resetInterval,
-          resetOnEnable: planFeature.resetOnEnable || false,
+          resetOnEnable: resetsOnPlanEnable,
           rolloverEnabled: planFeature.rolloverEnabled || false,
           rolloverMaxBalance: planFeature.rolloverMaxBalance,
           usageModel: planFeature.usageModel || "included",
           creditCost: planFeature.creditCost || 0,
+          usageScopeKey: usagePlanScope ?? null,
         };
 
         let doResult = await usageMeter.check(
@@ -1327,7 +1345,7 @@ app.openapi(
             resetPeriod;
 
           // Query UsageLedgerDO for historical usage (not D1 - DO is source of truth)
-          const ledgerUsage = await sumUsageAmount(
+          const ledgerUsage = await sumScopedUsageAmount(
             {
               usageLedger: c.env.USAGE_LEDGER,
               organizationId: organizationId || null,
@@ -1338,6 +1356,9 @@ app.openapi(
               entityId: entity || undefined,
               createdAtFrom: migPeriodStart,
               createdAtTo: migPeriodEnd,
+              scope: usageLedgerScope,
+              legacyPlanScope: legacyUsageLedgerScope,
+              legacyCreatedAtFloor: subscription.currentPeriodStart,
             },
           );
           if (
@@ -1385,6 +1406,8 @@ app.openapi(
             {
               usageLedger: c.env.USAGE_LEDGER,
               organizationId: organizationId || null,
+              ...usageLedgerScope,
+              legacyCreatedAtFloor: subscription.currentPeriodStart,
             },
           );
 
@@ -1503,6 +1526,7 @@ app.openapi(
               {
                 usageLedger: c.env.USAGE_LEDGER,
                 organizationId: organizationId || null,
+                ...usageLedgerScope,
               },
             );
 
@@ -1769,7 +1793,7 @@ app.openapi(
         );
 
       // Sum usage from UsageLedgerDO (source of truth) - not D1
-      const ledgerUsage = await sumUsageAmount(
+      const ledgerUsage = await sumScopedUsageAmount(
         {
           usageLedger: c.env.USAGE_LEDGER,
           organizationId: organizationId || null,
@@ -1780,6 +1804,9 @@ app.openapi(
           entityId: entity || undefined,
           createdAtFrom: currentPeriodStart,
           createdAtTo: currentPeriodEnd,
+          scope: usageLedgerScope,
+          legacyPlanScope: legacyUsageLedgerScope,
+          legacyCreatedAtFloor: subscription.currentPeriodStart,
         },
       );
       if (
@@ -1820,6 +1847,8 @@ app.openapi(
           {
             usageLedger: c.env.USAGE_LEDGER,
             organizationId: organizationId || null,
+            ...usageLedgerScope,
+            legacyCreatedAtFloor: subscription.currentPeriodStart,
           },
         );
 
@@ -1942,6 +1971,8 @@ app.openapi(
             {
               usageLedger: c.env.USAGE_LEDGER,
               organizationId: organizationId || null,
+              ...usageLedgerScope,
+              legacyCreatedAtFloor: subscription.currentPeriodStart,
             },
           );
 
@@ -2559,6 +2590,16 @@ app.openapi(
       subscription.currentPeriodEnd,
     );
     const usageModel = getUsageModel(planFeature);
+    const resetsOnPlanEnable = shouldResetUsageOnPlanEnable(planFeature);
+    const usagePlanScope = resolveUsagePlanScope(planFeature, subscription);
+    const usageLedgerScope = resolveUsageLedgerScope(
+      planFeature,
+      subscription,
+    );
+    const legacyUsageLedgerScope = resolveLegacyUsageLedgerScope(
+      planFeature,
+      subscription,
+    );
 
     try {
       // ===========================================================================
@@ -2592,11 +2633,12 @@ app.openapi(
         const currentConfig = {
           limit: effectiveLimit,
           resetInterval: planFeature.resetInterval,
-          resetOnEnable: planFeature.resetOnEnable || false,
+          resetOnEnable: resetsOnPlanEnable,
           rolloverEnabled: planFeature.rolloverEnabled || false,
           rolloverMaxBalance: planFeature.rolloverMaxBalance,
           usageModel: planFeature.usageModel || "included",
           creditCost: planFeature.creditCost || 0,
+          usageScopeKey: usagePlanScope ?? null,
         };
 
         if (usageModel === "usage_based") {
@@ -2612,6 +2654,8 @@ app.openapi(
             {
               usageLedger: c.env.USAGE_LEDGER,
               organizationId: organizationId || null,
+              ...usageLedgerScope,
+              legacyCreatedAtFloor: subscription.currentPeriodStart,
             },
           );
 
@@ -2649,7 +2693,7 @@ app.openapi(
         // If DO has no state yet (fresh/restart), migrate usage from UsageLedgerDO and configure
         if (doResult.code === "feature_not_found") {
           // Query UsageLedgerDO for historical usage (source of truth)
-          const ledgerUsage = await sumUsageAmount(
+          const ledgerUsage = await sumScopedUsageAmount(
             {
               usageLedger: c.env.USAGE_LEDGER,
               organizationId: organizationId || null,
@@ -2660,6 +2704,9 @@ app.openapi(
               entityId: entity || undefined,
               createdAtFrom: periodStart,
               createdAtTo: periodEnd,
+              scope: usageLedgerScope,
+              legacyPlanScope: legacyUsageLedgerScope,
+              legacyCreatedAtFloor: subscription.currentPeriodStart,
             },
           );
           if (
@@ -2793,6 +2840,8 @@ app.openapi(
               {
                 usageLedger: c.env.USAGE_LEDGER,
                 organizationId: organizationId || null,
+                ...usageLedgerScope,
+                legacyCreatedAtFloor: subscription.currentPeriodStart,
               },
             );
 
@@ -2848,6 +2897,8 @@ app.openapi(
                   {
                     usageLedger: c.env.USAGE_LEDGER,
                     organizationId: organizationId || null,
+                    ...usageLedgerScope,
+                    legacyCreatedAtFloor: subscription.currentPeriodStart,
                   },
                 );
 
@@ -2930,6 +2981,8 @@ app.openapi(
           {
             usageLedger: c.env.USAGE_LEDGER,
             organizationId: organizationId || null,
+            ...usageLedgerScope,
+            legacyCreatedAtFloor: subscription.currentPeriodStart,
           },
         );
 

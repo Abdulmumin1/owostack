@@ -82,6 +82,8 @@ export interface UnbilledUsageResult {
     estimatedAmount: number;
     periodStart: number;
     periodEnd: number;
+    pricingSnapshot?: UsagePricingSnapshot | null;
+    billingGroupKey: string;
   }[];
   totalEstimated: number;
   currency: string;
@@ -102,6 +104,64 @@ export interface ReleaseInvoiceResult {
   invoiceId: string;
   status: "void";
   releasedUsageRecords: number;
+}
+
+function serializePricingSnapshot(
+  snapshot?: UsagePricingSnapshot | null,
+): string {
+  return snapshot ? JSON.stringify(snapshot) : "null";
+}
+
+function buildBillingGroupKey(params: {
+  featureId: string;
+  periodStart: number;
+  periodEnd: number;
+  subscriptionId?: string | null;
+  planId?: string | null;
+  pricingSnapshot?: UsagePricingSnapshot | null;
+}): string {
+  return [
+    params.featureId,
+    params.periodStart,
+    params.periodEnd,
+    params.subscriptionId ?? "",
+    params.planId ?? "",
+    serializePricingSnapshot(params.pricingSnapshot),
+  ].join("|");
+}
+
+function getInvoiceItemBillingGroupKey(item: {
+  featureId?: string | null;
+  periodStart?: number | null;
+  periodEnd?: number | null;
+  metadata?: Record<string, unknown> | null;
+}): string {
+  const metadata =
+    item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
+      ? item.metadata
+      : null;
+
+  if (metadata && typeof metadata.billingGroupKey === "string") {
+    return metadata.billingGroupKey;
+  }
+
+  return buildBillingGroupKey({
+    featureId: item.featureId || "feature",
+    periodStart: item.periodStart || 0,
+    periodEnd: item.periodEnd || 0,
+    subscriptionId:
+      typeof metadata?.subscriptionId === "string"
+        ? metadata.subscriptionId
+        : null,
+    planId:
+      typeof metadata?.planId === "string" ? metadata.planId : null,
+    pricingSnapshot:
+      metadata?.pricingSnapshot &&
+      typeof metadata.pricingSnapshot === "object" &&
+      !Array.isArray(metadata.pricingSnapshot)
+        ? (metadata.pricingSnapshot as UsagePricingSnapshot)
+        : null,
+  });
 }
 
 export class BillingService {
@@ -287,6 +347,15 @@ export class BillingService {
             estimatedAmount: rated.amount,
             periodStart: row.periodStart,
             periodEnd: row.periodEnd,
+            pricingSnapshot: snapshot,
+            billingGroupKey: buildBillingGroupKey({
+              featureId: row.featureId,
+              periodStart: row.periodStart,
+              periodEnd: row.periodEnd,
+              subscriptionId: row.subscriptionId ?? null,
+              planId: row.planId ?? null,
+              pricingSnapshot: snapshot,
+            }),
           });
 
           totalEstimated += rated.amount;
@@ -433,7 +502,7 @@ export class BillingService {
     const existingItemKeys = new Set(
       (existingInvoice?.items || []).map(
         (item: NonNullable<typeof existingInvoice>["items"][number]) =>
-          `${item.featureId || "feature"}:${item.periodStart || 0}:${item.periodEnd || 0}`,
+          getInvoiceItemBillingGroupKey(item),
       ),
     );
 
@@ -471,7 +540,7 @@ export class BillingService {
       }
 
       for (const f of unbilled.features) {
-        const itemKey = `${f.featureId}:${f.periodStart}:${f.periodEnd}`;
+        const itemKey = f.billingGroupKey;
         const line = buildMeteredInvoiceLineData({
           featureName: f.featureName,
           billableQuantity: f.billableQuantity,
@@ -480,6 +549,15 @@ export class BillingService {
           ratingModel: f.ratingModel,
           tierBreakdown: f.tierBreakdown,
         });
+        const lineMetadata = {
+          ...(line.metadata ?? {}),
+          billingGroupKey: f.billingGroupKey,
+          ...(f.subscriptionId ? { subscriptionId: f.subscriptionId } : {}),
+          ...(f.planId ? { planId: f.planId } : {}),
+          ...(f.pricingSnapshot
+            ? { pricingSnapshot: f.pricingSnapshot }
+            : {}),
+        };
 
         if (!existingItemKeys.has(itemKey)) {
           await executor.insert(schema.invoiceItems).values({
@@ -492,7 +570,7 @@ export class BillingService {
             amount: f.estimatedAmount,
             periodStart: f.periodStart,
             periodEnd: f.periodEnd,
-            metadata: line.metadata ?? null,
+            metadata: lineMetadata,
             createdAt: now,
           });
           existingItemKeys.add(itemKey);
@@ -510,6 +588,13 @@ export class BillingService {
             periodEnd: f.periodEnd,
             usageCutoffAt: usageWindowEnd,
             invoiceId,
+            ...(f.subscriptionId !== undefined
+              ? { subscriptionId: f.subscriptionId }
+              : {}),
+            ...(f.planId !== undefined ? { planId: f.planId } : {}),
+            ...(f.pricingSnapshot !== undefined
+              ? { pricingSnapshot: f.pricingSnapshot }
+              : {}),
           },
         );
 
