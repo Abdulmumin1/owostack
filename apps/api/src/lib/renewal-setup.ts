@@ -92,6 +92,31 @@ export function writeRenewalSetupMetadata(
   };
 }
 
+export function buildRenewalSetupFailureMetadata(
+  metadata: unknown,
+  params: {
+    reason: string;
+    source: string;
+    retryScheduled: boolean;
+    retryCount?: number;
+    now?: number;
+    nextAttemptAt?: number | null;
+  },
+): Record<string, unknown> {
+  const now = params.now ?? Date.now();
+  return writeRenewalSetupMetadata(metadata, {
+    renewal_setup_status: params.retryScheduled ? "scheduled" : "failed",
+    renewal_setup_retry_count: params.retryCount ?? 0,
+    renewal_setup_last_error: params.reason,
+    renewal_setup_last_attempt_at: now,
+    renewal_setup_next_attempt_at: params.retryScheduled
+      ? (params.nextAttemptAt ?? null)
+      : null,
+    renewal_setup_updated_at: now,
+    renewal_setup_last_source: params.source,
+  });
+}
+
 export function hasRenewalSetupIssue(metadata: unknown): boolean {
   const status = readRenewalSetupMetadata(metadata).renewal_setup_status;
   return status === "failed" || status === "scheduled" || status === "retrying";

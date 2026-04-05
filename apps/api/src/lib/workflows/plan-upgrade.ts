@@ -12,6 +12,11 @@ import {
   invalidateSubscriptionCache,
   getRuntimeProviderEnvironment,
 } from "./utils";
+import {
+  RENEWAL_SETUP_RETRY_DELAYS_MS,
+  buildRenewalSetupFailureMetadata,
+} from "../renewal-setup";
+import { calculateAlignedPeriodEnd } from "../plan-switch";
 
 // ---------------------------------------------------------------------------
 // Params
@@ -45,6 +50,18 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
   WorkflowEnv,
   PlanUpgradeParams
 > {
+  static dependencies = {
+    getAdapter,
+    resolveProviderAccount,
+    provisionEntitlements,
+    intervalToMs,
+    invalidateSubscriptionCache,
+  };
+
+  private get deps() {
+    return PlanUpgradeWorkflow.dependencies;
+  }
+
   async run(event: WorkflowEvent<PlanUpgradeParams>, step: WorkflowStep) {
     const {
       customerId,
@@ -72,7 +89,7 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
         "cancel-old-on-provider",
         { retries: { limit: 2, delay: "5 seconds", backoff: "exponential" } },
         async () => {
-          const account = await resolveProviderAccount(
+          const account = await this.deps.resolveProviderAccount(
             this.env,
             organizationId,
             providerId,
@@ -84,7 +101,7 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
             return;
           }
 
-          const adapter = getAdapter(providerId);
+          const adapter = this.deps.getAdapter(providerId);
           if (!adapter) {
             console.warn(`[PlanUpgradeWorkflow] No adapter for ${providerId}`);
             return;
@@ -118,7 +135,11 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
         )
           .bind(now, now, oldSubscriptionId)
           .run();
-        await invalidateSubscriptionCache(this.env, organizationId, customerId);
+        await this.deps.invalidateSubscriptionCache(
+          this.env,
+          organizationId,
+          customerId,
+        );
         console.log(
           `[PlanUpgradeWorkflow] Canceled old sub in DB: ${oldSubscriptionId}`,
         );
@@ -170,7 +191,7 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
     );
 
     const { plan, customer, oldPeriodEnd } = lookupData;
-    const periodMs = intervalToMs(plan?.interval || "monthly");
+    const periodMs = this.deps.intervalToMs(plan?.interval || "monthly");
 
     // Step 4: Create new subscription in DB (preserving billing cycle)
     const newSubId = await step.do("create-new-subscription", async () => {
@@ -192,7 +213,7 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
 
       // Preserve old billing cycle end, or fall back to paidAt + period
       const startMs = paidAt ? new Date(paidAt).getTime() : now;
-      const endMs = oldPeriodEnd || startMs + periodMs;
+      const endMs = calculateAlignedPeriodEnd(oldPeriodEnd, startMs, periodMs);
 
       const subId = crypto.randomUUID();
       await this.env.DB.prepare(
@@ -220,9 +241,23 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
       console.log(
         `[PlanUpgradeWorkflow] Created upgraded sub: ${subId}, periodEnd=${new Date(endMs).toISOString()}`,
       );
-      await invalidateSubscriptionCache(this.env, organizationId, customerId);
+      await this.deps.invalidateSubscriptionCache(
+        this.env,
+        organizationId,
+        customerId,
+      );
       return subId;
     });
+
+    const newSubState = await step.do(
+      "load-upgraded-subscription-state",
+      async () =>
+        this.env.DB.prepare(
+          "SELECT provider_subscription_code FROM subscriptions WHERE id = ? LIMIT 1",
+        )
+          .bind(newSubId)
+          .first<{ provider_subscription_code: string | null }>(),
+    );
 
     // Step 5: Create provider subscription for recurring billing
     const providerPlanCode = plan?.provider_plan_id || plan?.paystack_plan_id;
@@ -231,41 +266,70 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
       customer?.paystack_authorization_code;
     const isRecurring = plan?.billing_type === "recurring";
     let providerSubCode: string | null = null;
+    const upgradeStartMs = paidAt ? new Date(paidAt).getTime() : Date.now();
+    const periodEnd = calculateAlignedPeriodEnd(
+      oldPeriodEnd,
+      upgradeStartMs,
+      periodMs,
+    );
+    const customerCode =
+      customer?.provider_customer_id ||
+      customer?.paystack_customer_id ||
+      customer?.email ||
+      null;
 
     // Skip provider subscription creation for providers with native subscription
     // management (supportsNativeTrials) — createSubscription would create a checkout, not a real sub.
-    const upgradeAdapter = getAdapter(providerId);
+    const upgradeAdapter = this.deps.getAdapter(providerId);
     const skipProviderSub = upgradeAdapter?.supportsNativeTrials === true;
+    const requiresProviderSubscription = isRecurring && !skipProviderSub;
+    const needsProviderSubscriptionLink =
+      !newSubState?.provider_subscription_code ||
+      newSubState.provider_subscription_code === "upgrade";
+    const missingRenewalInputs: string[] = [];
+    if (requiresProviderSubscription && !providerPlanCode) {
+      missingRenewalInputs.push("provider_plan_code");
+    }
+    if (requiresProviderSubscription && !customer?.email) {
+      missingRenewalInputs.push("customer_email");
+    }
+    if (requiresProviderSubscription && !authCode) {
+      missingRenewalInputs.push("provider_payment_method");
+    }
+    let renewalSetupFailureReason: string | null =
+      missingRenewalInputs.length > 0
+        ? `missing_${missingRenewalInputs.join("_")}`
+        : null;
 
     if (
-      isRecurring &&
+      requiresProviderSubscription &&
+      needsProviderSubscriptionLink &&
       providerPlanCode &&
       authCode &&
       customer &&
-      !skipProviderSub
+      customer.email
     ) {
       try {
         const subResult = await step.do(
           "create-provider-subscription",
           async () => {
-            const account = await resolveProviderAccount(
+            const account = await this.deps.resolveProviderAccount(
               this.env,
               organizationId,
               providerId,
             );
             if (!account) throw new Error("No provider account");
 
-            const adapter = getAdapter(providerId);
+            const adapter = this.deps.getAdapter(providerId);
             if (!adapter) throw new Error(`No adapter for ${providerId}`);
 
-            // Start date = old period end (proration covers until then)
-            // or now + period if no old sub
-            const startDate = oldPeriodEnd
-              ? new Date(oldPeriodEnd).toISOString()
-              : new Date(Date.now() + periodMs).toISOString();
+            const startDate = new Date(periodEnd).toISOString();
 
             const result = await adapter.createSubscription({
-              customer: { id: customer!.email, email: customer!.email },
+              customer: {
+                id: customerCode || customer!.email,
+                email: customer!.email,
+              },
               plan: { id: providerPlanCode! },
               authorizationCode: authCode!,
               startDate,
@@ -288,6 +352,8 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
         );
         providerSubCode = subResult;
       } catch (err) {
+        renewalSetupFailureReason =
+          err instanceof Error ? err.message : String(err);
         console.error(
           `[PlanUpgradeWorkflow] Failed to create provider subscription:`,
           err,
@@ -295,36 +361,115 @@ export class PlanUpgradeWorkflow extends WorkflowEntrypoint<
       }
     }
 
-    // Step 6: Update subscription with provider sub code (if created)
-    if (providerSubCode && newSubId) {
-      await step.do("link-provider-sub", async () => {
-        const paystackCode = providerId === "paystack" ? providerSubCode : null;
-        await this.env.DB.prepare(
-          `UPDATE subscriptions
-           SET provider_subscription_id = COALESCE(?, provider_subscription_id),
-               provider_subscription_code = COALESCE(?, provider_subscription_code),
-               paystack_subscription_code = COALESCE(?, paystack_subscription_code),
-               updated_at = ?
-           WHERE id = ?`,
+    let retryScheduled = false;
+    if (
+      requiresProviderSubscription &&
+      needsProviderSubscriptionLink &&
+      !providerSubCode
+    ) {
+      if (this.env.RENEWAL_SETUP_WORKFLOW) {
+        try {
+          const workflow = await this.env.RENEWAL_SETUP_WORKFLOW.create({
+            params: {
+              subscriptionId: newSubId,
+              customerId,
+              organizationId,
+              providerId,
+              source: "plan_upgrade",
+              immediate: false,
+            },
+          });
+          retryScheduled = true;
+          console.log(
+            `[PlanUpgradeWorkflow] Scheduled renewal setup retry workflow ${workflow.id} for subscription=${newSubId}`,
+          );
+        } catch (retryErr) {
+          console.error(
+            `[PlanUpgradeWorkflow] Failed to schedule renewal setup retry for subscription=${newSubId}`,
+            retryErr,
+          );
+        }
+      }
+    }
+
+    await step.do("finalize-upgraded-subscription", async () => {
+      const row = await this.env.DB.prepare(
+        "SELECT metadata FROM subscriptions WHERE id = ? LIMIT 1",
+      )
+        .bind(newSubId)
+        .first<{ metadata: unknown }>();
+      const now = Date.now();
+      const linkedProviderCode = needsProviderSubscriptionLink
+        ? providerSubCode
+        : newSubState?.provider_subscription_code || null;
+      const paystackCode =
+        providerId === "paystack" ? linkedProviderCode : null;
+      const baseMetadata =
+        row?.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+          ? (row.metadata as Record<string, unknown>)
+          : {};
+      const metadata =
+        requiresProviderSubscription &&
+        needsProviderSubscriptionLink &&
+        !providerSubCode
+          ? buildRenewalSetupFailureMetadata(baseMetadata, {
+              reason:
+                renewalSetupFailureReason || "provider_subscription_missing",
+              source: "plan_upgrade",
+              retryScheduled,
+              nextAttemptAt: retryScheduled
+                ? now + RENEWAL_SETUP_RETRY_DELAYS_MS[0]
+                : null,
+              now,
+            })
+          : baseMetadata;
+
+      await this.env.DB.prepare(
+        `UPDATE subscriptions
+         SET provider_subscription_id = ?,
+             provider_subscription_code = ?,
+             paystack_subscription_code = ?,
+             cancel_at = ?,
+             metadata = ?,
+             updated_at = ?
+         WHERE id = ?`,
+      )
+        .bind(
+          linkedProviderCode,
+          linkedProviderCode,
+          paystackCode,
+          requiresProviderSubscription &&
+            needsProviderSubscriptionLink &&
+            !providerSubCode
+            ? periodEnd
+            : null,
+          JSON.stringify(metadata || {}),
+          now,
+          newSubId,
         )
-          .bind(
-            providerSubCode,
-            providerSubCode,
-            paystackCode,
-            Date.now(),
-            newSubId,
-          )
-          .run();
+        .run();
+
+      await this.deps.invalidateSubscriptionCache(
+        this.env,
+        organizationId,
+        customerId,
+      );
+
+      if (providerSubCode) {
         console.log(
           `[PlanUpgradeWorkflow] Linked provider sub ${providerSubCode} to ${newSubId}`,
         );
-        await invalidateSubscriptionCache(this.env, organizationId, customerId);
-      });
-    }
+      }
+    });
 
     // Step 7: Re-provision entitlements
     await step.do("provision-entitlements", async () => {
-      await provisionEntitlements(this.env, customerId, newPlanId, oldPlanId);
+      await this.deps.provisionEntitlements(
+        this.env,
+        customerId,
+        newPlanId,
+        oldPlanId,
+      );
       console.log(
         `[PlanUpgradeWorkflow] Entitlements provisioned: customer=${customerId}, plan=${newPlanId}`,
       );

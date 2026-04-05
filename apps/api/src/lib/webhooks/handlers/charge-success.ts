@@ -1,9 +1,16 @@
 import { schema } from "@owostack/db";
 import { eq, and, or, sql } from "drizzle-orm";
-import { provisionEntitlements } from "../../plan-switch";
+import {
+  calculateAlignedPeriodEnd,
+  provisionEntitlements,
+} from "../../plan-switch";
 import { topUpScopedBalance } from "../../addon-credits";
 import { upsertPaymentMethod } from "../../payment-methods";
-import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
+import {
+  buildRenewalSetupFailureMetadata,
+  buildRenewalSetupRecoveryUpdate,
+  RENEWAL_SETUP_RETRY_DELAYS_MS,
+} from "../../renewal-setup";
 import { clearCustomerOverageBlockForInvoice } from "../../overage-blocks";
 import {
   isCustomerResolutionConflictError,
@@ -1333,7 +1340,11 @@ async function handlePlanUpgradeInline(
   });
 
   // Preserve old billing cycle end (reuses oldSub fetched above)
-  const endMs = oldSub?.currentPeriodEnd || startMs + periodMs;
+  const endMs = calculateAlignedPeriodEnd(
+    oldSub?.currentPeriodEnd,
+    startMs,
+    periodMs,
+  );
 
   let newSubId: string | undefined;
   if (!existingUpgradedSub) {
@@ -1365,18 +1376,36 @@ async function handlePlanUpgradeInline(
   const authCode =
     dbCustomer.providerAuthorizationCode ||
     dbCustomer.paystackAuthorizationCode;
+  const customerRef =
+    dbCustomer.providerCustomerId ||
+    dbCustomer.paystackCustomerId ||
+    dbCustomer.email;
   const skipProviderSub = adapter?.supportsNativeTrials === true;
+  const requiresProviderSubscription =
+    newPlan?.billingType === "recurring" && !skipProviderSub;
+  const needsProviderSubscriptionLink =
+    !existingUpgradedSub?.providerSubscriptionCode ||
+    existingUpgradedSub.providerSubscriptionCode === "upgrade";
+  let renewalSetupFailureReason: string | null = null;
+  if (requiresProviderSubscription && !providerPlanCode) {
+    renewalSetupFailureReason = "missing_provider_plan_code";
+  } else if (requiresProviderSubscription && !authCode) {
+    renewalSetupFailureReason = "missing_provider_payment_method";
+  } else if (requiresProviderSubscription && !dbCustomer.email) {
+    renewalSetupFailureReason = "missing_customer_email";
+  }
   if (
     adapter &&
     providerAccount &&
-    newPlan?.billingType === "recurring" &&
+    requiresProviderSubscription &&
+    needsProviderSubscriptionLink &&
     providerPlanCode &&
     authCode &&
-    !skipProviderSub
+    dbCustomer.email
   ) {
     try {
       const result = await adapter.createSubscription({
-        customer: { id: dbCustomer.email, email: dbCustomer.email },
+        customer: { id: customerRef, email: dbCustomer.email },
         plan: { id: providerPlanCode },
         authorizationCode: authCode,
         startDate: new Date(endMs).toISOString(),
@@ -1391,16 +1420,74 @@ async function handlePlanUpgradeInline(
             providerSubscriptionCode: result.value.id,
             paystackSubscriptionCode:
               event.provider === "paystack" ? result.value.id : null,
+            cancelAt: null,
             updatedAt: Date.now(),
           })
           .where(eq(schema.subscriptions.id, newSubId));
+      } else if (result.isErr()) {
+        renewalSetupFailureReason = result.error.message;
       }
     } catch (e) {
+      renewalSetupFailureReason =
+        e instanceof Error ? e.message : String(e);
       console.warn(
         `[WEBHOOK] Inline upgrade: provider createSubscription failed:`,
         e,
       );
     }
+  }
+
+  if (
+    newSubId &&
+    requiresProviderSubscription &&
+    needsProviderSubscriptionLink &&
+    renewalSetupFailureReason
+  ) {
+    let retryScheduled = false;
+    if (ctx.workflows.renewalSetup) {
+      try {
+        await ctx.workflows.renewalSetup.create({
+          params: {
+            subscriptionId: newSubId,
+            customerId: dbCustomer.id,
+            organizationId,
+            providerId: upgradeProviderId,
+            source: "plan_upgrade_inline",
+            immediate: false,
+          },
+        });
+        retryScheduled = true;
+      } catch (retryErr) {
+        console.warn(
+          `[WEBHOOK] Inline upgrade: failed to schedule renewal setup retry:`,
+          retryErr,
+        );
+      }
+    }
+
+    const existingMetadata = existingUpgradedSub?.metadata || {
+      ...event.raw,
+      switch_type: "upgrade",
+    };
+    await db
+      .update(schema.subscriptions)
+      .set({
+        providerSubscriptionId: null,
+        providerSubscriptionCode: null,
+        paystackSubscriptionCode: null,
+        cancelAt: endMs,
+        metadata: buildRenewalSetupFailureMetadata(existingMetadata, {
+          reason: renewalSetupFailureReason,
+          source: "plan_upgrade_inline",
+          retryScheduled,
+          nextAttemptAt: retryScheduled
+            ? Date.now() + RENEWAL_SETUP_RETRY_DELAYS_MS[0]
+            : null,
+          now: Date.now(),
+        }),
+        updatedAt: Date.now(),
+      })
+      .where(eq(schema.subscriptions.id, newSubId));
   }
 
   await chargeSuccessDependencies.provisionEntitlements(

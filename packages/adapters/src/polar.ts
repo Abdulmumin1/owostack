@@ -323,9 +323,11 @@ function mapProrationMode(
   mode?: "prorated_immediately" | "full_immediately" | "difference_immediately",
 ): "invoice" | "prorate" {
   if (!mode) return "invoice";
-  if (mode === "prorated_immediately") return "invoice";
-  if (mode === "difference_immediately") return "invoice";
-  return "prorate";
+  return mode === "prorated_immediately" ||
+    mode === "difference_immediately" ||
+    mode === "full_immediately"
+    ? "invoice"
+    : "prorate";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

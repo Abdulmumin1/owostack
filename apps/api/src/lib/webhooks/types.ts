@@ -21,6 +21,7 @@ export interface WebhookContext {
   workflows: {
     trialEnd: any | null;
     planUpgrade: any | null;
+    renewalSetup: any | null;
   };
   cache: EntitlementCache | null;
 }
