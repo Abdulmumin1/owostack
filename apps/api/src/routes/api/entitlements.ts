@@ -187,6 +187,79 @@ function buildUsageLedgerContext(params: {
   };
 }
 
+interface CreditRuntimeContext {
+  creditSystemId: string;
+  creditSystemSlug: string;
+  costPerUnit: number;
+  trackingFeatureId: string;
+  trackingFeatureSlug: string;
+}
+
+type CreditPlanBalancePayload = {
+  used: number;
+  limit: number | null;
+  balance: number | null;
+  resetsAt: string;
+};
+
+type CreditsPayload =
+  | {
+      source: "credit_system";
+      systemSlug: string;
+      costPerUnit: number;
+      addonBalance: number;
+      plan: CreditPlanBalancePayload;
+    }
+  | {
+      source: "prepaid";
+      addonBalance: null;
+      plan: CreditPlanBalancePayload;
+    }
+  | null;
+
+function buildCreditPlanBalance(
+  used: number | null,
+  limit: number | null,
+  resetsAt: string,
+): CreditPlanBalancePayload {
+  const normalizedUsed = used ?? 0;
+  return {
+    used: normalizedUsed,
+    limit,
+    balance: limit === null ? null : Math.max(0, limit - normalizedUsed),
+    resetsAt,
+  };
+}
+
+function buildCreditsPayload(params: {
+  creditContext: CreditRuntimeContext | null;
+  usageModel: "included" | "usage_based" | "prepaid";
+  usage: number | null;
+  limit: number | null;
+  resetsAt: string;
+  addonBalance?: number | null;
+}): CreditsPayload {
+  if (params.creditContext) {
+    return {
+      source: "credit_system" as const,
+      systemSlug: params.creditContext.creditSystemSlug,
+      costPerUnit: params.creditContext.costPerUnit,
+      addonBalance: params.addonBalance ?? 0,
+      plan: buildCreditPlanBalance(params.usage, params.limit, params.resetsAt),
+    };
+  }
+
+  if (params.usageModel === "prepaid") {
+    return {
+      source: "prepaid" as const,
+      addonBalance: null,
+      plan: buildCreditPlanBalance(params.usage, params.limit, params.resetsAt),
+    };
+  }
+
+  return null;
+}
+
 function scheduleCacheOp(c: any, op: Promise<unknown>, label: string) {
   c.executionCtx.waitUntil(
     op.catch((error) => {
@@ -462,7 +535,33 @@ const entitlementResultSchema = z
     balance: z.number().nullable().optional(),
     resetsAt: z.string().datetime().nullable().optional(),
     resetInterval: z.string().nullable().optional(),
-    addonCredits: z.number().optional(),
+    credits: z
+      .union([
+        z.object({
+          source: z.literal("credit_system"),
+          systemSlug: z.string(),
+          costPerUnit: z.number(),
+          addonBalance: z.number(),
+          plan: z.object({
+            used: z.number(),
+            limit: z.number().nullable(),
+            balance: z.number().nullable(),
+            resetsAt: z.string().datetime(),
+          }),
+        }),
+        z.object({
+          source: z.literal("prepaid"),
+          addonBalance: z.null(),
+          plan: z.object({
+            used: z.number(),
+            limit: z.number().nullable(),
+            balance: z.number().nullable(),
+            resetsAt: z.string().datetime(),
+          }),
+        }),
+        z.null(),
+      ])
+      .optional(),
     details: z
       .object({
         message: z.string().optional(),
@@ -486,7 +585,7 @@ const checkRoute = createRoute({
   tags: ["Entitlements"],
   summary: "Check feature entitlements",
   description:
-    "Check whether a customer is allowed to use a feature and get current usage and limits. Optionally track usage atomically if allowed via sendEvent.",
+    "Check whether a customer can use a feature and return the current entitlement state, including the canonical credits balance object for credit-backed features. Optionally track usage atomically if allowed via sendEvent.",
   security: apiKeySecurity,
   middleware: [requireApiKey, ensureJsonContentType],
   request: {
@@ -522,7 +621,7 @@ const trackRoute = createRoute({
   tags: ["Entitlements"],
   summary: "Record metered usage",
   description:
-    "Track usage for a feature and return the resulting entitlement state after the increment.",
+    "Track usage for a feature and return the resulting entitlement state after the increment, including the canonical credits balance object for credit-backed features.",
   security: apiKeySecurity,
   middleware: [requireApiKey, ensureJsonContentType],
   request: {
@@ -748,6 +847,40 @@ async function resolveCreditSystem(
   return null;
 }
 
+async function resolveDirectCreditSystem(
+  db: any,
+  organizationId: string | null | undefined,
+  feature: { id: string; slug?: string | null },
+): Promise<CreditRuntimeContext | null> {
+  const featureSlug = feature.slug || feature.id;
+  const creditSystemsQuery = (db.query as any)?.creditSystems;
+  if (!organizationId || !creditSystemsQuery?.findFirst) {
+    return null;
+  }
+
+  const directCreditSystem = await creditSystemsQuery.findFirst({
+    where: and(
+      eq(schema.creditSystems.organizationId, organizationId),
+      or(
+        eq(schema.creditSystems.slug, featureSlug),
+        eq(schema.creditSystems.id, feature.id),
+      ),
+    ),
+  });
+
+  if (!directCreditSystem) {
+    return null;
+  }
+
+  return {
+    creditSystemId: directCreditSystem.id,
+    creditSystemSlug: directCreditSystem.slug,
+    costPerUnit: 1,
+    trackingFeatureId: feature.id,
+    trackingFeatureSlug: featureSlug,
+  };
+}
+
 async function getManualEntitlementForFeature(
   c: any,
   db: any,
@@ -875,17 +1008,18 @@ app.openapi(
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json(
-          {
-            allowed: false,
-            code: "customer_ambiguous",
-            usage: null,
-            limit: null,
-            balance: null,
-            resetsAt: null,
-            resetInterval: null,
-            details: {
-              message: error.message,
-            },
+        {
+          allowed: false,
+          code: "customer_ambiguous",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          credits: null,
+          details: {
+            message: error.message,
+          },
           },
           200,
         );
@@ -903,6 +1037,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: {
             message: `Customer '${customerId}' not found in this organization.`,
           },
@@ -923,6 +1058,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: { message: `Feature '${featureId}' not found.` },
         },
         200,
@@ -1007,6 +1143,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: {
             message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
           },
@@ -1105,6 +1242,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: {
             message:
               "No active or trialing subscription found for this customer.",
@@ -1191,6 +1329,20 @@ app.openapi(
       }
     }
 
+    const directCreditContext =
+      !creditMapping && accessGrantingSubscription && accessGrantingPlanFeature
+        ? await resolveDirectCreditSystem(db, organizationId, feature)
+        : null;
+    const creditContext: CreditRuntimeContext | null = creditMapping
+      ? {
+          creditSystemId: creditMapping.creditSystemId,
+          creditSystemSlug: creditMapping.creditSystemSlug,
+          costPerUnit: creditMapping.costPerUnit,
+          trackingFeatureId: creditMapping.creditSystemId,
+          trackingFeatureSlug: creditMapping.creditSystemSlug,
+        }
+      : directCreditContext;
+
     if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
       return c.json(
         {
@@ -1201,6 +1353,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: {
             message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.`,
           },
@@ -1217,14 +1370,12 @@ app.openapi(
     // - effectiveFeatureId: track usage against the credit system's feature, not the child
     // - effectiveValue: multiply by cost (e.g., 1 unit of "dfs" = 20 credits)
     // - effectiveFeatureKey: use credit system slug for DO tracking
-    const effectiveFeatureId = creditMapping
-      ? creditMapping.creditSystemId
+    const effectiveFeatureId = creditContext
+      ? creditContext.trackingFeatureId
       : feature.id;
-    const effectiveValue = creditMapping
-      ? value * creditMapping.costPerUnit
-      : value;
-    const effectiveFeatureSlug = creditMapping
-      ? creditMapping.creditSystemSlug
+    const effectiveValue = creditContext ? value * creditContext.costPerUnit : value;
+    const effectiveFeatureSlug = creditContext
+      ? creditContext.trackingFeatureSlug
       : feature.slug || feature.id;
 
     // Build reusable details context
@@ -1252,10 +1403,10 @@ app.openapi(
         message,
         planName,
         ...(isTrial ? { trial: true, trialEndsAt } : {}),
-        ...(creditMapping
+        ...(creditContext
           ? {
-              creditSystem: creditMapping.creditSystemSlug,
-              creditCostPerUnit: creditMapping.costPerUnit,
+              creditSystem: creditContext.creditSystemSlug,
+              creditCostPerUnit: creditContext.costPerUnit,
             }
           : {}),
         ...(pricing ? { pricing } : {}),
@@ -1266,7 +1417,7 @@ app.openapi(
     // 5. Check Logic based on Type
     // Boolean features get immediate access UNLESS they're part of a credit system
     // (credit system children must go through the metered path to consume credits)
-    if (feature.type === "boolean" && !creditMapping) {
+    if (feature.type === "boolean" && !creditContext) {
       return c.json(
         {
           allowed: true,
@@ -1276,6 +1427,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: buildDetails(
             isTrial
               ? `Feature '${feature.slug || feature.id}' enabled on ${planName} via free trial (ends ${trialEndsAt}).`
@@ -1286,7 +1438,7 @@ app.openapi(
       );
     }
 
-    if (feature.type === "metered" || creditMapping) {
+    if (feature.type === "metered" || creditContext) {
       // Compute reset period once for all response paths
       const resetPeriod = getResetPeriod(
         planFeature.resetInterval,
@@ -1304,6 +1456,14 @@ app.openapi(
         planFeature,
         subscription,
       );
+      const currentAddonBalance = creditContext
+        ? await getAddonBalance(
+            db,
+            customer.id,
+            creditContext.creditSystemId,
+            deps,
+          )
+        : undefined;
 
       // ===========================================================================
       // DO Check (Preferred for atomicity)
@@ -1374,6 +1534,14 @@ app.openapi(
                 balance: null,
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
+                credits: buildCreditsPayload({
+                  creditContext,
+                  usageModel,
+                  usage: null,
+                  limit: null,
+                  resetsAt,
+                  addonBalance: currentAddonBalance,
+                }),
                 details: {
                   message:
                     "Billing ledger unavailable. Cannot safely initialize metered usage right now.",
@@ -1421,6 +1589,14 @@ app.openapi(
                 balance: null,
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
+                credits: buildCreditsPayload({
+                  creditContext,
+                  usageModel,
+                  usage: doResult.usage,
+                  limit: null,
+                  resetsAt,
+                  addonBalance: currentAddonBalance,
+                }),
                 details: buildDetails(
                   usageBasedGuard.reason ||
                     "Usage-based billing is not allowed.",
@@ -1440,11 +1616,11 @@ app.openapi(
             : planFeature.overage || "block";
 
           // Add-on credits FIRST — consume purchased credits before overage billing
-          if (creditMapping) {
+          if (creditContext) {
             const addonBalance = await getAddonBalance(
               db,
               customer.id,
-              creditMapping.creditSystemId,
+              creditContext.creditSystemId,
               deps,
             );
             if (addonBalance >= effectiveValue) {
@@ -1453,7 +1629,7 @@ app.openapi(
                   db,
                   customer.id,
                   effectiveValue,
-                  creditMapping.creditSystemId,
+                  creditContext.creditSystemId,
                   deps,
                 );
                 scheduleUsagePersist(
@@ -1465,7 +1641,7 @@ app.openapi(
                     ...buildUsageLedgerContext({
                       featureId: effectiveFeatureId,
                       featureSlug: effectiveFeatureSlug,
-                      featureName: creditMapping
+                      featureName: creditContext
                         ? effectiveFeatureSlug
                         : (feature.name ?? effectiveFeatureSlug),
                       subscription,
@@ -1492,12 +1668,14 @@ app.openapi(
                       : doResult.limit - doResult.usage,
                   resetsAt,
                   resetInterval: planFeature.resetInterval,
-                  addonCredits: remaining,
-                  planCredits: {
-                    used: doResult.usage,
+                  credits: buildCreditsPayload({
+                    creditContext,
+                    usageModel,
+                    usage: doResult.usage,
                     limit: doResult.limit,
                     resetsAt,
-                  },
+                    addonBalance: remaining,
+                  }),
                   details: buildDetails(
                     `Plan credits exhausted. ${effectiveValue} add-on credits ${sendEvent ? "deducted" : "will be deducted"}.`,
                     {
@@ -1543,6 +1721,14 @@ app.openapi(
                       : doResult.limit - doResult.usage,
                   resetsAt,
                   resetInterval: planFeature.resetInterval,
+                  credits: buildCreditsPayload({
+                    creditContext,
+                    usageModel,
+                    usage: doResult.usage,
+                    limit: doResult.limit,
+                    resetsAt,
+                    addonBalance: currentAddonBalance,
+                  }),
                   details: buildDetails(
                     `Usage exceeds limit (${doResult.usage}/${doResult.limit}), overage will be billed.`,
                     {
@@ -1564,11 +1750,11 @@ app.openapi(
           }
 
           // Otherwise block
-          const blockAddonCredits = creditMapping
+          const blockAddonCredits = creditContext
             ? await getAddonBalance(
                 db,
                 customer.id,
-                creditMapping.creditSystemId,
+                creditContext.creditSystemId,
                 deps,
               )
             : undefined;
@@ -1584,9 +1770,14 @@ app.openapi(
                   : doResult.limit - doResult.usage,
               resetsAt,
               resetInterval: planFeature.resetInterval,
-              ...(blockAddonCredits !== undefined
-                ? { addonCredits: blockAddonCredits }
-                : {}),
+              credits: buildCreditsPayload({
+                creditContext,
+                usageModel,
+                usage: doResult.usage,
+                limit: doResult.limit,
+                resetsAt,
+                addonBalance: blockAddonCredits,
+              }),
               details: buildDetails(
                 `Usage limit reached (${doResult.usage}/${doResult.limit}). Resets at ${resetsAt}.`,
                 undefined,
@@ -1606,12 +1797,12 @@ app.openapi(
           );
           if (trackResult && !trackResult.allowed) {
             // Add-on credit fallback for race condition (check passed but track failed)
-            if (creditMapping) {
+            if (creditContext) {
               const deductResult = await tryDeductAddonCredits(
                 db,
                 customer.id,
                 effectiveValue,
-                creditMapping.creditSystemId,
+                creditContext.creditSystemId,
               );
               if (deductResult.deducted) {
                 scheduleUsagePersist(
@@ -1623,7 +1814,7 @@ app.openapi(
                     ...buildUsageLedgerContext({
                       featureId: effectiveFeatureId,
                       featureSlug: effectiveFeatureSlug,
-                      featureName: creditMapping
+                      featureName: creditContext
                         ? effectiveFeatureSlug
                         : (feature.name ?? effectiveFeatureSlug),
                       subscription,
@@ -1654,12 +1845,14 @@ app.openapi(
                           doResult.limit - doResult.usage),
                     resetsAt,
                     resetInterval: planFeature.resetInterval,
-                    addonCredits: deductResult.remaining ?? 0,
-                    planCredits: {
-                      used: doResult.usage,
+                    credits: buildCreditsPayload({
+                      creditContext,
+                      usageModel,
+                      usage: doResult.usage,
                       limit: doResult.limit,
                       resetsAt,
-                    },
+                      addonBalance: deductResult.remaining ?? 0,
+                    }),
                     details: buildDetails(
                       `Plan credits exhausted. ${effectiveValue} add-on credits deducted.`,
                       {
@@ -1690,6 +1883,14 @@ app.openapi(
                     : (trackResult.balance ?? doResult.limit - doResult.usage),
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
+                credits: buildCreditsPayload({
+                  creditContext,
+                  usageModel,
+                  usage: doResult.usage,
+                  limit: doResult.limit,
+                  resetsAt,
+                  addonBalance: currentAddonBalance,
+                }),
                 details: buildDetails(
                   `Usage tracking denied — insufficient balance (${trackResult.balance} remaining). Resets at ${resetsAt}.`,
                   undefined,
@@ -1709,7 +1910,7 @@ app.openapi(
               ...buildUsageLedgerContext({
                 featureId: effectiveFeatureId,
                 featureSlug: effectiveFeatureSlug,
-                featureName: creditMapping
+                featureName: creditContext
                   ? effectiveFeatureSlug
                   : (feature.name ?? effectiveFeatureSlug),
                 subscription,
@@ -1725,7 +1926,7 @@ app.openapi(
 
           // Deduct from credits.balance for prepaid model (not credit systems)
           if (
-            !creditMapping &&
+            !creditContext &&
             planFeature.creditCost &&
             planFeature.creditCost > 0
           ) {
@@ -1743,10 +1944,6 @@ app.openapi(
         }
 
         // Include add-on credit balance in response for credit system features
-        const addonCreditsBalance = creditMapping
-          ? await getAddonBalance(db, customer.id, creditMapping.creditSystemId)
-          : undefined;
-
         return c.json(
           {
             allowed: true,
@@ -1759,18 +1956,14 @@ app.openapi(
             ...(doResult.rolloverBalance > 0
               ? { rolloverBalance: doResult.rolloverBalance }
               : {}),
-            ...(addonCreditsBalance !== undefined
-              ? { addonCredits: addonCreditsBalance }
-              : {}),
-            ...(creditMapping && doResult.limit !== null
-              ? {
-                  planCredits: {
-                    used: doResult.usage,
-                    limit: doResult.limit,
-                    resetsAt,
-                  },
-                }
-              : {}),
+            credits: buildCreditsPayload({
+              creditContext,
+              usageModel,
+              usage: doResult.usage,
+              limit: doResult.limit,
+              resetsAt,
+              addonBalance: currentAddonBalance,
+            }),
             details: buildDetails(
               usageModel === "usage_based"
                 ? `Usage-based access granted for '${feature.slug || feature.id}'. Usage will be billed.`
@@ -1822,6 +2015,14 @@ app.openapi(
             balance: null,
             resetsAt,
             resetInterval: planFeature.resetInterval,
+            credits: buildCreditsPayload({
+              creditContext,
+              usageModel: getUsageModel(planFeature),
+              usage: null,
+              limit: effectiveLimit,
+              resetsAt,
+              addonBalance: currentAddonBalance,
+            }),
             details: {
               message:
                 "Billing ledger unavailable. Cannot safely evaluate current metered usage right now.",
@@ -1862,6 +2063,14 @@ app.openapi(
               balance: null,
               resetsAt,
               resetInterval: planFeature.resetInterval,
+              credits: buildCreditsPayload({
+                creditContext,
+                usageModel,
+                usage: currentUsage,
+                limit: null,
+                resetsAt,
+                addonBalance: currentAddonBalance,
+              }),
               details: buildDetails(
                 usageBasedGuard.reason || "Usage-based billing is not allowed.",
                 undefined,
@@ -1881,6 +2090,14 @@ app.openapi(
             balance: null,
             resetsAt,
             resetInterval: planFeature.resetInterval,
+            credits: buildCreditsPayload({
+              creditContext,
+              usageModel,
+              usage: currentUsage,
+              limit: null,
+              resetsAt,
+              addonBalance: currentAddonBalance,
+            }),
             details: buildDetails(
               `Usage-based access granted for '${feature.slug || feature.id}'. Usage will be billed.`,
               undefined,
@@ -1903,6 +2120,14 @@ app.openapi(
             balance: null,
             resetsAt,
             resetInterval: planFeature.resetInterval,
+            credits: buildCreditsPayload({
+              creditContext,
+              usageModel,
+              usage: currentUsage,
+              limit: null,
+              resetsAt,
+              addonBalance: currentAddonBalance,
+            }),
             details: buildDetails(
               `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`,
               undefined,
@@ -1920,11 +2145,11 @@ app.openapi(
           : planFeature.overage || "block";
 
         // Add-on credits FIRST — consume purchased credits before overage billing
-        if (creditMapping) {
+        if (creditContext) {
           const addonBalance = await getAddonBalance(
             db,
             customer.id,
-            creditMapping.creditSystemId,
+            creditContext.creditSystemId,
             deps,
           );
           if (addonBalance >= effectiveValue) {
@@ -1937,12 +2162,14 @@ app.openapi(
                 balance: effectiveLimit - currentUsage,
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
-                addonCredits: addonBalance,
-                planCredits: {
-                  used: currentUsage,
+                credits: buildCreditsPayload({
+                  creditContext,
+                  usageModel,
+                  usage: currentUsage,
                   limit: effectiveLimit,
                   resetsAt,
-                },
+                  addonBalance,
+                }),
                 details: buildDetails(
                   `Plan credits exhausted. ${effectiveValue} add-on credits will be deducted.`,
                   {
@@ -1986,6 +2213,14 @@ app.openapi(
                 balance: effectiveLimit - currentUsage,
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
+                credits: buildCreditsPayload({
+                  creditContext,
+                  usageModel,
+                  usage: currentUsage,
+                  limit: effectiveLimit,
+                  resetsAt,
+                  addonBalance: currentAddonBalance,
+                }),
                 details: buildDetails(
                   `Usage exceeds limit (${currentUsage}/${planFeature.limitValue}), overage will be billed.`,
                   {
@@ -2007,8 +2242,13 @@ app.openapi(
         }
 
         // Block — unified path
-        const dbBlockAddonCredits = creditMapping
-          ? await getAddonBalance(db, customer.id, creditMapping.creditSystemId)
+        const dbBlockAddonCredits = creditContext
+          ? await getAddonBalance(
+              db,
+              customer.id,
+              creditContext.creditSystemId,
+              deps,
+            )
           : undefined;
         return c.json(
           {
@@ -2019,9 +2259,14 @@ app.openapi(
             balance: effectiveLimit - currentUsage,
             resetsAt,
             resetInterval: planFeature.resetInterval,
-            ...(dbBlockAddonCredits !== undefined
-              ? { addonCredits: dbBlockAddonCredits }
-              : {}),
+            credits: buildCreditsPayload({
+              creditContext,
+              usageModel,
+              usage: currentUsage,
+              limit: effectiveLimit,
+              resetsAt,
+              addonBalance: dbBlockAddonCredits,
+            }),
             details: buildDetails(
               `Usage limit exceeded (${currentUsage}/${planFeature.limitValue}). Resets at ${resetsAt}.`,
               undefined,
@@ -2036,7 +2281,7 @@ app.openapi(
       // NOTE: Credit systems do NOT use credits.balance — they enforce via usage_records pool.
       // Only planFeature.creditCost triggers the prepaid balance check.
       if (
-        !creditMapping &&
+        !creditContext &&
         planFeature.creditCost &&
         planFeature.creditCost > 0
       ) {
@@ -2056,6 +2301,14 @@ app.openapi(
               balance: effectiveLimit - currentUsage,
               resetsAt,
               resetInterval: planFeature.resetInterval,
+              credits: buildCreditsPayload({
+                creditContext,
+                usageModel,
+                usage: currentUsage,
+                limit: effectiveLimit,
+                resetsAt,
+                addonBalance: currentAddonBalance,
+              }),
               details: buildDetails(
                 `Insufficient credits — balance: ${creditBalance}, required: ${cost}.`,
                 undefined,
@@ -2078,7 +2331,7 @@ app.openapi(
             ...buildUsageLedgerContext({
               featureId: effectiveFeatureId,
               featureSlug: effectiveFeatureSlug,
-              featureName: creditMapping
+              featureName: creditContext
                 ? effectiveFeatureSlug
                 : (feature.name ?? effectiveFeatureSlug),
               subscription,
@@ -2094,7 +2347,7 @@ app.openapi(
 
         // Deduct from credits.balance for prepaid model (not credit systems)
         if (
-          !creditMapping &&
+          !creditContext &&
           planFeature.creditCost &&
           planFeature.creditCost > 0
         ) {
@@ -2118,6 +2371,14 @@ app.openapi(
           balance: effectiveLimit - currentUsage,
           resetsAt,
           resetInterval: planFeature.resetInterval,
+          credits: buildCreditsPayload({
+            creditContext,
+            usageModel,
+            usage: currentUsage,
+            limit: effectiveLimit,
+            resetsAt,
+            addonBalance: currentAddonBalance,
+          }),
           details: buildDetails(
             `Access granted — used ${currentUsage} of ${planFeature.limitValue}.`,
             undefined,
@@ -2137,6 +2398,7 @@ app.openapi(
         balance: null,
         resetsAt: null,
         resetInterval: null,
+        credits: null,
         details: { message: `Unrecognized feature type '${feature.type}'.` },
       },
       200,
@@ -2231,18 +2493,19 @@ app.openapi(
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json(
-          {
-            success: false,
-            allowed: false,
-            code: "customer_ambiguous",
-            usage: null,
-            limit: null,
-            balance: null,
-            resetsAt: null,
-            resetInterval: null,
-            details: {
-              message: error.message,
-            },
+        {
+          success: false,
+          allowed: false,
+          code: "customer_ambiguous",
+          usage: null,
+          limit: null,
+          balance: null,
+          resetsAt: null,
+          resetInterval: null,
+          credits: null,
+          details: {
+            message: error.message,
+          },
           },
           409,
         );
@@ -2263,6 +2526,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: {
             message: `Customer '${customerId}' not found in this organization.`,
           },
@@ -2284,6 +2548,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: { message: `Feature '${featureId}' not found.` },
         },
         404,
@@ -2348,6 +2613,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: {
             message: `Entity '${entity}' not found for feature '${featureId}'. Use addEntity() to create it first.`,
           },
@@ -2447,6 +2713,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: {
             message:
               "No active or trialing subscription found for this customer.",
@@ -2514,6 +2781,20 @@ app.openapi(
       }
     }
 
+    const directTrackCreditContext =
+      !trackCreditMapping && accessGrantingSubscription && accessGrantingPlanFeature
+        ? await resolveDirectCreditSystem(db, organizationId, feature)
+        : null;
+    const trackCreditContext: CreditRuntimeContext | null = trackCreditMapping
+      ? {
+          creditSystemId: trackCreditMapping.creditSystemId,
+          creditSystemSlug: trackCreditMapping.creditSystemSlug,
+          costPerUnit: trackCreditMapping.costPerUnit,
+          trackingFeatureId: trackCreditMapping.creditSystemId,
+          trackingFeatureSlug: trackCreditMapping.creditSystemSlug,
+        }
+      : directTrackCreditContext;
+
     const subscription = accessGrantingSubscription;
     const planFeature = accessGrantingPlanFeature;
 
@@ -2528,6 +2809,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: {
             message: `Feature '${feature.slug || feature.id}' is not included in the customer's current plan.`,
           },
@@ -2537,14 +2819,14 @@ app.openapi(
     }
 
     // Credit system effective values
-    const trackEffectiveFeatureId = trackCreditMapping
-      ? trackCreditMapping.creditSystemId
+    const trackEffectiveFeatureId = trackCreditContext
+      ? trackCreditContext.trackingFeatureId
       : feature.id;
-    const trackEffectiveValue = trackCreditMapping
-      ? value * trackCreditMapping.costPerUnit
+    const trackEffectiveValue = trackCreditContext
+      ? value * trackCreditContext.costPerUnit
       : value;
-    const trackEffectiveSlug = trackCreditMapping
-      ? trackCreditMapping.creditSystemSlug
+    const trackEffectiveSlug = trackCreditContext
+      ? trackCreditContext.trackingFeatureSlug
       : feature.slug || feature.id;
 
     // Build reusable details context for track responses
@@ -2572,10 +2854,10 @@ app.openapi(
         message,
         planName: trackPlanName,
         ...(isTrial ? { trial: true, trialEndsAt } : {}),
-        ...(trackCreditMapping
+        ...(trackCreditContext
           ? {
-              creditSystem: trackCreditMapping.creditSystemSlug,
-              creditCostPerUnit: trackCreditMapping.costPerUnit,
+              creditSystem: trackCreditContext.creditSystemSlug,
+              creditCostPerUnit: trackCreditContext.costPerUnit,
             }
           : {}),
         ...(pricing ? { pricing } : {}),
@@ -2600,6 +2882,14 @@ app.openapi(
       planFeature,
       subscription,
     );
+    const currentTrackAddonBalance = trackCreditContext
+      ? await getAddonBalance(
+          db,
+          customer.id,
+          trackCreditContext.creditSystemId,
+          deps,
+        )
+      : undefined;
 
     try {
       // ===========================================================================
@@ -2670,6 +2960,14 @@ app.openapi(
                 balance: null,
                 resetsAt: new Date(periodEnd).toISOString(),
                 resetInterval: planFeature.resetInterval,
+                credits: buildCreditsPayload({
+                  creditContext: trackCreditContext,
+                  usageModel,
+                  usage: null,
+                  limit: null,
+                  resetsAt: new Date(periodEnd).toISOString(),
+                  addonBalance: currentTrackAddonBalance,
+                }),
                 details: buildTrackDetails(
                   usageBasedGuard.reason ||
                     "Usage-based billing is not allowed.",
@@ -2723,6 +3021,14 @@ app.openapi(
                 balance: null,
                 resetsAt: new Date(periodEnd).toISOString(),
                 resetInterval: planFeature.resetInterval,
+                credits: buildCreditsPayload({
+                  creditContext: trackCreditContext,
+                  usageModel,
+                  usage: null,
+                  limit: effectiveLimit,
+                  resetsAt: new Date(periodEnd).toISOString(),
+                  addonBalance: currentTrackAddonBalance,
+                }),
                 details: buildTrackDetails(
                   "Billing ledger unavailable. Cannot safely initialize tracked usage right now.",
                 ),
@@ -2752,12 +3058,12 @@ app.openapi(
             : planFeature.overage || "block";
 
           // Add-on credits FIRST — consume purchased credits before overage billing
-          if (trackCreditMapping) {
+          if (trackCreditContext) {
             const deductResult = await tryDeductAddonCredits(
               db,
               customer.id,
               trackEffectiveValue,
-              trackCreditMapping.creditSystemId,
+              trackCreditContext.creditSystemId,
               deps,
             );
             if (deductResult.deducted) {
@@ -2770,7 +3076,7 @@ app.openapi(
                   ...buildUsageLedgerContext({
                     featureId: trackEffectiveFeatureId,
                     featureSlug: trackEffectiveSlug,
-                    featureName: trackCreditMapping
+                    featureName: trackCreditContext
                       ? trackEffectiveSlug
                       : (feature.name ?? trackEffectiveSlug),
                     subscription,
@@ -2797,12 +3103,14 @@ app.openapi(
                   ...(doResult.rolloverBalance > 0
                     ? { rolloverBalance: doResult.rolloverBalance }
                     : {}),
-                  addonCredits: deductResult.remaining ?? 0,
-                  planCredits: {
-                    used: addonDoUsage ?? 0,
+                  credits: buildCreditsPayload({
+                    creditContext: trackCreditContext,
+                    usageModel,
+                    usage: addonDoUsage,
                     limit: effectiveLimit,
                     resetsAt: new Date(periodEnd).toISOString(),
-                  },
+                    addonBalance: deductResult.remaining ?? 0,
+                  }),
                   details: buildTrackDetails(
                     `Plan credits exhausted. ${trackEffectiveValue} add-on credits deducted.`,
                     {
@@ -2860,6 +3168,14 @@ app.openapi(
                   ...(doResult.rolloverBalance > 0
                     ? { rolloverBalance: doResult.rolloverBalance }
                     : {}),
+                  credits: buildCreditsPayload({
+                    creditContext: trackCreditContext,
+                    usageModel,
+                    usage: guardUsage,
+                    limit: effectiveLimit,
+                    resetsAt: new Date(periodEnd).toISOString(),
+                    addonBalance: currentTrackAddonBalance,
+                  }),
                   details: buildTrackDetails(
                     overageGuard.reason ||
                       `Overage not allowed. ${requestedOverageUnits} overage units requested.`,
@@ -2916,6 +3232,14 @@ app.openapi(
                       ...(doResult.rolloverBalance > 0
                         ? { rolloverBalance: doResult.rolloverBalance }
                         : {}),
+                      credits: buildCreditsPayload({
+                        creditContext: trackCreditContext,
+                        usageModel,
+                        usage: doResult.usage ?? null,
+                        limit: effectiveLimit,
+                        resetsAt: new Date(periodEnd).toISOString(),
+                        addonBalance: currentTrackAddonBalance,
+                      }),
                       details: buildTrackDetails(
                         raceOverageGuard.reason ||
                           `Overage not allowed. ${trackEffectiveValue} overage units requested.`,
@@ -2932,11 +3256,11 @@ app.openapi(
           } else {
             // overage is "block" and addon credits insufficient — block
             const blockUsage = doResult.usage ?? null;
-            const trackBlockAddonCredits = trackCreditMapping
+            const trackBlockAddonCredits = trackCreditContext
               ? await getAddonBalance(
                   db,
                   customer.id,
-                  trackCreditMapping.creditSystemId,
+                  trackCreditContext.creditSystemId,
                   deps,
                 )
               : undefined;
@@ -2953,9 +3277,14 @@ app.openapi(
                 ...(doResult.rolloverBalance > 0
                   ? { rolloverBalance: doResult.rolloverBalance }
                   : {}),
-                ...(trackBlockAddonCredits !== undefined
-                  ? { addonCredits: trackBlockAddonCredits }
-                  : {}),
+                credits: buildCreditsPayload({
+                  creditContext: trackCreditContext,
+                  usageModel,
+                  usage: blockUsage,
+                  limit: effectiveLimit,
+                  resetsAt: new Date(periodEnd).toISOString(),
+                  addonBalance: trackBlockAddonCredits,
+                }),
                 details: buildTrackDetails(
                   `Usage tracking denied — limit reached (${doResult.balance} remaining). Resets at ${new Date(periodEnd).toISOString()}.`,
                   undefined,
@@ -2997,6 +3326,14 @@ app.openapi(
               balance: null,
               resetsAt: new Date(periodEnd).toISOString(),
               resetInterval: planFeature.resetInterval,
+              credits: buildCreditsPayload({
+                creditContext: trackCreditContext,
+                usageModel,
+                usage: null,
+                limit: null,
+                resetsAt: new Date(periodEnd).toISOString(),
+                addonBalance: currentTrackAddonBalance,
+              }),
               details: buildTrackDetails(
                 usageBasedGuard.reason || "Usage-based billing is not allowed.",
               ),
@@ -3019,7 +3356,7 @@ app.openapi(
           ...buildUsageLedgerContext({
             featureId: trackEffectiveFeatureId,
             featureSlug: trackEffectiveSlug,
-            featureName: trackCreditMapping
+            featureName: trackCreditContext
               ? trackEffectiveSlug
               : (feature.name ?? trackEffectiveSlug),
             subscription,
@@ -3038,7 +3375,7 @@ app.openapi(
       // This runs regardless of DO availability — credits.balance is a separate DB counter.
       if (
         subscription &&
-        !trackCreditMapping &&
+        !trackCreditContext &&
         planFeature.creditCost &&
         planFeature.creditCost > 0
       ) {
@@ -3095,6 +3432,14 @@ app.openapi(
           ...(doResult && doResult.rolloverBalance > 0
             ? { rolloverBalance: doResult.rolloverBalance }
             : {}),
+          credits: buildCreditsPayload({
+            creditContext: trackCreditContext,
+            usageModel,
+            usage: successUsage,
+            limit: effectiveLimit,
+            resetsAt: new Date(periodEnd).toISOString(),
+            addonBalance: currentTrackAddonBalance,
+          }),
           details: isOverage
             ? buildTrackDetails(
                 `Usage tracked as overage (will be billed).`,
@@ -3129,6 +3474,7 @@ app.openapi(
           balance: null,
           resetsAt: null,
           resetInterval: null,
+          credits: null,
           details: {
             message: "An internal error occurred while tracking usage.",
           },

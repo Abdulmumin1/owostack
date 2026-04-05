@@ -914,7 +914,7 @@
           "Entitlements"
         ],
         "summary": "Check feature entitlements",
-        "description": "Check whether a customer is allowed to use a feature and get current usage and limits. Optionally track usage atomically if allowed via sendEvent.",
+        "description": "Check whether a customer can use a feature and return the current entitlement state, including the canonical credits balance object for credit-backed features. Optionally track usage atomically if allowed via sendEvent.",
         "security": [
           {
             "bearerAuth": []
@@ -1002,8 +1002,118 @@
                         "null"
                       ]
                     },
-                    "addonCredits": {
-                      "type": "number"
+                    "credits": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "credit_system"
+                              ]
+                            },
+                            "systemSlug": {
+                              "type": "string"
+                            },
+                            "costPerUnit": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "number"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "systemSlug",
+                            "costPerUnit",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "details": {
                       "type": "object",
@@ -1257,8 +1367,118 @@
                         "null"
                       ]
                     },
-                    "addonCredits": {
-                      "type": "number"
+                    "credits": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "credit_system"
+                              ]
+                            },
+                            "systemSlug": {
+                              "type": "string"
+                            },
+                            "costPerUnit": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "number"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "systemSlug",
+                            "costPerUnit",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "details": {
                       "type": "object",
@@ -1298,7 +1518,7 @@
           "Entitlements"
         ],
         "summary": "Record metered usage",
-        "description": "Track usage for a feature and return the resulting entitlement state after the increment.",
+        "description": "Track usage for a feature and return the resulting entitlement state after the increment, including the canonical credits balance object for credit-backed features.",
         "security": [
           {
             "bearerAuth": []
@@ -1386,8 +1606,118 @@
                         "null"
                       ]
                     },
-                    "addonCredits": {
-                      "type": "number"
+                    "credits": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "credit_system"
+                              ]
+                            },
+                            "systemSlug": {
+                              "type": "string"
+                            },
+                            "costPerUnit": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "number"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "systemSlug",
+                            "costPerUnit",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "details": {
                       "type": "object",
@@ -1463,8 +1793,118 @@
                             "null"
                           ]
                         },
-                        "addonCredits": {
-                          "type": "number"
+                        "credits": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "credit_system"
+                                  ]
+                                },
+                                "systemSlug": {
+                                  "type": "string"
+                                },
+                                "costPerUnit": {
+                                  "type": "number"
+                                },
+                                "addonBalance": {
+                                  "type": "number"
+                                },
+                                "plan": {
+                                  "type": "object",
+                                  "properties": {
+                                    "used": {
+                                      "type": "number"
+                                    },
+                                    "limit": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "balance": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "resetsAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    }
+                                  },
+                                  "required": [
+                                    "used",
+                                    "limit",
+                                    "balance",
+                                    "resetsAt"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "systemSlug",
+                                "costPerUnit",
+                                "addonBalance",
+                                "plan"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "prepaid"
+                                  ]
+                                },
+                                "addonBalance": {
+                                  "type": "null"
+                                },
+                                "plan": {
+                                  "type": "object",
+                                  "properties": {
+                                    "used": {
+                                      "type": "number"
+                                    },
+                                    "limit": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "balance": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "resetsAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    }
+                                  },
+                                  "required": [
+                                    "used",
+                                    "limit",
+                                    "balance",
+                                    "resetsAt"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "addonBalance",
+                                "plan"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "details": {
                           "type": "object",
@@ -1623,8 +2063,118 @@
                         "null"
                       ]
                     },
-                    "addonCredits": {
-                      "type": "number"
+                    "credits": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "credit_system"
+                              ]
+                            },
+                            "systemSlug": {
+                              "type": "string"
+                            },
+                            "costPerUnit": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "number"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "systemSlug",
+                            "costPerUnit",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "details": {
                       "type": "object",
@@ -1698,8 +2248,118 @@
                         "null"
                       ]
                     },
-                    "addonCredits": {
-                      "type": "number"
+                    "credits": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "credit_system"
+                              ]
+                            },
+                            "systemSlug": {
+                              "type": "string"
+                            },
+                            "costPerUnit": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "number"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "systemSlug",
+                            "costPerUnit",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "details": {
                       "type": "object",
@@ -1775,8 +2435,118 @@
                             "null"
                           ]
                         },
-                        "addonCredits": {
-                          "type": "number"
+                        "credits": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "credit_system"
+                                  ]
+                                },
+                                "systemSlug": {
+                                  "type": "string"
+                                },
+                                "costPerUnit": {
+                                  "type": "number"
+                                },
+                                "addonBalance": {
+                                  "type": "number"
+                                },
+                                "plan": {
+                                  "type": "object",
+                                  "properties": {
+                                    "used": {
+                                      "type": "number"
+                                    },
+                                    "limit": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "balance": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "resetsAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    }
+                                  },
+                                  "required": [
+                                    "used",
+                                    "limit",
+                                    "balance",
+                                    "resetsAt"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "systemSlug",
+                                "costPerUnit",
+                                "addonBalance",
+                                "plan"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "prepaid"
+                                  ]
+                                },
+                                "addonBalance": {
+                                  "type": "null"
+                                },
+                                "plan": {
+                                  "type": "object",
+                                  "properties": {
+                                    "used": {
+                                      "type": "number"
+                                    },
+                                    "limit": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "balance": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "resetsAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    }
+                                  },
+                                  "required": [
+                                    "used",
+                                    "limit",
+                                    "balance",
+                                    "resetsAt"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "addonBalance",
+                                "plan"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "details": {
                           "type": "object",
@@ -1890,8 +2660,118 @@
                         "null"
                       ]
                     },
-                    "addonCredits": {
-                      "type": "number"
+                    "credits": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "credit_system"
+                              ]
+                            },
+                            "systemSlug": {
+                              "type": "string"
+                            },
+                            "costPerUnit": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "number"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "systemSlug",
+                            "costPerUnit",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "addonBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "details": {
                       "type": "object",
@@ -1931,7 +2811,7 @@
           "Add-ons"
         ],
         "summary": "Purchase a credit pack",
-        "description": "Creates a checkout session to purchase a credit pack add-on for a customer.",
+        "description": "Purchase a credit pack for a customer. Immediate purchases return the added credits and new balance; otherwise a checkout URL is returned.",
         "security": [
           {
             "bearerAuth": []

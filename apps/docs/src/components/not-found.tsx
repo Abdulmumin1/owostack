@@ -17,7 +17,7 @@ export function NotFound() {
           changed, or is temporarily unavailable.
         </p>
         <Link
-          to="/"
+          to="/$"
           className="mt-4 px-4 py-2 rounded-lg bg-fd-primary text-fd-primary-foreground font-medium text-sm hover:opacity-90 transition-opacity"
         >
           Back to Home

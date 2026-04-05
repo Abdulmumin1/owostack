@@ -51,6 +51,11 @@ const access = await owo.check({
 if (access.allowed) {
   // Allow request
 }
+
+if (access.credits?.source === "credit_system") {
+  console.log(access.credits.addonBalance);
+  console.log(access.credits.plan.balance);
+}
 ```
 
 ### 3. Track usage

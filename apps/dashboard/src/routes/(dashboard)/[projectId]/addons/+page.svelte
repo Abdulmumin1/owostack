@@ -303,7 +303,7 @@ const result = await owostack.addon(&#123;
 &#125;);
 
 // Credits are automatically consumed when plan credits run out
-// Check balance via /check response: planCredits + addonCredits</code></pre>
+// Check balance via /check response: credits.plan.balance + (credits.addonBalance ?? 0)</code></pre>
   </div>
 </div>
 

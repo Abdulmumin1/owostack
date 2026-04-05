@@ -252,16 +252,51 @@ export interface ResponseDetails {
 }
 
 /** Plan credit breakdown for credit system features */
-export interface PlanCredits {
+export interface CreditPlanBalance {
   /** Credits used this period */
   used: number;
 
   /** Plan credit limit */
   limit: number | null;
 
+  /** Remaining plan credits: limit - used (null = unlimited) */
+  balance: number | null;
+
   /** ISO timestamp when plan credits reset */
   resetsAt: string;
 }
+
+export interface CreditSystemBalanceDetails {
+  /** Source of the balance details */
+  source: "credit_system";
+
+  /** Credit system slug backing this feature */
+  systemSlug: string;
+
+  /** Credit cost per unit for this feature */
+  costPerUnit: number;
+
+  /** Purchased add-on balance remaining for this credit system */
+  addonBalance: number;
+
+  /** Plan-provided balance for the current reset window */
+  plan: CreditPlanBalance;
+}
+
+export interface PrepaidBalanceDetails {
+  /** Source of the balance details */
+  source: "prepaid";
+
+  /** Purchased add-on balance is not applicable for prepaid features */
+  addonBalance: null;
+
+  /** Plan-provided balance for the current reset window */
+  plan: CreditPlanBalance;
+}
+
+export type CreditsBalanceDetails =
+  | CreditSystemBalanceDetails
+  | PrepaidBalanceDetails;
 
 export interface CheckResult {
   /** Whether access is allowed */
@@ -285,11 +320,8 @@ export interface CheckResult {
   /** Reset interval (null for boolean features) */
   resetInterval: string | null;
 
-  /** Add-on credit balance for this credit system (only for credit system features) */
-  addonCredits?: number;
-
-  /** Plan credit breakdown (only for credit system features) */
-  planCredits?: PlanCredits;
+  /** Canonical balance details for credit-backed features */
+  credits: CreditsBalanceDetails | null;
 
   /** Contextual details (trial info, plan name, overage, human message) */
   details: ResponseDetails;
@@ -344,11 +376,8 @@ export interface TrackResult {
   /** Reset interval */
   resetInterval: string | null;
 
-  /** Add-on credit balance for this credit system (only for credit system features) */
-  addonCredits?: number;
-
-  /** Plan credit breakdown (only for credit system features) */
-  planCredits?: PlanCredits;
+  /** Canonical balance details for credit-backed features */
+  credits: CreditsBalanceDetails | null;
 
   /** Contextual details (trial info, plan name, overage, human message) */
   details: ResponseDetails;
