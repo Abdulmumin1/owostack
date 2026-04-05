@@ -8,7 +8,8 @@ import {
   type NormalizedOverageSettings,
 } from "./overage-billing-interval";
 import { getCustomerOverageBlock } from "./overage-blocks";
-import { sumUnbilledByFeature, sumUsageAmount } from "./usage-ledger";
+import { sumScopedUsageAmount } from "./scoped-usage";
+import { sumUnbilledByFeature } from "./usage-ledger";
 import { rateUsage } from "./usage-rating";
 
 /**
@@ -69,12 +70,15 @@ export async function getOverageUnitsUsed(
   opts?: {
     usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
     organizationId?: string | null;
+    subscriptionId?: string | null;
+    planId?: string | null;
+    legacyCreatedAtFloor?: number | null;
   },
 ): Promise<number | null> {
   const hasAuthoritativeLedger = Boolean(
     opts?.usageLedger && opts?.organizationId,
   );
-  const ledgerTotal = await sumUsageAmount(
+  const ledgerTotal = await sumScopedUsageAmount(
     {
       usageLedger: opts?.usageLedger,
       organizationId: opts?.organizationId,
@@ -84,6 +88,20 @@ export async function getOverageUnitsUsed(
       featureId,
       periodStart,
       periodEnd,
+      scope: {
+        ...(opts?.subscriptionId !== undefined
+          ? { subscriptionId: opts.subscriptionId }
+          : {}),
+        ...(opts?.planId !== undefined ? { planId: opts.planId } : {}),
+      },
+      legacyPlanScope:
+        opts?.subscriptionId !== undefined && opts?.planId
+          ? {
+              subscriptionId: null,
+              planId: opts.planId,
+            }
+          : undefined,
+      legacyCreatedAtFloor: opts?.legacyCreatedAtFloor,
     },
   );
   if (ledgerTotal !== null) {
@@ -317,6 +335,9 @@ export async function checkOverageAllowed(
   opts?: {
     usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
     organizationId?: string | null;
+    subscriptionId?: string | null;
+    planId?: string | null;
+    legacyCreatedAtFloor?: number | null;
   },
 ): Promise<OverageGuardResult> {
   const hasAuthoritativeLedger = Boolean(

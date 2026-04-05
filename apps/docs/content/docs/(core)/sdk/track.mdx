@@ -54,6 +54,30 @@ interface TrackResult {
   balance: number | null; // Remaining balance when applicable
   resetsAt: string | null; // Period reset time
   resetInterval: string | null;
+  credits:
+    | {
+        source: "credit_system";
+        systemSlug: string;
+        costPerUnit: number;
+        addonBalance: number;
+        plan: {
+          used: number;
+          limit: number | null;
+          balance: number | null;
+          resetsAt: string;
+        };
+      }
+    | {
+        source: "prepaid";
+        addonBalance: null;
+        plan: {
+          used: number;
+          limit: number | null;
+          balance: number | null;
+          resetsAt: string;
+        };
+      }
+    | null;
   details: {
     message: string;
     planName?: string;
@@ -170,14 +194,19 @@ console.log(`${result.balance} exports remaining this month`);
 
 ### Credit-based
 
-Consume from a prepaid credit balance:
+Consume from a credit-backed feature:
 
 ```ts
-await owo.track({
+const result = await owo.track({
   customer: "user_123",
-  feature: "credits",
-  value: operationCost, // e.g., 5 credits for this operation
+  feature: "gpt-4",
+  value: 1,
 });
+
+if (result.credits?.source === "credit_system") {
+  console.log("Plan credits left:", result.credits.plan.balance);
+  console.log("Add-on credits left:", result.credits.addonBalance);
+}
 ```
 
 ## Best Practices

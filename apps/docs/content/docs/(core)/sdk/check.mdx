@@ -53,6 +53,30 @@ interface CheckResult {
   balance: number | null;
   resetsAt: string | null;
   resetInterval: string | null;
+  credits:
+    | {
+        source: "credit_system";
+        systemSlug: string;
+        costPerUnit: number;
+        addonBalance: number;
+        plan: {
+          used: number;
+          limit: number | null;
+          balance: number | null;
+          resetsAt: string;
+        };
+      }
+    | {
+        source: "prepaid";
+        addonBalance: null;
+        plan: {
+          used: number;
+          limit: number | null;
+          balance: number | null;
+          resetsAt: string;
+        };
+      }
+    | null;
   details: {
     message: string;
     planName?: string;
@@ -101,6 +125,24 @@ if (!result.allowed) {
 
 // Process the request...
 ```
+
+### Credit-backed Features
+
+```ts
+const result = await owo.check({
+  customer: "user_123",
+  feature: "ai_tokens",
+});
+
+if (result.credits?.source === "credit_system") {
+  console.log("Plan credits left:", result.credits.plan.balance);
+  console.log("Add-on credits left:", result.credits.addonBalance);
+}
+```
+
+For credit-backed features, `credits` is the canonical balance object. The
+top-level `balance` remains the generic remaining balance for the checked
+feature.
 
 ### Multiple Feature Checks
 

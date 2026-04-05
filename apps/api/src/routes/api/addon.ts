@@ -78,7 +78,7 @@ const purchaseAddonRoute = createRoute({
   tags: ["Add-ons"],
   summary: "Purchase a credit pack",
   description:
-    "Creates a checkout session to purchase a credit pack add-on for a customer.",
+    "Purchase a credit pack for a customer. Immediate purchases return the added credits and new balance; otherwise a checkout URL is returned.",
   security: apiKeySecurity,
   request: {
     body: {

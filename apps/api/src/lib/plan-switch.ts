@@ -2,6 +2,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { createDb, schema } from "@owostack/db";
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
 import { ensurePlanSynced } from "./plan-sync";
+import { shouldResetUsageOnPlanEnable } from "./usage-scope";
 // Workflow type (any since it's a Cloudflare Workflow binding)
 type WorkflowBinding = {
   create: (opts: { params: Record<string, unknown> }) => Promise<unknown>;
@@ -1115,7 +1116,7 @@ export async function provisionEntitlements(
     featureId: pf.featureId,
     limitValue: pf.limitValue,
     resetInterval: pf.resetInterval,
-    lastResetAt: pf.resetOnEnable ? now : null,
+    lastResetAt: shouldResetUsageOnPlanEnable(pf) ? now : null,
     createdAt: now,
     updatedAt: now,
   }));

@@ -3,6 +3,7 @@
     Calendar,
     Check,
     CircleNotch,
+    CurrencyDollarIcon,
     FloppyDiskIcon,
     Plus,
     Sliders,
@@ -58,16 +59,21 @@
   let lastFeatureId = $state<string | null>(null);
 
   function createTierRow(
-    tier?: Partial<{ upTo: number | null; unitPrice?: number; flatFee?: number }>,
+    tier?: Partial<{
+      upTo: number | null;
+      unitPrice?: number;
+      flatFee?: number;
+    }>,
   ): TierFormRow {
     return {
       id: Math.random().toString(36).slice(2, 10),
       upTo:
-        tier?.upTo === null || tier?.upTo === undefined ? "" : String(tier.upTo),
+        tier?.upTo === null || tier?.upTo === undefined
+          ? ""
+          : String(tier.upTo),
       unitPrice:
         tier?.unitPrice === undefined ? "" : String(tier.unitPrice / 100),
-      flatFee:
-        tier?.flatFee === undefined ? "" : String(tier.flatFee / 100),
+      flatFee: tier?.flatFee === undefined ? "" : String(tier.flatFee / 100),
     };
   }
 
@@ -190,11 +196,15 @@
 
   function initializeForm(currentFeature: any) {
     const rawLimit = currentFeature.limitValue ?? currentFeature.limit_value;
-    configLimitValue = rawLimit === null || rawLimit === undefined ? "" : String(rawLimit);
+    configLimitValue =
+      rawLimit === null || rawLimit === undefined ? "" : String(rawLimit);
 
-    const rawTrialLimit = currentFeature.trialLimitValue ?? currentFeature.trial_limit_value;
+    const rawTrialLimit =
+      currentFeature.trialLimitValue ?? currentFeature.trial_limit_value;
     configTrialLimitValue =
-      rawTrialLimit === null || rawTrialLimit === undefined || isNaN(Number(rawTrialLimit))
+      rawTrialLimit === null ||
+      rawTrialLimit === undefined ||
+      isNaN(Number(rawTrialLimit))
         ? ""
         : String(rawTrialLimit);
     showTrialConfig = configTrialLimitValue !== "";
@@ -245,8 +255,7 @@
           ? [createTierRow()]
           : [];
 
-    configOverage =
-      currentFeature.overage === "charge" ? "charge" : "block";
+    configOverage = currentFeature.overage === "charge" ? "charge" : "block";
     configMaxOverageUnits =
       currentFeature.maxOverageUnits === null ||
       currentFeature.maxOverageUnits === undefined
@@ -359,7 +368,9 @@
     <form class="flex flex-col justify-between h-full" onsubmit={handleSubmit}>
       <div class="p-6 space-y-8">
         <div class="space-y-3">
-          <div class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1">
+          <div
+            class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1"
+          >
             Feature Type
           </div>
           <div class="grid grid-cols-2 gap-3">
@@ -373,7 +384,10 @@
               onclick={() => (configUsageModel = "included")}
             >
               <div
-                class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0 rounded-md transition-colors {configUsageModel === 'included' ? 'border-accent/30' : 'group-hover:border-border-strong'}"
+                class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0 rounded-md transition-colors {configUsageModel ===
+                'included'
+                  ? 'border-accent/30'
+                  : 'group-hover:border-border-strong'}"
               >
                 <Calendar
                   size={20}
@@ -387,13 +401,20 @@
                 <div class="text-sm font-bold text-text-primary mb-0.5">
                   Included
                 </div>
-                <p class="text-[11px] text-text-muted leading-tight font-medium">
+                <p
+                  class="text-[11px] text-text-muted leading-tight font-medium"
+                >
                   Included usage limit.
                 </p>
               </div>
               {#if configUsageModel === "included"}
-                <div class="absolute top-2.5 right-2.5" transition:fade={{ duration: 150 }}>
-                  <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast">
+                <div
+                  class="absolute top-2.5 right-2.5"
+                  transition:fade={{ duration: 150 }}
+                >
+                  <div
+                    class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast"
+                  >
                     <Check size={10} weight="bold" />
                   </div>
                 </div>
@@ -413,27 +434,39 @@
               }}
             >
               <div
-                class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0 rounded-md transition-colors {configUsageModel === 'usage_based' ? 'border-accent/30' : 'group-hover:border-border-strong'}"
+                class="w-10 h-10 bg-bg-primary border border-border flex items-center justify-center flex-shrink-0 rounded-md transition-colors {configUsageModel ===
+                'usage_based'
+                  ? 'border-accent/30'
+                  : 'group-hover:border-border-strong'}"
               >
-                <Sliders
+                <CurrencyDollarIcon
                   size={20}
                   class={configUsageModel === "usage_based"
                     ? "text-accent"
                     : "text-text-muted"}
-                  weight={configUsageModel === "usage_based" ? "fill" : "duotone"}
+                  weight={configUsageModel === "usage_based"
+                    ? "fill"
+                    : "duotone"}
                 />
               </div>
               <div class="min-w-0">
                 <div class="text-sm font-bold text-text-primary mb-0.5">
                   Priced
                 </div>
-                <p class="text-[11px] text-text-muted leading-tight font-medium">
+                <p
+                  class="text-[11px] text-text-muted leading-tight font-medium"
+                >
                   Charge for usage.
                 </p>
               </div>
               {#if configUsageModel === "usage_based"}
-                <div class="absolute top-2.5 right-2.5" transition:fade={{ duration: 150 }}>
-                  <div class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast">
+                <div
+                  class="absolute top-2.5 right-2.5"
+                  transition:fade={{ duration: 150 }}
+                >
+                  <div
+                    class="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-accent-contrast"
+                  >
                     <Check size={10} weight="bold" />
                   </div>
                 </div>
@@ -443,7 +476,9 @@
         </div>
 
         {#if hasUsagePricingConfig()}
-          <div class="space-y-4 p-5 bg-bg-secondary border border-border rounded-lg">
+          <div
+            class="space-y-4 p-5 bg-bg-secondary border border-border rounded-lg"
+          >
             <div class="flex flex-col justify-between gap-4">
               <div>
                 <div class="text-sm font-semibold text-text-primary">
@@ -453,29 +488,31 @@
                   Billing starts from the first tracked unit.
                 </p>
               </div>
-              <div class="relative flex w-fit bg-bg-card border border-border p-1 rounded-md overflow-hidden isolate">
+              <div
+                class="relative flex w-fit bg-bg-card border border-border p-1 rounded-md overflow-hidden isolate"
+              >
                 <!-- Animated background slider -->
-                <div 
+                <div
                   class="absolute inset-y-1 rounded-md bg-accent border border-accent-border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-0"
                   style="
-                    width: calc((100% - 8px) / 3); 
-                    left: calc(4px + (100% - 8px) / 3 * {
-                      configRatingModel === 'package' ? 0 : configRatingModel === 'graduated' ? 1 : 2
-                    });
+                    width: calc((100% - 8px) / 3);
+                    left: calc(4px + (100% - 8px) / 3 * {configRatingModel ===
+                  'package'
+                    ? 0
+                    : configRatingModel === 'graduated'
+                      ? 1
+                      : 2});
                   "
                 ></div>
-                {#each [
-                  { value: "package", label: "Package" },
-                  { value: "graduated", label: "Graduated" },
-                  { value: "volume", label: "Volume" },
-                ] as model}
+                {#each [{ value: "package", label: "Package" }, { value: "graduated", label: "Graduated" }, { value: "volume", label: "Volume" }] as model}
                   <button
                     type="button"
                     class="px-4 py-1.5 text-xs font-bold transition-colors duration-200 relative z-10 {configRatingModel ===
                     model.value
                       ? 'text-accent-contrast'
                       : 'text-text-muted hover:text-text-primary'}"
-                    onclick={() => selectRatingModel(model.value as RatingModel)}
+                    onclick={() =>
+                      selectRatingModel(model.value as RatingModel)}
                   >
                     {model.label}
                   </button>
@@ -486,7 +523,10 @@
             {#if configRatingModel === "package"}
               <div class="grid grid-cols-2 gap-4 pt-1">
                 <div class="space-y-1.5">
-                  <label for="pricePerUnit" class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1">
+                  <label
+                    for="pricePerUnit"
+                    class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1"
+                  >
                     {configUsageModel === "usage_based"
                       ? "Price per Unit"
                       : "Overage Price"}
@@ -500,14 +540,19 @@
                       class="input h-9 !text-xs !pl-8"
                       bind:value={configPricePerUnit}
                     />
-                    <div class="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                    <div
+                      class="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none"
+                    >
                       {getCurrencySymbol()}
                     </div>
                   </div>
                 </div>
 
                 <div class="space-y-1.5">
-                  <label for="billingUnits" class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1">
+                  <label
+                    for="billingUnits"
+                    class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1"
+                  >
                     Per X Units
                   </label>
                   <input
@@ -522,8 +567,14 @@
 
               <p class="text-[11px] text-text-muted">
                 {#if configPricePerUnit && configBillingUnits}
-                  Charging <strong>{getCurrencySymbol()}{configPricePerUnit}</strong>
-                  per <strong>{configBillingUnits} {feature?.feature?.unit || "units"}</strong>
+                  Charging <strong
+                    >{getCurrencySymbol()}{configPricePerUnit}</strong
+                  >
+                  per
+                  <strong
+                    >{configBillingUnits}
+                    {feature?.feature?.unit || "units"}</strong
+                  >
                 {:else}
                   Set price and units to configure billing.
                 {/if}
@@ -545,23 +596,33 @@
 
                 <div>
                   <div class="grid grid-cols-[1fr_1fr_1fr_18px] gap-3 px-1">
-                    <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">
+                    <div
+                      class="text-[10px] font-bold text-text-dim uppercase tracking-wider"
+                    >
                       Up To
                     </div>
-                    <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">
+                    <div
+                      class="text-[10px] font-bold text-text-dim uppercase tracking-wider"
+                    >
                       Unit Price
                     </div>
-                    <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">
+                    <div
+                      class="text-[10px] font-bold text-text-dim uppercase tracking-wider"
+                    >
                       Flat Price
                     </div>
                   </div>
 
                   {#each configTiers as tier, index (tier.id)}
-                    <div class="grid grid-cols-[1fr_1fr_1fr_18px] gap-1 items-center group">
+                    <div
+                      class="grid grid-cols-[1fr_1fr_1fr_18px] gap-1 items-center group"
+                    >
                       <div class="relative">
                         <input
                           type="number"
-                          placeholder={index === configTiers.length - 1 ? "Infinity" : "1000"}
+                          placeholder={index === configTiers.length - 1
+                            ? "Infinity"
+                            : "1000"}
                           class="input h-9 !text-xs"
                           bind:value={tier.upTo}
                         />
@@ -574,7 +635,9 @@
                           class="input h-9 !text-xs !pl-7"
                           bind:value={tier.unitPrice}
                         />
-                        <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                        <div
+                          class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none"
+                        >
                           {getCurrencySymbol()}
                         </div>
                       </div>
@@ -586,7 +649,9 @@
                           class="input h-9 !text-xs !pl-7"
                           bind:value={tier.flatFee}
                         />
-                        <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                        <div
+                          class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none"
+                        >
                           {getCurrencySymbol()}
                         </div>
                       </div>
@@ -621,7 +686,10 @@
         {#if configUsageModel === "included"}
           <div class="space-y-2.5">
             <div class="flex items-center justify-between px-1">
-              <label for="limitValueConfig" class="text-[11px] font-bold text-text-dim uppercase tracking-wider">
+              <label
+                for="limitValueConfig"
+                class="text-[11px] font-bold text-text-dim uppercase tracking-wider"
+              >
                 Grant Amount
               </label>
               <button
@@ -642,7 +710,9 @@
                 class="input !h-10 !text-sm !pr-16"
                 bind:value={configLimitValue}
               />
-              <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-dim pointer-events-none capitalize">
+              <div
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-dim pointer-events-none capitalize"
+              >
                 {feature?.feature?.unit || "units"}
               </div>
             </div>
@@ -658,9 +728,15 @@
                 <Plus size={12} weight="bold" /> Set Different Trial Grant
               </button>
             {:else}
-              <div class="space-y-2.5 pt-1" transition:fly={{ y: 5, duration: 150 }}>
+              <div
+                class="space-y-2.5 pt-1"
+                transition:fly={{ y: 5, duration: 150 }}
+              >
                 <div class="flex items-center justify-between px-1">
-                  <label for="trialLimitValueConfig" class="text-[11px] font-bold text-text-dim uppercase tracking-wider">
+                  <label
+                    for="trialLimitValueConfig"
+                    class="text-[11px] font-bold text-text-dim uppercase tracking-wider"
+                  >
                     Trial Grant Amount
                   </label>
                   <button
@@ -686,7 +762,9 @@
                     class="input !h-10 !text-sm !pr-16"
                     bind:value={configTrialLimitValue}
                   />
-                  <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-dim pointer-events-none capitalize">
+                  <div
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-dim pointer-events-none capitalize"
+                  >
                     {feature?.feature?.unit || "units"}
                   </div>
                 </div>
@@ -699,8 +777,9 @@
               Usage-based billing
             </div>
             <p class="mt-1 text-xs text-text-muted leading-relaxed">
-              Billing starts from the first tracked unit. If you want included units
-              before charging, switch to <strong>Included</strong> and set overage to
+              Billing starts from the first tracked unit. If you want included
+              units before charging, switch to <strong>Included</strong> and set
+              overage to
               <strong>Charge</strong>.
             </p>
           </div>
@@ -708,31 +787,33 @@
 
         {#if configUsageModel === "included"}
           <div class="space-y-3 pt-2">
-            <div class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1">
+            <div
+              class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1"
+            >
               When Limit Exceeded
             </div>
-            <div class="relative flex bg-bg-card border border-border p-1 rounded-md overflow-hidden isolate">
+            <div
+              class="relative flex bg-bg-card border border-border p-1 rounded-md overflow-hidden isolate"
+            >
               <!-- Animated background slider -->
-              <div 
+              <div
                 class="absolute inset-y-1 rounded-md bg-accent border border-accent-border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-0"
                 style="
-                  width: calc((100% - 8px) / 2); 
-                  left: calc(4px + (100% - 8px) / 2 * {
-                    configOverage === 'block' ? 0 : 1
-                  });
+                  width: calc((100% - 8px) / 2);
+                  left: calc(4px + (100% - 8px) / 2 * {configOverage === 'block'
+                  ? 0
+                  : 1});
                 "
               ></div>
-              {#each [
-                { value: "block", label: "Block" },
-                { value: "charge", label: "Charge" },
-              ] as option}
+              {#each [{ value: "block", label: "Block" }, { value: "charge", label: "Charge" }] as option}
                 <button
                   type="button"
                   class="flex-1 py-1.5 text-xs font-bold transition-colors duration-200 relative z-10 {configOverage ===
                   option.value
                     ? 'text-accent-contrast'
                     : 'text-text-muted hover:text-text-primary'}"
-                  onclick={() => (configOverage = option.value as typeof configOverage)}
+                  onclick={() =>
+                    (configOverage = option.value as typeof configOverage)}
                 >
                   {option.label}
                 </button>
@@ -740,7 +821,10 @@
             </div>
 
             {#if configOverage === "charge"}
-              <div class="space-y-5 p-5 bg-bg-elevated border border-border rounded-lg" transition:fly={{ y: 5, duration: 150 }}>
+              <div
+                class="space-y-5 p-5 bg-bg-elevated border border-border rounded-lg"
+                transition:fly={{ y: 5, duration: 150 }}
+              >
                 <div class="flex flex-col gap-4">
                   <div>
                     <div class="text-sm font-bold text-text-primary">
@@ -750,29 +834,31 @@
                       Applied only after the included grant is exhausted.
                     </p>
                   </div>
-                  <div class="relative flex w-fit bg-bg-card border border-border p-1 rounded-md overflow-hidden isolate">
+                  <div
+                    class="relative flex w-fit bg-bg-card border border-border p-1 rounded-md overflow-hidden isolate"
+                  >
                     <!-- Animated background slider -->
-                    <div 
+                    <div
                       class="absolute inset-y-1 rounded-md bg-accent border border-accent-border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-0"
                       style="
-                        width: calc((100% - 8px) / 3); 
-                        left: calc(4px + (100% - 8px) / 3 * {
-                          configRatingModel === 'package' ? 0 : configRatingModel === 'graduated' ? 1 : 2
-                        });
+                        width: calc((100% - 8px) / 3);
+                        left: calc(4px + (100% - 8px) / 3 * {configRatingModel ===
+                      'package'
+                        ? 0
+                        : configRatingModel === 'graduated'
+                          ? 1
+                          : 2});
                       "
                     ></div>
-                    {#each [
-                      { value: "package", label: "Package" },
-                      { value: "graduated", label: "Graduated" },
-                      { value: "volume", label: "Volume" },
-                    ] as model}
+                    {#each [{ value: "package", label: "Package" }, { value: "graduated", label: "Graduated" }, { value: "volume", label: "Volume" }] as model}
                       <button
                         type="button"
                         class="px-4 py-1.5 text-[11px] font-bold transition-colors duration-200 relative z-10 {configRatingModel ===
                         model.value
                           ? 'text-accent-contrast'
                           : 'text-text-muted hover:text-text-primary'}"
-                        onclick={() => selectRatingModel(model.value as RatingModel)}
+                        onclick={() =>
+                          selectRatingModel(model.value as RatingModel)}
                       >
                         {model.label}
                       </button>
@@ -783,7 +869,10 @@
                 {#if configRatingModel === "package"}
                   <div class="grid grid-cols-2 gap-4">
                     <div>
-                      <label for="overagePricePerUnit" class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1">
+                      <label
+                        for="overagePricePerUnit"
+                        class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1"
+                      >
                         Overage Price
                       </label>
                       <div class="input-icon-wrapper">
@@ -795,14 +884,19 @@
                           class="input h-9 !text-xs !pl-8"
                           bind:value={configPricePerUnit}
                         />
-                        <div class="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                        <div
+                          class="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none"
+                        >
                           {getCurrencySymbol()}
                         </div>
                       </div>
                     </div>
 
                     <div class="space-y-1.5">
-                      <label for="overageBillingUnits" class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1">
+                      <label
+                        for="overageBillingUnits"
+                        class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1"
+                      >
                         Per X Units
                       </label>
                       <input
@@ -831,23 +925,33 @@
 
                     <div>
                       <div class="grid grid-cols-[1fr_1fr_1fr_18px] gap-3 px-1">
-                        <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">
+                        <div
+                          class="text-[10px] font-bold text-text-dim uppercase tracking-wider"
+                        >
                           Up To
                         </div>
-                        <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">
+                        <div
+                          class="text-[10px] font-bold text-text-dim uppercase tracking-wider"
+                        >
                           Unit Price
                         </div>
-                        <div class="text-[10px] font-bold text-text-dim uppercase tracking-wider">
+                        <div
+                          class="text-[10px] font-bold text-text-dim uppercase tracking-wider"
+                        >
                           Flat Price
                         </div>
                       </div>
 
                       {#each configTiers as tier, index (tier.id)}
-                        <div class="grid grid-cols-[1fr_1fr_1fr_18px] gap-1 items-center group">
+                        <div
+                          class="grid grid-cols-[1fr_1fr_1fr_18px] gap-1 items-center group"
+                        >
                           <div class="relative">
                             <input
                               type="number"
-                              placeholder={index === configTiers.length - 1 ? "Infinity" : "1000"}
+                              placeholder={index === configTiers.length - 1
+                                ? "Infinity"
+                                : "1000"}
                               class="input h-9 !text-xs"
                               bind:value={tier.upTo}
                             />
@@ -860,7 +964,9 @@
                               class="input h-9 !text-xs !pl-7"
                               bind:value={tier.unitPrice}
                             />
-                            <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                            <div
+                              class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none"
+                            >
                               {getCurrencySymbol()}
                             </div>
                           </div>
@@ -872,7 +978,9 @@
                               class="input h-9 !text-xs !pl-7"
                               bind:value={tier.flatFee}
                             />
-                            <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none">
+                            <div
+                              class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-dim font-medium pointer-events-none"
+                            >
                               {getCurrencySymbol()}
                             </div>
                           </div>
@@ -903,7 +1011,10 @@
                 {/if}
 
                 <div class="space-y-1.5 pt-1">
-                  <label for="maxOverageUnits" class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1">
+                  <label
+                    for="maxOverageUnits"
+                    class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-1"
+                  >
                     Max Overage Units
                   </label>
                   <input
@@ -921,22 +1032,13 @@
 
         {#if configUsageModel === "included"}
           <div class="space-y-3">
-            <div class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1">
+            <div
+              class="text-[11px] font-bold text-text-dim uppercase tracking-wider px-1"
+            >
               Reset Window
             </div>
             <div class="grid grid-cols-5 gap-2">
-              {#each [
-                { value: "5min", label: "5 Min" },
-                { value: "15min", label: "15 Min" },
-                { value: "30min", label: "30 Min" },
-                { value: "hourly", label: "Hourly" },
-                { value: "daily", label: "Daily" },
-                { value: "weekly", label: "Weekly" },
-                { value: "monthly", label: "Monthly" },
-                { value: "quarterly", label: "Quarter" },
-                { value: "yearly", label: "Yearly" },
-                { value: "none", label: "One-off" },
-              ] as interval}
+              {#each [{ value: "5min", label: "5 Min" }, { value: "15min", label: "15 Min" }, { value: "30min", label: "30 Min" }, { value: "hourly", label: "Hourly" }, { value: "daily", label: "Daily" }, { value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }, { value: "quarterly", label: "Quarter" }, { value: "yearly", label: "Yearly" }, { value: "none", label: "One-off" }] as interval}
                 <button
                   type="button"
                   class="py-2 text-[10px] font-bold border rounded-md transition-all duration-75 {configResetInterval ===
@@ -955,26 +1057,30 @@
         {#if configUsageModel === "included" && configResetInterval !== "none"}
           <div class="space-y-4">
             <div class="flex items-center gap-3">
-             <label
+              <label
                 for="configRolloverEnabled"
                 class="text-sm flex gap-2 items-center font-medium text-text-primary cursor-pointer group select-none"
               >
-              <input
-                id="configRolloverEnabled"
-                type="checkbox"
-                bind:checked={configRolloverEnabled}
-                class="hidden"
-              />
-               <div
-                class="relative w-4 h-4 rounded border flex items-center justify-center transition-colors {configRolloverEnabled
-                  ? 'bg-accent border-accent'
-                  : 'border-border group-hover:border-text-dim'}"
-              >
-                {#if configRolloverEnabled}
-                  <Check size={10} class="text-accent-contrast" weight="fill" />
-                {/if}
-              </div>
-             
+                <input
+                  id="configRolloverEnabled"
+                  type="checkbox"
+                  bind:checked={configRolloverEnabled}
+                  class="hidden"
+                />
+                <div
+                  class="relative w-4 h-4 rounded border flex items-center justify-center transition-colors {configRolloverEnabled
+                    ? 'bg-accent border-accent'
+                    : 'border-border group-hover:border-text-dim'}"
+                >
+                  {#if configRolloverEnabled}
+                    <Check
+                      size={10}
+                      class="text-accent-contrast"
+                      weight="fill"
+                    />
+                  {/if}
+                </div>
+
                 Rollover unused balance
               </label>
             </div>
@@ -983,7 +1089,9 @@
             </p>
 
             {#if configRolloverEnabled}
-              <div class="p-4 bg-bg-secondary border border-border rounded-lg space-y-2 ml-7">
+              <div
+                class="p-4 bg-bg-secondary border border-border rounded-lg space-y-2 ml-7"
+              >
                 <label for="rolloverMaxBalance" class="label">
                   Max Rollover Balance
                 </label>

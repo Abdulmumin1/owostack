@@ -9,6 +9,7 @@ import {
   type PlanFeaturePricingConfigInput,
   validatePlanFeaturePricingConfig,
 } from "../../lib/plan-feature-normalization";
+import { shouldResetUsageOnPlanEnable } from "../../lib/usage-scope";
 import {
   normalizeOneTimePlan,
   sanitizeOneTimePlanFlags,
@@ -58,7 +59,10 @@ function buildPlanFeatureConfigSnapshot(
       limitValue: data.limitValue ?? null,
       trialLimitValue: data.trialLimitValue ?? null,
       resetInterval: data.resetInterval ?? "monthly",
-      resetOnEnable: data.resetOnEnable ?? true,
+      resetOnEnable: shouldResetUsageOnPlanEnable({
+        usageModel,
+        resetOnEnable: data.resetOnEnable,
+      }),
       rolloverEnabled: data.rolloverEnabled ?? false,
       rolloverMaxBalance: data.rolloverMaxBalance ?? null,
       usageModel,
@@ -369,7 +373,7 @@ app.get("/", async (c) => {
 
   return c.json({
     success: true,
-    data: plans.map((plan) => ({
+    data: plans.map((plan: any) => ({
       ...normalizeOneTimePlan(plan),
       customerCount: customerCountByPlanId.get(plan.id) ?? 0,
     })),
@@ -672,7 +676,6 @@ const addFeatureSchema = z.object({
       "yearly",
     ])
     .default("monthly"),
-  resetOnEnable: z.boolean().default(true),
 
   // Rollover config
   rolloverEnabled: z.boolean().default(false),
@@ -727,7 +730,6 @@ app.post("/:planId/features", async (c) => {
     limitValue,
     trialLimitValue,
     resetInterval,
-    resetOnEnable,
     rolloverEnabled,
     rolloverMaxBalance,
     usageModel,
@@ -749,7 +751,6 @@ app.post("/:planId/features", async (c) => {
         limitValue,
         trialLimitValue,
         resetInterval,
-        resetOnEnable,
         rolloverEnabled,
         rolloverMaxBalance,
         usageModel,

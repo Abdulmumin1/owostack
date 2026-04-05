@@ -430,6 +430,18 @@ app.get("/:id", async (c) => {
       new Date().getMonth(),
       1,
     ).getTime();
+    const requestedPlanUsageScope = requestedPlanId
+      ? {
+          planId: requestedPlanId,
+          subscriptionIds: subscriptions
+            .map((subscription: any) => subscription.id)
+            .filter(
+              (subscriptionId: unknown): subscriptionId is string =>
+                typeof subscriptionId === "string" &&
+                subscriptionId.length > 0,
+            ),
+        }
+      : undefined;
 
     const [ledgerRecentUsage, ledgerFeatureSummary] = await Promise.all([
       listRecentUsageForCustomer(
@@ -439,7 +451,7 @@ app.get("/:id", async (c) => {
         },
         id,
         20,
-        requestedPlanId,
+        requestedPlanUsageScope,
       ),
       featureUsageSummaryForCustomer(
         {
@@ -448,7 +460,7 @@ app.get("/:id", async (c) => {
         },
         id,
         monthStart,
-        requestedPlanId,
+        requestedPlanUsageScope,
       ),
     ]);
 

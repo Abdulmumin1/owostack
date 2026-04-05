@@ -15,16 +15,22 @@ await owo.addon({
   customer: string,
   pack: string,
   quantity?: number,
+  currency?: string,
+  callbackUrl?: string,
+  metadata?: Record<string, unknown>,
 }): Promise<AddonResult>
 ```
 
 ## Parameters
 
-| Parameter  | Type     | Required | Description                            |
-| ---------- | -------- | -------- | -------------------------------------- |
-| `customer` | `string` | Yes      | Your internal user ID                  |
-| `pack`     | `string` | Yes      | Credit pack slug or ID                 |
-| `quantity` | `number` | No       | Number of packs to buy (default: 1)   |
+| Parameter     | Type                     | Required | Description                              |
+| ------------- | ------------------------ | -------- | ---------------------------------------- |
+| `customer`    | `string`                 | Yes      | Your internal user ID                    |
+| `pack`        | `string`                 | Yes      | Credit pack slug or ID                   |
+| `quantity`    | `number`                 | No       | Number of packs to buy (default: 1)      |
+| `currency`    | `string`                 | No       | Optional currency override               |
+| `callbackUrl` | `string`                 | No       | Redirect URL after checkout              |
+| `metadata`    | `Record<string, unknown>` | No      | Custom metadata attached to the purchase |
 
 ## Response
 
@@ -32,10 +38,12 @@ await owo.addon({
 interface AddonResult {
   success: boolean;
   requiresCheckout: boolean;
-  checkoutUrl?: string;
+  credits?: number;
   balance?: number;
-  creditsAdded?: number;
-  error?: string;
+  creditSystemId?: string;
+  checkoutUrl?: string;
+  reference?: string;
+  message?: string;
 }
 ```
 
@@ -52,7 +60,7 @@ const result = await owo.addon({
 if (result.requiresCheckout) {
   console.log("Redirect to:", result.checkoutUrl);
 } else {
-  console.log("Credits added:", result.creditsAdded);
+  console.log("Credits added:", result.credits);
   console.log("New balance:", result.balance);
 }
 ```
@@ -70,5 +78,6 @@ const result = await owo.addon({
 ## Notes
 
 - Credit packs must be tied to a **credit system**. Packs without a credit system are rejected.
-- If the customer has a valid payment method on file, `requiresCheckout` is `false` and credits are added immediately.
-- The provider used for checkout is determined by the credit pack's `providerId`.
+- If the customer has a valid payment method on file, `requiresCheckout` is `false` and `credits` plus `balance` are returned immediately.
+- If `requiresCheckout` is `true`, use `checkoutUrl` to redirect the customer and `reference` to correlate the purchase.
+- The provider used for checkout is determined by the credit pack's configured payment provider.
