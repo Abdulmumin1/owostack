@@ -58,8 +58,8 @@
         details: "",
         interval,
         trial: null,
-        color: "text-blue-500 bg-blue-500/5 border-blue-500/10",
-        numColor: "text-blue-500"
+        color: "text-blue-400 bg-blue-400/10 border-blue-400/20",
+        numColor: "text-blue-400"
       };
     }
 
@@ -70,8 +70,8 @@
         details: unitPrice != null ? `${formatCurrency(unitPrice, currencyCode)} / ${billingUnits} ${unitLabel}` : ratingModel.toUpperCase(),
         interval,
         trial: null,
-        color: "text-purple-500 bg-purple-500/5 border-purple-500/10",
-        numColor: "text-purple-500"
+        color: "text-fuchsia-400 bg-fuchsia-400/10 border-fuchsia-400/20",
+        numColor: "text-fuchsia-400"
       };
     }
 
@@ -83,8 +83,8 @@
         details: `${formatCurrency(unitPrice, currencyCode)} / ${billingUnits} ${unitLabel}`,
         interval,
         trial: trialLimitValue != null ? trialLimitValue.toString() : null,
-        color: "text-pink-500 bg-pink-500/5 border-pink-500/10",
-        numColor: "text-pink-500"
+        color: "text-pink-400 bg-pink-400/10 border-pink-400/20",
+        numColor: "text-pink-400"
       };
     }
 
@@ -95,8 +95,8 @@
         details: "",
         interval,
         trial: trialLimitValue != null ? trialLimitValue.toString() : null,
-        color: "text-cyan-500 bg-cyan-500/5 border-cyan-500/10",
-        numColor: "text-cyan-500"
+        color: "text-cyan-400 bg-cyan-400/10 border-cyan-400/20",
+        numColor: "text-cyan-400"
       };
     }
 
@@ -106,8 +106,8 @@
       details: "",
       interval,
       trial: trialLimitValue != null ? trialLimitValue.toString() : null,
-      color: "text-indigo-500 bg-indigo-500/5 border-indigo-500/10",
-      numColor: "text-indigo-500"
+      color: "text-violet-400 bg-violet-400/10 border-violet-400/20",
+      numColor: "text-violet-400"
     };
   }
 </script>
@@ -246,7 +246,7 @@
           >
             <div class="flex items-center gap-3 min-w-0 flex-1">
               <div class="w-7 h-7 flex items-center justify-center rounded-lg border transition-all shrink-0
-                {planFeature.feature?.type === 'boolean' ? 'bg-blue-500/5 border-blue-500/10 text-blue-500' : 'bg-purple-500/5 border-purple-500/10 text-purple-500'}">
+                {planFeature.feature?.type === 'boolean' ? 'bg-blue-400/10 border-blue-400/20 text-blue-400' : 'bg-fuchsia-400/10 border-fuchsia-400/20 text-fuchsia-400'}">
                 {#if planFeature.feature?.type === "boolean"}
                   <CheckCircle size={14} weight="duotone" />
                 {:else}
