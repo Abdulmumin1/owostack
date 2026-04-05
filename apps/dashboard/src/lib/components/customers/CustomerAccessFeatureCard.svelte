@@ -1,6 +1,5 @@
 <script lang="ts">
   import { CheckCircle, Lightning } from "phosphor-svelte";
-  import ProgressBar from "$lib/components/ui/ProgressBar.svelte";
 
   let {
     item,
@@ -44,49 +43,50 @@
       item.balance !== null &&
       item.balance !== undefined,
   );
-  const progressValue = $derived(
-    showsProgress ? Math.max(0, item.balance || 0) : 0,
-  );
-  const progressMax = $derived(
-    showsProgress ? Math.max(1, item.limit || 0) : 1,
+
+  // Calculate width based on balance / limit.
+  // If balance > limit, cap at 100%. If 0, cap at 0%.
+  const progressPercent = $derived(
+    showsProgress
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            ((item.balance || 0) / (item.limit || 1)) * 100,
+          ),
+        )
+      : 0,
   );
 </script>
 
-<div class="flex flex-col gap-3 py-3 border-b border-border/40 last:border-0">
-  <div class="flex items-center justify-between">
+<div class="flex gap-2 py-2 border-b border-border/40 last:border-0">
+  <div class="flex items-center justify-between mb-1">
     <div class="flex items-center gap-2">
-      <h3 class="text-[13px] font-medium text-text-primary">
+      <h3 class="text-sm font-normal text-text-primary">
         {item.featureName}
       </h3>
-    </div>
-
-    <div class="flex items-center gap-2 text-[13px] text-text-primary">
-      {#if isBoolean}
-        <CheckCircle size={14} class="text-success" weight="fill" />
-        <span>Enabled</span>
-      {:else}
-        <Lightning size={14} class="text-accent" weight="fill" />
-        <span class="font-medium">{formatNumber(item.balance)} left</span>
-      {/if}
     </div>
   </div>
 
   {#if showsProgress}
-    <div class="flex items-center gap-4">
-      <div
-        class="w-full bg-bg-secondary rounded-full h-2 overflow-hidden opacity-60"
-      >
+    <div class="flex gap-2 flex-1 items-center">
+      <div class="w-full flex-1 bg-accent/20 rounded-full h-2 overflow-hidden">
         <div
-          class="bg-accent h-full rounded-full"
-          style="width: {(progressValue / progressMax) * 100}%"
+          class="bg-accent h-full rounded-full transition-all"
+          style="width: {progressPercent}%"
         ></div>
       </div>
-      <div class="text-[10px] text-text-dim shrink-0 whitespace-nowrap">
+      <div
+        class="text-[11px] text-text-dim text-right font-medium tracking-wide"
+      >
         {formatNumber(item.balance)} / {formatNumber(item.limit)}
-        {#if item.isTrialLimit}
-          <span class="text-info ml-1">(trial)</span>
-        {/if}
       </div>
+      {#if item.isTrialLimit}
+        <span
+          class="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-500 text-[9px] font-bold uppercase tracking-widest"
+          >Trial</span
+        >
+      {/if}
     </div>
   {/if}
 </div>

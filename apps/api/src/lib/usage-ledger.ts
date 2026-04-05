@@ -1,9 +1,11 @@
 import type {
+  CustomerUsageLedgerScope,
   UsageLedgerDO,
   UsageLedgerRecord,
   UnbilledUsagePeriodRow,
   UsageSumQuery,
 } from "./usage-ledger-do";
+import type { UsagePricingSnapshot } from "./usage-pricing-snapshot";
 
 interface UsageLedgerOptions {
   usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
@@ -78,6 +80,9 @@ export async function markUsageInvoiced(
     periodEnd: number;
     usageCutoffAt: number;
     invoiceId: string;
+    subscriptionId?: string | null;
+    planId?: string | null;
+    pricingSnapshot?: UsagePricingSnapshot | null;
   },
 ): Promise<number | null> {
   const stub = getStub(opts);
@@ -143,7 +148,7 @@ export async function listRecentUsageForCustomer(
   opts: UsageLedgerOptions,
   customerId: string,
   limit = 20,
-  planId?: string | null,
+  scope?: CustomerUsageLedgerScope,
 ): Promise<Array<{
   id: string;
   featureId: string;
@@ -154,7 +159,7 @@ export async function listRecentUsageForCustomer(
   if (!stub) return null;
 
   try {
-    return await stub.listRecentUsageForCustomer(customerId, limit, planId);
+    return await stub.listRecentUsageForCustomer(customerId, limit, scope);
   } catch (error) {
     console.error("[usage-ledger] listRecentUsageForCustomer failed:", error);
     return null;
@@ -165,7 +170,7 @@ export async function featureUsageSummaryForCustomer(
   opts: UsageLedgerOptions,
   customerId: string,
   createdAtFrom: number,
-  planId?: string | null,
+  scope?: CustomerUsageLedgerScope,
 ): Promise<Array<{
   featureId: string;
   totalUsage: number;
@@ -178,7 +183,7 @@ export async function featureUsageSummaryForCustomer(
     return await stub.featureUsageSummaryForCustomer(
       customerId,
       createdAtFrom,
-      planId,
+      scope,
     );
   } catch (error) {
     console.error(

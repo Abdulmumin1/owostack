@@ -73,7 +73,9 @@ export function baseOptions(): Omit<DocsLayoutProps, "tree"> {
           };
           return {
             ...option,
-            icon: icons[node.name] ?? <BookIcon className="size-4" />,
+            icon:
+              (typeof node.name === "string" ? icons[node.name] : undefined) ??
+              <BookIcon className="size-4" />,
           };
         },
       },

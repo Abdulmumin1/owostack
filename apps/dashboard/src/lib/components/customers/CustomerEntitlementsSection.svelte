@@ -57,9 +57,12 @@
       return;
 
     try {
-      const res = await apiFetch(`/api/dashboard/entitlement-overrides/${id}?organizationId=${organizationId}`, {
-        method: "DELETE",
-      });
+      const res = await apiFetch(
+        `/api/dashboard/entitlement-overrides/${id}?organizationId=${organizationId}`,
+        {
+          method: "DELETE",
+        },
+      );
       if (res.data?.success) {
         overrides = overrides.filter((o) => o.id !== id);
       }
@@ -86,7 +89,9 @@
 
 <div class="space-y-4">
   <div class="flex items-center justify-between">
-    <h3 class="text-[10px] font-bold text-text-primary uppercase tracking-[0.15em]">
+    <h3
+      class="text-[10px] font-bold text-text-primary uppercase tracking-[0.15em]"
+    >
       Entitlement Overrides
     </h3>
     <button
@@ -104,13 +109,10 @@
       Loading overrides...
     </div>
   {:else if visibleOverrides.length === 0}
-    <div class="bg-transparent border border-border/50 border-dashed rounded-xl py-10 px-6 flex flex-col items-center justify-center text-center">
-      <p class="text-xs font-medium text-text-primary">
-        {allowedFeatureIdSet
-          ? "No overrides for this plan"
-          : "No manual overrides granted"}
-      </p>
-      <p class="text-xs text-text-dim mt-1.5 max-w-[280px]">
+    <div
+      class="bg-transparent border h-10 border-border/40 border-dotted rounded-xl py-10 px-6 flex flex-col items-center justify-center text-center"
+    >
+      <p class="text-xs text-text-dim mt-1.5">
         {allowedFeatureIdSet
           ? "Only overrides for features attached to this plan are shown here."
           : "Overrides allow you to grant specific features regardless of the customer's plan."}
@@ -168,7 +170,9 @@
                 </div>
               </div>
               {#if override.grantedReason}
-                <div class="flex items-center gap-1.5 mt-2 text-[9px] text-text-dim/80 bg-bg-secondary/50 px-2 py-1 rounded border border-border/50 italic">
+                <div
+                  class="flex items-center gap-1.5 mt-2 text-[9px] text-text-dim/80 bg-bg-secondary/50 px-2 py-1 rounded border border-border/50 italic"
+                >
                   <Info size={10} />
                   <span>"{override.grantedReason}"</span>
                 </div>

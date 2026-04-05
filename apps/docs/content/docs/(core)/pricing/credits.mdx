@@ -130,12 +130,25 @@ const access = await owo.check({
   feature: "ai-tokens",
 });
 
-console.log("Credits remaining:", access.balance);
+if (access.credits?.source === "credit_system") {
+  const planBalance = access.credits.plan.balance ?? 0;
+  console.log("Plan credits remaining:", access.credits.plan.balance);
+  console.log("Add-on credits remaining:", access.credits.addonBalance);
+  console.log(
+    "Total spendable credits:",
+    planBalance + access.credits.addonBalance,
+  );
+}
 ```
+
+For credit-system features, `access.credits` is the canonical balance object.
+Use top-level `balance` only as the generic remaining balance for the checked
+feature.
 
 ## Consume credits
 
-`track()` deducts credits automatically based on the feature's `creditCost`:
+`track()` deducts credits automatically when you track a feature inside the
+credit system:
 
 ```ts
 await owo.track({

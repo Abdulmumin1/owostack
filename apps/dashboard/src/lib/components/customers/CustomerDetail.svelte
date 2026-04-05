@@ -485,36 +485,36 @@
           </div>
 
           <div
-            class="inline-flex items-center px-3 py-1 bg-bg-secondary/60 text-text-secondary text-xs font-medium rounded-md border border-border/50 mt-4"
+            class="inline-flex items-center px-3 py-1 bg-bg-secondary/60 text-text-secondary text-[11px] font-medium rounded-md border border-border/50 mt-4"
           >
             Purchases
           </div>
 
           <div
-            class="table-container rounded-lg border border-border shadow-none bg-bg-card"
+            class="table-container rounded-xl border border-border/40 shadow-none bg-transparent"
           >
             <table class="w-full text-sm text-left">
               <thead
-                class="bg-bg-card border-b border-border/50 text-xs text-text-dim font-medium"
+                class="bg-bg-secondary/30 border-b border-border/40 text-[10px] font-bold text-text-dim uppercase tracking-wider"
               >
                 <tr>
-                  <th class="py-3 px-4 bg-transparent border-0 font-medium"
+                  <th class="py-3 px-4 bg-transparent border-0"
                     >Name</th
                   >
-                  <th class="py-3 px-4 bg-transparent border-0 font-medium"
+                  <th class="py-3 px-4 bg-transparent border-0"
                     >Price</th
                   >
-                  <th class="py-3 px-4 bg-transparent border-0 font-medium"
+                  <th class="py-3 px-4 bg-transparent border-0"
                     >Status</th
                   >
-                  <th class="py-3 px-4 bg-transparent border-0 font-medium"
+                  <th class="py-3 px-4 bg-transparent border-0"
                     >Created At</th
                   >
-                  <th class="py-3 px-4 bg-transparent border-0 font-medium w-10"
+                  <th class="py-3 px-4 bg-transparent border-0 w-10"
                   ></th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-border/50">
+              <tbody class="divide-y divide-border/40">
                 <!-- Example of purchase mimicking the screenshot -->
                 {#if false}
                   <tr class="hover:bg-bg-secondary/30 transition-colors">
@@ -539,7 +539,7 @@
                 <tr>
                   <td
                     colspan="5"
-                    class="text-center py-8 text-sm text-text-dim bg-bg-secondary/10"
+                    class="text-center py-5 text-sm text-text-dim bg-transparent"
                   >
                     No purchases found
                   </td>

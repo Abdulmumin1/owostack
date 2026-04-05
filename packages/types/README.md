@@ -25,8 +25,11 @@ import type {
   OwostackConfig,
   AttachParams,
   CheckResult,
+  CreditsBalanceDetails,
 } from "@owostack/types";
 ```
+
+`CheckResult` and `TrackResult` expose canonical credit-backed balance state via `credits`, which is `null` for non-credit features and otherwise resolves to either a `credit_system` or `prepaid` shape.
 
 ## License
 

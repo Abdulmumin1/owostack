@@ -17,6 +17,7 @@ export interface FeatureConfig {
   usageModel: string;
   creditCost: number;
   initialUsage?: number;
+  usageScopeKey?: string | null;
 }
 
 interface TrackResult {
@@ -31,6 +32,76 @@ interface TrackResult {
 // Type for serialized storage (plain objects instead of Maps)
 type StoredUsageState = Record<string, UsageState>;
 type StoredFeatureConfigs = Record<string, FeatureConfig>;
+
+function parseUsageScopeKey(
+  raw: string | null | undefined,
+): { subscriptionId?: string; planId?: string; raw?: string } {
+  if (!raw) return {};
+
+  if (raw.startsWith("v2|")) {
+    const parsed: { subscriptionId?: string; planId?: string } = {};
+
+    for (const segment of raw.slice(3).split("|")) {
+      if (segment.startsWith("subscription:")) {
+        parsed.subscriptionId = segment.slice("subscription:".length);
+      } else if (segment.startsWith("plan:")) {
+        parsed.planId = segment.slice("plan:".length);
+      }
+    }
+
+    return parsed;
+  }
+
+  return { raw };
+}
+
+function usageScopesEquivalent(
+  previousKey: string | null | undefined,
+  nextKey: string | null | undefined,
+): boolean {
+  const previous = parseUsageScopeKey(previousKey);
+  const next = parseUsageScopeKey(nextKey);
+
+  if (
+    !previousKey &&
+    !nextKey
+  ) {
+    return true;
+  }
+
+  if (previous.raw && !next.raw) {
+    return (
+      previous.raw === next.subscriptionId ||
+      previous.raw === next.planId ||
+      Boolean(
+        next.subscriptionId &&
+          next.planId &&
+          previous.raw === `${next.subscriptionId}:${next.planId}`,
+      )
+    );
+  }
+
+  if (!previous.raw && next.raw) {
+    return (
+      next.raw === previous.subscriptionId ||
+      next.raw === previous.planId ||
+      Boolean(
+        previous.subscriptionId &&
+          previous.planId &&
+          next.raw === `${previous.subscriptionId}:${previous.planId}`,
+      )
+    );
+  }
+
+  if (previous.raw || next.raw) {
+    return previous.raw === next.raw;
+  }
+
+  return (
+    previous.subscriptionId === next.subscriptionId &&
+    previous.planId === next.planId
+  );
+}
 
 /**
  * UsageMeterDO - Durable Object for real-time usage tracking
@@ -100,7 +171,8 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
         oldConfig?.rolloverEnabled !== config.rolloverEnabled ||
         oldConfig?.rolloverMaxBalance !== config.rolloverMaxBalance ||
         oldConfig?.usageModel !== config.usageModel ||
-        oldConfig?.creditCost !== config.creditCost;
+        oldConfig?.creditCost !== config.creditCost ||
+        oldConfig?.usageScopeKey !== config.usageScopeKey;
 
       if (!configChanged) {
         return { success: true };
@@ -110,9 +182,27 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
         `[UsageMeter] Config changed for ${featureId}: interval ${oldConfig?.resetInterval} -> ${config.resetInterval}, limit ${oldConfig?.limit} -> ${config.limit}`,
       );
       this.featureConfigs.set(featureId, config);
-      existingState.limit = config.limit;
-      if (config.limit !== null) {
-        existingState.balance = Math.max(0, config.limit - existingState.usage);
+      const scopeChanged = !usageScopesEquivalent(
+        oldConfig?.usageScopeKey,
+        config.usageScopeKey,
+      );
+
+      if (scopeChanged && config.resetOnEnable) {
+        existingState.limit = config.limit;
+        existingState.usage = 0;
+        existingState.balance = config.limit ?? Infinity;
+        existingState.rolloverBalance = 0;
+        existingState.lastReset = Date.now();
+      } else {
+        existingState.limit = config.limit;
+        if (config.limit !== null) {
+          existingState.balance = Math.max(
+            0,
+            config.limit - existingState.usage,
+          );
+        } else {
+          existingState.balance = Infinity;
+        }
       }
       await this.persist();
       await this.scheduleResetAlarm();

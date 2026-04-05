@@ -1,6 +1,12 @@
-import { sumUsageAmount } from "./usage-ledger";
 import { getResetPeriod } from "./reset-period";
+import { sumScopedUsageAmount } from "./scoped-usage";
 import { isPaidActivePastGracePeriod } from "./subscription-health";
+import {
+  resolveLegacyUsageLedgerScope,
+  resolveUsageLedgerScope,
+  resolveUsagePlanScope,
+  shouldResetUsageOnPlanEnable,
+} from "./usage-scope";
 
 export type CustomerAccessSubscription = {
   id: string;
@@ -84,6 +90,7 @@ type UsageMeterConfig = {
   usageModel: string;
   creditCost: number;
   initialUsage?: number;
+  usageScopeKey?: string | null;
 };
 
 type UsageMeterResult = {
@@ -312,14 +319,40 @@ async function resolveMeteredBalance(params: {
       : params.limitValue;
 
   const resetInterval = params.resetInterval || "monthly";
+  const resetsOnPlanEnable = shouldResetUsageOnPlanEnable({
+    usageModel: params.usageModel,
+    resetOnEnable: params.resetOnEnable,
+  });
+  const usagePlanScope = resolveUsagePlanScope(
+    {
+      usageModel: params.usageModel,
+      resetOnEnable: params.resetOnEnable,
+    },
+    params.subscription,
+  );
+  const usageLedgerScope = resolveUsageLedgerScope(
+    {
+      usageModel: params.usageModel,
+      resetOnEnable: params.resetOnEnable,
+    },
+    params.subscription,
+  );
+  const legacyUsageLedgerScope = resolveLegacyUsageLedgerScope(
+    {
+      usageModel: params.usageModel,
+      resetOnEnable: params.resetOnEnable,
+    },
+    params.subscription,
+  );
   const currentConfig: UsageMeterConfig = {
     limit: activeLimit,
     resetInterval,
-    resetOnEnable: params.resetOnEnable ?? false,
+    resetOnEnable: resetsOnPlanEnable,
     rolloverEnabled: params.rolloverEnabled ?? false,
     rolloverMaxBalance: params.rolloverMaxBalance ?? null,
     usageModel: params.usageModel || "included",
     creditCost: params.creditCost ?? 0,
+    usageScopeKey: usagePlanScope ?? null,
   };
 
   const featureKey = params.featureSlug || params.featureId;
@@ -354,7 +387,7 @@ async function resolveMeteredBalance(params: {
           subscriptionWindowEnd,
         );
 
-        const ledgerUsage = await sumUsageAmount(
+        const ledgerUsage = await sumScopedUsageAmount(
           {
             usageLedger: params.env.USAGE_LEDGER,
             organizationId: params.organizationId,
@@ -364,6 +397,9 @@ async function resolveMeteredBalance(params: {
             featureId: params.featureId,
             createdAtFrom: resetWindow.periodStart,
             createdAtTo: resetWindow.periodEnd,
+            scope: usageLedgerScope,
+            legacyPlanScope: legacyUsageLedgerScope,
+            legacyCreatedAtFloor: params.subscription?.currentPeriodStart ?? null,
           },
         );
 
@@ -403,7 +439,7 @@ async function resolveMeteredBalance(params: {
     subscriptionWindowStart,
     subscriptionWindowEnd,
   );
-  const ledgerUsage = await sumUsageAmount(
+  const ledgerUsage = await sumScopedUsageAmount(
     {
       usageLedger: params.env.USAGE_LEDGER,
       organizationId: params.organizationId,
@@ -413,6 +449,9 @@ async function resolveMeteredBalance(params: {
       featureId: params.featureId,
       createdAtFrom: resetWindow.periodStart,
       createdAtTo: resetWindow.periodEnd,
+      scope: usageLedgerScope,
+      legacyPlanScope: legacyUsageLedgerScope,
+      legacyCreatedAtFloor: params.subscription?.currentPeriodStart ?? null,
     },
   );
   const usage = ledgerUsage ?? 0;

@@ -1,11 +1,15 @@
 <script lang="ts">
   import {
     CaretDown,
-    Lightning,
+    BatteryHigh,
     PackageIcon,
     PlusIcon,
     Sliders,
     Trash,
+    Circle,
+    CheckCircle,
+    Infinity as InfinityIcon,
+    Clock,
   } from "phosphor-svelte";
   import { defaultCurrency } from "$lib/stores/currency";
   import { formatCurrency } from "$lib/utils/currency";
@@ -29,7 +33,7 @@
     onDetachFeature?: (planFeatureId: string) => void;
   } = $props();
 
-  function describeFeaturePricing(planFeature: any) {
+  function getPricingData(planFeature: any) {
     const currencyCode = plan?.currency || $defaultCurrency;
     const ratingModel = planFeature.ratingModel || "package";
     const billingUnits = planFeature.billingUnits || 1;
@@ -38,28 +42,82 @@
         ? planFeature.pricePerUnit
         : (planFeature.overagePrice ?? planFeature.pricePerUnit);
 
+    const unitLabel = (planFeature.feature?.unit || "unit").toUpperCase();
+    const interval =
+      planFeature.resetInterval && planFeature.resetInterval !== "none"
+        ? planFeature.resetInterval.replace("ly", "").toUpperCase()
+        : null;
+
+    const trialLimitValue =
+      planFeature.trialLimitValue ?? planFeature.trial_limit_value;
+
+    if (planFeature.feature?.type === 'boolean') {
+      return {
+        value: "",
+        suffix: "INCLUDED",
+        details: "",
+        interval,
+        trial: null,
+        color: "text-blue-400 bg-blue-400/10 border-blue-400/20",
+        numColor: "text-blue-400"
+      };
+    }
+
     if (planFeature.usageModel === "usage_based") {
-      if (ratingModel === "package" && unitPrice != null) {
-        return `Priced · ${formatCurrency(unitPrice, currencyCode)} / ${billingUnits} ${planFeature.feature.unit || "units"}`;
-      }
-      return `Priced · ${ratingModel}`;
+      return {
+        value: "PRICED",
+        suffix: "",
+        details: unitPrice != null ? `${formatCurrency(unitPrice, currencyCode)} / ${billingUnits} ${unitLabel}` : ratingModel.toUpperCase(),
+        interval,
+        trial: null,
+        color: "text-fuchsia-400 bg-fuchsia-400/10 border-fuchsia-400/20",
+        numColor: "text-fuchsia-400"
+      };
     }
 
     if (planFeature.overage === "charge" && unitPrice != null) {
-      if (ratingModel === "package") {
-        return `Included + overage · ${formatCurrency(unitPrice, currencyCode)} / ${billingUnits} ${planFeature.feature.unit || "units"}`;
-      }
-      return `Included + overage · ${ratingModel}`;
+      const limit = planFeature.limitValue ?? 0;
+      return {
+        value: limit.toString(),
+        suffix: `INCLUDED + OVERAGE`,
+        details: `${formatCurrency(unitPrice, currencyCode)} / ${billingUnits} ${unitLabel}`,
+        interval,
+        trial: trialLimitValue != null ? trialLimitValue.toString() : null,
+        color: "text-pink-400 bg-pink-400/10 border-pink-400/20",
+        numColor: "text-pink-400"
+      };
     }
 
-    return `Included · ${planFeature.limitValue === null ? "Unlimited" : planFeature.limitValue} ${planFeature.feature.unit || "units"}`;
+    if (planFeature.limitValue === null) {
+      return {
+        value: "UNLIMITED",
+        suffix: `INCLUDED`,
+        details: "",
+        interval,
+        trial: trialLimitValue != null ? trialLimitValue.toString() : null,
+        color: "text-cyan-400 bg-cyan-400/10 border-cyan-400/20",
+        numColor: "text-cyan-400"
+      };
+    }
+
+    return {
+      value: planFeature.limitValue.toString(),
+      suffix: `${unitLabel} INCLUDED`,
+      details: "",
+      interval,
+      trial: trialLimitValue != null ? trialLimitValue.toString() : null,
+      color: "text-violet-400 bg-violet-400/10 border-violet-400/20",
+      numColor: "text-violet-400"
+    };
   }
 </script>
 
-<section class="space-y-4">
-  <div class="flex items-center justify-between px-1 pb-2">
-    <h2 class="text-sm font-semibold text-text-secondary flex items-center gap-2">
-      <PackageIcon class="text-secondary" size={18} weight="fill" /> Features
+<section class="space-y-3">
+  <div class="flex items-center justify-between px-1">
+    <h2
+      class="text-[11px] font-bold text-text-dim uppercase tracking-wider flex items-center gap-2"
+    >
+      <PackageIcon class="text-text-dim" size={14} weight="bold" /> Attached Features
     </h2>
 
     <button class="btn btn-primary btn-sm gap-1.5" onclick={onAddFeature}>
@@ -68,7 +126,7 @@
   </div>
 
   <div
-    class="bg-bg-card border border-border divide-y divide-border/50 rounded-lg overflow-hidden"
+    class="bg-bg-card border border-border divide-y divide-border/40 rounded-xl overflow-hidden"
   >
     {#if plan.planFeatures && plan.planFeatures.length > 0}
       {#each plan.planFeatures as planFeature}
@@ -76,130 +134,198 @@
           (system: any) => system.id === planFeature.featureId,
         )}
         {#if creditSystem}
-          <div
-            class="group hover:bg-bg-card-hover/40 transition-colors border-l-4 border-warning/50"
-          >
-            <div class="px-4 py-3 flex items-center justify-between">
+          <div class="group transition-all duration-200">
+            <div class="px-3 py-2.5 flex items-center justify-between">
               <button
-                class="flex items-center gap-4 flex-1 text-left"
+                class="flex items-center gap-3 flex-1 text-left min-w-0"
                 onclick={() => onToggleCreditSystem(creditSystem.id)}
               >
                 <div
-                  class="w-8 h-8 bg-warning-bg border border-warning/30 flex items-center justify-center rounded-md text-warning shrink-0"
+                  class="w-7 h-7 bg-warning/5 border border-warning/10 flex items-center justify-center rounded-lg text-warning shrink-0"
                 >
-                  <span class="text-base leading-none">&#9733;</span>
+                  <PackageIcon size={14} weight="fill" />
                 </div>
-                <div class="flex flex-col">
+
+                <div class="flex flex-col min-w-0">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm font-semibold text-text-primary">
+                    <span class="text-xs font-bold text-text-primary truncate">
                       {creditSystem.name}
                     </span>
+                    <div
+                      class="px-1.5 py-0.5 rounded-full bg-warning/10 border border-warning/20 text-[9px] font-bold text-warning uppercase tracking-tight"
+                    >
+                      Credit Pool
+                    </div>
+                  </div>
+                  <div
+                    class="flex items-center gap-1.5 mt-0.5 text-[10px] text-text-muted font-medium"
+                  >
+                    {#if planFeature.limitValue === null}
+                      <InfinityIcon size={10} /> Unlimited Pool
+                    {:else}
+                      {planFeature.limitValue} units included
+                    {/if}
                     <CaretDown
-                      size={14}
-                      class="text-text-muted transition-transform {expandedCreditSystems.includes(
+                      size={10}
+                      class="transition-transform duration-200 {expandedCreditSystems.includes(
                         creditSystem.id,
                       )
                         ? 'rotate-180'
                         : ''}"
                     />
                   </div>
-                  <span class="text-xs text-text-muted mt-0.5">
-                    Credit Pool &middot; {planFeature.limitValue === null
-                      ? "Unlimited"
-                      : planFeature.limitValue}
-                  </span>
                 </div>
               </button>
+
               <div
-                class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 translate-x-2 group-hover:translate-x-0"
               >
                 <button
-                  class="p-2 text-text-muted hover:text-text-primary hover:bg-bg-secondary rounded transition-colors"
+                  class="p-1.5 text-text-dim hover:text-text-primary hover:bg-bg-secondary rounded-md transition-colors"
                   onclick={() => onOpenConfig(planFeature)}
+                  title="Configure"
                 >
-                  <Sliders size={16} weight="duotone" />
+                  <Sliders size={14} weight="duotone" />
                 </button>
                 <button
-                  class="p-2 text-text-muted hover:text-red-500 hover:bg-error-bg rounded transition-colors"
+                  class="p-1.5 text-text-dim hover:text-error hover:bg-error-bg/10 rounded-md transition-colors"
                   onclick={() => onDetachFeature(planFeature.id)}
+                  title="Remove"
                 >
-                  <Trash size={16} weight="fill" />
+                  <Trash size={14} weight="bold" />
                 </button>
               </div>
             </div>
 
             {#if expandedCreditSystems.includes(creditSystem.id)}
-              <div class="px-4 pb-4 pl-16 flex flex-col gap-2" transition:slide>
+              <div
+                class="px-3 pb-3 ml-10 flex flex-col gap-1"
+                transition:slide={{ duration: 200 }}
+              >
                 {#if creditSystem.features && creditSystem.features.length > 0}
-                  {#each creditSystem.features as linkedFeature}
-                    <div
-                      class="flex items-center justify-between py-1.5 border-b border-border-light last:border-0"
-                    >
-                      <div class="flex items-center gap-3">
-                        <div class="w-1.5 h-1.5 rounded-full bg-warning/60"></div>
-                        <span class="text-sm text-text-secondary">
-                          {linkedFeature.feature?.name || linkedFeature.featureId}
+                  <div
+                    class="bg-bg-secondary/50 rounded-lg border border-border/40 p-2 space-y-1"
+                  >
+                    {#each creditSystem.features as linkedFeature}
+                      <div
+                        class="flex items-center justify-between py-1 px-2 rounded-md hover:bg-bg-secondary transition-colors"
+                      >
+                        <div class="flex items-center gap-2 min-w-0">
+                          <Circle
+                            size={6}
+                            weight="fill"
+                            class="text-warning/60 shrink-0"
+                          />
+                          <span
+                            class="text-[11px] text-text-secondary truncate"
+                          >
+                            {linkedFeature.feature?.name ||
+                              linkedFeature.featureId}
+                          </span>
+                        </div>
+                        <span
+                          class="text-[10px] font-bold text-text-dim shrink-0"
+                        >
+                          {linkedFeature.cost} units
                         </span>
                       </div>
-                      <span class="text-xs font-mono text-text-muted">
-                        {linkedFeature.cost} units
-                      </span>
-                    </div>
-                  {/each}
+                    {/each}
+                  </div>
                 {:else}
-                  <span class="text-sm text-text-muted italic">
+                  <div class="text-[10px] text-text-dim italic px-2">
                     No connected features
-                  </span>
+                  </div>
                 {/if}
               </div>
             {/if}
           </div>
         {:else}
+          {@const pricing = getPricingData(planFeature)}
           <div
-            class="px-4 py-3 flex items-center justify-between group hover:bg-bg-card-hover transition-colors"
+            class="group px-3 py-2 flex items-center justify-between hover:bg-bg-card-hover/30 transition-all duration-200"
           >
-            <div class="flex items-center gap-4">
-              <div
-                class="w-8 h-8 bg-bg-secondary border border-border flex items-center justify-center rounded-md text-text-muted group-hover:text-accent transition-colors shrink-0"
-              >
-                <Lightning size={16} weight="duotone" />
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="w-7 h-7 flex items-center justify-center rounded-lg border transition-all shrink-0
+                {planFeature.feature?.type === 'boolean' ? 'bg-blue-400/10 border-blue-400/20 text-blue-400' : 'bg-fuchsia-400/10 border-fuchsia-400/20 text-fuchsia-400'}">
+                {#if planFeature.feature?.type === "boolean"}
+                  <CheckCircle size={14} weight="duotone" />
+                {:else}
+                  <BatteryHigh size={14} weight="duotone" />
+                {/if}
               </div>
-              <div class="flex flex-col">
-                <span class="text-sm font-semibold text-text-primary">
-                  {planFeature.feature.name}
-                </span>
-                <span class="text-xs text-text-muted capitalize mt-0.5">
-                  {planFeature.feature.type}
-                  {#if planFeature.feature.type === "metered"}
-                    &middot; {describeFeaturePricing(planFeature)}
-                  {/if}
-                </span>
+
+              <div class="flex flex-col min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs font-bold text-text-primary truncate">
+                    {planFeature.feature?.name}
+                  </span>
+
+                  <div class="flex items-center gap-1 uppercase tracking-tight">
+                    <div class="px-1.5 py-0.5 rounded-full {pricing.color} border text-[9px] font-bold flex items-center gap-1.5">
+                      {#if pricing.value}
+                        <span class={pricing.numColor}>{pricing.value}</span>
+                      {/if}
+                      <span>{pricing.suffix}</span>
+                      
+                      {#if pricing.interval}
+                        <div class="flex items-center gap-1 pl-1.5 border-l border-current/20">
+                          <Clock size={10} weight="bold" class="opacity-70" />
+                          <span>{pricing.interval}</span>
+                        </div>
+                      {/if}
+                    </div>
+
+                    {#if pricing.trial}
+                      <div class="px-1.5 py-0.5 rounded-full bg-rose-500/5 border border-rose-500/10 text-[9px] font-bold text-rose-500 flex items-center gap-1.5">
+                        <span class="text-rose-600">{pricing.trial}</span>
+                        <span>TRIAL GRANT</span>
+                      </div>
+                    {/if}
+                    
+                    {#if pricing.details}
+                      <div class="px-1.5 py-0.5 rounded-full bg-bg-secondary border border-border text-[9px] font-bold text-text-dim">
+                        {pricing.details}
+                      </div>
+                    {/if}
+                  </div>
+                </div>
               </div>
             </div>
+
             <div
-              class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
+              class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 translate-x-2 group-hover:translate-x-0"
             >
-              {#if planFeature.feature.type === "metered"}
-                <button
-                  class="p-2 text-text-muted hover:text-text-primary hover:bg-bg-secondary rounded transition-colors"
-                  onclick={() => onOpenConfig(planFeature)}
-                >
-                  <Sliders size={16} weight="duotone" />
-                </button>
-              {/if}
               <button
-                class="p-2 text-text-muted hover:text-red-500 hover:bg-error-bg rounded transition-colors"
-                onclick={() => onDetachFeature(planFeature.id)}
+                class="p-1.5 text-text-dim hover:text-text-primary hover:bg-bg-secondary rounded-md transition-colors"
+                onclick={() => onOpenConfig(planFeature)}
+                title="Configure"
               >
-                <Trash size={16} weight="fill" />
+                <Sliders size={14} weight="duotone" />
+              </button>
+              <button
+                class="p-1.5 text-text-dim hover:text-error hover:bg-error-bg/10 rounded-md transition-colors"
+                onclick={() => onDetachFeature(planFeature.id)}
+                title="Remove"
+              >
+                <Trash size={14} weight="bold" />
               </button>
             </div>
           </div>
         {/if}
       {/each}
     {:else}
-      <div class="p-8 text-center">
-        <span class="text-sm text-text-muted">No features attached.</span>
+      <div class="py-8 px-4 text-center">
+        <div
+          class="w-10 h-10 bg-bg-secondary rounded-full flex items-center justify-center mx-auto mb-3"
+        >
+          <PackageIcon size={20} class="text-text-dim" />
+        </div>
+        <p class="text-[11px] font-bold text-text-dim uppercase tracking-wider">
+          No features attached
+        </p>
+        <p class="text-[10px] text-text-muted mt-1">
+          Add features to this plan to define its capabilities.
+        </p>
       </div>
     {/if}
   </div>

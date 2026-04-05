@@ -10,9 +10,20 @@ type TrackResponse = {
   success: boolean;
   allowed: boolean;
   code: string;
-  addonCredits?: number;
   usage?: number | null;
   balance?: number | null;
+  credits?: {
+    source: "credit_system" | "prepaid";
+    systemSlug?: string;
+    costPerUnit?: number;
+    addonBalance: number | null;
+    plan: {
+      used: number;
+      limit: number | null;
+      balance: number | null;
+      resetsAt: string;
+    };
+  } | null;
 };
 
 // Mock DB type with vitest mocks
@@ -22,6 +33,7 @@ type MockDb = {
     features: { findFirst: Mock; findMany: Mock };
     subscriptions: { findFirst: Mock; findMany: Mock };
     planFeatures: { findFirst: Mock; findMany: Mock };
+    creditSystems: { findFirst: Mock };
     credits: { findFirst: Mock };
     entities: { findFirst: Mock };
     entitlements: { findFirst: Mock; findMany: Mock };
@@ -164,6 +176,9 @@ describe("Entitlements Engine (Check & Track)", () => {
                 return [];
               },
             ),
+        },
+        creditSystems: {
+          findFirst: vi.fn().mockResolvedValue(null),
         },
         credits: {
           findFirst: vi.fn().mockResolvedValue({ balance: 0 }),
@@ -813,7 +828,17 @@ describe("Entitlements Engine (Check & Track)", () => {
     const body = (await res.json()) as TrackResponse;
     expect(body.allowed).toBe(true);
     expect(body.code).toBe("addon_credits_used");
-    expect(body.addonCredits).toBe(40);
+    expect(body.credits).toMatchObject({
+      source: "credit_system",
+      systemSlug: "support-credits",
+      costPerUnit: 20,
+      addonBalance: 40,
+      plan: {
+        used: 100,
+        limit: 100,
+        balance: 0,
+      },
+    });
 
     expect(usageMeter.check).toHaveBeenCalledTimes(1);
     expect(deductScopedBalanceMock).toHaveBeenCalledWith(
@@ -829,6 +854,177 @@ describe("Entitlements Engine (Check & Track)", () => {
         amount: 60,
       }),
     );
+  });
+
+  it("check returns nested credits for direct credit system features", async () => {
+    const usageMeter = {
+      check: vi.fn(async () => ({
+        allowed: true,
+        code: "access_granted",
+        usage: 0,
+        limit: 300,
+        balance: 300,
+        rolloverBalance: 0,
+      })),
+      configureFeature: vi.fn(async () => null),
+      track: vi.fn(async () => ({
+        allowed: true,
+        code: "tracked",
+        balance: 299,
+      })),
+    };
+
+    const envWithMeter = {
+      ...mockEnv,
+      USAGE_METER: {
+        idFromName: vi.fn(() => "do_1"),
+        get: vi.fn(() => usageMeter),
+      },
+    };
+
+    getScopedBalanceMock.mockResolvedValue(120);
+
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: "feat_ai_credits",
+      organizationId: "org_test",
+      slug: "ai-credits",
+      type: "metered",
+    });
+
+    mockDb.query.planFeatures.findMany.mockResolvedValueOnce([
+      {
+        planId: "plan_test",
+        featureId: "feat_ai_credits",
+        limitValue: 300,
+        trialLimitValue: 300,
+        resetInterval: "5min",
+        resetOnEnable: false,
+        rolloverEnabled: false,
+        rolloverMaxBalance: null,
+        usageModel: "included",
+        creditCost: 0,
+      },
+    ]);
+
+    mockDb.query.creditSystems.findFirst.mockResolvedValueOnce({
+      id: "cs_ai_credits",
+      slug: "ai-credits",
+    });
+
+    const res = await app.request(
+      "/check",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: "feat_ai_credits",
+          value: 1,
+          sendEvent: false,
+        }),
+      },
+      envWithMeter,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as TrackResponse;
+    expect(body.allowed).toBe(true);
+    expect(body.code).toBe("access_granted");
+    expect(body.credits).toMatchObject({
+      source: "credit_system",
+      systemSlug: "ai-credits",
+      costPerUnit: 1,
+      addonBalance: 120,
+      plan: {
+        used: 0,
+        limit: 300,
+        balance: 300,
+      },
+    });
+  });
+
+  it("track returns nested credits for direct credit system features with the current addon balance", async () => {
+    const usageMeter = {
+      track: vi.fn(async () => ({
+        allowed: true,
+        code: "tracked",
+        usage: 5,
+        limit: 300,
+        balance: 295,
+        rolloverBalance: 0,
+      })),
+      configureFeature: vi.fn(async () => null),
+    };
+
+    const envWithMeter = {
+      ...mockEnv,
+      USAGE_METER: {
+        idFromName: vi.fn(() => "do_1"),
+        get: vi.fn(() => usageMeter),
+      },
+    };
+
+    getScopedBalanceMock.mockResolvedValue(120);
+
+    mockDb.query.features.findFirst.mockResolvedValueOnce({
+      id: "feat_ai_credits",
+      organizationId: "org_test",
+      slug: "ai-credits",
+      type: "metered",
+    });
+
+    mockDb.query.planFeatures.findMany.mockResolvedValueOnce([
+      {
+        planId: "plan_test",
+        featureId: "feat_ai_credits",
+        limitValue: 300,
+        trialLimitValue: 300,
+        resetInterval: "5min",
+        resetOnEnable: false,
+        rolloverEnabled: false,
+        rolloverMaxBalance: null,
+        usageModel: "included",
+        creditCost: 0,
+      },
+    ]);
+
+    mockDb.query.creditSystems.findFirst.mockResolvedValueOnce({
+      id: "cs_ai_credits",
+      slug: "ai-credits",
+    });
+
+    const res = await app.request(
+      "/track",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          customer: customerId,
+          feature: "feat_ai_credits",
+          value: 5,
+        }),
+      },
+      envWithMeter,
+      mockExecutionCtx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as TrackResponse;
+    expect(body.success).toBe(true);
+    expect(body.allowed).toBe(true);
+    expect(body.code).toBe("tracked");
+    expect(body.credits).toMatchObject({
+      source: "credit_system",
+      systemSlug: "ai-credits",
+      costPerUnit: 1,
+      addonBalance: 120,
+      plan: {
+        used: 5,
+        limit: 300,
+        balance: 295,
+      },
+    });
   });
 
   it("track resolves credit system mapping and persists usage against the credit system feature id with multiplied effectiveValue", async () => {
