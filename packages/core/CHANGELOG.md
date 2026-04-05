@@ -1,5 +1,18 @@
 # owostack
 
+## 0.4.0
+
+### Minor Changes
+
+- [#130](https://github.com/Abdulmumin1/owostack/pull/130) [`646af7f`](https://github.com/Abdulmumin1/owostack/commit/646af7fdfecfb671f9dbf65460f26ea0ff216fe8) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Redesign credit-backed check and track responses to return a canonical `credits` object instead of loose top-level credit fields.
+
+  The new shape distinguishes between `credit_system` and `prepaid` balances, includes plan balance details consistently, and aligns direct credit-system feature checks with child features resolved through a credit pool.
+
+### Patch Changes
+
+- Updated dependencies [[`646af7f`](https://github.com/Abdulmumin1/owostack/commit/646af7fdfecfb671f9dbf65460f26ea0ff216fe8)]:
+  - @owostack/types@0.4.0
+
 ## 0.3.3
 
 ### Patch Changes

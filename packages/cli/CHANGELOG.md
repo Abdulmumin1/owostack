@@ -1,5 +1,13 @@
 # owosk
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [[`646af7f`](https://github.com/Abdulmumin1/owostack/commit/646af7fdfecfb671f9dbf65460f26ea0ff216fe8)]:
+  - owostack@0.4.0
+  - @owostack/types@0.4.0
+
 ## 0.3.3
 
 ### Patch Changes
