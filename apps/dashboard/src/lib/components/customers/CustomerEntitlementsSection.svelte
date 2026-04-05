@@ -104,8 +104,8 @@
       Loading overrides...
     </div>
   {:else if visibleOverrides.length === 0}
-    <div class="bg-transparent border border-border/50 border-dashed rounded-xl py-10 px-6 flex flex-col items-center justify-center text-center">
-      <p class="text-xs font-medium text-text-primary">
+    <div class="bg-transparent border border-border/40 border-dotted rounded-xl py-10 px-6 flex flex-col items-center justify-center text-center">
+      <p class="text-xs font-bold text-text-primary">
         {allowedFeatureIdSet
           ? "No overrides for this plan"
           : "No manual overrides granted"}
