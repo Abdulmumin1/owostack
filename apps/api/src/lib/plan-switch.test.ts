@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, type Mock } from "vitest";
 import {
+  calculateAlignedPeriodEnd,
   calculateProration,
   detectSwitchType,
   executeSwitch,
+  getUpgradeCheckoutMinimum,
   provisionEntitlements,
 } from "./plan-switch";
 
@@ -122,6 +124,26 @@ describe("calculateProration", () => {
   });
 });
 
+describe("upgrade checkout helpers", () => {
+  it("uses provider transaction minimums instead of hard-coded checkout floors", () => {
+    expect(getUpgradeCheckoutMinimum("paystack", "NGN")).toBe(5000);
+    expect(getUpgradeCheckoutMinimum("paystack", "usd")).toBe(200);
+    expect(getUpgradeCheckoutMinimum("stripe", "USD")).toBeNull();
+  });
+
+  it("rolls to a fresh cycle when the preserved period already ended", () => {
+    const startMs = new Date("2026-04-05T12:00:00.000Z").getTime();
+    const periodMs = 30 * 24 * 60 * 60 * 1000;
+
+    expect(calculateAlignedPeriodEnd(startMs - 1000, startMs, periodMs)).toBe(
+      startMs + periodMs,
+    );
+    expect(calculateAlignedPeriodEnd(startMs + 1000, startMs, periodMs)).toBe(
+      startMs + 1000,
+    );
+  });
+});
+
 describe("provisionEntitlements", () => {
   it("falls back when db.transaction is unsupported in D1", async () => {
     const whereMock = vi.fn(async () => []);
@@ -166,6 +188,107 @@ describe("provisionEntitlements", () => {
 });
 
 describe("executeSwitch", () => {
+  it("fails Dodo upgrades when native change-plan fails instead of falling back to raw-amount checkout", async () => {
+    const now = new Date("2026-04-05T12:00:00.000Z").getTime();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const createCheckoutSession = vi.fn();
+    const provider = {
+      adapter: {
+        id: "dodopayments",
+        displayName: "Dodo Payments",
+        defaultCurrency: "USD",
+        supportsNativeTrials: true,
+        createCheckoutSession,
+        changePlan: vi.fn(async () => ({
+          isOk: () => false,
+          isErr: () => true,
+          error: {
+            code: "request_failed",
+            message: "provider refused plan change",
+            providerId: "dodopayments",
+          },
+        })),
+      },
+      account: {
+        id: "acct_1",
+        providerId: "dodopayments",
+        environment: "test",
+        credentials: {},
+      },
+    } as any;
+
+    const db = {
+      query: {
+        plans: {
+          findFirst: vi
+            .fn()
+            .mockResolvedValueOnce({
+              id: "plan_pro",
+              name: "Pro",
+              slug: "pro",
+              price: 3000,
+              interval: "monthly",
+              billingType: "recurring",
+              type: "paid",
+              planGroup: "main",
+              providerPlanId: "prod_remote_pro",
+              paystackPlanId: null,
+              currency: "USD",
+            }),
+        },
+        customers: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "cust_1",
+            email: "customer@example.com",
+            providerAuthorizationCode: "sub_card_123",
+            paystackAuthorizationCode: null,
+            providerCustomerId: "cus_remote_1",
+            paystackCustomerId: null,
+          }),
+        },
+        subscriptions: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "sub_old",
+              customerId: "cust_1",
+              planId: "plan_starter",
+              providerId: "dodopayments",
+              providerSubscriptionCode: "sub_remote_old",
+              paystackSubscriptionCode: null,
+              currentPeriodStart: now - 10 * 24 * 60 * 60 * 1000,
+              currentPeriodEnd: now + 20 * 24 * 60 * 60 * 1000,
+              status: "active",
+              plan: {
+                id: "plan_starter",
+                name: "Starter",
+                slug: "starter",
+                price: 1000,
+                interval: "monthly",
+                planGroup: "main",
+                isAddon: false,
+              },
+              metadata: {},
+            },
+          ]),
+        },
+      },
+    } as any;
+
+    const result = await executeSwitch(db, "cust_1", "plan_pro", provider);
+
+    expect(result).toMatchObject({
+      success: false,
+      type: "upgrade",
+      requiresCheckout: false,
+      subscriptionId: "sub_old",
+      message: "Failed to upgrade to Pro: provider refused plan change",
+    });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+
+    vi.restoreAllMocks();
+  });
+
   it("schedules a downgrade to a free plan at period end instead of switching immediately", async () => {
     const now = new Date("2026-03-13T12:00:00.000Z").getTime();
     vi.spyOn(Date, "now").mockReturnValue(now);

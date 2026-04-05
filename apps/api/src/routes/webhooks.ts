@@ -26,6 +26,7 @@ export type WebhookRouteDependencies = {
     account: ProviderAccount | undefined;
     trialEndWorkflow: Env["TRIAL_END_WORKFLOW"];
     planUpgradeWorkflow: Env["PLAN_UPGRADE_WORKFLOW"];
+    renewalSetupWorkflow: Env["RENEWAL_SETUP_WORKFLOW"];
     cache: Env["CACHE"];
     analyticsEnv: AnalyticsEnv;
   }) => {
@@ -47,6 +48,7 @@ const defaultDependencies: WebhookRouteDependencies = {
     account,
     trialEndWorkflow,
     planUpgradeWorkflow,
+    renewalSetupWorkflow,
     cache,
     analyticsEnv,
   }) =>
@@ -55,6 +57,7 @@ const defaultDependencies: WebhookRouteDependencies = {
       account,
       trialEndWorkflow,
       planUpgradeWorkflow,
+      renewalSetupWorkflow,
       cache,
       analyticsEnv,
     }),
@@ -380,6 +383,7 @@ export function createWebhookRoutes(
       account: selectedAccount,
       trialEndWorkflow: c.env.TRIAL_END_WORKFLOW,
       planUpgradeWorkflow: c.env.PLAN_UPGRADE_WORKFLOW,
+      renewalSetupWorkflow: c.env.RENEWAL_SETUP_WORKFLOW,
       cache: c.env.CACHE,
       analyticsEnv: {
         ANALYTICS: c.env.ANALYTICS,

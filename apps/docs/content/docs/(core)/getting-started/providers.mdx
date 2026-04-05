@@ -82,6 +82,13 @@ Some billing features work differently depending on the provider:
 - Dodo — product-centric, requires a synced product ID for every checkout
 - Polar — product-centric checkout with support for single- or multi-product sessions
 
+**Plan upgrades:**
+
+- Paystack — no native plan change API. Owostack uses a one-time prorated checkout when an immediate difference is due, then keeps recurring renewal aligned to the next full cycle. If the remaining difference is `0` or below Paystack's transaction minimum, Owostack switches immediately without charging the tiny remainder.
+- Stripe — native subscription updates. Owostack applies upgrades with immediate invoicing so proration is billed now instead of being left on a later invoice.
+- Dodo — native `change-plan` flow with provider-managed proration. If Dodo rejects the change, Owostack fails the upgrade instead of falling back to an invalid raw-amount checkout.
+- Polar — native subscription updates. Owostack uses the provider's immediate invoice mode for paid upgrades.
+
 These differences are handled internally. Your application code is the same regardless of provider.
 
 ## Adding a new provider

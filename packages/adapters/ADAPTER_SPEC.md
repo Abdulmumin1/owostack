@@ -464,6 +464,11 @@ async changePlan(params: {
 }): Promise<ProviderResult<{ changed: boolean }>>
 ```
 
+Implementation notes:
+
+- Immediate proration modes must map to the provider's immediate collection or invoicing behavior. For example, Stripe should use `always_invoice`, and Polar should use `invoice` rather than a deferred proration-only mode.
+- Only use raw-amount checkout fallback when the provider actually supports amount-only checkout. Product-centric providers like Dodo require a product-linked flow and should fail the upgrade instead of attempting an invalid fallback session.
+
 #### `refundCharge?`
 
 Refunds a previous charge.

@@ -50,10 +50,7 @@
     showsProgress
       ? Math.min(
           100,
-          Math.max(
-            0,
-            ((item.balance || 0) / (item.limit || 1)) * 100,
-          ),
+          Math.max(0, ((item.balance || 0) / (item.limit || 1)) * 100),
         )
       : 0,
   );
@@ -62,8 +59,9 @@
 <div class="flex gap-2 py-2 border-b border-border/40 last:border-0">
   <div class="flex items-center justify-between mb-1">
     <div class="flex items-center gap-2">
-      <h3 class="text-sm font-normal text-text-primary">
+      <h3 class="text-sm font-normal text-text-primary items-center">
         {item.featureName}
+        <span class="text-xs text-text-muted"> / {item.planResetInterval}</span>
       </h3>
     </div>
   </div>

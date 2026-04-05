@@ -29,6 +29,12 @@ if (result.checkoutUrl) {
 
 Upgrades take effect immediately. Entitlements are re-provisioned so the customer sees the new plan's features right away.
 
+Provider note:
+
+- Paystack upgrades use a one-time prorated checkout when there is a payable difference.
+- Stripe, Dodo Payments, and Polar use native provider-side plan changes when available.
+- If the remaining upgrade difference is `0` or too small for the provider to charge directly, Owostack switches immediately and keeps the next renewal aligned to the new cycle.
+
 ## Downgrade a customer
 
 Same call, lower-priced plan:
@@ -86,6 +92,7 @@ plan("pro", {
 - Subscription state may be updated at the provider
 - Entitlements are re-provisioned so the customer’s features match the new plan
 - Scheduled downgrades are stored until the period ends
+- Checkout-based upgrades keep renewal setup state on the subscription if the follow-up recurring subscription cannot be created immediately
 
 ## Recommended UX
 

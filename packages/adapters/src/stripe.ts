@@ -277,12 +277,11 @@ function mapProrationMode(
     | undefined,
 ): "create_prorations" | "always_invoice" | "none" {
   switch (mode) {
-    case "full_immediately":
-      return "always_invoice";
     case "difference_immediately":
+    case "full_immediately":
     case "prorated_immediately":
     default:
-      return "create_prorations";
+      return "always_invoice";
   }
 }
 

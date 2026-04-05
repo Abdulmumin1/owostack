@@ -113,7 +113,7 @@ interface HandlerContext {
   event: WebhookEventData;
   adapter: unknown;
   providerAccount: unknown;
-  workflows: { trialEnd: null; planUpgrade: null };
+  workflows: { trialEnd: null; planUpgrade: null; renewalSetup: null };
   cache: unknown;
 }
 
@@ -131,6 +131,7 @@ function makeCtx(
     workflows: {
       trialEnd: null,
       planUpgrade: null,
+      renewalSetup: null,
     },
     cache: null,
     ...extra,
@@ -376,6 +377,209 @@ describe("Webhook handlers behavior", () => {
 
     expect(insertValuesMock).not.toHaveBeenCalled();
     expect(provisionEntitlementsMock).not.toHaveBeenCalled();
+  });
+
+  it("charge.success inline plan upgrade records renewal setup failure when recurring subscription creation fails", async () => {
+    const { db, insertValuesMock, updateSetMock } = createDbMock();
+    const createSubscription = vi.fn(async () => ({
+      isOk: () => false,
+      isErr: () => true,
+      error: {
+        code: "request_failed",
+        message: "provider create subscription failed",
+        providerId: "paystack",
+      },
+    }));
+
+    db.query.customers.findFirst.mockResolvedValue({
+      id: "cus_1",
+      email: "customer@example.com",
+      organizationId: "org_1",
+      providerCustomerId: "cus_remote_1",
+      paystackCustomerId: "cus_remote_1",
+      providerAuthorizationCode: "AUTH_paystack",
+      paystackAuthorizationCode: "AUTH_paystack",
+    });
+    db.query.subscriptions.findFirst
+      .mockResolvedValueOnce({
+        id: "sub_old",
+        status: "active",
+        providerSubscriptionCode: "sub_remote_old",
+        paystackSubscriptionCode: "sub_remote_old",
+        currentPeriodEnd: new Date("2026-05-05T17:00:15.000Z").getTime(),
+        plan: { id: "plan_old" },
+      })
+      .mockResolvedValueOnce(null);
+    db.query.plans.findFirst.mockResolvedValue({
+      id: "plan_new",
+      interval: "monthly",
+      billingType: "recurring",
+      providerPlanId: "plan_remote_new",
+      paystackPlanId: "plan_remote_new",
+    });
+
+    const event = {
+      type: "charge.success",
+      provider: "paystack",
+      customer: {
+        email: "customer@example.com",
+        providerCustomerId: "cus_remote_1",
+      },
+      payment: {
+        amount: 2500,
+        currency: "NGN",
+        reference: "ref_upgrade_1",
+        paidAt: "2026-04-05T17:00:15.000Z",
+      },
+      metadata: {
+        type: "plan_upgrade",
+        customer_id: "cus_1",
+        old_subscription_id: "sub_old",
+        old_plan_id: "plan_old",
+        new_plan_id: "plan_new",
+      },
+      raw: { event: "charge.success" },
+    };
+
+    await handleChargeSuccess(
+      makeCtx(db, event, {
+        adapter: {
+          supportsNativeTrials: false,
+          createSubscription,
+          cancelSubscription: vi.fn(async () => undefined),
+        },
+        providerAccount: {
+          environment: "test",
+        },
+      }),
+    );
+
+    expect(createSubscription).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer: { id: "cus_remote_1", email: "customer@example.com" },
+        plan: { id: "plan_remote_new" },
+        authorizationCode: "AUTH_paystack",
+        startDate: "2026-05-05T17:00:15.000Z",
+      }),
+    );
+
+    const insertedSub = insertValuesMock.mock.calls[0]?.[0]?.[0];
+    expect(insertedSub.providerSubscriptionCode).toBe("upgrade");
+
+    const failureUpdate = updateSetMock.mock.calls.find(
+      (call) => call[0].metadata?.renewal_setup_status === "failed",
+    )?.[0];
+    expect(failureUpdate.providerSubscriptionCode).toBeNull();
+    expect(failureUpdate.paystackSubscriptionCode).toBeNull();
+    expect(failureUpdate.cancelAt).toBe(
+      new Date("2026-05-05T17:00:15.000Z").getTime(),
+    );
+    expect(failureUpdate.metadata.renewal_setup_status).toBe("failed");
+    expect(failureUpdate.metadata.renewal_setup_last_source).toBe(
+      "plan_upgrade_inline",
+    );
+    expect(String(failureUpdate.metadata.renewal_setup_last_error)).toContain(
+      "provider create subscription failed",
+    );
+  });
+
+  it("charge.success inline plan upgrade schedules renewal setup retry when the workflow binding is available", async () => {
+    const { db, updateSetMock } = createDbMock();
+    const createSubscription = vi.fn(async () => ({
+      isOk: () => false,
+      isErr: () => true,
+      error: {
+        code: "request_failed",
+        message: "provider create subscription failed",
+        providerId: "paystack",
+      },
+    }));
+    const renewalSetupCreate = vi.fn(async () => ({ id: "wf_retry_1" }));
+
+    db.query.customers.findFirst.mockResolvedValue({
+      id: "cus_1",
+      email: "customer@example.com",
+      organizationId: "org_1",
+      providerCustomerId: "cus_remote_1",
+      paystackCustomerId: "cus_remote_1",
+      providerAuthorizationCode: "AUTH_paystack",
+      paystackAuthorizationCode: "AUTH_paystack",
+    });
+    db.query.subscriptions.findFirst
+      .mockResolvedValueOnce({
+        id: "sub_old",
+        status: "active",
+        providerSubscriptionCode: "sub_remote_old",
+        paystackSubscriptionCode: "sub_remote_old",
+        currentPeriodEnd: new Date("2026-05-05T17:00:15.000Z").getTime(),
+        plan: { id: "plan_old" },
+      })
+      .mockResolvedValueOnce(null);
+    db.query.plans.findFirst.mockResolvedValue({
+      id: "plan_new",
+      interval: "monthly",
+      billingType: "recurring",
+      providerPlanId: "plan_remote_new",
+      paystackPlanId: "plan_remote_new",
+    });
+
+    const event = {
+      type: "charge.success",
+      provider: "paystack",
+      customer: {
+        email: "customer@example.com",
+        providerCustomerId: "cus_remote_1",
+      },
+      payment: {
+        amount: 2500,
+        currency: "NGN",
+        reference: "ref_upgrade_retry",
+        paidAt: "2026-04-05T17:00:15.000Z",
+      },
+      metadata: {
+        type: "plan_upgrade",
+        customer_id: "cus_1",
+        old_subscription_id: "sub_old",
+        old_plan_id: "plan_old",
+        new_plan_id: "plan_new",
+      },
+      raw: { event: "charge.success" },
+    };
+
+    await handleChargeSuccess(
+      makeCtx(db, event, {
+        adapter: {
+          supportsNativeTrials: false,
+          createSubscription,
+          cancelSubscription: vi.fn(async () => undefined),
+        },
+        providerAccount: {
+          environment: "test",
+        },
+        workflows: {
+          trialEnd: null,
+          planUpgrade: null,
+          renewalSetup: { create: renewalSetupCreate },
+        },
+      }),
+    );
+
+    expect(renewalSetupCreate).toHaveBeenCalledWith({
+      params: expect.objectContaining({
+        customerId: "cus_1",
+        organizationId: "org_1",
+        providerId: "paystack",
+        source: "plan_upgrade_inline",
+      }),
+    });
+
+    const scheduledUpdate = updateSetMock.mock.calls.find(
+      (call) => call[0].metadata?.renewal_setup_status === "scheduled",
+    )?.[0];
+    expect(scheduledUpdate.metadata.renewal_setup_status).toBe("scheduled");
+    expect(scheduledUpdate.metadata.renewal_setup_next_attempt_at).toBeTypeOf(
+      "number",
+    );
   });
 
   it("subscription.created without plan code links provider subscription code to an existing active sub", async () => {
