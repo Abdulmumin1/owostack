@@ -117,6 +117,7 @@ export class WebhookHandler {
   private providerAccount: ProviderAccount | null;
   private trialEndWorkflow: any | null;
   private planUpgradeWorkflow: any | null;
+  private renewalSetupWorkflow: any | null;
   private cache: EntitlementCache | null;
   private analyticsEnv: AnalyticsEnv | null;
 
@@ -128,6 +129,7 @@ export class WebhookHandler {
       account?: ProviderAccount;
       trialEndWorkflow?: any;
       planUpgradeWorkflow?: any;
+      renewalSetupWorkflow?: any;
       cache?: KVNamespace;
       analyticsEnv?: AnalyticsEnv;
     },
@@ -136,6 +138,7 @@ export class WebhookHandler {
     this.providerAccount = opts?.account || null;
     this.trialEndWorkflow = opts?.trialEndWorkflow || null;
     this.planUpgradeWorkflow = opts?.planUpgradeWorkflow || null;
+    this.renewalSetupWorkflow = opts?.renewalSetupWorkflow || null;
     this.cache = opts?.cache ? new EntitlementCache(opts.cache) : null;
     this.analyticsEnv = opts?.analyticsEnv || null;
   }
@@ -186,6 +189,7 @@ export class WebhookHandler {
           workflows: {
             trialEnd: this.trialEndWorkflow,
             planUpgrade: this.planUpgradeWorkflow,
+            renewalSetup: this.renewalSetupWorkflow,
           },
           cache: this.cache,
         };
