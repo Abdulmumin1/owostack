@@ -2,6 +2,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { createDb, schema } from "@owostack/db";
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
 import { ensurePlanSynced } from "./plan-sync";
+import { buildRenewalSetupFailureMetadata } from "./renewal-setup";
 import { shouldResetUsageOnPlanEnable } from "./usage-scope";
 // Workflow type (any since it's a Cloudflare Workflow binding)
 type WorkflowBinding = {
@@ -53,6 +54,15 @@ export interface SwitchResult {
   scheduledAt?: number;
 }
 
+const PAYSTACK_TRANSACTION_MINIMUMS: Record<string, number> = {
+  GHS: 10,
+  KES: 300,
+  NGN: 5000,
+  USD: 200,
+  XOF: 100,
+  ZAR: 100,
+};
+
 function resolveProviderId(
   provider: ProviderContext | null,
   metadata?: Record<string, unknown>,
@@ -61,6 +71,32 @@ function resolveProviderId(
     typeof metadata?.provider_id === "string" ? metadata.provider_id : null;
   if (providerId) return providerId;
   return provider ? provider.adapter.id : null;
+}
+
+export function calculateAlignedPeriodEnd(
+  previousPeriodEnd: number | null | undefined,
+  startMs: number,
+  periodMs: number,
+): number {
+  return previousPeriodEnd && previousPeriodEnd > startMs
+    ? previousPeriodEnd
+    : startMs + periodMs;
+}
+
+export function getUpgradeCheckoutMinimum(
+  providerId: string | null,
+  currency: string | null | undefined,
+): number | null {
+  if (providerId !== "paystack") return null;
+
+  const normalizedCurrency = (currency || "USD").toUpperCase();
+  return PAYSTACK_TRANSACTION_MINIMUMS[normalizedCurrency] ?? null;
+}
+
+function providerSupportsManualUpgradeCheckout(
+  provider: ProviderContext | null,
+): boolean {
+  return provider?.adapter.id !== "dodopayments";
 }
 
 // =============================================================================
@@ -526,70 +562,60 @@ async function handleUpgrade(
       };
     }
 
+    if (!providerSupportsManualUpgradeCheckout(provider)) {
+      return {
+        success: false,
+        type: "upgrade",
+        requiresCheckout: false,
+        subscriptionId: existingSub.id,
+        message: `Failed to upgrade to ${newPlan.name}: ${changeResult.error.message}`,
+      };
+    }
+
     // Native change failed — fall through to manual flow
     console.warn(
       `[plan-switch] Native changePlan failed: ${changeResult.error.message}, falling back`,
     );
   }
 
-  // If prorated amount is 0 or negative (near end of period), just switch directly
+  const checkoutMinimum = getUpgradeCheckoutMinimum(
+    providerId,
+    newPlan.currency || null,
+  );
   if (proratedAmount <= 0) {
-    await cancelSubscription(db, existingSub, provider);
-
-    let newProviderSubCode: string | undefined;
-    // Skip createSubscription for checkout-based providers (supportsNativeTrials) — already handled above
-    const skipDirectSub = provider?.adapter.supportsNativeTrials === true;
-    if (provider && planRef && authCode && !skipDirectSub) {
-      const subResult = await provider.adapter.createSubscription({
-        customer: { id: customerRef, email: customer.email },
-        plan: { id: planRef },
-        authorizationCode: authCode,
-        environment: provider.account.environment,
-        account: provider.account,
-      });
-      if (subResult.isOk()) {
-        newProviderSubCode = subResult.value.id;
-      }
-    }
-
-    const periodEnd = existingSub.currentPeriodEnd;
-    const [sub] = await db
-      .insert(schema.subscriptions)
-      .values({
-        id: crypto.randomUUID(),
-        customerId: customer.id,
-        planId: newPlan.id,
-        paystackSubscriptionCode:
-          providerId === "paystack" ? newProviderSubCode || null : null,
-        providerId,
-        providerSubscriptionId: newProviderSubCode || null,
-        providerSubscriptionCode: newProviderSubCode || null,
-        status: "active",
-        currentPeriodStart: now,
-        currentPeriodEnd: periodEnd,
-        metadata: {
-          switched_from: existingSub.plan.id,
-          switch_type: "upgrade",
-          prorated_amount: 0,
-          ...options.metadata,
-        },
-      })
-      .returning();
-
-    await provisionEntitlements(
+    return applyUpgradeWithoutCheckout(
       db,
-      customer.id,
-      newPlan.id,
-      existingSub.plan.id,
+      customer,
+      existingSub,
+      newPlan,
+      provider,
+      {
+        planRef,
+        authCode,
+        customerRef,
+        providerId,
+        metadata: options.metadata,
+        message: `Upgraded to ${newPlan.name}. No prorated charge (near end of period).`,
+      },
     );
+  }
 
-    return {
-      success: true,
-      type: "upgrade",
-      requiresCheckout: false,
-      subscriptionId: sub.id,
-      message: `Upgraded to ${newPlan.name}. No prorated charge (near end of period).`,
-    };
+  if (checkoutMinimum !== null && proratedAmount < checkoutMinimum) {
+    return applyUpgradeWithoutCheckout(
+      db,
+      customer,
+      existingSub,
+      newPlan,
+      provider,
+      {
+        planRef,
+        authCode,
+        customerRef,
+        providerId,
+        metadata: options.metadata,
+        message: `Upgraded to ${newPlan.name}. No prorated charge (below ${newPlan.currency || "provider"} checkout minimum).`,
+      },
+    );
   }
 
   // Always use checkout for upgrade proration (auto-charge reserved for overages only)
@@ -602,6 +628,125 @@ async function handleUpgrade(
     proratedAmount,
     options,
   );
+}
+
+async function applyUpgradeWithoutCheckout(
+  db: DB,
+  customer: any,
+  existingSub: any,
+  newPlan: any,
+  provider: ProviderContext | null,
+  options: {
+    planRef: string | null | undefined;
+    authCode: string | null | undefined;
+    customerRef: string;
+    providerId: string | null;
+    metadata?: Record<string, unknown>;
+    message: string;
+  },
+): Promise<SwitchResult> {
+  if (!provider) {
+    return {
+      success: false,
+      type: "upgrade",
+      requiresCheckout: false,
+      subscriptionId: existingSub.id,
+      message: "Payment provider not configured — cannot process upgrade",
+    };
+  }
+
+  const now = Date.now();
+  const periodMs = intervalToMs(newPlan.interval);
+  const periodEnd = calculateAlignedPeriodEnd(
+    existingSub.currentPeriodEnd,
+    now,
+    periodMs,
+  );
+  const newSubscriptionId = crypto.randomUUID();
+
+  await cancelSubscription(db, existingSub, provider);
+
+  let newProviderSubCode: string | undefined;
+  let renewalSetupFailureReason: string | null = null;
+  const skipDirectSub = provider.adapter.supportsNativeTrials === true;
+  const requiresProviderSubscription =
+    newPlan.billingType === "recurring" && !skipDirectSub;
+
+  if (requiresProviderSubscription && !options.planRef) {
+    renewalSetupFailureReason = "missing_provider_plan_code";
+  } else if (requiresProviderSubscription && !options.authCode) {
+    renewalSetupFailureReason = "missing_provider_payment_method";
+  } else if (
+    requiresProviderSubscription &&
+    options.planRef &&
+    options.authCode
+  ) {
+    const subResult = await provider.adapter.createSubscription({
+      customer: { id: options.customerRef, email: customer.email },
+      plan: { id: options.planRef },
+      authorizationCode: options.authCode,
+      startDate: new Date(periodEnd).toISOString(),
+      environment: provider.account.environment,
+      account: provider.account,
+      metadata: {
+        subscription_id: newSubscriptionId,
+        switch_type: "upgrade",
+      },
+    });
+
+    if (subResult.isOk()) {
+      newProviderSubCode = subResult.value.id;
+    } else {
+      renewalSetupFailureReason = subResult.error.message;
+    }
+  }
+
+  const baseMetadata = {
+    switched_from: existingSub.plan.id,
+    switch_type: "upgrade",
+    prorated_amount: 0,
+    ...options.metadata,
+  };
+  const metadata = renewalSetupFailureReason
+    ? buildRenewalSetupFailureMetadata(baseMetadata, {
+        reason: renewalSetupFailureReason,
+        source: "plan_switch_upgrade",
+        retryScheduled: false,
+        now,
+      })
+    : baseMetadata;
+
+  const [sub] = await db
+    .insert(schema.subscriptions)
+    .values({
+      id: newSubscriptionId,
+      customerId: customer.id,
+      planId: newPlan.id,
+      paystackSubscriptionCode:
+        options.providerId === "paystack" ? newProviderSubCode || null : null,
+      providerId: options.providerId,
+      providerSubscriptionId: newProviderSubCode || null,
+      providerSubscriptionCode: newProviderSubCode || null,
+      status: "active",
+      currentPeriodStart: now,
+      currentPeriodEnd: periodEnd,
+      cancelAt:
+        renewalSetupFailureReason && requiresProviderSubscription
+          ? periodEnd
+          : null,
+      metadata,
+    })
+    .returning();
+
+  await provisionEntitlements(db, customer.id, newPlan.id, existingSub.plan.id);
+
+  return {
+    success: true,
+    type: "upgrade",
+    requiresCheckout: false,
+    subscriptionId: sub.id,
+    message: options.message,
+  };
 }
 
 async function createUpgradeCheckout(
@@ -633,7 +778,7 @@ async function createUpgradeCheckout(
   const result = await provider.adapter.createCheckoutSession({
     customer: { id: customerRef, email: customer.email },
     plan: null,
-    amount: Math.max(proratedAmount, 100),
+    amount: proratedAmount,
     currency: newPlan.currency || "USD",
     callbackUrl: options.callbackUrl,
     metadata: {
