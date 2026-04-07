@@ -1106,6 +1106,24 @@ async function handleSubscriptionPayment(
     planId,
   );
 
+  // Cancel old free subscription for free→paid upgrades.
+  // The old sub ID is passed via checkout metadata so the free plan stays
+  // active until payment actually succeeds (avoids orphaned cancellation).
+  const oldSubId =
+    typeof metadata.old_subscription_id === "string"
+      ? metadata.old_subscription_id
+      : null;
+  if (oldSubId) {
+    const now = Date.now();
+    await db
+      .update(schema.subscriptions)
+      .set({ status: "canceled", canceledAt: now, updatedAt: now })
+      .where(eq(schema.subscriptions.id, oldSubId));
+    console.log(
+      `[WEBHOOK] Cancelled old free subscription ${oldSubId} after successful upgrade payment`,
+    );
+  }
+
   // Invalidate cached subscriptions so /check and /track see the updated period
   if (cache) {
     try {
@@ -1428,8 +1446,7 @@ async function handlePlanUpgradeInline(
         renewalSetupFailureReason = result.error.message;
       }
     } catch (e) {
-      renewalSetupFailureReason =
-        e instanceof Error ? e.message : String(e);
+      renewalSetupFailureReason = e instanceof Error ? e.message : String(e);
       console.warn(
         `[WEBHOOK] Inline upgrade: provider createSubscription failed:`,
         e,

@@ -354,10 +354,37 @@ export async function executeSwitch(
   // Providers like Dodo don't support raw-amount checkouts, so the proration
   // flow (createUpgradeCheckout with plan: null) would fail. Since the old
   // plan is free, there's nothing to prorate — just cancel and subscribe.
+  //
+  // IMPORTANT: Do NOT cancel the free subscription before checkout completes.
+  // If the user abandons checkout, they'd be left with no plan (orphaned
+  // cancellation). Instead, pass old_subscription_id in checkout metadata so
+  // the charge.success webhook can cancel it after payment succeeds.
   // =========================================================================
   if (switchType === "upgrade" && existingSub && existingSub.plan.price === 0) {
-    await cancelSubscription(db, existingSub, provider);
-    return handleNewSubscription(db, customer, newPlan, provider, options);
+    const upgradeOptions = {
+      ...options,
+      metadata: {
+        ...options.metadata,
+        old_subscription_id: existingSub.id,
+      },
+    };
+    const result = await handleNewSubscription(
+      db,
+      customer,
+      newPlan,
+      provider,
+      upgradeOptions,
+    );
+
+    // Only cancel old free sub immediately when no checkout is required
+    // (i.e. subscription was created directly using a card on file).
+    // When checkout IS required the old sub stays active until the
+    // charge.success webhook fires and cancels it via old_subscription_id.
+    if (result.success && !result.requiresCheckout) {
+      await cancelSubscription(db, existingSub, provider);
+    }
+
+    return result;
   }
 
   // =========================================================================
