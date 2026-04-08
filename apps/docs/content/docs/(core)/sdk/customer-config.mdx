@@ -1,0 +1,115 @@
+---
+title: Customer Config
+description: Customer-level billing controls for feature overage and spend caps
+draft: false
+icon: SlidersHorizontal
+---
+
+# Customer Config
+
+Customer config lets you make customer-specific billing exceptions without cloning plans.
+
+Today there are two customer-level control surfaces:
+
+- `owo.customer.setFeatureConfig()` for per-feature overage behavior and hard overage caps
+- `owo.customer.setOverageLimit()` for a customer-wide spend cap across billable overage
+
+## When to Use It
+
+Use customer config when:
+
+- one enterprise customer negotiated a stricter or looser overage policy
+- one feature has very different abuse risk or unit economics than the rest
+- you want a customer-wide spend guardrail without changing the plan itself
+
+## Precedence
+
+For feature-level overage handling, Owostack resolves config in this order:
+
+1. Customer feature config
+2. Plan feature config
+3. Existing defaults
+
+The customer-wide overage limit is evaluated separately. It acts as a safety rail across all billable overage, even when a feature is allowed to charge.
+
+## Read the Current Config
+
+`owo.customer()` returns the current billing config alongside the customer record.
+
+```ts
+const customer = await owo.customer({
+  email: "billing@acme.com",
+});
+
+console.log(customer.billing.overageLimit);
+console.log(customer.billing.featureConfigs);
+```
+
+## Set a Feature Override
+
+Use `setFeatureConfig()` to override one feature for one customer.
+
+```ts
+await owo.customer.setFeatureConfig({
+  customer: "cust_123",
+  feature: "api_calls",
+  overage: "block",
+  maxOverageUnits: 1000,
+});
+```
+
+This is the right tool when the plan default is mostly correct, but one customer needs an exception for a specific feature.
+
+Pass `null` to clear a feature override:
+
+```ts
+await owo.customer.setFeatureConfig({
+  customer: "cust_123",
+  feature: "api_calls",
+  overage: null,
+  maxOverageUnits: null,
+});
+```
+
+## Set a Customer-Wide Overage Limit
+
+Use `setOverageLimit()` to cap total overage exposure for a customer.
+
+```ts
+await owo.customer.setOverageLimit({
+  customer: "cust_123",
+  maxOverageAmount: 500_000,
+  onLimitReached: "block",
+});
+```
+
+`maxOverageAmount` is expressed in minor currency units. For example, `500_000` means `5,000.00` in a two-decimal currency.
+
+Pass `null` to remove the spend cap:
+
+```ts
+await owo.customer.setOverageLimit({
+  customer: "cust_123",
+  maxOverageAmount: null,
+  onLimitReached: "block",
+});
+```
+
+## Which One Should You Use?
+
+Use `setFeatureConfig()` when the exception is about one feature's overage behavior.
+
+Use `setOverageLimit()` when the concern is total customer exposure across all overage billing.
+
+In practice, many teams use both:
+
+- plan config defines the normal default
+- feature config handles negotiated exceptions
+- overage limit acts as the final customer-wide guardrail
+
+## Related
+
+- [`customer()`](/sdk/customer)
+- [Overage](/pricing/overage)
+- [Set customer feature billing config](/api-reference/setCustomerFeatureConfig)
+- [Set customer overage limit](/api-reference/setCustomerOverageLimit)

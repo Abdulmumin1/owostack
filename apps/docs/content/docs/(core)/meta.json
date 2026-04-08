@@ -39,6 +39,7 @@
     "sdk/configuration",
     "sdk/catalog",
     "sdk/customer",
+    "sdk/customer-config",
     "sdk/entities",
     "sdk/attach",
     "sdk/plans",
