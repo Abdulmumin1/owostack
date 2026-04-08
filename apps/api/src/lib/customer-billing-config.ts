@@ -233,13 +233,20 @@ export async function resolveCustomerFeatureBillingOverride(
     return null;
   }
 
-  const rows = await db.query.customerFeatureConfigs.findMany({
-    where: and(
-      eq(schema.customerFeatureConfigs.organizationId, organizationId),
-      eq(schema.customerFeatureConfigs.customerId, customerId),
-      inArray(schema.customerFeatureConfigs.featureId, requestedFeatureIds),
-    ),
-  });
+  const rows = await db
+    .select({
+      featureId: schema.customerFeatureConfigs.featureId,
+      overage: schema.customerFeatureConfigs.overage,
+      maxOverageUnits: schema.customerFeatureConfigs.maxOverageUnits,
+    })
+    .from(schema.customerFeatureConfigs)
+    .where(
+      and(
+        eq(schema.customerFeatureConfigs.organizationId, organizationId),
+        eq(schema.customerFeatureConfigs.customerId, customerId),
+        inArray(schema.customerFeatureConfigs.featureId, requestedFeatureIds),
+      ),
+    );
 
   const rowByFeatureId = new Map(rows.map((row) => [row.featureId, row]));
 
