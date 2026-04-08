@@ -33,6 +33,7 @@ type MockDb = {
     features: { findFirst: Mock; findMany: Mock };
     subscriptions: { findFirst: Mock; findMany: Mock };
     planFeatures: { findFirst: Mock; findMany: Mock };
+    customerFeatureConfigs: { findMany: Mock };
     creditSystems: { findFirst: Mock };
     credits: { findFirst: Mock };
     entities: { findFirst: Mock };
@@ -176,6 +177,9 @@ describe("Entitlements Engine (Check & Track)", () => {
                 return [];
               },
             ),
+        },
+        customerFeatureConfigs: {
+          findMany: vi.fn().mockResolvedValue([]),
         },
         creditSystems: {
           findFirst: vi.fn().mockResolvedValue(null),
