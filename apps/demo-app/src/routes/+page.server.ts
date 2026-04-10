@@ -2,7 +2,7 @@ import { redirect } from "@sveltejs/kit";
 import { owo } from "$lib/server/owo";
 import type { PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ parent }) => {
+export const load: PageServerLoad = async ({ parent, url }) => {
   const { user } = await parent();
   if (!user) {
     throw redirect(302, "/login");
@@ -10,7 +10,8 @@ export const load: PageServerLoad = async ({ parent }) => {
 
   try {
     // Fetch initial billing data for the user
-    const [invoicesRes, plansRes, checkRes, premiumCheck] = await Promise.all([
+    const [invoicesRes, plansRes, checkRes, premiumCheck, customerRes, walletRes] =
+      await Promise.all([
       owo.billing
         .invoices({ customer: user.id })
         .catch(() => ({ invoices: [] })),
@@ -21,15 +22,28 @@ export const load: PageServerLoad = async ({ parent }) => {
       owo
         .check({ customer: user.id, feature: "premium-models", value: 0 })
         .catch(() => null),
+      user.email
+        ? owo.customer({
+            id: user.id,
+            email: user.email,
+            name: user.name,
+          }).catch(() => null)
+        : Promise.resolve(null),
+      owo.wallet(user.id).catch(() => ({
+        hasCard: false,
+        card: null,
+        methods: [],
+      })),
     ]);
-
-    console.log(checkRes);
 
     return {
       invoices: invoicesRes?.invoices || [],
       plans: plansRes?.plans || [],
       checkResult: checkRes,
       isPremium: premiumCheck?.allowed || false,
+      customer: customerRes,
+      wallet: walletRes,
+      initialTab: url.searchParams.get("tab") === "billing" ? "billing" : "dashboard",
       user,
     };
   } catch (e) {
@@ -39,6 +53,13 @@ export const load: PageServerLoad = async ({ parent }) => {
       plans: [],
       checkResult: null,
       isPremium: false,
+      customer: null,
+      wallet: {
+        hasCard: false,
+        card: null,
+        methods: [],
+      },
+      initialTab: url.searchParams.get("tab") === "billing" ? "billing" : "dashboard",
       user,
     };
   }
