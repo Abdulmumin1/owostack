@@ -364,6 +364,7 @@
              <BillingSettingsPanel
                billing={data.customer?.billing ?? null}
                wallet={data.wallet ?? null}
+               usage={data.usage ?? null}
                customerId={data.user?.id ?? "unknown"}
              />
            </div>
