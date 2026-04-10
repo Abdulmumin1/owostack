@@ -1178,6 +1178,24 @@ describe("Entitlements Engine (Check & Track)", () => {
         maxOverageUnits: 200,
       },
     ]);
+    mockDb.select.mockImplementationOnce((_shape: unknown) => {
+      return {
+        from: (_table: unknown) => {
+          return {
+            where: async (_where: unknown) => {
+              void _where;
+              return [
+                {
+                  featureId: featureIdMetered,
+                  overage: "charge",
+                  maxOverageUnits: null,
+                },
+              ];
+            },
+          };
+        },
+      };
+    });
 
     const res = await app.request(
       "/track",
