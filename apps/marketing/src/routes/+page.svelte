@@ -487,10 +487,7 @@
           <DiscordLogo size={16} weight="duotone" />
           Join Discord
         </a>
-        <a
-          href="/talk-to-founder"
-          class="btn btn-primary gap-2"
-        >
+        <a href="/talk-to-founder" class="btn btn-primary gap-2">
           <Calendar size={16} weight="duotone" />
           Talk to Founder
         </a>
@@ -498,9 +495,9 @@
     </div>
   </section>
 
-  <div
+  <!-- <div
     bind:this={rocketSection}
-    class="w-full h-300 relative z-0 overflow-hidden perspective-distant"
+    class="w-full h-84 md:h-270 relative z-0 overflow-hidden perspective-distant"
   >
     <div
       class="absolute inset-x-0 bottom-10 md:bottom-14 z-0 pointer-events-none text-center px-6 will-change-transform"
@@ -518,7 +515,7 @@
     >
       <RocketFlame />
     </div>
-  </div>
+  </div> -->
 
   <Footer />
 </div>
