@@ -15,7 +15,14 @@ export const catalog = [
     currency: "NGN",
     interval: "monthly",
     planGroup: "main",
-    features: [aiCredits.limit(50, { reset: "monthly" })],
+    features: [
+      aiCredits.limit(50, {
+        reset: "monthly",
+        overage: "block",
+        overagePrice: 25,
+        billingUnits: 1,
+      }),
+    ],
   }),
   plan("pro", {
     name: "Pro",
@@ -23,7 +30,15 @@ export const catalog = [
     currency: "NGN",
     interval: "monthly",
     planGroup: "main",
-    features: [aiCredits.limit(5000, { reset: "monthly" }), premiumModels.on()],
+    features: [
+      aiCredits.limit(5000, {
+        reset: "monthly",
+        overage: "block",
+        overagePrice: 25,
+        billingUnits: 1,
+      }),
+      premiumModels.on(),
+    ],
   }),
 ];
 

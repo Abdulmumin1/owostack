@@ -22,6 +22,9 @@ export const owo = new Owostack({
       features: [
         aiCredits.limit(5000, {
           reset: "monthly",
+          overage: "block",
+          overagePrice: 25,
+          billingUnits: 1,
         }),
         premiumModels.on(),
       ],
@@ -37,6 +40,9 @@ export const owo = new Owostack({
         aiCredits.limit(500, {
           reset: "daily",
           trialLimit: 200,
+          overage: "block",
+          overagePrice: 25,
+          billingUnits: 1,
         }),
         premiumModels.on(),
       ],
@@ -51,6 +57,9 @@ export const owo = new Owostack({
       features: [
         aiCredits.limit(50, {
           reset: "monthly",
+          overage: "block",
+          overagePrice: 25,
+          billingUnits: 1,
         }),
       ],
     }),
