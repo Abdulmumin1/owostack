@@ -39,6 +39,8 @@
     "---Customers---",
     "createCustomer",
     "getCustomer",
+    "setCustomerFeatureConfig",
+    "setCustomerOverageLimit",
 
     "---Entities---",
     "addEntity",

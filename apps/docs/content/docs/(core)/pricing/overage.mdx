@@ -92,6 +92,29 @@ emails.limit(10000, {
 
 That allows billing to continue, but only up to the configured extra usage cap.
 
+## Customer-level overrides
+
+Plan pricing still defines the default overage behavior, but you can override it for a single customer when you need an exception.
+
+```ts
+await owo.customer.setFeatureConfig({
+  customer: "cust_123",
+  feature: "emails",
+  overage: "block",
+  maxOverageUnits: 5000,
+});
+
+await owo.customer.setOverageLimit({
+  customer: "cust_123",
+  maxOverageAmount: 200000,
+  onLimitReached: "block",
+});
+```
+
+Use `setFeatureConfig()` for one feature that needs stricter or looser handling than the plan default. Use `setOverageLimit()` as a customer-wide safety rail across all billable overage.
+
+For the full customer-level model and SDK examples, see [Customer Config](/sdk/customer-config).
+
 ## Operational behavior
 
 Owostack’s billing paths and invoice generation use the same pricing metadata:
