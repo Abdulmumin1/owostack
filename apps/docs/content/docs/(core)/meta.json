@@ -31,6 +31,7 @@
     "subscriptions/checkout",
     "subscriptions/trials",
     "subscriptions/plan-switching",
+    "sdk/customer-config",
     "subscriptions/billing",
     "subscriptions/wallet",
     "pricing/pricing-page",
