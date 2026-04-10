@@ -48,10 +48,20 @@ function createDbMock(overrides?: {
 
 describe("BillingService.getUnbilledUsage", () => {
   const sumUnbilledByFeaturePeriodMock = vi.fn();
+  const sumUsageAmountMock = vi.fn();
   const markUsageInvoicedMock = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    sumUsageAmountMock.mockImplementation(async (_opts, query) => {
+      if (query.featureId === "feature_1" && query.periodStart === 1_000) {
+        return 1_200;
+      }
+      if (query.featureId === "feature_1" && query.periodStart === 2_000) {
+        return 1_100;
+      }
+      return 0;
+    });
   });
 
   it("keeps the just-finished reset window invoiceable after a rollover", async () => {
@@ -67,6 +77,7 @@ describe("BillingService.getUnbilledUsage", () => {
 
     const service = new BillingService(createDbMock() as any, {
       deps: {
+        sumUsageAmount: sumUsageAmountMock as any,
         sumUnbilledByFeaturePeriod: sumUnbilledByFeaturePeriodMock as any,
         markUsageInvoiced: markUsageInvoicedMock as any,
       },
@@ -112,6 +123,7 @@ describe("BillingService.getUnbilledUsage", () => {
 
     const service = new BillingService(createDbMock() as any, {
       deps: {
+        sumUsageAmount: sumUsageAmountMock as any,
         sumUnbilledByFeaturePeriod: sumUnbilledByFeaturePeriodMock as any,
         markUsageInvoiced: markUsageInvoicedMock as any,
       },
@@ -167,6 +179,7 @@ describe("BillingService.getUnbilledUsage", () => {
       createDbMock({ overagePrice: 900, billingUnits: 100 }) as any,
       {
         deps: {
+          sumUsageAmount: sumUsageAmountMock as any,
           sumUnbilledByFeaturePeriod: sumUnbilledByFeaturePeriodMock as any,
           markUsageInvoiced: markUsageInvoicedMock as any,
         },
@@ -205,6 +218,7 @@ describe("BillingService.getUnbilledUsage", () => {
 
     const service = new BillingService(createDbMock() as any, {
       deps: {
+        sumUsageAmount: sumUsageAmountMock as any,
         sumUnbilledByFeaturePeriod: sumUnbilledByFeaturePeriodMock as any,
         markUsageInvoiced: markUsageInvoicedMock as any,
       },
@@ -228,6 +242,7 @@ describe("BillingService.getUnbilledUsage", () => {
 
     const service = new BillingService(createDbMock() as any, {
       deps: {
+        sumUsageAmount: sumUsageAmountMock as any,
         sumUnbilledByFeaturePeriod: sumUnbilledByFeaturePeriodMock as any,
         markUsageInvoiced: markUsageInvoicedMock as any,
       },

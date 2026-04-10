@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getCurrentPricingTier, rateUsage } from "../src/lib/usage-rating";
+import {
+  getCurrentPricingTier,
+  rateUsage,
+  rateUsageDelta,
+} from "../src/lib/usage-rating";
 
 describe("usage-rating", () => {
   it("rates package pricing with billing units", () => {
@@ -135,5 +139,45 @@ describe("usage-rating", () => {
       unitPrice: 0,
       flatFee: 25000,
     });
+  });
+
+  it("rates only the follow-up overage after an earlier mid-period invoice", () => {
+    const rated = rateUsageDelta({
+      usageModel: "included",
+      ratingModel: "package",
+      previousUsage: 5100,
+      usage: 5190,
+      included: 5000,
+      overagePrice: 25,
+      billingUnits: 1,
+    });
+
+    expect(rated.usage).toBe(5190);
+    expect(rated.billableQuantity).toBe(90);
+    expect(rated.amount).toBe(2250);
+    expect(rated.pricePerUnit).toBe(25);
+    expect(rated.billingUnits).toBe(1);
+  });
+
+  it("rates only the newly reached graduated tiers after prior billed usage", () => {
+    const rated = rateUsageDelta({
+      usageModel: "included",
+      ratingModel: "graduated",
+      previousUsage: 6100,
+      usage: 6500,
+      included: 5000,
+      tiers: [
+        { upTo: 1000, unitPrice: 10 },
+        { upTo: 5000, unitPrice: 8 },
+        { upTo: null, unitPrice: 5 },
+      ],
+    });
+
+    expect(rated.usage).toBe(6500);
+    expect(rated.billableQuantity).toBe(400);
+    expect(rated.amount).toBe(3200);
+    expect(rated.tierBreakdown).toEqual([
+      { tier: 1, units: 400, unitPrice: 8, amount: 3200 },
+    ]);
   });
 });
