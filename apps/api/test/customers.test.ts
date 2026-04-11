@@ -10,10 +10,14 @@ describe("POST /v1/customers", () => {
   const verifyApiKeyMock = vi.fn();
   const customerFindFirstMock = vi.fn();
   const customerFindManyMock = vi.fn();
+  const customerOverageLimitFindFirstMock = vi.fn();
   const planFindManyMock = vi.fn();
   const insertValuesMock = vi.fn(async () => undefined);
   const updateWhereMock = vi.fn(async () => undefined);
   const updateSetMock = vi.fn(() => ({ where: updateWhereMock }));
+  const selectWhereMock = vi.fn(async () => []);
+  const selectInnerJoinMock = vi.fn(() => ({ where: selectWhereMock }));
+  const selectFromMock = vi.fn(() => ({ innerJoin: selectInnerJoinMock }));
 
   const mockDb = {
     query: {
@@ -24,9 +28,13 @@ describe("POST /v1/customers", () => {
       plans: {
         findMany: planFindManyMock,
       },
+      customerOverageLimits: {
+        findFirst: customerOverageLimitFindFirstMock,
+      },
     },
     insert: vi.fn(() => ({ values: insertValuesMock })),
     update: vi.fn(() => ({ set: updateSetMock })),
+    select: vi.fn(() => ({ from: selectFromMock })),
   };
 
   const app = createRouteTestApp(
@@ -53,6 +61,7 @@ describe("POST /v1/customers", () => {
     });
     customerFindFirstMock.mockResolvedValue(null);
     customerFindManyMock.mockResolvedValue([]);
+    customerOverageLimitFindFirstMock.mockResolvedValue(null);
     planFindManyMock.mockResolvedValue([
       { id: "plan_free", type: "free" },
       { id: "plan_paid", type: "paid" },
@@ -96,6 +105,10 @@ describe("POST /v1/customers", () => {
       id: "cust_123",
       email: "new@example.com",
       name: "New Customer",
+      billing: {
+        overageLimit: null,
+        featureConfigs: [],
+      },
     });
 
     expect(insertValuesMock).toHaveBeenCalledTimes(2);

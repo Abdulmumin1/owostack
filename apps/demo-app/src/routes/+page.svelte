@@ -19,6 +19,7 @@
     CaretRight
   } from "phosphor-svelte";
   import { cn } from "$lib/utils";
+  import BillingSettingsPanel from "$lib/BillingSettingsPanel.svelte";
   import { tick } from "svelte";
   import type { PublicPlan, CheckResult } from "owostack";
 
@@ -50,6 +51,10 @@
   let isGenerating = $state(false);
   let attachError = $state<string | null>(null);
   let chatContainer = $state<HTMLDivElement>();
+
+  $effect(() => {
+    currentTab = data.initialTab || "dashboard";
+  });
 
   function addLog(msg: string, type: 'info' | 'error' | 'success' = 'info', extraData?: any) {
     const entry = {
@@ -353,7 +358,15 @@
       {:else if currentTab === 'billing'}
          <div class="max-w-4xl mx-auto p-10">
            <h1 class="text-2xl font-display font-bold">Billing & Wallet</h1>
-           <p class="text-text-muted mt-2">Manage your cards and view invoice archive.</p>
+           <p class="text-text-muted mt-2">Manage customer-level overage controls, wallet readiness, and invoice history.</p>
+
+           <div class="mt-8">
+             <BillingSettingsPanel
+               billing={data.customer?.billing ?? null}
+               wallet={data.wallet ?? null}
+               customerId={data.user?.id ?? "unknown"}
+             />
+           </div>
            
            <div class="mt-8 space-y-4">
              <h2 class="text-sm font-bold uppercase tracking-widest">Past Invoices</h2>

@@ -32,6 +32,10 @@ import {
 } from "../../lib/usage-scope";
 import { isCustomerResolutionConflictError } from "../../lib/customer-resolution";
 import {
+  applyCustomerFeatureBillingOverride,
+  resolveCustomerFeatureBillingOverride,
+} from "../../lib/customer-billing-config";
+import {
   apiKeySecurity,
   badRequestResponse,
   billingTierBreakdownSchema,
@@ -1008,18 +1012,18 @@ app.openapi(
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json(
-        {
-          allowed: false,
-          code: "customer_ambiguous",
-          usage: null,
-          limit: null,
-          balance: null,
-          resetsAt: null,
-          resetInterval: null,
-          credits: null,
-          details: {
-            message: error.message,
-          },
+          {
+            allowed: false,
+            code: "customer_ambiguous",
+            usage: null,
+            limit: null,
+            balance: null,
+            resetsAt: null,
+            resetInterval: null,
+            credits: null,
+            details: {
+              message: error.message,
+            },
           },
           200,
         );
@@ -1364,7 +1368,16 @@ app.openapi(
 
     // Use the granting subscription/feature for the rest of the logic
     const subscription = accessGrantingSubscription;
-    const planFeature = accessGrantingPlanFeature;
+    const customerFeatureOverride = await resolveCustomerFeatureBillingOverride(
+      db,
+      organizationId,
+      customer.id,
+      [feature.id, accessGrantingPlanFeature.featureId],
+    );
+    const planFeature = applyCustomerFeatureBillingOverride(
+      accessGrantingPlanFeature,
+      customerFeatureOverride,
+    );
 
     // When resolved via credit system, adjust the effective values:
     // - effectiveFeatureId: track usage against the credit system's feature, not the child
@@ -1373,7 +1386,9 @@ app.openapi(
     const effectiveFeatureId = creditContext
       ? creditContext.trackingFeatureId
       : feature.id;
-    const effectiveValue = creditContext ? value * creditContext.costPerUnit : value;
+    const effectiveValue = creditContext
+      ? value * creditContext.costPerUnit
+      : value;
     const effectiveFeatureSlug = creditContext
       ? creditContext.trackingFeatureSlug
       : feature.slug || feature.id;
@@ -2202,7 +2217,6 @@ app.openapi(
               legacyCreatedAtFloor: subscription.currentPeriodStart,
             },
           );
-
           if (overageGuard.allowed) {
             return c.json(
               {
@@ -2493,19 +2507,19 @@ app.openapi(
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
         return c.json(
-        {
-          success: false,
-          allowed: false,
-          code: "customer_ambiguous",
-          usage: null,
-          limit: null,
-          balance: null,
-          resetsAt: null,
-          resetInterval: null,
-          credits: null,
-          details: {
-            message: error.message,
-          },
+          {
+            success: false,
+            allowed: false,
+            code: "customer_ambiguous",
+            usage: null,
+            limit: null,
+            balance: null,
+            resetsAt: null,
+            resetInterval: null,
+            credits: null,
+            details: {
+              message: error.message,
+            },
           },
           409,
         );
@@ -2782,7 +2796,9 @@ app.openapi(
     }
 
     const directTrackCreditContext =
-      !trackCreditMapping && accessGrantingSubscription && accessGrantingPlanFeature
+      !trackCreditMapping &&
+      accessGrantingSubscription &&
+      accessGrantingPlanFeature
         ? await resolveDirectCreditSystem(db, organizationId, feature)
         : null;
     const trackCreditContext: CreditRuntimeContext | null = trackCreditMapping
@@ -2796,9 +2812,9 @@ app.openapi(
       : directTrackCreditContext;
 
     const subscription = accessGrantingSubscription;
-    const planFeature = accessGrantingPlanFeature;
+    const basePlanFeature = accessGrantingPlanFeature;
 
-    if (!subscription || !planFeature) {
+    if (!subscription || !basePlanFeature) {
       return c.json(
         {
           success: false,
@@ -2817,6 +2833,17 @@ app.openapi(
         400,
       );
     }
+
+    const customerFeatureOverride = await resolveCustomerFeatureBillingOverride(
+      db,
+      organizationId,
+      customer.id,
+      [feature.id, basePlanFeature.featureId],
+    );
+    const planFeature = applyCustomerFeatureBillingOverride(
+      basePlanFeature,
+      customerFeatureOverride,
+    );
 
     // Credit system effective values
     const trackEffectiveFeatureId = trackCreditContext
@@ -2874,10 +2901,7 @@ app.openapi(
     const usageModel = getUsageModel(planFeature);
     const resetsOnPlanEnable = shouldResetUsageOnPlanEnable(planFeature);
     const usagePlanScope = resolveUsagePlanScope(planFeature, subscription);
-    const usageLedgerScope = resolveUsageLedgerScope(
-      planFeature,
-      subscription,
-    );
+    const usageLedgerScope = resolveUsageLedgerScope(planFeature, subscription);
     const legacyUsageLedgerScope = resolveLegacyUsageLedgerScope(
       planFeature,
       subscription,

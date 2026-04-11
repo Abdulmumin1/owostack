@@ -1,26 +1,43 @@
 ---
 title: customer()
-description: Create or resolve a customer
+description: Create, resolve, and configure a customer
 draft: false
 icon: User
 ---
 
 # customer()
 
-Create a new customer or resolve an existing one by email or ID. Returns a customer object that can be used for subscriptions and billing operations.
+Use `owo.customer()` to create or resolve a customer by email or ID. The response includes the customer's current billing configuration, and the same namespace exposes helpers for customer-specific billing controls.
+
+For the dedicated guide covering customer-level billing overrides, precedence, and recommended usage, see [Customer Config](/sdk/customer-config).
 
 ## Signature
 
 ```ts
-await owo.customer({
+const customer = await owo.customer({
   id?: string,         // Optional: Your customer ID
   email: string,       // Required: Customer email
   name?: string,       // Optional: Display name
   metadata?: Record<string, unknown>, // Optional: Custom data
-}): Promise<Customer>
+});
+
+await owo.customer.setFeatureConfig({
+  customer: string,
+  feature: string,
+  overage?: "block" | "charge" | null,
+  maxOverageUnits?: number | null,
+});
+
+await owo.customer.setOverageLimit({
+  customer: string,
+  maxOverageAmount: number | null,
+  onLimitReached?: "block" | "notify",
+});
 ```
 
 ## Parameters
+
+### `owo.customer(params)`
 
 | Parameter  | Type     | Required | Description               |
 | ---------- | -------- | -------- | ------------------------- |
@@ -29,24 +46,64 @@ await owo.customer({
 | `name`     | `string` | -        | Customer display name     |
 | `metadata` | `object` | -        | Custom key-value data     |
 
+### `owo.customer.setFeatureConfig(params)`
+
+| Parameter         | Type                        | Required | Description                                            |
+| ----------------- | --------------------------- | -------- | ------------------------------------------------------ |
+| `customer`        | `string`                    | ✅       | Customer ID or identifier                              |
+| `feature`         | `string`                    | ✅       | Feature slug or ID                                     |
+| `overage`         | `"block" \| "charge" \| null` | -      | Override overage behavior for this feature             |
+| `maxOverageUnits` | `number \| null`            | -        | Override the hard overage cap for this feature         |
+
+Provide at least one of `overage` or `maxOverageUnits`. Pass `null` to clear an existing override.
+
+### `owo.customer.setOverageLimit(params)`
+
+| Parameter          | Type                    | Required | Description                                             |
+| ------------------ | ----------------------- | -------- | ------------------------------------------------------- |
+| `customer`         | `string`                | ✅       | Customer ID or identifier                               |
+| `maxOverageAmount` | `number \| null`        | ✅       | Customer-wide spend cap in minor units                  |
+| `onLimitReached`   | `"block" \| "notify"`   | -        | Behavior when the spend cap is reached. Defaults to `block` |
+
+Pass `null` for `maxOverageAmount` to remove the spend cap.
+
 ## Returns
 
-Returns a `Customer` object with these properties:
+All three methods return the customer plus the current customer billing config.
 
 ```ts
-interface Customer {
-  id: string; // Customer ID
-  email: string; // Customer email
-  name?: string; // Display name
-  metadata?: Record<string, unknown>; // Custom data
-  createdAt: string; // ISO timestamp
-  updatedAt: string; // ISO timestamp
+interface CustomerResult {
+  id: string;
+  email: string;
+  name?: string;
+  metadata?: Record<string, unknown>;
+  billing: {
+    overageLimit: {
+      maxOverageAmount: number | null;
+      onLimitReached: "block" | "notify";
+      createdAt: number;
+      updatedAt: number;
+    } | null;
+    featureConfigs: Array<{
+      feature: {
+        id: string;
+        slug: string | null;
+        name: string;
+      };
+      overage: "block" | "charge" | null;
+      maxOverageUnits: number | null;
+      createdAt: number;
+      updatedAt: number;
+    }>;
+  };
+  createdAt: number;
+  updatedAt: number;
 }
 ```
 
 ## Examples
 
-### Create Organization
+### Create or Resolve a Customer
 
 ```ts
 import { Owostack } from "owostack";
@@ -57,17 +114,15 @@ const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
 const org = await owo.customer({
   email: "billing@acme.com",
   name: "Acme Corporation",
-  metadata: {
-    industry: "SaaS",
-    size: "50-100",
-  },
+  metadata: { industry: "SaaS" },
 });
 
-console.log(org.id); // "cus_xxx"
-console.log(org.email); // "billing@acme.com"
+console.log(org.id);
+console.log(org.billing.overageLimit); // null by default
+console.log(org.billing.featureConfigs); // []
 ```
 
-### Get Existing Customer
+### Resolve an Existing Customer
 
 ```ts
 // Resolve existing customer by email
@@ -82,17 +137,45 @@ const byId = await owo.customer({
 });
 ```
 
-### Update Customer
+### Set a Per-Feature Overage Policy
 
 ```ts
-// Update metadata and name
-await owo.customer({
-  email: "billing@acme.com",
-  name: "Acme Inc", // Updates name
-  metadata: {
-    // Merges with existing metadata
-    plan: "enterprise",
-  },
+const updated = await owo.customer.setFeatureConfig({
+  customer: "cust_123",
+  feature: "api_calls",
+  overage: "block",
+  maxOverageUnits: 1000,
+});
+
+console.log(updated.billing.featureConfigs);
+```
+
+### Set a Customer-Wide Overage Spend Cap
+
+```ts
+const updated = await owo.customer.setOverageLimit({
+  customer: "cust_123",
+  maxOverageAmount: 500_000,
+  onLimitReached: "block",
+});
+
+console.log(updated.billing.overageLimit);
+```
+
+### Clear Customer Billing Overrides
+
+```ts
+await owo.customer.setFeatureConfig({
+  customer: "cust_123",
+  feature: "api_calls",
+  overage: null,
+  maxOverageUnits: null,
+});
+
+await owo.customer.setOverageLimit({
+  customer: "cust_123",
+  maxOverageAmount: null,
+  onLimitReached: "block",
 });
 ```
 
@@ -170,10 +253,14 @@ const { entities: seats } = await org.listEntities({ feature: "seats" });
 1. **Create early** - Create the customer before attaching subscriptions or adding entities
 2. **Use consistent IDs** - Either always pass your own `id` or always use email as identifier
 3. **Store metadata** - Use metadata for customer segmentation and analytics
-4. **Update on changes** - Call `customer()` when user data changes to keep billing records in sync
+4. **Use spend caps as safety rails** - `setOverageLimit()` protects the whole customer across billable overage
+5. **Use feature config for exceptions** - `setFeatureConfig()` is best for one risky or contract-specific feature
+6. **Update on changes** - Call `customer()` when user data changes to keep billing records in sync
 
 ## Related
 
+- [Customer Config](/sdk/customer-config) - Customer-level billing overrides and spend caps
 - [`attach()`](/sdk/attach) - Subscribe customer to a plan
+- [Overage](/pricing/overage) - How plan overage and customer overrides interact
 - [`addEntity()`](/sdk/entities) - Add entities/seats (flat API)
 - [Seat Pricing Guide](/pricing/seat-pricing) - Complete seat-based billing walkthrough

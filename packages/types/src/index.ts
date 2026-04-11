@@ -1260,11 +1260,82 @@ export interface CustomerResult {
   /** Custom metadata */
   metadata?: Record<string, unknown>;
 
+  /** Customer-specific billing configuration */
+  billing: CustomerBillingConfig;
+
   /** ISO timestamp when created */
   createdAt: string;
 
   /** ISO timestamp when last updated */
   updatedAt: string;
+}
+
+export interface CustomerFeatureConfigResult {
+  /** Feature this config applies to */
+  feature: {
+    id: string;
+    slug: string | null;
+    name: string;
+  };
+
+  /** Customer override for overage handling */
+  overage: "block" | "charge" | null;
+
+  /** Customer override for hard overage units */
+  maxOverageUnits: number | null;
+
+  /** Timestamp when created */
+  createdAt: number;
+
+  /** Timestamp when updated */
+  updatedAt: number;
+}
+
+export interface CustomerOverageLimitResult {
+  /** Max allowed overage spend in minor units */
+  maxOverageAmount: number | null;
+
+  /** Behavior when the limit is hit */
+  onLimitReached: "block" | "notify";
+
+  /** Timestamp when created */
+  createdAt: number;
+
+  /** Timestamp when updated */
+  updatedAt: number;
+}
+
+export interface CustomerBillingConfig {
+  /** Customer-wide overage spend limit */
+  overageLimit: CustomerOverageLimitResult | null;
+
+  /** Per-feature billing overrides */
+  featureConfigs: CustomerFeatureConfigResult[];
+}
+
+export interface SetCustomerFeatureConfigParams {
+  /** Customer ID or email */
+  customer: string;
+
+  /** Feature slug or ID */
+  feature: string;
+
+  /** Override overage behavior for this customer/feature */
+  overage?: "block" | "charge" | null;
+
+  /** Override hard overage units for this customer/feature */
+  maxOverageUnits?: number | null;
+}
+
+export interface SetCustomerOverageLimitParams {
+  /** Customer ID or email */
+  customer: string;
+
+  /** Customer-wide spend limit in minor units; null clears the limit */
+  maxOverageAmount: number | null;
+
+  /** Behavior when the limit is reached */
+  onLimitReached?: "block" | "notify";
 }
 
 /**

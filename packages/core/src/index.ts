@@ -25,6 +25,8 @@ import type {
   PublicPlan,
   CustomerParams,
   CustomerResult,
+  SetCustomerFeatureConfigParams,
+  SetCustomerOverageLimitParams,
   AddEntityParams,
   AddEntityResult,
   RemoveEntityParams,
@@ -56,11 +58,15 @@ export class Owostack {
   /** Wallet: payment methods — callable + namespace */
   readonly wallet: WalletFn;
 
+  /** Customer: create/resolve + billing config management */
+  readonly customer: CustomerFn;
+
   constructor(config: OwostackConfig) {
     this._config = config;
     this.apiUrl = this.resolveApiUrl(config);
     this.billing = new BillingNamespace(this);
     this.wallet = buildWalletFn(this);
+    this.customer = buildCustomerFn(this);
     this.plans = buildPlansFn(this);
 
     // Bind all registered feature handles to this client
@@ -233,30 +239,6 @@ export class Owostack {
   async addon(params: AddonParams): Promise<AddonResult> {
     const response = await this.post("/addon", params);
     return response as AddonResult;
-  }
-
-  /**
-   * customer() - Create or resolve a customer
-   *
-   * Creates a new customer or resolves an existing one by email or ID.
-   * If customerData is provided and customer doesn't exist, creates a new customer.
-   *
-   * @example
-   * ```ts
-   * // Create new customer
-   * const customer = await owo.customer({
-   *   email: 'org@acme.com',
-   *   name: 'Acme Corp',
-   *   metadata: { plan: 'enterprise' }
-   * });
-   *
-   * // Get existing customer
-   * const existing = await owo.customer({ email: 'org@acme.com' });
-   * ```
-   */
-  async customer(params: CustomerParams): Promise<CustomerResult> {
-    const response = await this.post("/customers", params);
-    return response as CustomerResult;
   }
 
   /**
@@ -497,6 +479,29 @@ function buildPlansFn(client: Owostack): PlansFn {
   return fn;
 }
 
+type CustomerFn = {
+  (params: CustomerParams): Promise<CustomerResult>;
+  setFeatureConfig(
+    params: SetCustomerFeatureConfigParams,
+  ): Promise<CustomerResult>;
+  setOverageLimit(
+    params: SetCustomerOverageLimitParams,
+  ): Promise<CustomerResult>;
+};
+
+function buildCustomerFn(client: Owostack): CustomerFn {
+  const fn = ((params: CustomerParams) =>
+    client.post("/customers", params)) as CustomerFn;
+
+  fn.setFeatureConfig = (params: SetCustomerFeatureConfigParams) =>
+    client.post("/customers/feature-config", params) as Promise<CustomerResult>;
+
+  fn.setOverageLimit = (params: SetCustomerOverageLimitParams) =>
+    client.post("/customers/overage-limit", params) as Promise<CustomerResult>;
+
+  return fn;
+}
+
 // ---------------------------------------------------------------------------
 // Wallet — callable + namespace
 //
@@ -709,6 +714,11 @@ export type {
   PublicPlanFeature,
   CustomerParams,
   CustomerResult,
+  CustomerBillingConfig,
+  CustomerFeatureConfigResult,
+  CustomerOverageLimitResult,
+  SetCustomerFeatureConfigParams,
+  SetCustomerOverageLimitParams,
   AddEntityParams,
   AddEntityResult,
   RemoveEntityParams,

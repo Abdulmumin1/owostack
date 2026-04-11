@@ -8,11 +8,12 @@ import type { UsageLedgerDO } from "./usage-ledger-do";
 import {
   markUsageInvoiced,
   releaseUsageInvoice,
+  sumUsageAmount,
   sumUnbilledByFeaturePeriod,
 } from "./usage-ledger";
 import { releaseCustomerOverageBlockForInvoice } from "./overage-blocks";
 import type { UsagePricingSnapshot } from "./usage-pricing-snapshot";
-import { rateUsage } from "./usage-rating";
+import { rateUsageDelta } from "./usage-rating";
 import { buildMeteredInvoiceLineData } from "./invoice-line-items";
 import type {
   BillingTierBreakdown,
@@ -26,6 +27,7 @@ export type BillingServiceDependencies = {
   markUsageInvoiced: typeof markUsageInvoiced;
   releaseUsageInvoice: typeof releaseUsageInvoice;
   releaseCustomerOverageBlockForInvoice: typeof releaseCustomerOverageBlockForInvoice;
+  sumUsageAmount: typeof sumUsageAmount;
   sumUnbilledByFeaturePeriod: typeof sumUnbilledByFeaturePeriod;
 };
 
@@ -33,6 +35,7 @@ const defaultDependencies: BillingServiceDependencies = {
   markUsageInvoiced,
   releaseUsageInvoice,
   releaseCustomerOverageBlockForInvoice,
+  sumUsageAmount,
   sumUnbilledByFeaturePeriod,
 };
 
@@ -282,6 +285,7 @@ export class BillingService {
         const features: UnbilledUsageResult["features"] = [];
         let totalEstimated = 0;
         let usageWindowEnd = options?.usageCutoffAt ?? 0;
+        const totalUsageByGroup = new Map<string, number>();
 
         for (const row of unbilledUsageRows) {
           const snapshot = row.pricingSnapshot as UsagePricingSnapshot | null;
@@ -293,15 +297,63 @@ export class BillingService {
             continue;
           }
 
-          const usage = Number(row.totalUsage || 0);
-          if (usage === 0) continue;
+          const unbilledUsage = Number(row.totalUsage || 0);
+          if (unbilledUsage === 0) continue;
 
-          const rated = rateUsage(
+          const billingGroupKey = buildBillingGroupKey({
+            featureId: row.featureId,
+            periodStart: row.periodStart,
+            periodEnd: row.periodEnd,
+            subscriptionId: row.subscriptionId ?? null,
+            planId: row.planId ?? null,
+            pricingSnapshot: snapshot,
+          });
+
+          let totalUsageForGroup = totalUsageByGroup.get(billingGroupKey);
+          if (totalUsageForGroup === undefined) {
+            const summedUsage = await this.deps.sumUsageAmount(
+              {
+                usageLedger: this.opts?.usageLedger,
+                organizationId,
+              },
+              {
+                customerId,
+                featureId: row.featureId,
+                periodStart: row.periodStart,
+                periodEnd: row.periodEnd,
+                ...(options?.usageCutoffAt !== undefined
+                  ? { createdAtTo: options.usageCutoffAt }
+                  : {}),
+                ...(row.subscriptionId !== undefined
+                  ? { subscriptionId: row.subscriptionId }
+                  : {}),
+                ...(row.planId !== undefined ? { planId: row.planId } : {}),
+                ...(snapshot !== undefined
+                  ? { pricingSnapshot: snapshot }
+                  : {}),
+              },
+            );
+
+            if (summedUsage === null) {
+              throw new DatabaseError({
+                operation: "getUnbilledUsage",
+                cause: new Error(
+                  `[billing] UsageLedgerDO cumulative sum unavailable for customer=${customerId}, feature=${row.featureId}.`,
+                ),
+              });
+            }
+
+            totalUsageForGroup = Number(summedUsage || 0);
+            totalUsageByGroup.set(billingGroupKey, totalUsageForGroup);
+          }
+
+          const rated = rateUsageDelta(
             snapshot
               ? {
                   usageModel: snapshot.usageModel,
                   ratingModel: snapshot.ratingModel,
-                  usage,
+                  usage: totalUsageForGroup,
+                  previousUsage: Math.max(0, totalUsageForGroup - unbilledUsage),
                   included: snapshot.included,
                   pricePerUnit: snapshot.pricePerUnit,
                   billingUnits: snapshot.billingUnits,
@@ -311,7 +363,8 @@ export class BillingService {
               : {
                   usageModel: pf!.usageModel || "included",
                   ratingModel: pf!.ratingModel || "package",
-                  usage,
+                  usage: totalUsageForGroup,
+                  previousUsage: Math.max(0, totalUsageForGroup - unbilledUsage),
                   included: pf!.limitValue,
                   pricePerUnit: pf!.pricePerUnit,
                   billingUnits: pf!.billingUnits,
@@ -335,7 +388,7 @@ export class BillingService {
               : {}),
             ...(row.planId ? { planId: row.planId } : {}),
             usageModel: rated.usageModel,
-            usage,
+            usage: rated.usage,
             included: rated.included,
             billableQuantity: rated.billableQuantity,
             pricePerUnit: rated.pricePerUnit,
@@ -348,14 +401,7 @@ export class BillingService {
             periodStart: row.periodStart,
             periodEnd: row.periodEnd,
             pricingSnapshot: snapshot,
-            billingGroupKey: buildBillingGroupKey({
-              featureId: row.featureId,
-              periodStart: row.periodStart,
-              periodEnd: row.periodEnd,
-              subscriptionId: row.subscriptionId ?? null,
-              planId: row.planId ?? null,
-              pricingSnapshot: snapshot,
-            }),
+            billingGroupKey,
           });
 
           totalEstimated += rated.amount;

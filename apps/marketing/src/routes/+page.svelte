@@ -9,12 +9,11 @@
     Lock,
     Users,
     Plug,
-    DiscordLogo,
-    Calendar,
   } from "phosphor-svelte";
   import Logo from "$lib/components/ui/Logo.svelte";
   import InteractiveDemo from "$lib/components/marketing/InteractiveDemo.svelte";
   import PricingTemplatesSection from "$lib/components/marketing/PricingTemplatesSection.svelte";
+  import FounderLetter from "$lib/components/marketing/FounderLetter.svelte";
   import Footer from "$lib/components/marketing/Footer.svelte";
   import Header from "$lib/components/marketing/Header.svelte";
   import TextLoop from "$lib/components/ui/TextLoop.svelte";
@@ -463,44 +462,11 @@
     </div>
   </section>
 
-  <!-- Community Section -->
-  <section
-    class="px-6 py-20 md:py-28 border-t border-border/30 bg-bg-secondary/30"
-  >
-    <div class="max-w-4xl mx-auto text-center">
-      <h2
-        class="text-2xl md:text-3xl font-bold tracking-tight text-text-primary mb-4"
-      >
-        Building something ambitious?
-      </h2>
-      <p class="text-text-secondary max-w-lg mx-auto text-sm mb-10">
-        Join our community of builders or book a call to discuss your billing
-        architecture.
-      </p>
-      <div class="flex flex-wrap justify-center gap-3">
-        <a
-          href="https://discord.gg/jQ3TyEn6WR"
-          class="btn btn-secondary gap-2"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <DiscordLogo size={16} weight="duotone" />
-          Join Discord
-        </a>
-        <a
-          href="/talk-to-founder"
-          class="btn btn-primary gap-2"
-        >
-          <Calendar size={16} weight="duotone" />
-          Talk to Founder
-        </a>
-      </div>
-    </div>
-  </section>
+  <FounderLetter />
 
   <div
     bind:this={rocketSection}
-    class="w-full h-300 relative z-0 overflow-hidden perspective-distant"
+    class="w-full dark:hidden h-84 md:h-270 relative z-0 overflow-hidden perspective-distant"
   >
     <div
       class="absolute inset-x-0 bottom-10 md:bottom-14 z-0 pointer-events-none text-center px-6 will-change-transform"

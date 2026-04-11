@@ -22,6 +22,14 @@ const MIGRATION_FILES = [
     "../../../../../packages/db/migrations/0004_numerous_wallow.sql",
     import.meta.url,
   ),
+  new URL(
+    "../../../../../packages/db/migrations/0005_late_silver_sable.sql",
+    import.meta.url,
+  ),
+  new URL(
+    "../../../../../packages/db/migrations/0006_broken_molecule_man.sql",
+    import.meta.url,
+  ),
 ];
 
 type SqliteRunResult = {

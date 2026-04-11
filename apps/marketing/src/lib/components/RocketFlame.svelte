@@ -1,4 +1,4 @@
-<script lang="ts">
+<!-- <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import * as THREE from "three";
   import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -1491,9 +1491,14 @@
       // ignore
     }
   });
-</script>
+</script> -->
 
-<div
-  bind:this={container}
-  class="w-full h-full absolute inset-0 z-0 pointer-events-auto"
-></div>
+<img src="./rocket-engine.png" alt="" class="-mt-43" />
+x
+
+<style>
+  img {
+    mix-blend-mode: color-dodge; /* Makes black pixels transparent, perfect for glows */
+    filter: contrast(1.1);
+  }
+</style>

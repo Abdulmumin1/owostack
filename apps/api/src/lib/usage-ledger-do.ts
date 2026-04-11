@@ -33,6 +33,7 @@ export interface UsageSumQuery {
   entityId?: string | null;
   subscriptionId?: string | null;
   planId?: string | null;
+  pricingSnapshot?: UsagePricingSnapshot | null;
   unbilledOnly?: boolean;
 }
 
@@ -300,6 +301,14 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
       } else {
         sqlText += " AND plan_id = ?";
         bindings.push(query.planId);
+      }
+    }
+    if (query.pricingSnapshot !== undefined) {
+      if (query.pricingSnapshot === null) {
+        sqlText += " AND pricing_snapshot IS NULL";
+      } else {
+        sqlText += " AND pricing_snapshot = ?";
+        bindings.push(JSON.stringify(query.pricingSnapshot));
       }
     }
     if (query.unbilledOnly) {

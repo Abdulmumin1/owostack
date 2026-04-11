@@ -113,6 +113,7 @@ class SimulatedUsageLedgerStub {
     entityId?: string | null;
     subscriptionId?: string | null;
     planId?: string | null;
+    pricingSnapshot?: UsagePricingSnapshot | null;
     unbilledOnly?: boolean;
   }) {
     return this.records
@@ -156,6 +157,13 @@ class SimulatedUsageLedgerStub {
           return false;
         }
         if (query.planId !== undefined && record.planId !== query.planId) {
+          return false;
+        }
+        if (
+          query.pricingSnapshot !== undefined &&
+          pricingSnapshotKey(record.pricingSnapshot) !==
+            pricingSnapshotKey(query.pricingSnapshot)
+        ) {
           return false;
         }
         if (query.unbilledOnly && record.invoiceId !== null) return false;

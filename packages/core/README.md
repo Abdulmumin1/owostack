@@ -70,6 +70,30 @@ await owo.track({
 });
 ```
 
+### 4. Manage customer billing controls
+
+Inspect and update customer-specific overage behavior through the same `customer` namespace:
+
+```ts
+const customer = await owo.customer({
+  email: "billing@acme.com",
+  name: "Acme Corporation",
+});
+
+await owo.customer.setFeatureConfig({
+  customer: customer.id,
+  feature: "api-calls",
+  overage: "block",
+  maxOverageUnits: 1000,
+});
+
+await owo.customer.setOverageLimit({
+  customer: customer.id,
+  maxOverageAmount: 500_000,
+  onLimitReached: "block",
+});
+```
+
 ## Features
 
 - **Feature Gating**: Instant access control for boolean and metered features.
