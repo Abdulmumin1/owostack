@@ -30,6 +30,11 @@ export interface RatedUsage {
   tierBreakdown?: BillingTierBreakdown[];
 }
 
+export interface RateUsageDeltaParams extends Omit<RateUsageParams, "usage"> {
+  previousUsage: number;
+  usage: number;
+}
+
 function normalizeUsageModel(usageModel?: string | null): UsageModel {
   if (usageModel === "usage_based" || usageModel === "prepaid") {
     return usageModel;
@@ -266,5 +271,77 @@ export function rateUsage(params: RateUsageParams): RatedUsage {
     pricePerUnit: null,
     billingUnits: null,
     tierBreakdown,
+  };
+}
+
+function diffTierBreakdowns(
+  previous: BillingTierBreakdown[] | undefined,
+  current: BillingTierBreakdown[] | undefined,
+): BillingTierBreakdown[] | undefined {
+  const currentBreakdown = current ?? [];
+  if (currentBreakdown.length === 0) return current;
+
+  const previousByTier = new Map(
+    (previous ?? []).map((tier) => [tier.tier, tier]),
+  );
+  const diffed = currentBreakdown
+    .map((tier) => {
+      const previousTier = previousByTier.get(tier.tier);
+      const units = tier.units - (previousTier?.units ?? 0);
+      const amount = tier.amount - (previousTier?.amount ?? 0);
+      const flatFee =
+        (tier.flatFee ?? 0) - (previousTier?.flatFee ?? 0) || undefined;
+
+      if (units === 0 && amount === 0 && flatFee === undefined) {
+        return null;
+      }
+
+      return {
+        tier: tier.tier,
+        units,
+        unitPrice: tier.unitPrice,
+        ...(flatFee !== undefined ? { flatFee } : {}),
+        amount,
+      };
+    })
+    .filter((tier): tier is BillingTierBreakdown => tier !== null);
+
+  return diffed;
+}
+
+export function rateUsageDelta(params: RateUsageDeltaParams): RatedUsage {
+  const usageModel = normalizeUsageModel(params.usageModel);
+  const ratingModel = normalizeRatingModel(params.ratingModel);
+  const usage = Math.max(0, params.usage);
+  const previousUsage = Math.max(0, params.previousUsage);
+  const included = params.included ?? null;
+
+  const previousRated = rateUsage({
+    ...params,
+    usage: previousUsage,
+  });
+  const currentRated = rateUsage({
+    ...params,
+    usage,
+  });
+
+  return {
+    usageModel,
+    ratingModel,
+    usage,
+    included,
+    billableQuantity:
+      currentRated.billableQuantity - previousRated.billableQuantity,
+    amount: currentRated.amount - previousRated.amount,
+    pricePerUnit: currentRated.pricePerUnit,
+    billingUnits: currentRated.billingUnits,
+    ...(currentRated.tierBreakdown !== undefined
+      ? {
+          tierBreakdown: diffTierBreakdowns(
+            previousRated.tierBreakdown,
+            currentRated.tierBreakdown,
+          ),
+        }
+      : {}),
   };
 }

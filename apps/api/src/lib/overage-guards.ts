@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import type { PricingTier } from "@owostack/types";
 import type { UsageLedgerDO } from "./usage-ledger-do";
@@ -48,6 +48,16 @@ export async function hasPaymentMethod(
   db: any,
   customerId: string,
 ): Promise<boolean> {
+  if (db?.query?.paymentMethods?.findFirst) {
+    const paymentMethod = await db.query.paymentMethods.findFirst({
+      where: and(
+        eq(schema.paymentMethods.customerId, customerId),
+        eq(schema.paymentMethods.isValid, true),
+      ),
+    });
+    return !!paymentMethod;
+  }
+
   const result = await (db as any).run(
     sql`SELECT 1 FROM payment_methods
         WHERE customer_id = ${customerId} AND is_valid = 1

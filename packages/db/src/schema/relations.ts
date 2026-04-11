@@ -29,6 +29,7 @@ import {
   billingRuns,
   overageSettings,
   customerOverageLimits,
+  customerFeatureConfigs,
   customerOverageBlocks,
   paymentMethods,
 } from "./billing";
@@ -154,6 +155,7 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   invoices: many(invoices),
   billingRuns: many(billingRuns),
   overageBlocks: many(customerOverageBlocks),
+  featureConfigs: many(customerFeatureConfigs),
 }));
 
 export const plansRelations = relations(plans, ({ one, many }) => ({
@@ -173,6 +175,7 @@ export const featuresRelations = relations(features, ({ one, many }) => ({
   planFeatures: many(planFeatures),
   entitlements: many(entitlements),
   usageRecords: many(usageRecords),
+  customerConfigs: many(customerFeatureConfigs),
 }));
 
 export const planFeaturesRelations = relations(planFeatures, ({ one }) => ({
@@ -439,6 +442,24 @@ export const customerOverageLimitsRelations = relations(
     organization: one(organizations, {
       fields: [customerOverageLimits.organizationId],
       references: [organizations.id],
+    }),
+  }),
+);
+
+export const customerFeatureConfigsRelations = relations(
+  customerFeatureConfigs,
+  ({ one }) => ({
+    customer: one(customers, {
+      fields: [customerFeatureConfigs.customerId],
+      references: [customers.id],
+    }),
+    organization: one(organizations, {
+      fields: [customerFeatureConfigs.organizationId],
+      references: [organizations.id],
+    }),
+    feature: one(features, {
+      fields: [customerFeatureConfigs.featureId],
+      references: [features.id],
     }),
   }),
 );

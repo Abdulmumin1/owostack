@@ -978,6 +978,38 @@ export const customerOverageLimits = sqliteTable(
   ],
 );
 
+export const customerFeatureConfigs = sqliteTable(
+  "customer_feature_configs",
+  {
+    id: text("id").primaryKey(),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    featureId: text("feature_id")
+      .notNull()
+      .references(() => features.id, { onDelete: "cascade" }),
+    overage: text("overage"), // block, charge
+    maxOverageUnits: integer("max_overage_units"),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("customer_feature_configs_customer_feature_idx").on(
+      table.customerId,
+      table.featureId,
+    ),
+    index("customer_feature_configs_org_idx").on(table.organizationId),
+    index("customer_feature_configs_feature_idx").on(table.featureId),
+  ],
+);
+
 // =============================================================================
 // Feature Entities (for per-seat/org scoped features)
 // =============================================================================

@@ -474,8 +474,6 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
    */
   private async scheduleResetAlarm(): Promise<void> {
     // Find the soonest reset time across all features
-
-    console.log("SOMEONE WANTS TO SCHEDULE");
     let soonestReset = Infinity;
 
     for (const [featureId, config] of this.featureConfigs) {
@@ -494,12 +492,6 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
 
     if (soonestReset === Infinity) return;
 
-    console.log(
-      "soonest (s)",
-      Math.round((soonestReset - Date.now()) / 1000),
-      "s",
-    );
-
     // If the reset time is in the past, schedule immediately so the alarm
     // fires ASAP instead of silently dropping it (fixes missed alarm chain)
     const alarmTime =
@@ -507,26 +499,9 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
 
     const currentAlarm = await this.ctx.storage.getAlarm();
 
-    console.log(
-      "current alarm (s)",
-      Math.round((alarmTime - Date.now()) / 1000),
-      "s",
-    );
-    if (currentAlarm !== null) {
-      console.log(
-        "current alarm time (s)",
-        Math.round((currentAlarm - Date.now()) / 1000),
-        "s",
-      );
-    }
-    // console.log(currentAlarm)
-
-    // Set alarm if: no alarm exists, this one is sooner, or the existing alarm is stale (past)
-    if (
-      !currentAlarm ||
-      alarmTime < currentAlarm ||
-      currentAlarm <= Date.now()
-    ) {
+    // Always align the DO alarm to the current soonest reset. This replaces
+    // stale alarms left behind by older reset intervals or removed features.
+    if (currentAlarm !== alarmTime) {
       await this.ctx.storage.setAlarm(alarmTime);
     }
   }
@@ -537,14 +512,12 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
    */
   async alarm(): Promise<void> {
     await this.init();
-    console.log(`[UsageMeter] ⏰ Alarm fired at ${new Date().toISOString()}`);
 
     const now = Date.now();
 
     // Check all features for reset
     for (const [featureId, state] of this.featureUsage) {
       const config = this.featureConfigs.get(featureId);
-      console.log({ config });
       if (config && config.resetInterval !== "none") {
         const intervalMs = this.getIntervalMs(config.resetInterval);
         const nextReset = state.lastReset + intervalMs;
@@ -556,7 +529,7 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
     }
 
     // Re-schedule for the next soonest reset across all features
-    // await this.scheduleResetAlarm();
+    await this.scheduleResetAlarm();
   }
 
   /**

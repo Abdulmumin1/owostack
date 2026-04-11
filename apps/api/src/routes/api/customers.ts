@@ -7,6 +7,11 @@ import {
   isCustomerResolutionConflictError,
   resolveCustomerByIdentifier,
 } from "../../lib/customer-resolution";
+import {
+  getCustomerBillingConfig,
+  setCustomerFeatureBillingConfig,
+  setCustomerOverageLimitConfig,
+} from "../../lib/customer-billing-config";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 import {
@@ -33,6 +38,52 @@ const customerSchema = z.object({
   email: z.string().email(),
   name: z.string().optional(),
   metadata: metadataSchema.optional(),
+});
+
+const customerFeatureConfigSchema = z.object({
+  feature: z.object({
+    id: z.string(),
+    slug: z.string().nullable(),
+    name: z.string(),
+  }),
+  overage: z.enum(["block", "charge"]).nullable(),
+  maxOverageUnits: z.number().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+const customerOverageLimitSchema = z.object({
+  maxOverageAmount: z.number().nullable(),
+  onLimitReached: z.enum(["block", "notify"]),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+const customerBillingSchema = z.object({
+  overageLimit: customerOverageLimitSchema.nullable(),
+  featureConfigs: z.array(customerFeatureConfigSchema),
+});
+
+const setCustomerFeatureConfigSchema = z
+  .object({
+    customer: z.string(),
+    feature: z.string(),
+    overage: z.enum(["block", "charge"]).nullable().optional(),
+    maxOverageUnits: z.number().int().positive().nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      value.overage !== undefined || value.maxOverageUnits !== undefined,
+    {
+      message: "Provide overage or maxOverageUnits",
+      path: ["feature"],
+    },
+  );
+
+const setCustomerOverageLimitSchema = z.object({
+  customer: z.string(),
+  maxOverageAmount: z.number().int().positive().nullable(),
+  onLimitReached: z.enum(["block", "notify"]).default("block"),
 });
 
 const addEntitySchema = z.object({
@@ -62,6 +113,7 @@ const customerResponseSchema = z
     email: z.string().email(),
     name: z.string().nullable().optional(),
     metadata: metadataSchema.nullable().optional(),
+    billing: customerBillingSchema,
     createdAt: z.number(),
     updatedAt: z.number(),
   })
@@ -150,6 +202,70 @@ const getCustomerRoute = createRoute({
     },
     401: unauthorizedResponse,
     404: notFoundResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const setCustomerFeatureConfigRoute = createRoute({
+  method: "post",
+  path: "/customers/feature-config",
+  operationId: "setCustomerFeatureConfig",
+  tags: ["Customers"],
+  summary: "Set customer feature billing config",
+  description:
+    "Sets or clears customer-specific overage behavior for a single feature.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: setCustomerFeatureConfigSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Customer config updated successfully",
+      ...jsonContent(customerResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const setCustomerOverageLimitRoute = createRoute({
+  method: "post",
+  path: "/customers/overage-limit",
+  operationId: "setCustomerOverageLimit",
+  tags: ["Customers"],
+  summary: "Set customer overage limit",
+  description:
+    "Sets or clears the customer-wide overage spend cap and breach behavior.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: setCustomerOverageLimitSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Customer overage limit updated successfully",
+      ...jsonContent(customerResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
     500: internalServerErrorResponse,
   },
 });
@@ -263,6 +379,49 @@ async function resolveCustomer(
     customerId,
   });
   return resolved?.customer ?? null;
+}
+
+async function resolveFeature(
+  db: any,
+  organizationId: string,
+  feature: string,
+) {
+  return db.query.features.findFirst({
+    where: and(
+      eq(schema.features.organizationId, organizationId),
+      or(eq(schema.features.id, feature), eq(schema.features.slug, feature)),
+    ),
+  });
+}
+
+async function buildCustomerResponse(
+  db: any,
+  organizationId: string,
+  customer: {
+    id: string;
+    email: string;
+    name?: string | null;
+    metadata?: Record<string, unknown> | null;
+    createdAt: number;
+    updatedAt: number;
+  },
+) {
+  const billing = await getCustomerBillingConfig(
+    db,
+    organizationId,
+    customer.id,
+  );
+
+  return {
+    success: true as const,
+    id: customer.id,
+    email: customer.email,
+    name: customer.name ?? null,
+    metadata: customer.metadata ?? null,
+    billing,
+    createdAt: customer.createdAt,
+    updatedAt: customer.updatedAt,
+  };
 }
 
 export function createApiCustomersRoute(
@@ -381,15 +540,7 @@ export function createApiCustomersRoute(
       }
 
       return c.json(
-        {
-          success: true,
-          id: customer.id,
-          email: customer.email,
-          name: customer.name,
-          metadata: customer.metadata,
-          createdAt: customer.createdAt,
-          updatedAt: customer.updatedAt,
-        },
+        await buildCustomerResponse(db, organizationId, customer),
         200,
       );
     } catch (error) {
@@ -424,20 +575,137 @@ export function createApiCustomersRoute(
       }
 
       return c.json(
-        {
-          success: true,
-          id: customer.id,
-          email: customer.email,
-          name: customer.name,
-          metadata: customer.metadata,
-          createdAt: customer.createdAt,
-          updatedAt: customer.updatedAt,
-        },
+        await buildCustomerResponse(db, organizationId, customer),
         200,
       );
     } catch (error) {
       console.error("[customers] error:", error);
       return c.json({ success: false, error: "Failed to get customer" }, 500);
+    }
+  });
+
+  app.openapi(setCustomerFeatureConfigRoute, async (c) => {
+    const db = c.get("db");
+    const organizationId = c.get("organizationId")!;
+
+    try {
+      const body = await c.req.json();
+      const parsed = setCustomerFeatureConfigSchema.safeParse(body);
+
+      if (!parsed.success) {
+        return c.json(zodErrorToResponse(parsed.error), 400);
+      }
+
+      const customer = await resolveCustomer(
+        db,
+        organizationId,
+        parsed.data.customer,
+      );
+
+      if (!customer) {
+        return c.json({ success: false, error: "Customer not found" }, 404);
+      }
+
+      const feature = await resolveFeature(
+        db,
+        organizationId,
+        parsed.data.feature,
+      );
+
+      if (!feature) {
+        return c.json({ success: false, error: "Feature not found" }, 404);
+      }
+
+      await setCustomerFeatureBillingConfig({
+        db,
+        organizationId,
+        customerId: customer.id,
+        featureId: feature.id,
+        overage: parsed.data.overage,
+        maxOverageUnits: parsed.data.maxOverageUnits,
+      });
+
+      const refreshedCustomer = await db.query.customers.findFirst({
+        where: and(
+          eq(schema.customers.organizationId, organizationId),
+          eq(schema.customers.id, customer.id),
+        ),
+      });
+
+      if (!refreshedCustomer) {
+        return c.json({ success: false, error: "Customer not found" }, 404);
+      }
+
+      return c.json(
+        await buildCustomerResponse(db, organizationId, refreshedCustomer),
+        200,
+      );
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
+      console.error("[customers] feature-config error:", error);
+      return c.json(
+        { success: false, error: "Failed to update customer feature config" },
+        500,
+      );
+    }
+  });
+
+  app.openapi(setCustomerOverageLimitRoute, async (c) => {
+    const db = c.get("db");
+    const organizationId = c.get("organizationId")!;
+
+    try {
+      const body = await c.req.json();
+      const parsed = setCustomerOverageLimitSchema.safeParse(body);
+
+      if (!parsed.success) {
+        return c.json(zodErrorToResponse(parsed.error), 400);
+      }
+
+      const customer = await resolveCustomer(
+        db,
+        organizationId,
+        parsed.data.customer,
+      );
+
+      if (!customer) {
+        return c.json({ success: false, error: "Customer not found" }, 404);
+      }
+
+      await setCustomerOverageLimitConfig({
+        db,
+        organizationId,
+        customerId: customer.id,
+        maxOverageAmount: parsed.data.maxOverageAmount,
+        onLimitReached: parsed.data.onLimitReached,
+      });
+
+      const refreshedCustomer = await db.query.customers.findFirst({
+        where: and(
+          eq(schema.customers.organizationId, organizationId),
+          eq(schema.customers.id, customer.id),
+        ),
+      });
+
+      if (!refreshedCustomer) {
+        return c.json({ success: false, error: "Customer not found" }, 404);
+      }
+
+      return c.json(
+        await buildCustomerResponse(db, organizationId, refreshedCustomer),
+        200,
+      );
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
+      console.error("[customers] overage-limit error:", error);
+      return c.json(
+        { success: false, error: "Failed to update customer overage limit" },
+        500,
+      );
     }
   });
 
