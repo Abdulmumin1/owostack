@@ -1498,7 +1498,7 @@ x
 
 <style>
   img {
-    mix-blend-mode: screen; /* Makes black pixels transparent, perfect for glows */
+    mix-blend-mode: color-dodge; /* Makes black pixels transparent, perfect for glows */
     filter: contrast(1.1);
   }
 </style>

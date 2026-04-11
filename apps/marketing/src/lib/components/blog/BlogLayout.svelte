@@ -16,9 +16,7 @@
         <p class="italic text-text-muted">by {author}</p>
       </div>
       {#if thumbnail}
-        <div
-          class="mb-5 w-full overflow-hidden bg-bg-secondary"
-        >
+        <div class="mb-5 w-full overflow-hidden bg-bg-secondary">
           <img
             src={thumbnail}
             alt={title || "Blog cover"}
@@ -87,7 +85,8 @@
     color: var(--color-accent);
   }
 
-  :global(.prose ul), :global(.prose ol) {
+  :global(.prose ul),
+  :global(.prose ol) {
     margin-top: 1.5rem;
     margin-bottom: 1.5rem;
     padding-left: 0;
@@ -183,14 +182,9 @@
   }
 
   :global(.prose img) {
-    max-width: 100%;
-    height: auto;
     border-radius: 8px;
     margin: 1.5rem 0;
     display: block;
-    box-shadow:
-      0 4px 6px -1px rgba(0, 0, 0, 0.1),
-      0 2px 4px -1px rgba(0, 0, 0, 0.06);
   }
 
   :global(.prose img + em) {
