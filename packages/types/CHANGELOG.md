@@ -1,5 +1,11 @@
 # @owostack/types
 
+## 0.4.1
+
+### Patch Changes
+
+- [#137](https://github.com/Abdulmumin1/owostack/pull/137) [`df27166`](https://github.com/Abdulmumin1/owostack/commit/df2716678c83a3d39947479b3333729163ac12f6) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Add customer billing config support to the SDK, including `owo.customer` setters for per-feature overage config and customer-wide overage limits, plus enriched customer responses that include active billing config state.
+
 ## 0.4.0
 
 ### Minor Changes
