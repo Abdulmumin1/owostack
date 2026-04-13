@@ -464,7 +464,7 @@
 
   <FounderLetter />
 
-  <div
+  <!-- <div
     bind:this={rocketSection}
     class="w-full dark:hidden h-84 md:h-270 relative z-0 overflow-hidden perspective-distant"
   >
@@ -484,7 +484,7 @@
     >
       <RocketFlame />
     </div>
-  </div>
+  </div> -->
 
   <Footer />
 </div>

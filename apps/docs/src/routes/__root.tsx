@@ -8,6 +8,7 @@ import * as React from "react";
 import appCss from "@/styles/app.css?url";
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
 import { FloatingNav } from "@/components/FloatingNav";
+import { AIChatSidebar } from "@/components/AIChatSidebar";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -96,6 +97,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body className="flex flex-col min-h-screen relative">
         <RootProvider>{children}</RootProvider>
+        <AIChatSidebar />
         <Scripts />
       </body>
     </html>
