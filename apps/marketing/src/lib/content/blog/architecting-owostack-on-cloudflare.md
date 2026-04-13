@@ -7,7 +7,6 @@ category: "Engineering"
 layout: blog
 thumbnail: ""
 author: "yaqeen"
-draft: true
 ---
 
 Owostack makes billing decisions on the request path. For a metered feature, a single check may need to read subscription state, current usage, credits, reset windows, overage rules, entitlements, and customer-level billing configuration, then decide whether to allow usage and how that usage should be accounted for.

@@ -6,8 +6,6 @@
 
 \> Yes, self hosting is pretty much easy and would run perfectly with free workers plan.
 
-\> optional events log uses cf data platform or analytics engine. (use AE if you're smol)
-
 \> yes u can use /check as middleware, and maybe a smol cache on ur end. (the endpoint is average 175ms response time)
 
 \> No, tests are not 100% of core data paths yet.

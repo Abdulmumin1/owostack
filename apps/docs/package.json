@@ -15,9 +15,11 @@
     "postinstall": "NODE_OPTIONS=--conditions=development tsx scripts/generate-openapi.ts && fumadocs-mdx"
   },
   "dependencies": {
+    "@cloudflare/ai-search-snippet": "^0.0.30",
     "@tanstack/react-router": "1.157.16",
     "@tanstack/react-router-devtools": "1.157.16",
     "@tanstack/react-start": "1.157.16",
+    "framer-motion": "^12.38.0",
     "fumadocs-core": "16.5.0",
     "fumadocs-mdx": "14.2.6",
     "fumadocs-openapi": "^10.3.11",
@@ -25,6 +27,9 @@
     "lucide-react": "^0.563.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "react-resizable-panels": "^4.9.0",
+    "remark-gfm": "^4.0.1",
     "shiki": "^3.23.0",
     "vite": "^7.3.1"
   },
