@@ -10,8 +10,15 @@ export const load: PageServerLoad = async ({ parent, url }) => {
 
   try {
     // Fetch initial billing data for the user
-    const [invoicesRes, plansRes, checkRes, premiumCheck, customerRes, walletRes] =
-      await Promise.all([
+    const [
+      invoicesRes,
+      plansRes,
+      checkRes,
+      premiumCheck,
+      customerRes,
+      walletRes,
+      usageRes,
+    ] = await Promise.all([
       owo.billing
         .invoices({ customer: user.id })
         .catch(() => ({ invoices: [] })),
@@ -23,17 +30,20 @@ export const load: PageServerLoad = async ({ parent, url }) => {
         .check({ customer: user.id, feature: "premium-models", value: 0 })
         .catch(() => null),
       user.email
-        ? owo.customer({
-            id: user.id,
-            email: user.email,
-            name: user.name,
-          }).catch(() => null)
+        ? owo
+            .customer({
+              id: user.id,
+              email: user.email,
+              name: user.name,
+            })
+            .catch(() => null)
         : Promise.resolve(null),
       owo.wallet(user.id).catch(() => ({
         hasCard: false,
         card: null,
         methods: [],
       })),
+      owo.billing.usage({ customer: user.id }).catch(() => null),
     ]);
 
     return {
@@ -43,7 +53,9 @@ export const load: PageServerLoad = async ({ parent, url }) => {
       isPremium: premiumCheck?.allowed || false,
       customer: customerRes,
       wallet: walletRes,
-      initialTab: url.searchParams.get("tab") === "billing" ? "billing" : "dashboard",
+      usage: usageRes,
+      initialTab:
+        url.searchParams.get("tab") === "billing" ? "billing" : "dashboard",
       user,
     };
   } catch (e) {
@@ -59,7 +71,9 @@ export const load: PageServerLoad = async ({ parent, url }) => {
         card: null,
         methods: [],
       },
-      initialTab: url.searchParams.get("tab") === "billing" ? "billing" : "dashboard",
+      usage: null,
+      initialTab:
+        url.searchParams.get("tab") === "billing" ? "billing" : "dashboard",
       user,
     };
   }
