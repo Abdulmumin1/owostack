@@ -313,7 +313,7 @@ app.get("/:id", async (c) => {
       ),
     ];
 
-    const [accessPlanFeatures, manualEntitlementRows, creditBalanceRows] =
+    const [accessPlanFeatures, manualAccessEntitlementRows, creditBalanceRows] =
       await Promise.all([
         accessPlanIds.length > 0
           ? db
@@ -364,7 +364,10 @@ app.get("/:id", async (c) => {
               .where(
                 and(
                   eq(schema.entitlements.customerId, id),
-                  eq(schema.entitlements.source, "manual"),
+                  inArray(schema.entitlements.source, [
+                    "manual",
+                    "manual_bonus",
+                  ]),
                   or(
                     isNull(schema.entitlements.expiresAt),
                     gt(schema.entitlements.expiresAt, Date.now()),
@@ -382,6 +385,13 @@ app.get("/:id", async (c) => {
           .from(schema.creditSystemBalances)
           .where(eq(schema.creditSystemBalances.customerId, id)),
       ]);
+    const manualEntitlementRows = manualAccessEntitlementRows.filter(
+      (entitlement: { source: string }) => entitlement.source === "manual",
+    );
+    const manualBonusEntitlementRows = manualAccessEntitlementRows.filter(
+      (entitlement: { source: string }) =>
+        entitlement.source === "manual_bonus",
+    );
     const accessFeatureIds = [
       ...new Set(accessPlanFeatures.map((feature: any) => feature.featureId)),
     ];
@@ -422,6 +432,7 @@ app.get("/:id", async (c) => {
       planFeatures: accessPlanFeatures,
       planEntitlements: planEntitlementRows,
       manualEntitlements: manualEntitlementRows,
+      manualBonusEntitlements: manualBonusEntitlementRows,
       creditBalances: creditBalanceRows,
     });
 

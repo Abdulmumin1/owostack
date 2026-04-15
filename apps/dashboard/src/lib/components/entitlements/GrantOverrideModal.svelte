@@ -29,6 +29,7 @@
   let features = $state<any[]>([]);
   let selectedFeatureId = $state("");
   let selectedFeature = $derived(features.find(f => f.id === selectedFeatureId));
+  let grantMode = $state<"replace" | "bonus">("replace");
   let limitValue = $state<number | null>(null);
   let isUnlimited = $state(false);
   let expiresAt = $state("");
@@ -64,6 +65,18 @@
   });
 
   $effect(() => {
+    if (selectedFeature?.type !== "metered" && grantMode !== "replace") {
+      grantMode = "replace";
+    }
+  });
+
+  $effect(() => {
+    if (grantMode === "bonus") {
+      isUnlimited = false;
+    }
+  });
+
+  $effect(() => {
     if (isUnlimited) {
       limitValue = null;
     } else if (limitValue === null) {
@@ -74,6 +87,10 @@
   async function handleSubmit() {
     if (!selectedFeatureId) {
       error = "Please select a feature";
+      return;
+    }
+    if (grantMode === "bonus" && limitValue === null) {
+      error = "Bonus credits require a finite amount";
       return;
     }
 
@@ -87,6 +104,7 @@
           organizationId,
           customerId,
           featureId: selectedFeatureId,
+          mode: grantMode,
           limitValue: isUnlimited ? null : limitValue,
           expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
           resetInterval,
@@ -117,6 +135,7 @@
     // Reset form after animation
     setTimeout(() => {
       selectedFeatureId = "";
+      grantMode = "replace";
       limitValue = null;
       isUnlimited = false;
       expiresAt = "";
@@ -129,7 +148,7 @@
 
 <SidePanel
   open={isOpen}
-  title="Grant Entitlement Override"
+  title="Grant Customer Access"
   onclose={close}
   width="max-w-md"
 >
@@ -138,9 +157,15 @@
       <div class="bg-accent/10 border border-accent/20 rounded-lg p-4 flex gap-3">
         <ShieldCheck size={18} class="text-accent shrink-0" weight="duotone" />
         <div class="space-y-1">
-          <p class="text-xs font-bold text-accent uppercase tracking-widest">Manual Override</p>
+          <p class="text-xs font-bold text-accent uppercase tracking-widest">
+            {grantMode === "bonus" ? "Bonus Credits" : "Manual Override"}
+          </p>
           <p class="text-[11px] text-text-dim leading-relaxed">
-            This override will take precedence over the customer's current plan and will persist even if they switch plans.
+            {#if grantMode === "bonus"}
+              This adds non-billable credits on top of the current plan. Bonus credits are consumed after included credits.
+            {:else}
+              This replaces the customer's current entitlement for the selected feature and persists even if they switch plans.
+            {/if}
           </p>
         </div>
       </div>
@@ -168,6 +193,44 @@
         </div>
       </div>
 
+      {#if selectedFeature?.type === "metered"}
+        <fieldset class="space-y-2">
+          <legend class="block text-xs font-medium text-text-dim">
+            Grant Type
+          </legend>
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              class={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                grantMode === "replace"
+                  ? "border-accent bg-accent/10 text-text-primary"
+                  : "border-border text-text-dim hover:border-accent/30"
+              }`}
+              onclick={() => (grantMode = "replace")}
+            >
+              <span class="block text-[11px] font-bold uppercase tracking-widest">Replace</span>
+              <span class="mt-1 block text-[10px] leading-relaxed">
+                Swap the plan entitlement for a custom limit.
+              </span>
+            </button>
+            <button
+              type="button"
+              class={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                grantMode === "bonus"
+                  ? "border-accent bg-accent/10 text-text-primary"
+                  : "border-border text-text-dim hover:border-accent/30"
+              }`}
+              onclick={() => (grantMode = "bonus")}
+            >
+              <span class="block text-[11px] font-bold uppercase tracking-widest">Bonus</span>
+              <span class="mt-1 block text-[10px] leading-relaxed">
+                Add extra credits after included usage is exhausted.
+              </span>
+            </button>
+          </div>
+        </fieldset>
+      {/if}
+
       {#if selectedFeature?.type === "metered" || selectedFeature?.type === "static"}
         <!-- Limit Value -->
         <div class="space-y-3">
@@ -176,9 +239,13 @@
               class="block text-xs font-medium text-text-dim"
               for="limitValue"
             >
-              {selectedFeature.type === "static" ? "Value" : "Usage Limit"}
+              {selectedFeature.type === "static"
+                ? "Value"
+                : grantMode === "bonus"
+                  ? "Bonus Credits"
+                  : "Usage Limit"}
             </label>
-            {#if selectedFeature.type === "metered"}
+            {#if selectedFeature.type === "metered" && grantMode === "replace"}
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -201,7 +268,9 @@
                 bind:value={limitValue}
                 placeholder={selectedFeature.type === "static"
                   ? "Value"
-                  : "eg. 1000"}
+                  : grantMode === "bonus"
+                    ? "eg. 100"
+                    : "eg. 1000"}
                 class="input"
                 min="0"
               />
@@ -216,7 +285,7 @@
               class="block text-xs font-medium text-text-dim mb-1.5"
               for="resetInterval"
             >
-              Reset Interval
+              {grantMode === "bonus" ? "Bonus Reset Interval" : "Reset Interval"}
             </label>
             <select id="resetInterval" bind:value={resetInterval} class="input">
               <option value="never">Never</option>
@@ -257,7 +326,7 @@
       <!-- Reason -->
       <div>
         <label class="block text-xs font-medium text-text-dim mb-1.5" for="reason">
-          Reason for Override
+          Reason
         </label>
         <div class="input-icon-wrapper">
           <Note size={14} class="input-icon-left mt-2.5" weight="duotone" />
@@ -293,10 +362,10 @@
       >
         {#if isSubmitting}
           <CircleNotchIcon size={12} class="animate-spin" />
-          Granting...
+          Saving...
         {:else}
           <PlusIcon size={12} weight="bold" />
-          Grant Override
+          {grantMode === "bonus" ? "Grant Bonus" : "Grant Override"}
         {/if}
       </button>
     </div>

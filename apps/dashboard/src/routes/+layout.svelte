@@ -14,6 +14,8 @@
   />
 </svelte:head>
 
+<div class="fixed inset-0 z-1000 pointer-events-none bg-noise"></div>
+
 <Toaster
   position="bottom-right"
   toastOptions={{

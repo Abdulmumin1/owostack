@@ -2,7 +2,6 @@
   import {
     Plus as PlusIcon,
     Trash as TrashIcon,
-    ShieldCheck,
     Clock,
     Infinity as InfinityIcon,
     Info,
@@ -53,7 +52,7 @@
   }
 
   async function removeOverride(id: string) {
-    if (!confirm("Are you sure you want to remove this entitlement override?"))
+    if (!confirm("Are you sure you want to remove this customer grant?"))
       return;
 
     try {
@@ -92,21 +91,21 @@
     <h3
       class="text-[10px] font-bold text-text-primary uppercase tracking-[0.15em]"
     >
-      Entitlement Overrides
+      Manual Grants
     </h3>
     <button
       class="text-[10px] font-bold text-accent hover:text-accent-hover flex items-center gap-1 transition-colors uppercase tracking-widest"
       onclick={() => (isOverrideModalOpen = true)}
     >
       <PlusIcon size={12} weight="bold" />
-      Grant Override
+      Add Grant
     </button>
   </div>
 
   {#if isLoading}
     <div class="flex items-center gap-2 text-[11px] text-text-dim py-4">
       <Clock size={12} class="animate-spin" />
-      Loading overrides...
+      Loading grants...
     </div>
   {:else if visibleOverrides.length === 0}
     <div
@@ -114,8 +113,8 @@
     >
       <p class="text-xs text-text-dim mt-1.5">
         {allowedFeatureIdSet
-          ? "Only overrides for features attached to this plan are shown here."
-          : "Overrides allow you to grant specific features regardless of the customer's plan."}
+          ? "Only manual grants for features attached to this plan are shown here."
+          : "Manual grants let you replace plan access or add bonus credits for a customer."}
       </p>
     </div>
   {:else}
@@ -130,17 +129,23 @@
                 <span class="text-xs font-bold text-text-primary"
                   >{override.feature?.name}</span
                 >
-                <!-- <span
-                  class="text-[9px] px-1.5 py-0.5 bg-accent/10 text-accent font-bold rounded uppercase tracking-wider"
-                  >Manual</span
-                > -->
+                <span
+                  class={`text-[9px] px-1.5 py-0.5 font-bold rounded uppercase tracking-wider ${
+                    override.source === "manual_bonus"
+                      ? "bg-emerald-500/10 text-emerald-500"
+                      : "bg-accent/10 text-accent"
+                  }`}
+                >
+                  {override.source === "manual_bonus" ? "Bonus" : "Override"}
+                </span>
               </div>
               <div class="flex items-center gap-3 text-[10px] text-text-dim">
                 {#if override.feature?.type === "metered"}
                   <div class="flex items-center gap-1">
                     <InfinityIcon size={12} weight="bold" />
                     <span
-                      >Limit: <span class="text-text-primary font-medium"
+                      >{override.source === "manual_bonus" ? "Credits" : "Limit"}:
+                      <span class="text-text-primary font-medium"
                         >{formatValue(override.limitValue)}</span
                       ></span
                     >
@@ -158,6 +163,16 @@
                   <div class="flex items-center gap-1">
                     <Check size={12} weight="bold" class="text-accent" />
                     <span class="text-text-primary font-medium">Granted</span>
+                  </div>
+                {/if}
+                {#if override.feature?.type === "metered"}
+                  <div class="flex items-center gap-1">
+                    <Clock size={12} />
+                    <span
+                      >Resets: <span class="text-text-primary font-medium"
+                        >{override.resetInterval}</span
+                      ></span
+                    >
                   </div>
                 {/if}
                 <div class="flex items-center gap-1">
@@ -181,7 +196,7 @@
             <button
               class="p-1.5 text-text-dim hover:text-error hover:bg-error/10 rounded transition-all opacity-0 group-hover:opacity-100"
               onclick={() => removeOverride(override.id)}
-              title="Remove Override"
+              title="Remove Grant"
             >
               <TrashIcon size={14} />
             </button>

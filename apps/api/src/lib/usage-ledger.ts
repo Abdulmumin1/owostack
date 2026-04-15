@@ -6,6 +6,7 @@ import type {
   UsageSumQuery,
 } from "./usage-ledger-do";
 import type { UsagePricingSnapshot } from "./usage-pricing-snapshot";
+import type { UsageCoverageSource } from "./usage-coverage";
 
 interface UsageLedgerOptions {
   usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
@@ -82,6 +83,8 @@ export async function markUsageInvoiced(
     invoiceId: string;
     subscriptionId?: string | null;
     planId?: string | null;
+    coverageSource?: UsageCoverageSource | null;
+    coverageReferenceId?: string | null;
     pricingSnapshot?: UsagePricingSnapshot | null;
   },
 ): Promise<number | null> {

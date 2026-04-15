@@ -50,6 +50,7 @@ describe("customer-access trial limit integration", () => {
       planFeatures,
       planEntitlements: [],
       manualEntitlements: [],
+      manualBonusEntitlements: [],
       creditBalances: [],
     });
 
@@ -81,6 +82,7 @@ describe("customer-access trial limit integration", () => {
       planFeatures,
       planEntitlements: [],
       manualEntitlements: [],
+      manualBonusEntitlements: [],
       creditBalances: [],
     });
 
@@ -112,6 +114,7 @@ describe("customer-access trial limit integration", () => {
       planFeatures,
       planEntitlements: [],
       manualEntitlements: [],
+      manualBonusEntitlements: [],
       creditBalances: [],
     });
 
@@ -143,6 +146,7 @@ describe("customer-access trial limit integration", () => {
       planFeatures,
       planEntitlements: [],
       manualEntitlements: [],
+      manualBonusEntitlements: [],
       creditBalances: [],
     });
 
@@ -173,6 +177,7 @@ describe("customer-access trial limit integration", () => {
       planFeatures,
       planEntitlements: [],
       manualEntitlements: [],
+      manualBonusEntitlements: [],
       creditBalances: [],
     });
 

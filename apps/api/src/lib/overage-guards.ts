@@ -98,6 +98,7 @@ export async function getOverageUnitsUsed(
       featureId,
       periodStart,
       periodEnd,
+      coverageSource: "plan",
       scope: {
         ...(opts?.subscriptionId !== undefined
           ? { subscriptionId: opts.subscriptionId }
