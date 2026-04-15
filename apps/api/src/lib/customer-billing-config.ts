@@ -269,14 +269,21 @@ export function applyCustomerFeatureBillingOverride<T extends object>(
   planFeature: T,
   override: CustomerFeatureBillingOverride,
 ): T {
-  if (!override) {
-    return planFeature;
-  }
+  const planFeatureRecord = planFeature as T & {
+    usageModel?: string | null;
+    overage?: "block" | "charge" | null;
+  };
+
+  const effectiveOverage =
+    planFeatureRecord.usageModel === "usage_based"
+      ? planFeatureRecord.overage
+      : override?.overage ?? "block";
 
   return {
     ...planFeature,
-    ...(override.overage !== null ? { overage: override.overage } : {}),
-    ...(override.maxOverageUnits !== null
+    ...(effectiveOverage ? { overage: effectiveOverage } : {}),
+    ...(override?.maxOverageUnits !== null &&
+    override?.maxOverageUnits !== undefined
       ? { maxOverageUnits: override.maxOverageUnits }
       : {}),
   };

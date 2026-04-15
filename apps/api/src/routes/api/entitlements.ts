@@ -12,6 +12,10 @@ import { getScopedBalance, deductScopedBalance } from "../../lib/addon-credits";
 import { trackUsageEvent } from "../../lib/analytics-engine";
 import { appendUsageRecord } from "../../lib/usage-ledger";
 import {
+  getActiveManualBonusEntitlement,
+  resolveManualBonusBalanceState,
+} from "../../lib/manual-bonus-balances";
+import {
   checkOverageAllowed,
   getOrgOverageSettings,
   getUnbilledOverageAmount,
@@ -24,6 +28,7 @@ import {
   normalizeRatingModel,
 } from "../../lib/usage-rating";
 import { buildUsagePricingSnapshot } from "../../lib/usage-pricing-snapshot";
+import type { UsageCoverageSource } from "../../lib/usage-coverage";
 import {
   resolveLegacyUsageLedgerScope,
   resolveUsageLedgerScope,
@@ -178,6 +183,9 @@ function buildUsageLedgerContext(params: {
   featureName?: string | null;
   subscription?: { id?: string | null; planId?: string | null } | null;
   planFeature?: any;
+  coverageSource?: UsageCoverageSource;
+  coverageReferenceId?: string | null;
+  pricingSnapshot?: ReturnType<typeof buildUsagePricingSnapshot> | null;
 }) {
   return {
     featureId: params.featureId,
@@ -185,9 +193,14 @@ function buildUsageLedgerContext(params: {
     featureName: params.featureName ?? null,
     subscriptionId: params.subscription?.id ?? null,
     planId: params.subscription?.planId ?? null,
-    pricingSnapshot: params.planFeature
-      ? buildUsagePricingSnapshot(params.planFeature)
-      : null,
+    coverageSource: params.coverageSource ?? "plan",
+    coverageReferenceId: params.coverageReferenceId ?? null,
+    pricingSnapshot:
+      params.pricingSnapshot !== undefined
+        ? params.pricingSnapshot
+        : params.planFeature
+          ? buildUsagePricingSnapshot(params.planFeature)
+          : null,
   };
 }
 
@@ -211,15 +224,51 @@ type CreditsPayload =
       source: "credit_system";
       systemSlug: string;
       costPerUnit: number;
+      bonusBalance: number;
       addonBalance: number;
+      totalBalance: number | null;
+      plan: CreditPlanBalancePayload;
+    }
+  | {
+      source: "feature";
+      bonusBalance: number;
+      addonBalance: null;
+      totalBalance: number | null;
       plan: CreditPlanBalancePayload;
     }
   | {
       source: "prepaid";
+      bonusBalance: number;
       addonBalance: null;
+      totalBalance: number | null;
       plan: CreditPlanBalancePayload;
     }
   | null;
+
+function computeTotalAvailableBalance(
+  planBalance: number | null,
+  bonusBalance: number = 0,
+  addonBalance: number = 0,
+): number | null {
+  if (planBalance === null) {
+    return null;
+  }
+
+  return Math.max(0, planBalance) + Math.max(0, bonusBalance) + Math.max(0, addonBalance);
+}
+
+function computeRemainingAddonBalance(
+  startingBalance: number,
+  deductedAmount: number,
+  reportedRemaining?: number,
+): number {
+  const expectedRemaining = Math.max(0, startingBalance - deductedAmount);
+  if (typeof reportedRemaining !== "number" || !Number.isFinite(reportedRemaining)) {
+    return expectedRemaining;
+  }
+
+  return Math.min(Math.max(0, reportedRemaining), expectedRemaining);
+}
 
 function buildCreditPlanBalance(
   used: number | null,
@@ -241,27 +290,127 @@ function buildCreditsPayload(params: {
   usage: number | null;
   limit: number | null;
   resetsAt: string;
+  manualBonusBalance?: number | null;
   addonBalance?: number | null;
 }): CreditsPayload {
+  const plan = buildCreditPlanBalance(
+    params.usage,
+    params.limit,
+    params.resetsAt,
+  );
+  const bonusBalance = Math.max(0, params.manualBonusBalance ?? 0);
+  const addonBalance = Math.max(0, params.addonBalance ?? 0);
+  const totalBalance = computeTotalAvailableBalance(
+    plan.balance,
+    bonusBalance,
+    params.creditContext ? addonBalance : 0,
+  );
+
   if (params.creditContext) {
     return {
       source: "credit_system" as const,
       systemSlug: params.creditContext.creditSystemSlug,
       costPerUnit: params.creditContext.costPerUnit,
-      addonBalance: params.addonBalance ?? 0,
-      plan: buildCreditPlanBalance(params.usage, params.limit, params.resetsAt),
+      bonusBalance,
+      addonBalance,
+      totalBalance,
+      plan,
     };
   }
 
   if (params.usageModel === "prepaid") {
     return {
       source: "prepaid" as const,
+      bonusBalance,
       addonBalance: null,
-      plan: buildCreditPlanBalance(params.usage, params.limit, params.resetsAt),
+      totalBalance,
+      plan,
+    };
+  }
+
+  if (bonusBalance > 0) {
+    return {
+      source: "feature" as const,
+      bonusBalance,
+      addonBalance: null,
+      totalBalance,
+      plan,
     };
   }
 
   return null;
+}
+
+type UsageCoverageBreakdown = {
+  planAmount: number;
+  manualBonusAmount: number;
+  addonAmount: number;
+  remainder: number;
+};
+
+function splitUsageCoverage(params: {
+  requested: number;
+  planBalance: number | null;
+  manualBonusBalance: number;
+  addonBalance: number;
+}): UsageCoverageBreakdown {
+  const planBalance = Math.max(0, params.planBalance ?? 0);
+  const manualBonusBalance = Math.max(0, params.manualBonusBalance);
+  const addonBalance = Math.max(0, params.addonBalance);
+  const planAmount = Math.min(params.requested, planBalance);
+  const afterPlan = Math.max(0, params.requested - planAmount);
+  const manualBonusAmount = Math.min(afterPlan, manualBonusBalance);
+  const afterManualBonus = Math.max(0, afterPlan - manualBonusAmount);
+  const addonAmount = Math.min(afterManualBonus, addonBalance);
+
+  return {
+    planAmount,
+    manualBonusAmount,
+    addonAmount,
+    remainder: Math.max(0, afterManualBonus - addonAmount),
+  };
+}
+
+function buildUsagePersistSegments(params: {
+  planFeature: any;
+  planAmount: number;
+  manualBonusAmount: number;
+  addonAmount: number;
+  manualBonusEntitlementId?: string | null;
+}) {
+  const segments: Array<{
+    amount: number;
+    coverageSource: UsageCoverageSource;
+    coverageReferenceId?: string | null;
+    pricingSnapshot?: ReturnType<typeof buildUsagePricingSnapshot> | null;
+  }> = [];
+
+  if (params.planAmount > 0) {
+    segments.push({
+      amount: params.planAmount,
+      coverageSource: "plan",
+      pricingSnapshot: buildUsagePricingSnapshot(params.planFeature),
+    });
+  }
+
+  if (params.manualBonusAmount > 0) {
+    segments.push({
+      amount: params.manualBonusAmount,
+      coverageSource: "manual_bonus",
+      coverageReferenceId: params.manualBonusEntitlementId ?? null,
+      pricingSnapshot: null,
+    });
+  }
+
+  if (params.addonAmount > 0) {
+    segments.push({
+      amount: params.addonAmount,
+      coverageSource: "addon",
+      pricingSnapshot: null,
+    });
+  }
+
+  return segments;
 }
 
 function scheduleCacheOp(c: any, op: Promise<unknown>, label: string) {
@@ -287,6 +436,8 @@ async function persistUsageRecord(
     periodEnd: number;
     subscriptionId?: string | null;
     planId?: string | null;
+    coverageSource?: UsageCoverageSource | null;
+    coverageReferenceId?: string | null;
     pricingSnapshot?: ReturnType<typeof buildUsagePricingSnapshot> | null;
   },
 ) {
@@ -338,6 +489,8 @@ async function persistUsageRecord(
         periodEnd: record.periodEnd,
         subscriptionId: record.subscriptionId ?? null,
         planId: record.planId ?? null,
+        coverageSource: record.coverageSource ?? "plan",
+        coverageReferenceId: record.coverageReferenceId ?? null,
         pricingSnapshot: record.pricingSnapshot ?? null,
         createdAt: Date.now(),
       },
@@ -414,6 +567,8 @@ function scheduleUsagePersist(
     periodEnd: number;
     subscriptionId?: string | null;
     planId?: string | null;
+    coverageSource?: UsageCoverageSource | null;
+    coverageReferenceId?: string | null;
     pricingSnapshot?: ReturnType<typeof buildUsagePricingSnapshot> | null;
   },
   label: string,
@@ -458,6 +613,50 @@ function scheduleUsagePersist(
   const persistPromise = persistWithRetry(1);
   c.executionCtx.waitUntil(persistPromise);
   return persistPromise;
+}
+
+function scheduleUsagePersistSegments(
+  c: any,
+  db: any,
+  organizationId: string | null | undefined,
+  baseRecord: {
+    customerId: string;
+    featureId: string;
+    featureSlug?: string | null;
+    featureName?: string | null;
+    entityId?: string | null;
+    periodStart: number;
+    periodEnd: number;
+    subscriptionId?: string | null;
+    planId?: string | null;
+  },
+  segments: Array<{
+    amount: number;
+    coverageSource: UsageCoverageSource;
+    coverageReferenceId?: string | null;
+    pricingSnapshot?: ReturnType<typeof buildUsagePricingSnapshot> | null;
+  }>,
+  label: string,
+): Promise<void[]> {
+  const writes = segments
+    .filter((segment) => segment.amount > 0)
+    .map((segment) =>
+      scheduleUsagePersist(
+        c,
+        db,
+        organizationId,
+        {
+          ...baseRecord,
+          amount: segment.amount,
+          coverageSource: segment.coverageSource,
+          coverageReferenceId: segment.coverageReferenceId ?? null,
+          pricingSnapshot: segment.pricingSnapshot ?? null,
+        },
+        `${label}:${segment.coverageSource}`,
+      ),
+    );
+
+  return Promise.all(writes);
 }
 
 function hasAuthoritativeUsageLedger(
@@ -545,7 +744,21 @@ const entitlementResultSchema = z
           source: z.literal("credit_system"),
           systemSlug: z.string(),
           costPerUnit: z.number(),
+          bonusBalance: z.number(),
           addonBalance: z.number(),
+          totalBalance: z.number().nullable(),
+          plan: z.object({
+            used: z.number(),
+            limit: z.number().nullable(),
+            balance: z.number().nullable(),
+            resetsAt: z.string().datetime(),
+          }),
+        }),
+        z.object({
+          source: z.literal("feature"),
+          bonusBalance: z.number(),
+          addonBalance: z.null(),
+          totalBalance: z.number().nullable(),
           plan: z.object({
             used: z.number(),
             limit: z.number().nullable(),
@@ -555,7 +768,9 @@ const entitlementResultSchema = z
         }),
         z.object({
           source: z.literal("prepaid"),
+          bonusBalance: z.number(),
           addonBalance: z.null(),
+          totalBalance: z.number().nullable(),
           plan: z.object({
             used: z.number(),
             limit: z.number().nullable(),
@@ -1236,7 +1451,7 @@ app.openapi(
       }
     }
 
-    if (!subscriptions || subscriptions.length === 0) {
+    if ((!subscriptions || subscriptions.length === 0) && !manualEntitlement) {
       return c.json(
         {
           allowed: false,
@@ -1479,6 +1694,49 @@ app.openapi(
             deps,
           )
         : undefined;
+      const manualBonusEntitlement = await getActiveManualBonusEntitlement(
+        db,
+        customer.id,
+        effectiveFeatureId,
+        now,
+      );
+      const manualBonusState = await resolveManualBonusBalanceState({
+        usageLedger: c.env.USAGE_LEDGER,
+        organizationId: organizationId || null,
+        customerId: customer.id,
+        featureId: effectiveFeatureId,
+        entitlement: manualBonusEntitlement,
+        subscription,
+        usageLedgerScope,
+        legacyUsageLedgerScope,
+      });
+      const currentManualBonusBalance = manualBonusState.balance ?? 0;
+      const usageModel = getUsageModel(planFeature);
+      const buildCredits = (
+        usage: number | null,
+        limit: number | null,
+        addonBalance: number | null | undefined = currentAddonBalance,
+        manualBonusBalance: number | null | undefined = currentManualBonusBalance,
+      ) =>
+        buildCreditsPayload({
+          creditContext,
+          usageModel,
+          usage,
+          limit,
+          resetsAt,
+          manualBonusBalance,
+          addonBalance,
+        });
+      const toAvailableBalance = (
+        planBalance: number | null,
+        addonBalance: number | null | undefined = currentAddonBalance,
+        manualBonusBalance: number | null | undefined = currentManualBonusBalance,
+      ) =>
+        computeTotalAvailableBalance(
+          planBalance,
+          manualBonusBalance ?? 0,
+          addonBalance ?? 0,
+        );
 
       // ===========================================================================
       // DO Check (Preferred for atomicity)
@@ -1494,7 +1752,6 @@ app.openapi(
           `${organizationId}:${customer.id}`,
         );
         const usageMeter = c.env.USAGE_METER.get(doId);
-        const usageModel = getUsageModel(planFeature);
 
         // Pass current config inline — single RPC call, no extra round-trip
         const currentConfig = {
@@ -1531,6 +1788,7 @@ app.openapi(
               entityId: entity || undefined,
               createdAtFrom: migPeriodStart,
               createdAtTo: migPeriodEnd,
+              coverageSource: "plan",
               scope: usageLedgerScope,
               legacyPlanScope: legacyUsageLedgerScope,
               legacyCreatedAtFloor: subscription.currentPeriodStart,
@@ -1549,14 +1807,7 @@ app.openapi(
                 balance: null,
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
-                credits: buildCreditsPayload({
-                  creditContext,
-                  usageModel,
-                  usage: null,
-                  limit: null,
-                  resetsAt,
-                  addonBalance: currentAddonBalance,
-                }),
+                credits: buildCredits(null, null),
                 details: {
                   message:
                     "Billing ledger unavailable. Cannot safely initialize metered usage right now.",
@@ -1604,14 +1855,7 @@ app.openapi(
                 balance: null,
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
-                credits: buildCreditsPayload({
-                  creditContext,
-                  usageModel,
-                  usage: doResult.usage,
-                  limit: null,
-                  resetsAt,
-                  addonBalance: currentAddonBalance,
-                }),
+                credits: buildCredits(doResult.usage, null),
                 details: buildDetails(
                   usageBasedGuard.reason ||
                     "Usage-based billing is not allowed.",
@@ -1625,84 +1869,180 @@ app.openapi(
         }
 
         if (!doResult.allowed) {
-          // During trials, always block at limit — no overage billing for free trials
           const overageSetting = isTrial
             ? "block"
             : planFeature.overage || "block";
 
-          // Add-on credits FIRST — consume purchased credits before overage billing
-          if (creditContext) {
-            const addonBalance = await getAddonBalance(
-              db,
-              customer.id,
-              creditContext.creditSystemId,
-              deps,
-            );
-            if (addonBalance >= effectiveValue) {
-              if (sendEvent) {
-                await tryDeductAddonCredits(
-                  db,
-                  customer.id,
-                  effectiveValue,
-                  creditContext.creditSystemId,
-                  deps,
-                );
-                scheduleUsagePersist(
-                  c,
-                  db,
-                  organizationId,
+          const coverage = splitUsageCoverage({
+            requested: effectiveValue,
+            planBalance: doResult.balance,
+            manualBonusBalance: currentManualBonusBalance,
+            addonBalance: currentAddonBalance ?? 0,
+          });
+
+          if (coverage.remainder === 0) {
+            let responseUsage = doResult.usage;
+            let responsePlanBalance = doResult.balance;
+            let responseAddonBalance = currentAddonBalance ?? 0;
+            let responseManualBonusBalance = currentManualBonusBalance;
+
+            if (sendEvent && coverage.planAmount > 0) {
+              const trackResult = await usageMeter.track(
+                featureKey,
+                coverage.planAmount,
+                currentConfig,
+              );
+
+              if (!trackResult.allowed) {
+                return c.json(
                   {
-                    customerId: customer.id,
-                    ...buildUsageLedgerContext({
-                      featureId: effectiveFeatureId,
-                      featureSlug: effectiveFeatureSlug,
-                      featureName: creditContext
-                        ? effectiveFeatureSlug
-                        : (feature.name ?? effectiveFeatureSlug),
-                      subscription,
-                      planFeature,
-                    }),
-                    entityId: entity || null,
-                    amount: effectiveValue,
-                    periodStart: resetPeriod.periodStart,
-                    periodEnd: resetPeriod.periodEnd,
-                  },
-                  "check:addon-fallback",
-                );
-              }
-              const remaining = addonBalance - (sendEvent ? effectiveValue : 0);
-              return c.json(
-                {
-                  allowed: true,
-                  code: "addon_credits_used",
-                  usage: doResult.usage,
-                  limit: doResult.limit,
-                  balance:
-                    doResult.limit === null
-                      ? null
-                      : doResult.limit - doResult.usage,
-                  resetsAt,
-                  resetInterval: planFeature.resetInterval,
-                  credits: buildCreditsPayload({
-                    creditContext,
-                    usageModel,
+                    allowed: false,
+                    code: "limit_exceeded",
                     usage: doResult.usage,
                     limit: doResult.limit,
+                    balance: toAvailableBalance(doResult.balance),
                     resetsAt,
-                    addonBalance: remaining,
-                  }),
-                  details: buildDetails(
-                    `Plan credits exhausted. ${effectiveValue} add-on credits ${sendEvent ? "deducted" : "will be deducted"}.`,
-                    {
-                      addonCreditsUsed: effectiveValue,
-                      addonCreditsRemaining: remaining,
-                    },
-                    doResult.usage,
-                  ),
-                },
-                200,
+                    resetInterval: planFeature.resetInterval,
+                    credits: buildCredits(doResult.usage, doResult.limit),
+                    details: buildDetails(
+                      `Usage tracking denied — limit changed while processing the request.`,
+                      undefined,
+                      doResult.usage,
+                    ),
+                  },
+                  200,
+                );
+              }
+
+              responseUsage = trackResult.usage;
+              responsePlanBalance = trackResult.balance;
+            }
+
+            if (sendEvent && coverage.addonAmount > 0 && creditContext) {
+              const deductResult = await tryDeductAddonCredits(
+                db,
+                customer.id,
+                coverage.addonAmount,
+                creditContext.creditSystemId,
+                deps,
+              );
+              if (!deductResult.deducted) {
+                return c.json(
+                  {
+                    allowed: false,
+                    code: "limit_exceeded",
+                    usage: responseUsage,
+                    limit: doResult.limit,
+                    balance: toAvailableBalance(responsePlanBalance),
+                    resetsAt,
+                    resetInterval: planFeature.resetInterval,
+                    credits: buildCredits(responseUsage, doResult.limit),
+                    details: buildDetails(
+                      `Usage tracking denied — add-on credits were no longer available.`,
+                      undefined,
+                      responseUsage,
+                    ),
+                  },
+                  200,
+                );
+              }
+
+              responseAddonBalance = computeRemainingAddonBalance(
+                currentAddonBalance ?? 0,
+                coverage.addonAmount,
+                deductResult.remaining,
               );
             }
+
+            if (sendEvent) {
+              responseManualBonusBalance = Math.max(
+                0,
+                currentManualBonusBalance - coverage.manualBonusAmount,
+              );
+              scheduleUsagePersistSegments(
+                c,
+                db,
+                organizationId,
+                {
+                  customerId: customer.id,
+                  featureId: effectiveFeatureId,
+                  featureSlug: effectiveFeatureSlug,
+                  featureName: creditContext
+                    ? effectiveFeatureSlug
+                    : (feature.name ?? effectiveFeatureSlug),
+                  subscriptionId: subscription?.id ?? null,
+                  planId: subscription?.planId ?? null,
+                  entityId: entity || null,
+                  periodStart: resetPeriod.periodStart,
+                  periodEnd: resetPeriod.periodEnd,
+                },
+                buildUsagePersistSegments({
+                  planFeature,
+                  planAmount: coverage.planAmount,
+                  manualBonusAmount: coverage.manualBonusAmount,
+                  addonAmount: coverage.addonAmount,
+                  manualBonusEntitlementId: manualBonusEntitlement?.id ?? null,
+                }),
+                "check:coverage-fallback",
+              );
+            }
+
+            const creditCode =
+              coverage.manualBonusAmount > 0
+                ? "bonus_credits_used"
+                : "addon_credits_used";
+            return c.json(
+              {
+                allowed: true,
+                code: creditCode,
+                usage: responseUsage,
+                limit: doResult.limit,
+                balance: toAvailableBalance(
+                  sendEvent ? responsePlanBalance : doResult.balance,
+                  sendEvent ? responseAddonBalance : currentAddonBalance,
+                  sendEvent
+                    ? responseManualBonusBalance
+                    : currentManualBonusBalance,
+                ),
+                resetsAt,
+                resetInterval: planFeature.resetInterval,
+                credits: buildCredits(
+                  responseUsage,
+                  doResult.limit,
+                  sendEvent ? responseAddonBalance : currentAddonBalance,
+                  sendEvent
+                    ? responseManualBonusBalance
+                    : currentManualBonusBalance,
+                ),
+                details: buildDetails(
+                  coverage.manualBonusAmount > 0
+                    ? `Plan credits exhausted. ${coverage.manualBonusAmount} manual bonus credits ${sendEvent ? "deducted" : "will be deducted"}.`
+                    : `Plan credits exhausted. ${coverage.addonAmount} add-on credits ${sendEvent ? "deducted" : "will be deducted"}.`,
+                  {
+                    ...(coverage.manualBonusAmount > 0
+                      ? {
+                          bonusCreditsUsed: coverage.manualBonusAmount,
+                          bonusCreditsRemaining:
+                            sendEvent
+                              ? responseManualBonusBalance
+                              : currentManualBonusBalance,
+                        }
+                      : {}),
+                    ...(coverage.addonAmount > 0
+                      ? {
+                          addonCreditsUsed: coverage.addonAmount,
+                          addonCreditsRemaining:
+                            sendEvent
+                              ? responseAddonBalance
+                              : currentAddonBalance,
+                        }
+                      : {}),
+                  },
+                  responseUsage,
+                ),
+              },
+              200,
+            );
           }
 
           // If overage is "charge", check guards before allowing
@@ -1715,7 +2055,7 @@ app.openapi(
               resetPeriod.periodEnd,
               planFeature.limitValue,
               planFeature.maxOverageUnits,
-              effectiveValue,
+              coverage.remainder,
               {
                 usageLedger: c.env.USAGE_LEDGER,
                 organizationId: organizationId || null,
@@ -1730,20 +2070,10 @@ app.openapi(
                   code: "overage_allowed",
                   usage: doResult.usage,
                   limit: doResult.limit,
-                  balance:
-                    doResult.limit === null
-                      ? null
-                      : doResult.limit - doResult.usage,
+                  balance: toAvailableBalance(doResult.balance),
                   resetsAt,
                   resetInterval: planFeature.resetInterval,
-                  credits: buildCreditsPayload({
-                    creditContext,
-                    usageModel,
-                    usage: doResult.usage,
-                    limit: doResult.limit,
-                    resetsAt,
-                    addonBalance: currentAddonBalance,
-                  }),
+                  credits: buildCredits(doResult.usage, doResult.limit),
                   details: buildDetails(
                     `Usage exceeds limit (${doResult.usage}/${doResult.limit}), overage will be billed.`,
                     {
@@ -1779,20 +2109,17 @@ app.openapi(
               code: "limit_exceeded",
               usage: doResult.usage,
               limit: doResult.limit,
-              balance:
-                doResult.limit === null
-                  ? null
-                  : doResult.limit - doResult.usage,
+              balance: toAvailableBalance(
+                doResult.limit === null ? null : doResult.limit - doResult.usage,
+                blockAddonCredits,
+              ),
               resetsAt,
               resetInterval: planFeature.resetInterval,
-              credits: buildCreditsPayload({
-                creditContext,
-                usageModel,
-                usage: doResult.usage,
-                limit: doResult.limit,
-                resetsAt,
-                addonBalance: blockAddonCredits,
-              }),
+              credits: buildCredits(
+                doResult.usage,
+                doResult.limit,
+                blockAddonCredits,
+              ),
               details: buildDetails(
                 `Usage limit reached (${doResult.usage}/${doResult.limit}). Resets at ${resetsAt}.`,
                 undefined,
@@ -1853,26 +2180,37 @@ app.openapi(
                           : null
                         : doResult.usage,
                     limit: doResult.limit,
-                    balance:
+                    balance: toAvailableBalance(
                       doResult.limit === null
                         ? null
                         : (trackResult.balance ??
                           doResult.limit - doResult.usage),
+                      computeRemainingAddonBalance(
+                        currentAddonBalance ?? 0,
+                        effectiveValue,
+                        deductResult.remaining,
+                      ),
+                    ),
                     resetsAt,
                     resetInterval: planFeature.resetInterval,
-                    credits: buildCreditsPayload({
-                      creditContext,
-                      usageModel,
-                      usage: doResult.usage,
-                      limit: doResult.limit,
-                      resetsAt,
-                      addonBalance: deductResult.remaining ?? 0,
-                    }),
+                    credits: buildCredits(
+                      doResult.usage,
+                      doResult.limit,
+                      computeRemainingAddonBalance(
+                        currentAddonBalance ?? 0,
+                        effectiveValue,
+                        deductResult.remaining,
+                      ),
+                    ),
                     details: buildDetails(
                       `Plan credits exhausted. ${effectiveValue} add-on credits deducted.`,
                       {
                         addonCreditsUsed: effectiveValue,
-                        addonCreditsRemaining: deductResult.remaining ?? 0,
+                        addonCreditsRemaining: computeRemainingAddonBalance(
+                          currentAddonBalance ?? 0,
+                          effectiveValue,
+                          deductResult.remaining,
+                        ),
                       },
                       doResult.usage,
                     ),
@@ -1892,20 +2230,14 @@ app.openapi(
                       : null
                     : doResult.usage,
                 limit: doResult.limit,
-                balance:
+                balance: toAvailableBalance(
                   doResult.limit === null
                     ? null
                     : (trackResult.balance ?? doResult.limit - doResult.usage),
+                ),
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
-                credits: buildCreditsPayload({
-                  creditContext,
-                  usageModel,
-                  usage: doResult.usage,
-                  limit: doResult.limit,
-                  resetsAt,
-                  addonBalance: currentAddonBalance,
-                }),
+                credits: buildCredits(doResult.usage, doResult.limit),
                 details: buildDetails(
                   `Usage tracking denied — insufficient balance (${trackResult.balance} remaining). Resets at ${resetsAt}.`,
                   undefined,
@@ -1965,20 +2297,13 @@ app.openapi(
             code: "access_granted",
             usage: doResult.usage,
             limit: doResult.limit,
-            balance: doResult.limit === null ? null : doResult.balance,
+            balance: toAvailableBalance(doResult.limit === null ? null : doResult.balance),
             resetsAt,
             resetInterval: planFeature.resetInterval,
             ...(doResult.rolloverBalance > 0
               ? { rolloverBalance: doResult.rolloverBalance }
               : {}),
-            credits: buildCreditsPayload({
-              creditContext,
-              usageModel,
-              usage: doResult.usage,
-              limit: doResult.limit,
-              resetsAt,
-              addonBalance: currentAddonBalance,
-            }),
+            credits: buildCredits(doResult.usage, doResult.limit),
             details: buildDetails(
               usageModel === "usage_based"
                 ? `Usage-based access granted for '${feature.slug || feature.id}'. Usage will be billed.`
@@ -2012,6 +2337,7 @@ app.openapi(
           entityId: entity || undefined,
           createdAtFrom: currentPeriodStart,
           createdAtTo: currentPeriodEnd,
+          coverageSource: "plan",
           scope: usageLedgerScope,
           legacyPlanScope: legacyUsageLedgerScope,
           legacyCreatedAtFloor: subscription.currentPeriodStart,
@@ -2030,14 +2356,7 @@ app.openapi(
             balance: null,
             resetsAt,
             resetInterval: planFeature.resetInterval,
-            credits: buildCreditsPayload({
-              creditContext,
-              usageModel: getUsageModel(planFeature),
-              usage: null,
-              limit: effectiveLimit,
-              resetsAt,
-              addonBalance: currentAddonBalance,
-            }),
+            credits: buildCredits(null, effectiveLimit),
             details: {
               message:
                 "Billing ledger unavailable. Cannot safely evaluate current metered usage right now.",
@@ -2048,7 +2367,6 @@ app.openapi(
       }
 
       const currentUsage = ledgerUsage ?? 0;
-      const usageModel = getUsageModel(planFeature);
 
       if (usageModel === "usage_based") {
         const usageBasedGuard = await deps.checkOverageAllowed(
@@ -2078,14 +2396,7 @@ app.openapi(
               balance: null,
               resetsAt,
               resetInterval: planFeature.resetInterval,
-              credits: buildCreditsPayload({
-                creditContext,
-                usageModel,
-                usage: currentUsage,
-                limit: null,
-                resetsAt,
-                addonBalance: currentAddonBalance,
-              }),
+              credits: buildCredits(currentUsage, null),
               details: buildDetails(
                 usageBasedGuard.reason || "Usage-based billing is not allowed.",
                 undefined,
@@ -2105,14 +2416,7 @@ app.openapi(
             balance: null,
             resetsAt,
             resetInterval: planFeature.resetInterval,
-            credits: buildCreditsPayload({
-              creditContext,
-              usageModel,
-              usage: currentUsage,
-              limit: null,
-              resetsAt,
-              addonBalance: currentAddonBalance,
-            }),
+            credits: buildCredits(currentUsage, null),
             details: buildDetails(
               `Usage-based access granted for '${feature.slug || feature.id}'. Usage will be billed.`,
               undefined,
@@ -2135,14 +2439,7 @@ app.openapi(
             balance: null,
             resetsAt,
             resetInterval: planFeature.resetInterval,
-            credits: buildCreditsPayload({
-              creditContext,
-              usageModel,
-              usage: currentUsage,
-              limit: null,
-              resetsAt,
-              addonBalance: currentAddonBalance,
-            }),
+            credits: buildCredits(currentUsage, null),
             details: buildDetails(
               `Unlimited access to '${feature.slug || feature.id}' on ${planName}.`,
               undefined,
@@ -2154,49 +2451,146 @@ app.openapi(
       }
 
       if (currentUsage + effectiveValue > effectiveLimit) {
-        // During trials, always block at limit — no overage billing for free trials
         const overageSetting = isTrial
           ? "block"
           : planFeature.overage || "block";
+        const currentPlanBalance = Math.max(0, effectiveLimit - currentUsage);
+        const coverage = splitUsageCoverage({
+          requested: effectiveValue,
+          planBalance: currentPlanBalance,
+          manualBonusBalance: currentManualBonusBalance,
+          addonBalance: currentAddonBalance ?? 0,
+        });
 
-        // Add-on credits FIRST — consume purchased credits before overage billing
-        if (creditContext) {
-          const addonBalance = await getAddonBalance(
-            db,
-            customer.id,
-            creditContext.creditSystemId,
-            deps,
-          );
-          if (addonBalance >= effectiveValue) {
-            return c.json(
-              {
-                allowed: true,
-                code: "addon_credits_used",
-                usage: currentUsage,
-                limit: effectiveLimit,
-                balance: effectiveLimit - currentUsage,
-                resetsAt,
-                resetInterval: planFeature.resetInterval,
-                credits: buildCreditsPayload({
-                  creditContext,
-                  usageModel,
+        if (coverage.remainder === 0) {
+          let responseAddonBalance = currentAddonBalance ?? 0;
+          let responseManualBonusBalance = currentManualBonusBalance;
+
+          if (sendEvent && coverage.addonAmount > 0 && creditContext) {
+            const deductResult = await tryDeductAddonCredits(
+              db,
+              customer.id,
+              coverage.addonAmount,
+              creditContext.creditSystemId,
+              deps,
+            );
+            if (!deductResult.deducted) {
+              return c.json(
+                {
+                  allowed: false,
+                  code: "limit_exceeded",
                   usage: currentUsage,
                   limit: effectiveLimit,
+                  balance: toAvailableBalance(currentPlanBalance),
                   resetsAt,
-                  addonBalance,
-                }),
-                details: buildDetails(
-                  `Plan credits exhausted. ${effectiveValue} add-on credits will be deducted.`,
-                  {
-                    addonCreditsUsed: effectiveValue,
-                    addonCreditsRemaining: addonBalance,
-                  },
-                  currentUsage,
-                ),
-              },
-              200,
+                  resetInterval: planFeature.resetInterval,
+                  credits: buildCredits(currentUsage, effectiveLimit),
+                  details: buildDetails(
+                    `Usage tracking denied — add-on credits were no longer available.`,
+                    undefined,
+                    currentUsage,
+                  ),
+                },
+                200,
+              );
+            }
+            responseAddonBalance = computeRemainingAddonBalance(
+              currentAddonBalance ?? 0,
+              coverage.addonAmount,
+              deductResult.remaining,
             );
           }
+
+          if (sendEvent) {
+            responseManualBonusBalance = Math.max(
+              0,
+              currentManualBonusBalance - coverage.manualBonusAmount,
+            );
+            scheduleUsagePersistSegments(
+              c,
+              db,
+              organizationId,
+              {
+                customerId: customer.id,
+                featureId: effectiveFeatureId,
+                featureSlug: effectiveFeatureSlug,
+                featureName: creditContext
+                  ? effectiveFeatureSlug
+                  : (feature.name ?? effectiveFeatureSlug),
+                subscriptionId: subscription?.id ?? null,
+                planId: subscription?.planId ?? null,
+                entityId: entity || null,
+                periodStart: currentPeriodStart,
+                periodEnd: currentPeriodEnd,
+              },
+              buildUsagePersistSegments({
+                planFeature,
+                planAmount: coverage.planAmount,
+                manualBonusAmount: coverage.manualBonusAmount,
+                addonAmount: coverage.addonAmount,
+                manualBonusEntitlementId: manualBonusEntitlement?.id ?? null,
+              }),
+              "check:track-inline-db-only-coverage",
+            );
+          }
+
+          return c.json(
+            {
+              allowed: true,
+              code:
+                coverage.manualBonusAmount > 0
+                  ? "bonus_credits_used"
+                  : "addon_credits_used",
+              usage: currentUsage + (sendEvent ? coverage.planAmount : 0),
+              limit: effectiveLimit,
+              balance: toAvailableBalance(
+                sendEvent
+                  ? Math.max(0, currentPlanBalance - coverage.planAmount)
+                  : currentPlanBalance,
+                sendEvent ? responseAddonBalance : currentAddonBalance,
+                sendEvent
+                  ? responseManualBonusBalance
+                  : currentManualBonusBalance,
+              ),
+              resetsAt,
+              resetInterval: planFeature.resetInterval,
+              credits: buildCredits(
+                currentUsage + (sendEvent ? coverage.planAmount : 0),
+                effectiveLimit,
+                sendEvent ? responseAddonBalance : currentAddonBalance,
+                sendEvent
+                  ? responseManualBonusBalance
+                  : currentManualBonusBalance,
+              ),
+              details: buildDetails(
+                coverage.manualBonusAmount > 0
+                  ? `Plan credits exhausted. ${coverage.manualBonusAmount} manual bonus credits ${sendEvent ? "deducted" : "will be deducted"}.`
+                  : `Plan credits exhausted. ${coverage.addonAmount} add-on credits ${sendEvent ? "deducted" : "will be deducted"}.`,
+                {
+                  ...(coverage.manualBonusAmount > 0
+                    ? {
+                        bonusCreditsUsed: coverage.manualBonusAmount,
+                        bonusCreditsRemaining:
+                          sendEvent
+                            ? responseManualBonusBalance
+                            : currentManualBonusBalance,
+                      }
+                    : {}),
+                  ...(coverage.addonAmount > 0
+                    ? {
+                        addonCreditsUsed: coverage.addonAmount,
+                        addonCreditsRemaining:
+                          sendEvent
+                            ? responseAddonBalance
+                            : currentAddonBalance,
+                      }
+                    : {}),
+                },
+                currentUsage,
+              ),
+            },
+            200,
+          );
         }
 
         // If overage is "charge", check guards before allowing
@@ -2205,14 +2599,14 @@ app.openapi(
             db,
             customer.id,
             effectiveFeatureId,
-            currentPeriodStart,
-            currentPeriodEnd,
-            planFeature.limitValue,
-            planFeature.maxOverageUnits,
-            effectiveValue,
-            {
-              usageLedger: c.env.USAGE_LEDGER,
-              organizationId: organizationId || null,
+              currentPeriodStart,
+              currentPeriodEnd,
+              planFeature.limitValue,
+              planFeature.maxOverageUnits,
+              coverage.remainder,
+              {
+                usageLedger: c.env.USAGE_LEDGER,
+                organizationId: organizationId || null,
               ...usageLedgerScope,
               legacyCreatedAtFloor: subscription.currentPeriodStart,
             },
@@ -2224,17 +2618,10 @@ app.openapi(
                 code: "overage_allowed",
                 usage: currentUsage,
                 limit: effectiveLimit,
-                balance: effectiveLimit - currentUsage,
+                balance: toAvailableBalance(effectiveLimit - currentUsage),
                 resetsAt,
                 resetInterval: planFeature.resetInterval,
-                credits: buildCreditsPayload({
-                  creditContext,
-                  usageModel,
-                  usage: currentUsage,
-                  limit: effectiveLimit,
-                  resetsAt,
-                  addonBalance: currentAddonBalance,
-                }),
+                credits: buildCredits(currentUsage, effectiveLimit),
                 details: buildDetails(
                   `Usage exceeds limit (${currentUsage}/${planFeature.limitValue}), overage will be billed.`,
                   {
@@ -2270,17 +2657,17 @@ app.openapi(
             code: "limit_exceeded",
             usage: currentUsage,
             limit: effectiveLimit,
-            balance: effectiveLimit - currentUsage,
+            balance: toAvailableBalance(
+              effectiveLimit - currentUsage,
+              dbBlockAddonCredits,
+            ),
             resetsAt,
             resetInterval: planFeature.resetInterval,
-            credits: buildCreditsPayload({
-              creditContext,
-              usageModel,
-              usage: currentUsage,
-              limit: effectiveLimit,
-              resetsAt,
-              addonBalance: dbBlockAddonCredits,
-            }),
+            credits: buildCredits(
+              currentUsage,
+              effectiveLimit,
+              dbBlockAddonCredits,
+            ),
             details: buildDetails(
               `Usage limit exceeded (${currentUsage}/${planFeature.limitValue}). Resets at ${resetsAt}.`,
               undefined,
@@ -2312,17 +2699,10 @@ app.openapi(
               code: "insufficient_credits",
               usage: currentUsage,
               limit: effectiveLimit,
-              balance: effectiveLimit - currentUsage,
+              balance: toAvailableBalance(effectiveLimit - currentUsage),
               resetsAt,
               resetInterval: planFeature.resetInterval,
-              credits: buildCreditsPayload({
-                creditContext,
-                usageModel,
-                usage: currentUsage,
-                limit: effectiveLimit,
-                resetsAt,
-                addonBalance: currentAddonBalance,
-              }),
+              credits: buildCredits(currentUsage, effectiveLimit),
               details: buildDetails(
                 `Insufficient credits — balance: ${creditBalance}, required: ${cost}.`,
                 undefined,
@@ -2382,17 +2762,10 @@ app.openapi(
           code: "access_granted",
           usage: currentUsage,
           limit: effectiveLimit,
-          balance: effectiveLimit - currentUsage,
+          balance: toAvailableBalance(effectiveLimit - currentUsage),
           resetsAt,
           resetInterval: planFeature.resetInterval,
-          credits: buildCreditsPayload({
-            creditContext,
-            usageModel,
-            usage: currentUsage,
-            limit: effectiveLimit,
-            resetsAt,
-            addonBalance: currentAddonBalance,
-          }),
+          credits: buildCredits(currentUsage, effectiveLimit),
           details: buildDetails(
             `Access granted — used ${currentUsage} of ${planFeature.limitValue}.`,
             undefined,
@@ -2571,50 +2944,61 @@ app.openapi(
 
     // 3 & 4. Validate Entity and fetch Subscriptions in parallel
     const subsCacheKey = customer.id;
-    const [trackEntityValid, trackSubsResult] = await Promise.all([
-      entity
-        ? db.query.entities.findFirst({
-            where: and(
-              eq(schema.entities.customerId, customer.id),
-              eq(schema.entities.featureId, feature.id),
-              eq(schema.entities.entityId, entity),
-              eq(schema.entities.status, "active"),
-            ),
-          })
-        : true,
-      (async () => {
-        let subs = cache
-          ? await cache.getSubscriptions<
-              Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
-            >(organizationId, subsCacheKey)
-          : null;
+    const trackNow = Date.now();
+    const [trackEntityValid, trackSubsResult, trackManualEntitlement] =
+      await Promise.all([
+        entity
+          ? db.query.entities.findFirst({
+              where: and(
+                eq(schema.entities.customerId, customer.id),
+                eq(schema.entities.featureId, feature.id),
+                eq(schema.entities.entityId, entity),
+                eq(schema.entities.status, "active"),
+              ),
+            })
+          : true,
+        (async () => {
+          let subs = cache
+            ? await cache.getSubscriptions<
+                Awaited<ReturnType<typeof db.query.subscriptions.findMany>>
+              >(organizationId, subsCacheKey)
+            : null;
 
-        if (!subs) {
-          subs = await db.query.subscriptions.findMany({
-            where: and(
-              eq(schema.subscriptions.customerId, customer.id),
-              inArray(schema.subscriptions.status, [
-                "active",
-                "trialing",
-                "pending_cancel",
-              ]),
-            ),
-            with: {
-              plan: true,
-            },
-          });
+          if (!subs) {
+            subs = await db.query.subscriptions.findMany({
+              where: and(
+                eq(schema.subscriptions.customerId, customer.id),
+                inArray(schema.subscriptions.status, [
+                  "active",
+                  "trialing",
+                  "pending_cancel",
+                ]),
+              ),
+              with: {
+                plan: true,
+              },
+            });
 
-          if (cache) {
-            scheduleCacheOp(
-              c,
-              cache.setSubscriptions(organizationId, subsCacheKey, subs),
-              "setSubscriptions(/track)",
-            );
+            if (cache) {
+              scheduleCacheOp(
+                c,
+                cache.setSubscriptions(organizationId, subsCacheKey, subs),
+                "setSubscriptions(/track)",
+              );
+            }
           }
-        }
-        return subs;
-      })(),
-    ]);
+          return subs;
+        })(),
+        getManualEntitlementForFeature(
+          c,
+          db,
+          cache,
+          organizationId,
+          customer.id,
+          feature.id,
+          trackNow,
+        ),
+      ]);
 
     if (entity && !trackEntityValid) {
       return c.json(
@@ -2639,7 +3023,6 @@ app.openapi(
     let subscriptions = trackSubsResult;
 
     // Filter out expired trialing subscriptions and scheduled cancellations past their effective date
-    const trackNow = Date.now();
     const trackExpiredTrialIds: string[] = [];
     const trackExpiredCancelIds: string[] = [];
     const trackStalePaidPeriodIds: string[] = [];
@@ -2716,7 +3099,7 @@ app.openapi(
       }
     }
 
-    if (subscriptions.length === 0) {
+    if (subscriptions.length === 0 && !trackManualEntitlement) {
       return c.json(
         {
           success: false,
@@ -2768,30 +3151,45 @@ app.openapi(
     let accessGrantingPlanFeature: (typeof planFeatures)[number] | null = null;
     let trackCreditMapping: CreditSystemMapping | null = null;
 
-    for (const pf of planFeatures) {
-      const sub = subscriptions.find(
-        (s: { planId: string }) => s.planId === pf.planId,
-      );
-      if (sub) {
-        accessGrantingSubscription = sub;
-        accessGrantingPlanFeature = pf;
-        break;
+    if (trackManualEntitlement) {
+      accessGrantingSubscription = subscriptions[0] || {
+        id: "manual",
+        status: "active",
+        currentPeriodStart: trackNow - 30 * 24 * 60 * 60 * 1000,
+        currentPeriodEnd: trackNow + 30 * 24 * 60 * 60 * 1000,
+        plan: { name: "Manual Override" },
+      };
+      accessGrantingPlanFeature = {
+        ...trackManualEntitlement,
+        planId: (accessGrantingSubscription as any).planId || "manual",
+        usageModel: "included",
+      } as (typeof planFeatures)[number];
+    } else {
+      for (const pf of planFeatures) {
+        const sub = subscriptions.find(
+          (s: { planId: string }) => s.planId === pf.planId,
+        );
+        if (sub) {
+          accessGrantingSubscription = sub;
+          accessGrantingPlanFeature = pf;
+          break;
+        }
       }
-    }
 
-    // Credit system fallback
-    if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
-      trackCreditMapping = await resolveCreditSystem(
-        db,
-        feature.id,
-        planIds,
-        subscriptions,
-        customer.id,
-        now,
-      );
-      if (trackCreditMapping) {
-        accessGrantingSubscription = trackCreditMapping.subscription;
-        accessGrantingPlanFeature = trackCreditMapping.planFeature;
+      // Credit system fallback
+      if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
+        trackCreditMapping = await resolveCreditSystem(
+          db,
+          feature.id,
+          planIds,
+          subscriptions,
+          customer.id,
+          now,
+        );
+        if (trackCreditMapping) {
+          accessGrantingSubscription = trackCreditMapping.subscription;
+          accessGrantingPlanFeature = trackCreditMapping.planFeature;
+        }
       }
     }
 
@@ -2914,6 +3312,54 @@ app.openapi(
           deps,
         )
       : undefined;
+    const trackManualBonusEntitlement = await getActiveManualBonusEntitlement(
+      db,
+      customer.id,
+      trackEffectiveFeatureId,
+      now,
+    );
+    const trackManualBonusState = await resolveManualBonusBalanceState({
+      usageLedger: c.env.USAGE_LEDGER,
+      organizationId: organizationId || null,
+      customerId: customer.id,
+      featureId: trackEffectiveFeatureId,
+      entitlement: trackManualBonusEntitlement,
+      subscription,
+      usageLedgerScope,
+      legacyUsageLedgerScope,
+    });
+    const currentTrackManualBonusBalance = trackManualBonusState.balance ?? 0;
+    const buildTrackCredits = (
+      usage: number | null,
+      limit: number | null,
+      addonBalance: number | null | undefined = currentTrackAddonBalance,
+      manualBonusBalance:
+        | number
+        | null
+        | undefined = currentTrackManualBonusBalance,
+    ) =>
+      buildCreditsPayload({
+        creditContext: trackCreditContext,
+        usageModel,
+        usage,
+        limit,
+        resetsAt: new Date(periodEnd).toISOString(),
+        manualBonusBalance,
+        addonBalance,
+      });
+    const toTrackAvailableBalance = (
+      planBalance: number | null,
+      addonBalance: number | null | undefined = currentTrackAddonBalance,
+      manualBonusBalance:
+        | number
+        | null
+        | undefined = currentTrackManualBonusBalance,
+    ) =>
+      computeTotalAvailableBalance(
+        planBalance,
+        manualBonusBalance ?? 0,
+        addonBalance ?? 0,
+      );
 
     try {
       // ===========================================================================
@@ -2928,6 +3374,18 @@ app.openapi(
         rolloverBalance: number;
       } | null = null;
       let trackedAsOverage = false;
+      let persistedPlanAmount = trackEffectiveValue;
+      let persistedManualBonusAmount = 0;
+      let persistedAddonAmount = 0;
+      let trackAddonBalanceAfter = currentTrackAddonBalance ?? 0;
+      let trackSuccessCode: "tracked" | "tracked_overage" | "addon_credits_used" | "bonus_credits_used" =
+        "tracked";
+      let trackSuccessDetail:
+        | {
+            message: string;
+            extra?: Record<string, unknown>;
+          }
+        | null = null;
 
       // When credit system resolved, use credit system slug for DO key
       // When entity is provided, scope DO feature key and DB queries by entity
@@ -2984,14 +3442,7 @@ app.openapi(
                 balance: null,
                 resetsAt: new Date(periodEnd).toISOString(),
                 resetInterval: planFeature.resetInterval,
-                credits: buildCreditsPayload({
-                  creditContext: trackCreditContext,
-                  usageModel,
-                  usage: null,
-                  limit: null,
-                  resetsAt: new Date(periodEnd).toISOString(),
-                  addonBalance: currentTrackAddonBalance,
-                }),
+                credits: buildTrackCredits(null, null),
                 details: buildTrackDetails(
                   usageBasedGuard.reason ||
                     "Usage-based billing is not allowed.",
@@ -3026,6 +3477,7 @@ app.openapi(
               entityId: entity || undefined,
               createdAtFrom: periodStart,
               createdAtTo: periodEnd,
+              coverageSource: "plan",
               scope: usageLedgerScope,
               legacyPlanScope: legacyUsageLedgerScope,
               legacyCreatedAtFloor: subscription.currentPeriodStart,
@@ -3045,14 +3497,7 @@ app.openapi(
                 balance: null,
                 resetsAt: new Date(periodEnd).toISOString(),
                 resetInterval: planFeature.resetInterval,
-                credits: buildCreditsPayload({
-                  creditContext: trackCreditContext,
-                  usageModel,
-                  usage: null,
-                  limit: effectiveLimit,
-                  resetsAt: new Date(periodEnd).toISOString(),
-                  addonBalance: currentTrackAddonBalance,
-                }),
+                credits: buildTrackCredits(null, effectiveLimit),
                 details: buildTrackDetails(
                   "Billing ledger unavailable. Cannot safely initialize tracked usage right now.",
                 ),
@@ -3074,92 +3519,134 @@ app.openapi(
           );
         }
 
-        // If DO says not allowed, try addon credits first, then overage
+        // If DO says not allowed, spend remaining plan balance first, then
+        // manual bonus credits, then add-on credits, then overage.
         if (doResult && !doResult.allowed) {
-          // During trials, always block at limit — no overage billing for free trials
           const overageSetting = isTrial
             ? "block"
             : planFeature.overage || "block";
+          const coverage = splitUsageCoverage({
+            requested: trackEffectiveValue,
+            planBalance: doResult.balance,
+            manualBonusBalance: currentTrackManualBonusBalance,
+            addonBalance: currentTrackAddonBalance ?? 0,
+          });
 
-          // Add-on credits FIRST — consume purchased credits before overage billing
-          if (trackCreditContext) {
-            const deductResult = await tryDeductAddonCredits(
-              db,
-              customer.id,
-              trackEffectiveValue,
-              trackCreditContext.creditSystemId,
-              deps,
+          if (coverage.planAmount > 0) {
+            const consumeIncludedResult = await usageMeter.track(
+              trackFeatureKey,
+              coverage.planAmount,
+              currentConfig,
             );
-            if (deductResult.deducted) {
-              scheduleUsagePersist(
-                c,
-                db,
-                organizationId,
-                {
-                  customerId: customer.id,
-                  ...buildUsageLedgerContext({
-                    featureId: trackEffectiveFeatureId,
-                    featureSlug: trackEffectiveSlug,
-                    featureName: trackCreditContext
-                      ? trackEffectiveSlug
-                      : (feature.name ?? trackEffectiveSlug),
-                    subscription,
-                    planFeature,
-                  }),
-                  entityId: entity || null,
-                  amount: trackEffectiveValue,
-                  periodStart,
-                  periodEnd,
-                },
-                "track:addon-fallback",
-              );
-              const addonDoUsage = doResult.usage ?? null;
+
+            if (!consumeIncludedResult.allowed) {
               return c.json(
                 {
-                  success: true,
-                  allowed: true,
-                  code: "addon_credits_used",
-                  usage: addonDoUsage,
+                  success: false,
+                  allowed: false,
+                  code: "limit_exceeded",
+                  usage: doResult.usage ?? null,
                   limit: effectiveLimit,
-                  balance: doResult.balance,
+                  balance: toTrackAvailableBalance(doResult.balance),
                   resetsAt: new Date(periodEnd).toISOString(),
                   resetInterval: planFeature.resetInterval,
                   ...(doResult.rolloverBalance > 0
                     ? { rolloverBalance: doResult.rolloverBalance }
                     : {}),
-                  credits: buildCreditsPayload({
-                    creditContext: trackCreditContext,
-                    usageModel,
-                    usage: addonDoUsage,
-                    limit: effectiveLimit,
-                    resetsAt: new Date(periodEnd).toISOString(),
-                    addonBalance: deductResult.remaining ?? 0,
-                  }),
+                  credits: buildTrackCredits(
+                    doResult.usage ?? null,
+                    effectiveLimit,
+                  ),
                   details: buildTrackDetails(
-                    `Plan credits exhausted. ${trackEffectiveValue} add-on credits deducted.`,
-                    {
-                      addonCreditsUsed: trackEffectiveValue,
-                      addonCreditsRemaining: deductResult.remaining ?? 0,
-                    },
-                    addonDoUsage,
+                    `Usage tracking denied — limit changed while processing the request.`,
+                    undefined,
+                    doResult.usage ?? null,
                   ),
                 },
                 200,
               );
             }
+
+            doResult = consumeIncludedResult;
           }
 
-          // If overage is "charge", check guards before allowing
-          if (overageSetting === "charge") {
-            const includedBalanceBeforeOverage = Math.max(
-              0,
-              Math.min(trackEffectiveValue, Number(doResult.balance || 0)),
-            );
-            const requestedOverageUnits = Math.max(
-              0,
-              trackEffectiveValue - includedBalanceBeforeOverage,
-            );
+          if (coverage.remainder === 0) {
+            if (coverage.addonAmount > 0 && trackCreditContext) {
+              const deductResult = await tryDeductAddonCredits(
+                db,
+                customer.id,
+                coverage.addonAmount,
+                trackCreditContext.creditSystemId,
+                deps,
+              );
+              if (!deductResult.deducted) {
+                return c.json(
+                  {
+                    success: false,
+                    allowed: false,
+                    code: "limit_exceeded",
+                    usage: doResult.usage ?? null,
+                    limit: effectiveLimit,
+                    balance: toTrackAvailableBalance(doResult.balance),
+                    resetsAt: new Date(periodEnd).toISOString(),
+                    resetInterval: planFeature.resetInterval,
+                    ...(doResult.rolloverBalance > 0
+                      ? { rolloverBalance: doResult.rolloverBalance }
+                      : {}),
+                    credits: buildTrackCredits(
+                      doResult.usage ?? null,
+                      effectiveLimit,
+                    ),
+                    details: buildTrackDetails(
+                      `Usage tracking denied — add-on credits were no longer available.`,
+                      undefined,
+                      doResult.usage ?? null,
+                    ),
+                  },
+                  200,
+                );
+              }
+              trackAddonBalanceAfter = computeRemainingAddonBalance(
+                currentAddonBalance ?? 0,
+                coverage.addonAmount,
+                deductResult.remaining,
+              );
+            }
 
+            persistedPlanAmount = coverage.planAmount;
+            persistedManualBonusAmount = coverage.manualBonusAmount;
+            persistedAddonAmount = coverage.addonAmount;
+            trackSuccessCode =
+              coverage.manualBonusAmount > 0
+                ? "bonus_credits_used"
+                : "addon_credits_used";
+            trackSuccessDetail =
+              coverage.manualBonusAmount > 0
+                ? {
+                    message: `Plan credits exhausted. ${coverage.manualBonusAmount} manual bonus credits deducted.`,
+                    extra: {
+                      bonusCreditsUsed: coverage.manualBonusAmount,
+                      bonusCreditsRemaining: Math.max(
+                        0,
+                        currentTrackManualBonusBalance -
+                          coverage.manualBonusAmount,
+                      ),
+                      ...(coverage.addonAmount > 0
+                        ? {
+                            addonCreditsUsed: coverage.addonAmount,
+                            addonCreditsRemaining: trackAddonBalanceAfter,
+                          }
+                        : {}),
+                    },
+                  }
+                : {
+                    message: `Plan credits exhausted. ${coverage.addonAmount} add-on credits deducted.`,
+                    extra: {
+                      addonCreditsUsed: coverage.addonAmount,
+                      addonCreditsRemaining: trackAddonBalanceAfter,
+                    },
+                  };
+          } else if (overageSetting === "charge") {
             const overageGuard = await deps.checkOverageAllowed(
               db,
               customer.id,
@@ -3168,7 +3655,7 @@ app.openapi(
               periodEnd,
               planFeature.limitValue,
               planFeature.maxOverageUnits,
-              requestedOverageUnits,
+              coverage.remainder,
               {
                 usageLedger: c.env.USAGE_LEDGER,
                 organizationId: organizationId || null,
@@ -3178,116 +3665,82 @@ app.openapi(
             );
 
             if (!overageGuard.allowed) {
-              const guardUsage = doResult.usage ?? null;
               return c.json(
                 {
                   success: false,
                   allowed: false,
                   code: "limit_exceeded",
-                  usage: guardUsage,
+                  usage: doResult.usage ?? null,
                   limit: effectiveLimit,
-                  balance: doResult.balance,
+                  balance: toTrackAvailableBalance(doResult.balance),
                   resetsAt: new Date(periodEnd).toISOString(),
                   resetInterval: planFeature.resetInterval,
                   ...(doResult.rolloverBalance > 0
                     ? { rolloverBalance: doResult.rolloverBalance }
                     : {}),
-                  credits: buildCreditsPayload({
-                    creditContext: trackCreditContext,
-                    usageModel,
-                    usage: guardUsage,
-                    limit: effectiveLimit,
-                    resetsAt: new Date(periodEnd).toISOString(),
-                    addonBalance: currentTrackAddonBalance,
-                  }),
+                  credits: buildTrackCredits(
+                    doResult.usage ?? null,
+                    effectiveLimit,
+                  ),
                   details: buildTrackDetails(
                     overageGuard.reason ||
-                      `Overage not allowed. ${requestedOverageUnits} overage units requested.`,
+                      `Overage not allowed. ${coverage.remainder} overage units requested.`,
                     undefined,
-                    guardUsage,
+                    doResult.usage ?? null,
                   ),
                 },
                 200,
               );
             }
 
-            trackedAsOverage = true;
-
-            // Guard passed: consume any remaining included/rollover balance first.
-            if (includedBalanceBeforeOverage > 0) {
-              const consumeIncludedResult = await usageMeter.track(
-                trackFeatureKey,
-                includedBalanceBeforeOverage,
-                currentConfig,
+            if (coverage.addonAmount > 0 && trackCreditContext) {
+              const deductResult = await tryDeductAddonCredits(
+                db,
+                customer.id,
+                coverage.addonAmount,
+                trackCreditContext.creditSystemId,
+                deps,
               );
-
-              if (consumeIncludedResult.allowed) {
-                doResult = consumeIncludedResult;
-              } else {
-                // If balance changed concurrently, re-check guard for full request as overage.
-                const raceOverageGuard = await deps.checkOverageAllowed(
-                  db,
-                  customer.id,
-                  trackEffectiveFeatureId,
-                  periodStart,
-                  periodEnd,
-                  planFeature.limitValue,
-                  planFeature.maxOverageUnits,
-                  trackEffectiveValue,
+              if (!deductResult.deducted) {
+                return c.json(
                   {
-                    usageLedger: c.env.USAGE_LEDGER,
-                    organizationId: organizationId || null,
-                    ...usageLedgerScope,
-                    legacyCreatedAtFloor: subscription.currentPeriodStart,
+                    success: false,
+                    allowed: false,
+                    code: "limit_exceeded",
+                    usage: doResult.usage ?? null,
+                    limit: effectiveLimit,
+                    balance: toTrackAvailableBalance(doResult.balance),
+                    resetsAt: new Date(periodEnd).toISOString(),
+                    resetInterval: planFeature.resetInterval,
+                    ...(doResult.rolloverBalance > 0
+                      ? { rolloverBalance: doResult.rolloverBalance }
+                      : {}),
+                    credits: buildTrackCredits(
+                      doResult.usage ?? null,
+                      effectiveLimit,
+                    ),
+                    details: buildTrackDetails(
+                      `Usage tracking denied — add-on credits were no longer available.`,
+                      undefined,
+                      doResult.usage ?? null,
+                    ),
                   },
+                  200,
                 );
-
-                if (!raceOverageGuard.allowed) {
-                  return c.json(
-                    {
-                      success: false,
-                      allowed: false,
-                      code: "limit_exceeded",
-                      usage: doResult.usage ?? null,
-                      limit: effectiveLimit,
-                      balance: doResult.balance,
-                      resetsAt: new Date(periodEnd).toISOString(),
-                      resetInterval: planFeature.resetInterval,
-                      ...(doResult.rolloverBalance > 0
-                        ? { rolloverBalance: doResult.rolloverBalance }
-                        : {}),
-                      credits: buildCreditsPayload({
-                        creditContext: trackCreditContext,
-                        usageModel,
-                        usage: doResult.usage ?? null,
-                        limit: effectiveLimit,
-                        resetsAt: new Date(periodEnd).toISOString(),
-                        addonBalance: currentTrackAddonBalance,
-                      }),
-                      details: buildTrackDetails(
-                        raceOverageGuard.reason ||
-                          `Overage not allowed. ${trackEffectiveValue} overage units requested.`,
-                        undefined,
-                        doResult.usage ?? null,
-                      ),
-                    },
-                    200,
-                  );
-                }
               }
+              trackAddonBalanceAfter = computeRemainingAddonBalance(
+                currentAddonBalance ?? 0,
+                effectiveValue,
+                deductResult.remaining,
+              );
             }
-            // Continue to persist full usage record below.
+
+            trackedAsOverage = true;
+            persistedPlanAmount = coverage.planAmount + coverage.remainder;
+            persistedManualBonusAmount = coverage.manualBonusAmount;
+            persistedAddonAmount = coverage.addonAmount;
           } else {
-            // overage is "block" and addon credits insufficient — block
             const blockUsage = doResult.usage ?? null;
-            const trackBlockAddonCredits = trackCreditContext
-              ? await getAddonBalance(
-                  db,
-                  customer.id,
-                  trackCreditContext.creditSystemId,
-                  deps,
-                )
-              : undefined;
             return c.json(
               {
                 success: false,
@@ -3295,20 +3748,13 @@ app.openapi(
                 code: "limit_exceeded",
                 usage: blockUsage,
                 limit: effectiveLimit,
-                balance: doResult.balance,
+                balance: toTrackAvailableBalance(doResult.balance),
                 resetsAt: new Date(periodEnd).toISOString(),
                 resetInterval: planFeature.resetInterval,
                 ...(doResult.rolloverBalance > 0
                   ? { rolloverBalance: doResult.rolloverBalance }
                   : {}),
-                credits: buildCreditsPayload({
-                  creditContext: trackCreditContext,
-                  usageModel,
-                  usage: blockUsage,
-                  limit: effectiveLimit,
-                  resetsAt: new Date(periodEnd).toISOString(),
-                  addonBalance: trackBlockAddonCredits,
-                }),
+                credits: buildTrackCredits(blockUsage, effectiveLimit),
                 details: buildTrackDetails(
                   `Usage tracking denied — limit reached (${doResult.balance} remaining). Resets at ${new Date(periodEnd).toISOString()}.`,
                   undefined,
@@ -3350,14 +3796,7 @@ app.openapi(
               balance: null,
               resetsAt: new Date(periodEnd).toISOString(),
               resetInterval: planFeature.resetInterval,
-              credits: buildCreditsPayload({
-                creditContext: trackCreditContext,
-                usageModel,
-                usage: null,
-                limit: null,
-                resetsAt: new Date(periodEnd).toISOString(),
-                addonBalance: currentTrackAddonBalance,
-              }),
+              credits: buildTrackCredits(null, null),
               details: buildTrackDetails(
                 usageBasedGuard.reason || "Usage-based billing is not allowed.",
               ),
@@ -3371,26 +3810,30 @@ app.openapi(
       // Persist to DB asynchronously (for audit trail and backup)
       // Using waitUntil to avoid blocking the response
       // ===========================================================================
-      const usagePersistPromise = scheduleUsagePersist(
+      const usagePersistPromise = scheduleUsagePersistSegments(
         c,
         db,
         organizationId,
         {
           customerId: customer.id,
-          ...buildUsageLedgerContext({
-            featureId: trackEffectiveFeatureId,
-            featureSlug: trackEffectiveSlug,
-            featureName: trackCreditContext
-              ? trackEffectiveSlug
-              : (feature.name ?? trackEffectiveSlug),
-            subscription,
-            planFeature,
-          }),
+          featureId: trackEffectiveFeatureId,
+          featureSlug: trackEffectiveSlug,
+          featureName: trackCreditContext
+            ? trackEffectiveSlug
+            : (feature.name ?? trackEffectiveSlug),
+          subscriptionId: subscription?.id ?? null,
+          planId: subscription?.planId ?? null,
           entityId: entity || null,
-          amount: trackEffectiveValue,
           periodStart,
           periodEnd,
         },
+        buildUsagePersistSegments({
+          planFeature,
+          planAmount: persistedPlanAmount,
+          manualBonusAmount: persistedManualBonusAmount,
+          addonAmount: persistedAddonAmount,
+          manualBonusEntitlementId: trackManualBonusEntitlement?.id ?? null,
+        }),
         "track:main",
       );
 
@@ -3416,9 +3859,7 @@ app.openapi(
       }
 
       // Determine if this was an overage usage
-      const isOverage =
-        trackedAsOverage ||
-        !!(doResult && !doResult.allowed && planFeature.overage === "charge");
+      const isOverage = trackedAsOverage;
 
       const isChargeableUsage = isOverage || usageModel === "usage_based";
 
@@ -3442,28 +3883,36 @@ app.openapi(
       }
 
       const successUsage = doResult ? doResult.usage : null;
+      const remainingTrackManualBonusBalance = Math.max(
+        0,
+        currentTrackManualBonusBalance - persistedManualBonusAmount,
+      );
 
+      const responseCode =
+        trackedAsOverage ? "tracked_overage" : trackSuccessCode;
       return c.json(
         {
           success: true,
           allowed: true,
-          code: isOverage ? "tracked_overage" : "tracked",
+          code: responseCode,
           usage: successUsage,
           limit: effectiveLimit,
-          balance: doResult?.balance ?? null,
+          balance: toTrackAvailableBalance(
+            doResult?.balance ?? null,
+            trackAddonBalanceAfter,
+            remainingTrackManualBonusBalance,
+          ),
           resetsAt: new Date(periodEnd).toISOString(),
           resetInterval: planFeature.resetInterval,
           ...(doResult && doResult.rolloverBalance > 0
             ? { rolloverBalance: doResult.rolloverBalance }
             : {}),
-          credits: buildCreditsPayload({
-            creditContext: trackCreditContext,
-            usageModel,
-            usage: successUsage,
-            limit: effectiveLimit,
-            resetsAt: new Date(periodEnd).toISOString(),
-            addonBalance: currentTrackAddonBalance,
-          }),
+          credits: buildTrackCredits(
+            successUsage,
+            effectiveLimit,
+            trackAddonBalanceAfter,
+            remainingTrackManualBonusBalance,
+          ),
           details: isOverage
             ? buildTrackDetails(
                 `Usage tracked as overage (will be billed).`,
@@ -3472,6 +3921,12 @@ app.openapi(
                 },
                 successUsage,
               )
+            : trackSuccessDetail
+              ? buildTrackDetails(
+                  trackSuccessDetail.message,
+                  trackSuccessDetail.extra,
+                  successUsage,
+                )
             : usageModel === "usage_based"
               ? buildTrackDetails(
                   `Usage tracked successfully. This usage is billable.`,

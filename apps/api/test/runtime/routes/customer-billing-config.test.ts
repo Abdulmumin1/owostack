@@ -297,7 +297,100 @@ describe("Customer billing config runtime integration", () => {
     });
   });
 
-  it("enforces a customer feature max overage cap ahead of the plan fallback", async () => {
+  it("blocks plan overage by default until the customer explicitly enables it", async () => {
+    const now = Date.now();
+    const currentPeriodStart = now - 2 * 24 * 60 * 60 * 1000;
+    const currentPeriodEnd = now + 28 * 24 * 60 * 60 * 1000;
+    const usageWindow = getResetPeriod(
+      "monthly",
+      currentPeriodStart,
+      currentPeriodEnd,
+    );
+
+    await insertCustomer(businessDb.d1, {
+      id: "cust_default_block",
+      organizationId: "org_123",
+      email: "default-block@acme.com",
+    });
+    await insertPlan(businessDb.d1, {
+      id: "plan_default_block",
+      organizationId: "org_123",
+      name: "Pro",
+      slug: "pro",
+      price: 4900,
+      currency: "USD",
+      type: "paid",
+    });
+    await insertFeature(businessDb.d1, {
+      id: "feature_default_block",
+      organizationId: "org_123",
+      slug: "default-block-feature",
+      name: "Default Block Feature",
+    });
+    await insertPlanFeature(businessDb.d1, {
+      id: "pf_default_block",
+      planId: "plan_default_block",
+      featureId: "feature_default_block",
+      limitValue: 10,
+      overage: "charge",
+      overagePrice: 25,
+      billingUnits: 1,
+    });
+    await insertSubscription(businessDb.d1, {
+      id: "sub_default_block",
+      customerId: "cust_default_block",
+      planId: "plan_default_block",
+      status: "active",
+      currentPeriodStart,
+      currentPeriodEnd,
+    });
+    await insertPaymentMethod(businessDb.d1, {
+      customerId: "cust_default_block",
+      organizationId: "org_123",
+    });
+
+    await appendMeteredUsage({
+      organizationId: "org_123",
+      customerId: "cust_default_block",
+      featureId: "feature_default_block",
+      featureSlug: "default-block-feature",
+      featureName: "Default Block Feature",
+      subscriptionId: "sub_default_block",
+      planId: "plan_default_block",
+      amount: 10,
+      periodStart: usageWindow.periodStart,
+      periodEnd: usageWindow.periodEnd,
+      createdAt: now - 60_000,
+    });
+
+    const checkResponse = await entitlementsApp.request(
+      "/check",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customer: "cust_default_block",
+          feature: "default-block-feature",
+          value: 1,
+        }),
+      },
+      {
+        ...RUNTIME_ROUTE_ENV,
+        USAGE_LEDGER: usageLedger as unknown as DurableObjectNamespace<any>,
+      },
+    );
+
+    expect(checkResponse.status).toBe(200);
+    const body = await checkResponse.json();
+    expect(body.allowed).toBe(false);
+    expect(body.code).toBe("limit_exceeded");
+    expect(body.details.overage ?? null).toBeNull();
+  });
+
+  it("enforces a customer feature max overage cap once customer overage is enabled", async () => {
     const now = Date.now();
     const currentPeriodStart = now - 2 * 24 * 60 * 60 * 1000;
     const currentPeriodEnd = now + 28 * 24 * 60 * 60 * 1000;
@@ -367,6 +460,7 @@ describe("Customer billing config runtime integration", () => {
     const configResponse = await setCustomerFeatureConfig({
       customer: "cust_2",
       feature: "agent-runs",
+      overage: "charge",
       maxOverageUnits: 2,
     });
     expect(configResponse.status).toBe(200);

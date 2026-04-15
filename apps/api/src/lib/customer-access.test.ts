@@ -103,6 +103,7 @@ describe("customer access helpers", () => {
           grantedReason: "Support extension",
         },
       ],
+      manualBonusEntitlements: [],
     });
 
     expect(entries).toHaveLength(1);
@@ -173,6 +174,7 @@ describe("customer access helpers", () => {
       ],
       planEntitlements: [],
       manualEntitlements: [],
+      manualBonusEntitlements: [],
       creditBalances: [],
     });
 
@@ -242,6 +244,7 @@ describe("customer access helpers", () => {
       ],
       planEntitlements: [],
       manualEntitlements: [],
+      manualBonusEntitlements: [],
       creditBalances: [],
     });
 
@@ -311,6 +314,7 @@ describe("customer access helpers", () => {
       ],
       planEntitlements: [],
       manualEntitlements: [],
+      manualBonusEntitlements: [],
       creditBalances: [],
     });
 
@@ -381,6 +385,7 @@ describe("customer access helpers", () => {
       ],
       planEntitlements: [],
       manualEntitlements: [],
+      manualBonusEntitlements: [],
       creditBalances: [],
     });
 

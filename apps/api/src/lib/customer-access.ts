@@ -1,4 +1,6 @@
 import { getResetPeriod } from "./reset-period";
+import { resolveManualBonusBalanceState } from "./manual-bonus-balances";
+import { normalizeResetInterval } from "./reset-interval";
 import { sumScopedUsageAmount } from "./scoped-usage";
 import { isPaidActivePastGracePeriod } from "./subscription-health";
 import {
@@ -73,8 +75,13 @@ export type CustomerAccessItem = {
   entitlementSource: "plan" | "manual";
   grantedReason: string | null;
   balance: number | null;
+  planBalance: number | null;
   usage: number | null;
   limit: number | null;
+  manualBonusLimit: number | null;
+  manualBonusBalance: number | null;
+  totalBalance: number | null;
+  totalLimit: number | null;
   isTrialing?: boolean;
   isTrialLimit?: boolean;
   rolloverBalance: number;
@@ -115,6 +122,7 @@ type BuildCustomerAccessSnapshotParams = {
   planFeatures: CustomerAccessPlanFeature[];
   planEntitlements: CustomerAccessEntitlement[];
   manualEntitlements: CustomerAccessEntitlement[];
+  manualBonusEntitlements: CustomerAccessEntitlement[];
   creditBalances: CustomerAccessCreditBalance[];
   now?: number;
 };
@@ -177,6 +185,7 @@ export function composeCustomerAccessEntries(params: {
   planFeatures: CustomerAccessPlanFeature[];
   planEntitlements: CustomerAccessEntitlement[];
   manualEntitlements: CustomerAccessEntitlement[];
+  manualBonusEntitlements: CustomerAccessEntitlement[];
 }): Array<{
   featureId: string;
   featureName: string;
@@ -186,6 +195,7 @@ export function composeCustomerAccessEntries(params: {
   planFeature: CustomerAccessPlanFeature | null;
   planEntitlement: CustomerAccessEntitlement | null;
   manualEntitlement: CustomerAccessEntitlement | null;
+  manualBonusEntitlement: CustomerAccessEntitlement | null;
   effectiveEntitlement: CustomerAccessPlanFeature | CustomerAccessEntitlement;
   subscription: CustomerAccessSubscription | null;
 }> {
@@ -231,11 +241,24 @@ export function composeCustomerAccessEntries(params: {
     }
   }
 
+  const manualBonusEntitlementByFeatureId = new Map<
+    string,
+    CustomerAccessEntitlement
+  >();
+  for (const entitlement of params.manualBonusEntitlements) {
+    if (!manualBonusEntitlementByFeatureId.has(entitlement.featureId)) {
+      manualBonusEntitlementByFeatureId.set(entitlement.featureId, entitlement);
+    }
+  }
+
   const featureIds = [
     ...new Set([
       ...params.planFeatures.map((feature) => feature.featureId),
       ...params.planEntitlements.map((entitlement) => entitlement.featureId),
       ...params.manualEntitlements.map((entitlement) => entitlement.featureId),
+      ...params.manualBonusEntitlements.map(
+        (entitlement) => entitlement.featureId,
+      ),
     ]),
   ];
 
@@ -245,6 +268,8 @@ export function composeCustomerAccessEntries(params: {
       const planEntitlement = planEntitlementByFeatureId.get(featureId) ?? null;
       const manualEntitlement =
         manualEntitlementByFeatureId.get(featureId) ?? null;
+      const manualBonusEntitlement =
+        manualBonusEntitlementByFeatureId.get(featureId) ?? null;
       const effectiveEntitlement =
         manualEntitlement ?? planEntitlement ?? planFeature;
 
@@ -267,6 +292,7 @@ export function composeCustomerAccessEntries(params: {
         planFeature,
         planEntitlement,
         manualEntitlement,
+        manualBonusEntitlement,
         effectiveEntitlement,
         subscription,
       };
@@ -318,7 +344,9 @@ async function resolveMeteredBalance(params: {
       ? params.trialLimitValue
       : params.limitValue;
 
-  const resetInterval = params.resetInterval || "monthly";
+  const resetInterval = normalizeResetInterval(
+    params.resetInterval || "monthly",
+  );
   const resetsOnPlanEnable = shouldResetUsageOnPlanEnable({
     usageModel: params.usageModel,
     resetOnEnable: params.resetOnEnable,
@@ -397,6 +425,7 @@ async function resolveMeteredBalance(params: {
             featureId: params.featureId,
             createdAtFrom: resetWindow.periodStart,
             createdAtTo: resetWindow.periodEnd,
+            coverageSource: "plan",
             scope: usageLedgerScope,
             legacyPlanScope: legacyUsageLedgerScope,
             legacyCreatedAtFloor: params.subscription?.currentPeriodStart ?? null,
@@ -449,6 +478,7 @@ async function resolveMeteredBalance(params: {
       featureId: params.featureId,
       createdAtFrom: resetWindow.periodStart,
       createdAtTo: resetWindow.periodEnd,
+      coverageSource: "plan",
       scope: usageLedgerScope,
       legacyPlanScope: legacyUsageLedgerScope,
       legacyCreatedAtFloor: params.subscription?.currentPeriodStart ?? null,
@@ -480,6 +510,7 @@ export async function buildCustomerAccessSnapshot(
     ),
     planEntitlements: params.planEntitlements,
     manualEntitlements: params.manualEntitlements,
+    manualBonusEntitlements: params.manualBonusEntitlements,
   });
 
   const addonBalanceByFeatureId = new Map(
@@ -511,11 +542,49 @@ export async function buildCustomerAccessSnapshot(
               subscription: entry.subscription,
             })
           : null;
+      const manualBonusState =
+        entry.featureType === "metered"
+          ? await resolveManualBonusBalanceState({
+              usageLedger: params.env.USAGE_LEDGER,
+              organizationId: params.organizationId,
+              customerId: params.customerId,
+              featureId: entry.featureId,
+              entitlement: entry.manualBonusEntitlement,
+              subscription: entry.subscription,
+              usageLedgerScope: resolveUsageLedgerScope(
+                {
+                  usageModel: entry.planFeature?.usageModel,
+                  resetOnEnable: entry.planFeature?.resetOnEnable,
+                },
+                entry.subscription,
+              ),
+              legacyUsageLedgerScope: resolveLegacyUsageLedgerScope(
+                {
+                  usageModel: entry.planFeature?.usageModel,
+                  resetOnEnable: entry.planFeature?.resetOnEnable,
+                },
+                entry.subscription,
+              ),
+            })
+          : null;
 
       const isTrialing = entry.subscription?.status === "trialing";
       const planTrialLimitValue = entry.planFeature?.trialLimitValue ?? null;
       const effectiveLimit =
         balanceState?.limit ?? entry.effectiveEntitlement.limitValue ?? null;
+      const addonBalance = addonBalanceByFeatureId.get(entry.featureId) ?? null;
+      const totalBalance =
+        balanceState?.balance === null
+          ? null
+          : (balanceState?.balance ?? 0) +
+            (manualBonusState?.balance ?? 0) +
+            (addonBalance ?? 0);
+      const totalLimit =
+        effectiveLimit === null
+          ? null
+          : effectiveLimit +
+            (manualBonusState?.limit ?? 0) +
+            (addonBalance ?? 0);
 
       return {
         featureId: entry.featureId,
@@ -541,15 +610,20 @@ export async function buildCustomerAccessSnapshot(
         entitlementSource: entry.manualEntitlement ? "manual" : "plan",
         grantedReason: entry.manualEntitlement?.grantedReason ?? null,
         balance: balanceState?.balance ?? null,
+        planBalance: balanceState?.balance ?? null,
         usage: balanceState?.usage ?? null,
         limit: effectiveLimit,
+        manualBonusLimit: manualBonusState?.limit ?? null,
+        manualBonusBalance: manualBonusState?.balance ?? null,
+        totalBalance,
+        totalLimit,
         isTrialing,
         isTrialLimit:
           isTrialing &&
           planTrialLimitValue !== null &&
           effectiveLimit === planTrialLimitValue,
         rolloverBalance: balanceState?.rolloverBalance ?? 0,
-        addonBalance: addonBalanceByFeatureId.get(entry.featureId) ?? null,
+        addonBalance,
       };
     }),
   );

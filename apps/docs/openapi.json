@@ -1019,8 +1019,17 @@
                             "costPerUnit": {
                               "type": "number"
                             },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
                             "addonBalance": {
                               "type": "number"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -1057,7 +1066,9 @@
                             "source",
                             "systemSlug",
                             "costPerUnit",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -1067,11 +1078,20 @@
                             "source": {
                               "type": "string",
                               "enum": [
-                                "prepaid"
+                                "feature"
                               ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
                             },
                             "addonBalance": {
                               "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -1106,7 +1126,69 @@
                           },
                           "required": [
                             "source",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "bonusBalance",
+                            "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -1384,8 +1466,17 @@
                             "costPerUnit": {
                               "type": "number"
                             },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
                             "addonBalance": {
                               "type": "number"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -1422,7 +1513,9 @@
                             "source",
                             "systemSlug",
                             "costPerUnit",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -1432,11 +1525,20 @@
                             "source": {
                               "type": "string",
                               "enum": [
-                                "prepaid"
+                                "feature"
                               ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
                             },
                             "addonBalance": {
                               "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -1471,7 +1573,69 @@
                           },
                           "required": [
                             "source",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "bonusBalance",
+                            "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -1623,8 +1787,17 @@
                             "costPerUnit": {
                               "type": "number"
                             },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
                             "addonBalance": {
                               "type": "number"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -1661,7 +1834,9 @@
                             "source",
                             "systemSlug",
                             "costPerUnit",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -1671,11 +1846,20 @@
                             "source": {
                               "type": "string",
                               "enum": [
-                                "prepaid"
+                                "feature"
                               ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
                             },
                             "addonBalance": {
                               "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -1710,7 +1894,69 @@
                           },
                           "required": [
                             "source",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "bonusBalance",
+                            "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -1810,8 +2056,17 @@
                                 "costPerUnit": {
                                   "type": "number"
                                 },
+                                "bonusBalance": {
+                                  "type": "number"
+                                },
                                 "addonBalance": {
                                   "type": "number"
+                                },
+                                "totalBalance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 },
                                 "plan": {
                                   "type": "object",
@@ -1848,7 +2103,9 @@
                                 "source",
                                 "systemSlug",
                                 "costPerUnit",
+                                "bonusBalance",
                                 "addonBalance",
+                                "totalBalance",
                                 "plan"
                               ]
                             },
@@ -1858,11 +2115,20 @@
                                 "source": {
                                   "type": "string",
                                   "enum": [
-                                    "prepaid"
+                                    "feature"
                                   ]
+                                },
+                                "bonusBalance": {
+                                  "type": "number"
                                 },
                                 "addonBalance": {
                                   "type": "null"
+                                },
+                                "totalBalance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 },
                                 "plan": {
                                   "type": "object",
@@ -1897,7 +2163,69 @@
                               },
                               "required": [
                                 "source",
+                                "bonusBalance",
                                 "addonBalance",
+                                "totalBalance",
+                                "plan"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "prepaid"
+                                  ]
+                                },
+                                "bonusBalance": {
+                                  "type": "number"
+                                },
+                                "addonBalance": {
+                                  "type": "null"
+                                },
+                                "totalBalance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "plan": {
+                                  "type": "object",
+                                  "properties": {
+                                    "used": {
+                                      "type": "number"
+                                    },
+                                    "limit": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "balance": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "resetsAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    }
+                                  },
+                                  "required": [
+                                    "used",
+                                    "limit",
+                                    "balance",
+                                    "resetsAt"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "bonusBalance",
+                                "addonBalance",
+                                "totalBalance",
                                 "plan"
                               ]
                             },
@@ -2080,8 +2408,17 @@
                             "costPerUnit": {
                               "type": "number"
                             },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
                             "addonBalance": {
                               "type": "number"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -2118,7 +2455,9 @@
                             "source",
                             "systemSlug",
                             "costPerUnit",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -2128,11 +2467,20 @@
                             "source": {
                               "type": "string",
                               "enum": [
-                                "prepaid"
+                                "feature"
                               ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
                             },
                             "addonBalance": {
                               "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -2167,7 +2515,69 @@
                           },
                           "required": [
                             "source",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "bonusBalance",
+                            "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -2265,8 +2675,17 @@
                             "costPerUnit": {
                               "type": "number"
                             },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
                             "addonBalance": {
                               "type": "number"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -2303,7 +2722,9 @@
                             "source",
                             "systemSlug",
                             "costPerUnit",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -2313,11 +2734,20 @@
                             "source": {
                               "type": "string",
                               "enum": [
-                                "prepaid"
+                                "feature"
                               ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
                             },
                             "addonBalance": {
                               "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -2352,7 +2782,69 @@
                           },
                           "required": [
                             "source",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "bonusBalance",
+                            "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -2452,8 +2944,17 @@
                                 "costPerUnit": {
                                   "type": "number"
                                 },
+                                "bonusBalance": {
+                                  "type": "number"
+                                },
                                 "addonBalance": {
                                   "type": "number"
+                                },
+                                "totalBalance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 },
                                 "plan": {
                                   "type": "object",
@@ -2490,7 +2991,9 @@
                                 "source",
                                 "systemSlug",
                                 "costPerUnit",
+                                "bonusBalance",
                                 "addonBalance",
+                                "totalBalance",
                                 "plan"
                               ]
                             },
@@ -2500,11 +3003,20 @@
                                 "source": {
                                   "type": "string",
                                   "enum": [
-                                    "prepaid"
+                                    "feature"
                                   ]
+                                },
+                                "bonusBalance": {
+                                  "type": "number"
                                 },
                                 "addonBalance": {
                                   "type": "null"
+                                },
+                                "totalBalance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 },
                                 "plan": {
                                   "type": "object",
@@ -2539,7 +3051,69 @@
                               },
                               "required": [
                                 "source",
+                                "bonusBalance",
                                 "addonBalance",
+                                "totalBalance",
+                                "plan"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "prepaid"
+                                  ]
+                                },
+                                "bonusBalance": {
+                                  "type": "number"
+                                },
+                                "addonBalance": {
+                                  "type": "null"
+                                },
+                                "totalBalance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "plan": {
+                                  "type": "object",
+                                  "properties": {
+                                    "used": {
+                                      "type": "number"
+                                    },
+                                    "limit": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "balance": {
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "resetsAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    }
+                                  },
+                                  "required": [
+                                    "used",
+                                    "limit",
+                                    "balance",
+                                    "resetsAt"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "bonusBalance",
+                                "addonBalance",
+                                "totalBalance",
                                 "plan"
                               ]
                             },
@@ -2677,8 +3251,17 @@
                             "costPerUnit": {
                               "type": "number"
                             },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
                             "addonBalance": {
                               "type": "number"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -2715,7 +3298,9 @@
                             "source",
                             "systemSlug",
                             "costPerUnit",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
@@ -2725,11 +3310,20 @@
                             "source": {
                               "type": "string",
                               "enum": [
-                                "prepaid"
+                                "feature"
                               ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
                             },
                             "addonBalance": {
                               "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
                             },
                             "plan": {
                               "type": "object",
@@ -2764,7 +3358,69 @@
                           },
                           "required": [
                             "source",
+                            "bonusBalance",
                             "addonBalance",
+                            "totalBalance",
+                            "plan"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "prepaid"
+                              ]
+                            },
+                            "bonusBalance": {
+                              "type": "number"
+                            },
+                            "addonBalance": {
+                              "type": "null"
+                            },
+                            "totalBalance": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "plan": {
+                              "type": "object",
+                              "properties": {
+                                "used": {
+                                  "type": "number"
+                                },
+                                "limit": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "balance": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "resetsAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "used",
+                                "limit",
+                                "balance",
+                                "resetsAt"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "bonusBalance",
+                            "addonBalance",
+                            "totalBalance",
                             "plan"
                           ]
                         },
