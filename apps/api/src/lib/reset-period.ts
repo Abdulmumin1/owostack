@@ -1,3 +1,5 @@
+import { normalizeResetInterval } from "./reset-interval";
+
 /**
  * Shared utility for calculating calendar-aligned usage period boundaries
  * based on a feature's resetInterval.
@@ -20,7 +22,9 @@ export function getResetPeriod(
   subscriptionPeriodStart: number,
   subscriptionPeriodEnd: number,
 ): ResetPeriod {
-  if (resetInterval === "none") {
+  const normalizedResetInterval = normalizeResetInterval(resetInterval);
+
+  if (normalizedResetInterval === "none") {
     return {
       periodStart: subscriptionPeriodStart,
       periodEnd: subscriptionPeriodEnd,
@@ -29,7 +33,7 @@ export function getResetPeriod(
 
   const now = new Date();
 
-  switch (resetInterval) {
+  switch (normalizedResetInterval) {
     case "5min": {
       // 5-minute rolling window aligned to clock (e.g. :00, :05, :10, ...)
       const minute5 = Math.floor(now.getMinutes() / 5) * 5;

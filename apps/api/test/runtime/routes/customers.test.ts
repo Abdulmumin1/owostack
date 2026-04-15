@@ -14,6 +14,37 @@ import {
   insertSubscription,
 } from "../helpers/workflow-runtime";
 
+async function insertEntitlement(
+  db: D1Database,
+  params: {
+    id: string;
+    customerId: string;
+    featureId: string;
+    limitValue: number;
+    resetInterval?: string;
+    source?: string;
+  },
+) {
+  const now = Date.now();
+  await db
+    .prepare(
+      `INSERT INTO entitlements
+       (id, customer_id, feature_id, limit_value, reset_interval, source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      params.id,
+      params.customerId,
+      params.featureId,
+      params.limitValue,
+      params.resetInterval || "monthly",
+      params.source || "plan",
+      now,
+      now,
+    )
+    .run();
+}
+
 async function appendMeteredUsage(
   usageLedger: SimulatedUsageLedgerNamespace,
   record: {
@@ -269,6 +300,113 @@ describe("Customers route runtime integration", () => {
         totalUsage: 9,
         recordCount: 3,
       },
+    ]);
+  });
+
+  it("returns plan and bonus balances separately in customer access", async () => {
+    const now = Date.now();
+    const currentPeriodStart = now - 5 * 24 * 60 * 60 * 1000;
+    const currentPeriodEnd = now + 25 * 24 * 60 * 60 * 1000;
+
+    await insertCustomer(businessDb.d1, {
+      id: "cust_bonus",
+      organizationId: "org_123",
+      email: "bonus-balance@example.com",
+    });
+    await insertPlan(businessDb.d1, {
+      id: "plan_pro",
+      organizationId: "org_123",
+      providerId: null,
+      providerPlanId: null,
+      paystackPlanId: null,
+      name: "Pro",
+      slug: "pro",
+      price: 5000,
+      currency: "USD",
+      type: "paid",
+    });
+    await insertFeature(businessDb.d1, {
+      id: "feature_ai_credits",
+      organizationId: "org_123",
+      slug: "ai-credits",
+      name: "AI Credits",
+      type: "metered",
+    });
+    await insertPlanFeature(businessDb.d1, {
+      id: "pf_ai_credits",
+      planId: "plan_pro",
+      featureId: "feature_ai_credits",
+      limitValue: 5000,
+      usageModel: "included",
+      resetOnEnable: 1,
+      overage: "charge",
+      overagePrice: 25,
+      billingUnits: 1,
+      ratingModel: "package",
+    });
+    await insertSubscription(businessDb.d1, {
+      id: "sub_pro",
+      customerId: "cust_bonus",
+      planId: "plan_pro",
+      providerId: null,
+      providerSubscriptionCode: null,
+      status: "active",
+      currentPeriodStart,
+      currentPeriodEnd,
+    });
+    await insertEntitlement(businessDb.d1, {
+      id: "ent_plan_ai_credits",
+      customerId: "cust_bonus",
+      featureId: "feature_ai_credits",
+      limitValue: 5000,
+      source: "plan",
+    });
+    await insertEntitlement(businessDb.d1, {
+      id: "ent_bonus_ai_credits",
+      customerId: "cust_bonus",
+      featureId: "feature_ai_credits",
+      limitValue: 100,
+      source: "manual_bonus",
+    });
+
+    await appendMeteredUsage(usageLedger, {
+      organizationId: "org_123",
+      customerId: "cust_bonus",
+      featureId: "feature_ai_credits",
+      featureSlug: "ai-credits",
+      featureName: "AI Credits",
+      subscriptionId: "sub_pro",
+      planId: "plan_pro",
+      amount: 5000,
+      periodStart: currentPeriodStart,
+      periodEnd: currentPeriodEnd,
+      createdAt: now - 60 * 60 * 1000,
+    });
+
+    const response = await app.request(
+      "/cust_bonus?planId=plan_pro",
+      { method: "GET" },
+      {
+        ENVIRONMENT: "test",
+        USAGE_LEDGER: usageLedger as unknown as DurableObjectNamespace<any>,
+      },
+    );
+
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data.customerAccess).toEqual([
+      expect.objectContaining({
+        featureId: "feature_ai_credits",
+        featureName: "AI Credits",
+        balance: 0,
+        planBalance: 0,
+        manualBonusLimit: 100,
+        manualBonusBalance: 100,
+        totalBalance: 100,
+        totalLimit: 5100,
+      }),
     ]);
   });
 });

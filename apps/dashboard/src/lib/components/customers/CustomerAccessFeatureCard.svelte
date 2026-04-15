@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { CheckCircle, Lightning } from "phosphor-svelte";
-
   let {
     item,
   }: {
@@ -19,7 +17,12 @@
       entitlementSource?: "plan" | "manual";
       grantedReason?: string | null;
       balance?: number | null;
+      planBalance?: number | null;
       limit?: number | null;
+      manualBonusLimit?: number | null;
+      manualBonusBalance?: number | null;
+      totalBalance?: number | null;
+      totalLimit?: number | null;
       isTrialing?: boolean;
       isTrialLimit?: boolean;
       rolloverBalance?: number;
@@ -36,12 +39,14 @@
 
   const isMetered = $derived(item.featureType === "metered");
   const isBoolean = $derived(item.featureType === "boolean");
+  const displayBalance = $derived(item.totalBalance ?? item.balance ?? null);
+  const displayLimit = $derived(item.totalLimit ?? item.limit ?? null);
   const showsProgress = $derived(
     isMetered &&
-      item.limit !== null &&
-      item.limit !== undefined &&
-      item.balance !== null &&
-      item.balance !== undefined,
+      displayLimit !== null &&
+      displayLimit !== undefined &&
+      displayBalance !== null &&
+      displayBalance !== undefined,
   );
 
   // Calculate width based on balance / limit.
@@ -50,14 +55,14 @@
     showsProgress
       ? Math.min(
           100,
-          Math.max(0, ((item.balance || 0) / (item.limit || 1)) * 100),
+          Math.max(0, ((displayBalance || 0) / (displayLimit || 1)) * 100),
         )
       : 0,
   );
 </script>
 
-<div class="flex gap-2 py-2 border-b border-border/40 last:border-0">
-  <div class="flex items-center justify-between mb-1">
+<div class="py-3 border-b border-border/40 last:border-0">
+  <div class="flex items-center justify-between mb-2">
     <div class="flex items-center gap-2">
       <h3 class="text-sm font-normal text-text-primary items-center">
         {item.featureName}
@@ -67,7 +72,7 @@
   </div>
 
   {#if showsProgress}
-    <div class="flex gap-2 flex-1 items-center">
+    <div class="flex gap-2 items-center">
       <div class="w-full flex-1 bg-accent/20 rounded-full h-2 overflow-hidden">
         <div
           class="bg-accent h-full rounded-full transition-all"
@@ -77,13 +82,31 @@
       <div
         class="text-[11px] text-text-dim text-right font-medium tracking-wide"
       >
-        {formatNumber(item.balance)} / {formatNumber(item.limit)}
+        {formatNumber(displayBalance)} / {formatNumber(displayLimit)}
       </div>
       {#if item.isTrialLimit}
         <span
           class="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-500 text-[9px] font-bold uppercase tracking-widest"
           >Trial</span
         >
+      {/if}
+    </div>
+  {/if}
+
+  {#if isMetered && ((item.manualBonusBalance ?? 0) > 0 || (item.addonBalance ?? 0) > 0)}
+    <div class="mt-2 flex flex-wrap gap-2 text-[10px] text-text-dim">
+      <span class="rounded-full bg-bg-secondary px-2 py-1">
+        Plan {formatNumber(item.planBalance ?? item.balance)} / {formatNumber(item.limit)}
+      </span>
+      {#if (item.manualBonusBalance ?? 0) > 0}
+        <span class="rounded-full bg-emerald-500/10 px-2 py-1 text-emerald-500">
+          Bonus {formatNumber(item.manualBonusBalance)}
+        </span>
+      {/if}
+      {#if (item.addonBalance ?? 0) > 0}
+        <span class="rounded-full bg-accent/10 px-2 py-1 text-accent">
+          Add-on {formatNumber(item.addonBalance)}
+        </span>
       {/if}
     </div>
   {/if}

@@ -104,6 +104,67 @@ describe("UsageMeterDO", () => {
     expect(result.limit).toBe(50);
   });
 
+  it("preserves included usage when only the reset interval changes in the same scope", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+
+    const { meter } = createMeter();
+    const usageScopeKey = resolveUsagePlanScope(
+      { usageModel: "included", resetOnEnable: true },
+      { id: "sub_pro", planId: "plan_pro" },
+    );
+
+    await meter.configureFeature(
+      "ai-credits",
+      config({
+        limit: 5000,
+        resetInterval: "never",
+        usageScopeKey,
+      }),
+    );
+    await meter.track("ai-credits", 5000);
+
+    vi.setSystemTime(new Date("2026-04-10T00:00:00.000Z"));
+
+    const result = await meter.check(
+      "ai-credits",
+      0,
+      config({
+        limit: 100,
+        resetInterval: "monthly",
+        usageScopeKey,
+      }),
+    );
+
+    expect(result.usage).toBe(5000);
+    expect(result.balance).toBe(0);
+    expect(result.limit).toBe(100);
+  });
+
+  it("treats never as an alias of none", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+
+    const { meter } = createMeter();
+
+    await meter.configureFeature(
+      "ai-credits",
+      config({
+        limit: 100,
+        resetInterval: "never",
+      }),
+    );
+    await meter.track("ai-credits", 25);
+
+    vi.setSystemTime(new Date("2026-06-01T00:00:00.000Z"));
+
+    const result = await meter.check("ai-credits", 0);
+
+    expect(result.usage).toBe(25);
+    expect(result.balance).toBe(75);
+    expect(result.limit).toBe(100);
+  });
+
   it("preserves usage for usage-based features when resetOnEnable is disabled", async () => {
     const { meter } = createMeter();
 

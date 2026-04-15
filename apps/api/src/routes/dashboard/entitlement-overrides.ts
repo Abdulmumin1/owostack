@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
+import { normalizeResetInterval } from "../../lib/reset-interval";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -38,11 +39,13 @@ function zodErrorToResponse(zodError: z.ZodError) {
 const grantOverrideSchema = z.object({
   customerId: z.string(),
   featureId: z.string(),
+  mode: z.enum(["replace", "bonus"]).default("replace"),
   limitValue: z.number().nullable(),
   expiresAt: z.number().nullable().optional(),
   resetInterval: z
-    .enum(["daily", "weekly", "monthly", "yearly", "never"])
-    .default("monthly"),
+    .enum(["daily", "weekly", "monthly", "yearly", "never", "none"])
+    .default("monthly")
+    .transform((value) => normalizeResetInterval(value)),
   reason: z.string().optional(),
 });
 
@@ -58,6 +61,7 @@ app.post("/", async (c) => {
   const {
     customerId,
     featureId,
+    mode,
     limitValue,
     expiresAt,
     resetInterval,
@@ -92,18 +96,39 @@ app.post("/", async (c) => {
       return c.json({ success: false, error: "Customer not found" }, 404);
     }
 
+    if (mode === "bonus" && feature.type !== "metered") {
+      return c.json(
+        {
+          success: false,
+          error: "Bonus credits are only supported for metered features",
+        },
+        400,
+      );
+    }
+
+    if (mode === "bonus" && limitValue === null) {
+      return c.json(
+        {
+          success: false,
+          error: "Bonus credits require a finite credit amount",
+        },
+        400,
+      );
+    }
+
     // 3. Upsert override
     const now = Date.now();
     const id = crypto.randomUUID();
+    const source = mode === "bonus" ? "manual_bonus" : "manual";
 
-    // Remove any existing manual overrides for this feature to avoid duplicates
+    // Remove any existing grant for this feature/source to avoid duplicates
     await db
       .delete(schema.entitlements)
       .where(
         and(
           eq(schema.entitlements.customerId, customerId),
           eq(schema.entitlements.featureId, featureId),
-          eq(schema.entitlements.source, "manual"),
+          eq(schema.entitlements.source, source),
         ),
       );
 
@@ -116,7 +141,7 @@ app.post("/", async (c) => {
         limitValue,
         resetInterval,
         expiresAt: expiresAt || null,
-        source: "manual",
+        source,
         grantedBy: user?.id || "system",
         grantedReason: reason || null,
         createdAt: now,
@@ -172,7 +197,7 @@ app.get("/", async (c) => {
   const overrides = await db.query.entitlements.findMany({
     where: and(
       eq(schema.entitlements.customerId, customerId),
-      eq(schema.entitlements.source, "manual"),
+      inArray(schema.entitlements.source, ["manual", "manual_bonus"]),
     ),
     with: {
       feature: true,

@@ -3,6 +3,8 @@ import type {
   UsageLedgerDO,
   UsageLedgerRecord,
 } from "../../../src/lib/usage-ledger-do";
+import { UsageMeterDO } from "../../../src/lib/usage-meter";
+import { normalizeUsageCoverageSource } from "../../../src/lib/usage-coverage";
 import {
   insertSubscription,
   seedWorkflowBase,
@@ -29,6 +31,8 @@ type StoredUsageRecord = Required<
     | "entityId"
     | "subscriptionId"
     | "planId"
+    | "coverageSource"
+    | "coverageReferenceId"
     | "pricingSnapshot"
   >;
 
@@ -89,6 +93,8 @@ class SimulatedUsageLedgerStub {
       periodEnd: record.periodEnd,
       subscriptionId: record.subscriptionId ?? null,
       planId: record.planId ?? null,
+      coverageSource: normalizeUsageCoverageSource(record.coverageSource),
+      coverageReferenceId: record.coverageReferenceId ?? null,
       pricingSnapshot: record.pricingSnapshot ?? null,
       invoiceId: record.invoiceId ?? null,
       createdAt: record.createdAt ?? Date.now(),
@@ -114,6 +120,8 @@ class SimulatedUsageLedgerStub {
     subscriptionId?: string | null;
     planId?: string | null;
     pricingSnapshot?: UsagePricingSnapshot | null;
+    coverageSource?: string | null;
+    coverageReferenceId?: string | null;
     unbilledOnly?: boolean;
   }) {
     return this.records
@@ -159,6 +167,26 @@ class SimulatedUsageLedgerStub {
         if (query.planId !== undefined && record.planId !== query.planId) {
           return false;
         }
+        if (query.coverageSource !== undefined) {
+          if (query.coverageSource === null) {
+            if (record.coverageSource !== null) return false;
+          } else if (query.coverageSource === "plan") {
+            if (
+              normalizeUsageCoverageSource(record.coverageSource) !==
+              query.coverageSource
+            ) {
+              return false;
+            }
+          } else if (record.coverageSource !== query.coverageSource) {
+            return false;
+          }
+        }
+        if (
+          query.coverageReferenceId !== undefined &&
+          record.coverageReferenceId !== query.coverageReferenceId
+        ) {
+          return false;
+        }
         if (
           query.pricingSnapshot !== undefined &&
           pricingSnapshotKey(record.pricingSnapshot) !==
@@ -182,6 +210,8 @@ class SimulatedUsageLedgerStub {
     subscriptionId?: string | null;
     planId?: string | null;
     pricingSnapshot?: UsagePricingSnapshot | null;
+    coverageSource?: string | null;
+    coverageReferenceId?: string | null;
   }) {
     let updated = 0;
     for (const record of this.records) {
@@ -197,6 +227,26 @@ class SimulatedUsageLedgerStub {
         continue;
       }
       if (query.planId !== undefined && record.planId !== query.planId) {
+        continue;
+      }
+      if (query.coverageSource !== undefined) {
+        if (query.coverageSource === null) {
+          if (record.coverageSource !== null) continue;
+        } else if (query.coverageSource === "plan") {
+          if (
+            normalizeUsageCoverageSource(record.coverageSource) !==
+            query.coverageSource
+          ) {
+            continue;
+          }
+        } else if (record.coverageSource !== query.coverageSource) {
+          continue;
+        }
+      }
+      if (
+        query.coverageReferenceId !== undefined &&
+        record.coverageReferenceId !== query.coverageReferenceId
+      ) {
         continue;
       }
       if (
@@ -229,6 +279,9 @@ class SimulatedUsageLedgerStub {
       if (record.customerId !== _customerId || record.invoiceId !== null) {
         continue;
       }
+      if (normalizeUsageCoverageSource(record.coverageSource) !== "plan") {
+        continue;
+      }
       totals.set(
         record.featureId,
         (totals.get(record.featureId) || 0) + record.amount,
@@ -251,6 +304,8 @@ class SimulatedUsageLedgerStub {
         periodEnd: number;
         subscriptionId: string | null;
         planId: string | null;
+        coverageSource: string;
+        coverageReferenceId: string | null;
         pricingSnapshot: UsagePricingSnapshot | null;
         totalUsage: number;
         lastCreatedAt: number;
@@ -260,6 +315,9 @@ class SimulatedUsageLedgerStub {
     for (const record of this.records) {
       if (record.customerId !== customerId || record.invoiceId !== null)
         continue;
+      if (normalizeUsageCoverageSource(record.coverageSource) !== "plan") {
+        continue;
+      }
       if (
         typeof usageCutoffAt === "number" &&
         record.createdAt > usageCutoffAt
@@ -275,6 +333,8 @@ class SimulatedUsageLedgerStub {
         record.periodEnd,
         record.subscriptionId ?? "",
         record.planId ?? "",
+        normalizeUsageCoverageSource(record.coverageSource),
+        record.coverageReferenceId ?? "",
         pricingSnapshotKey(record.pricingSnapshot),
       ].join("|");
 
@@ -296,6 +356,8 @@ class SimulatedUsageLedgerStub {
         periodEnd: record.periodEnd,
         subscriptionId: record.subscriptionId ?? null,
         planId: record.planId ?? null,
+        coverageSource: normalizeUsageCoverageSource(record.coverageSource),
+        coverageReferenceId: record.coverageReferenceId ?? null,
         pricingSnapshot: record.pricingSnapshot ?? null,
         totalUsage: record.amount,
         lastCreatedAt: record.createdAt,
@@ -391,6 +453,48 @@ export class SimulatedUsageLedgerNamespace {
     return (this.recordsByOrg.get(`org:${organizationId}`) || []).map(
       cloneRecord,
     );
+  }
+}
+
+function createUsageMeterStorage() {
+  const values = new Map<string, unknown>();
+  let alarm: number | null = null;
+
+  return {
+    storage: {
+      async get<T>(key: string): Promise<T | undefined> {
+        return values.get(key) as T | undefined;
+      },
+      async put(key: string, value: unknown): Promise<void> {
+        values.set(key, value);
+      },
+      async getAlarm(): Promise<number | null> {
+        return alarm;
+      },
+      async setAlarm(value: number): Promise<void> {
+        alarm = value;
+      },
+    },
+  };
+}
+
+export class SimulatedUsageMeterNamespace {
+  private readonly meters = new Map<string, UsageMeterDO>();
+
+  idFromName(name: string) {
+    return name;
+  }
+
+  get(id: string) {
+    if (!this.meters.has(id)) {
+      const storage = createUsageMeterStorage();
+      this.meters.set(
+        id,
+        new UsageMeterDO({ storage: storage.storage } as any, {} as never),
+      );
+    }
+
+    return this.meters.get(id)! as unknown as DurableObjectStub<UsageMeterDO>;
   }
 }
 

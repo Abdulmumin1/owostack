@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { normalizeResetInterval } from "./reset-interval";
 
 interface UsageState {
   balance: number;
@@ -150,6 +151,10 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
     options?: { lazy?: boolean },
   ): Promise<{ success: boolean }> {
     await this.init();
+    const normalizedConfig: FeatureConfig = {
+      ...config,
+      resetInterval: normalizeResetInterval(config.resetInterval),
+    };
 
     // If lazy initialization, prevent reset/overwrite of existing state
     const existingState = this.featureUsage.get(featureId);
@@ -157,51 +162,60 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
       if (!existingState) {
         // No state yet — save config but DON'T create state.
         // Caller should handle "feature_not_found" and provide initialUsage via non-lazy configure.
-        this.featureConfigs.set(featureId, config);
+        this.featureConfigs.set(featureId, normalizedConfig);
         await this.persist();
         return { success: true };
       }
 
       const oldConfig = this.featureConfigs.get(featureId);
+      const normalizedOldInterval = normalizeResetInterval(
+        oldConfig?.resetInterval,
+      );
 
       // If config hasn't changed, skip entirely (no persist, no write)
       const configChanged =
-        oldConfig?.resetInterval !== config.resetInterval ||
-        oldConfig?.limit !== config.limit ||
-        oldConfig?.rolloverEnabled !== config.rolloverEnabled ||
-        oldConfig?.rolloverMaxBalance !== config.rolloverMaxBalance ||
-        oldConfig?.usageModel !== config.usageModel ||
-        oldConfig?.creditCost !== config.creditCost ||
-        oldConfig?.usageScopeKey !== config.usageScopeKey;
+        normalizedOldInterval !== normalizedConfig.resetInterval ||
+        oldConfig?.limit !== normalizedConfig.limit ||
+        oldConfig?.rolloverEnabled !== normalizedConfig.rolloverEnabled ||
+        oldConfig?.rolloverMaxBalance !== normalizedConfig.rolloverMaxBalance ||
+        oldConfig?.usageModel !== normalizedConfig.usageModel ||
+        oldConfig?.creditCost !== normalizedConfig.creditCost ||
+        oldConfig?.usageScopeKey !== normalizedConfig.usageScopeKey;
 
       if (!configChanged) {
         return { success: true };
       }
 
       console.log(
-        `[UsageMeter] Config changed for ${featureId}: interval ${oldConfig?.resetInterval} -> ${config.resetInterval}, limit ${oldConfig?.limit} -> ${config.limit}`,
+        `[UsageMeter] Config changed for ${featureId}: interval ${normalizedOldInterval} -> ${normalizedConfig.resetInterval}, limit ${oldConfig?.limit} -> ${normalizedConfig.limit}`,
       );
-      this.featureConfigs.set(featureId, config);
+      this.featureConfigs.set(featureId, normalizedConfig);
       const scopeChanged = !usageScopesEquivalent(
         oldConfig?.usageScopeKey,
-        config.usageScopeKey,
+        normalizedConfig.usageScopeKey,
       );
 
-      if (scopeChanged && config.resetOnEnable) {
-        existingState.limit = config.limit;
+      if (scopeChanged && normalizedConfig.resetOnEnable) {
+        existingState.limit = normalizedConfig.limit;
         existingState.usage = 0;
-        existingState.balance = config.limit ?? Infinity;
+        existingState.balance = normalizedConfig.limit ?? Infinity;
         existingState.rolloverBalance = 0;
         existingState.lastReset = Date.now();
       } else {
-        existingState.limit = config.limit;
-        if (config.limit !== null) {
+        existingState.limit = normalizedConfig.limit;
+        if (normalizedConfig.limit !== null) {
           existingState.balance = Math.max(
             0,
-            config.limit - existingState.usage,
+            normalizedConfig.limit - existingState.usage,
           );
         } else {
           existingState.balance = Infinity;
+        }
+
+        if (normalizedOldInterval !== normalizedConfig.resetInterval) {
+          // Preserve consumed usage when only the reset policy changes within
+          // the same plan/subscription scope.
+          existingState.lastReset = Date.now();
         }
       }
       await this.persist();
@@ -211,25 +225,25 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
       return { success: true };
     }
 
-    this.featureConfigs.set(featureId, config);
+    this.featureConfigs.set(featureId, normalizedConfig);
 
     // Determine start usage: existing, or initialUsage from config, or 0
     let startUsage = 0;
-    if (config.initialUsage !== undefined) {
-      startUsage = config.initialUsage;
+    if (normalizedConfig.initialUsage !== undefined) {
+      startUsage = normalizedConfig.initialUsage;
     }
 
-    if (!existingState || config.resetOnEnable) {
+    if (!existingState || normalizedConfig.resetOnEnable) {
       this.featureUsage.set(featureId, {
-        balance: config.limit ?? Infinity,
+        balance: normalizedConfig.limit ?? Infinity,
         usage: startUsage, // Start with migrated usage
-        limit: config.limit,
+        limit: normalizedConfig.limit,
         lastReset: Date.now(),
         rolloverBalance: 0,
       });
 
       // If we have initial usage, debit the balance
-      if (startUsage > 0 && config.limit !== null) {
+      if (startUsage > 0 && normalizedConfig.limit !== null) {
         const state = this.featureUsage.get(featureId)!;
         state.balance = Math.max(0, state.balance - startUsage);
       }
@@ -238,7 +252,7 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
     await this.persist();
 
     // Schedule reset alarm if needed
-    if (config.resetInterval !== "none") {
+    if (normalizedConfig.resetInterval !== "none") {
       await this.scheduleResetAlarm();
     }
 
@@ -252,9 +266,10 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
   private async maybeReset(featureId: string): Promise<void> {
     const state = this.featureUsage.get(featureId);
     const config = this.featureConfigs.get(featureId);
-    if (!state || !config || config.resetInterval === "none") return;
+    const normalizedInterval = normalizeResetInterval(config?.resetInterval);
+    if (!state || !config || normalizedInterval === "none") return;
 
-    const intervalMs = this.getIntervalMs(config.resetInterval);
+    const intervalMs = this.getIntervalMs(normalizedInterval);
     if (intervalMs === 0) return;
 
     const nextReset = state.lastReset + intervalMs;
@@ -477,8 +492,9 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
     let soonestReset = Infinity;
 
     for (const [featureId, config] of this.featureConfigs) {
-      if (config.resetInterval === "none") continue;
-      const intervalMs = this.getIntervalMs(config.resetInterval);
+      const normalizedInterval = normalizeResetInterval(config.resetInterval);
+      if (normalizedInterval === "none") continue;
+      const intervalMs = this.getIntervalMs(normalizedInterval);
       if (intervalMs === 0) continue;
 
       const state = this.featureUsage.get(featureId);
@@ -518,8 +534,9 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
     // Check all features for reset
     for (const [featureId, state] of this.featureUsage) {
       const config = this.featureConfigs.get(featureId);
-      if (config && config.resetInterval !== "none") {
-        const intervalMs = this.getIntervalMs(config.resetInterval);
+      const normalizedInterval = normalizeResetInterval(config?.resetInterval);
+      if (config && normalizedInterval !== "none") {
+        const intervalMs = this.getIntervalMs(normalizedInterval);
         const nextReset = state.lastReset + intervalMs;
 
         if (now >= nextReset) {
@@ -536,6 +553,7 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
    * Convert interval string to milliseconds
    */
   private getIntervalMs(interval: string): number {
+    const normalizedInterval = normalizeResetInterval(interval);
     const intervals: Record<string, number> = {
       "5min": 5 * 60 * 1000,
       "15min": 15 * 60 * 1000,
@@ -554,7 +572,7 @@ export class UsageMeterDO extends DurableObject<Record<string, unknown>> {
       year: 365 * 24 * 60 * 60 * 1000,
       yearly: 365 * 24 * 60 * 60 * 1000,
     };
-    return intervals[interval] || 0;
+    return intervals[normalizedInterval] || 0;
   }
 
   /**
