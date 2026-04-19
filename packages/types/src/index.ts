@@ -1339,6 +1339,103 @@ export interface SetCustomerOverageLimitParams {
 }
 
 /**
+ * usageHistory() - Get aggregated customer usage history
+ */
+
+export interface UsageHistoryParams {
+  /** Customer ID */
+  customer: string;
+
+  /** Preset date range or a custom window */
+  range?: "7d" | "30d" | "90d" | "custom";
+
+  /** Bucket size for aggregation */
+  granularity?: "day" | "week" | "month";
+
+  /** Optional feature slug or ID */
+  feature?: string | null;
+
+  /** Return a total series or include per-feature breakdowns */
+  groupBy?: "total" | "feature";
+
+  /** IANA timezone name used for bucket boundaries */
+  timezone?: string;
+
+  /** Inclusive start date in YYYY-MM-DD format when range is custom */
+  from?: string;
+
+  /** Inclusive end date in YYYY-MM-DD format when range is custom */
+  to?: string;
+}
+
+export interface UsageHistorySeriesPoint {
+  /** Bucket label, e.g. 2026-04-01 or 2026-04 */
+  bucket: string;
+
+  /** Aggregated usage value for the bucket */
+  value: number;
+}
+
+export interface UsageHistoryFeature {
+  /** Feature ID */
+  id: string;
+
+  /** Feature slug */
+  slug: string | null;
+
+  /** Feature name */
+  name: string;
+
+  /** Feature unit */
+  unit: string | null;
+}
+
+export interface UsageHistoryBreakdown {
+  /** Feature metadata */
+  feature: UsageHistoryFeature;
+
+  /** Totals for this feature within the requested range */
+  totals: {
+    usage: number;
+    records: number;
+  };
+
+  /** Aggregated feature series */
+  series: UsageHistorySeriesPoint[];
+}
+
+export interface UsageHistoryResult {
+  /** Customer that the history belongs to */
+  customer: {
+    id: string;
+  };
+
+  /** Echoed query metadata */
+  query: {
+    range: {
+      from: string;
+      to: string;
+    };
+    granularity: "day" | "week" | "month";
+    feature: string | null;
+    groupBy: "total" | "feature";
+    timezone: string;
+  };
+
+  /** Totals across the returned range */
+  totals: {
+    usage: number;
+    records: number;
+  };
+
+  /** Main series for charts and tables */
+  series: UsageHistorySeriesPoint[];
+
+  /** Optional per-feature breakdowns */
+  breakdown: UsageHistoryBreakdown[];
+}
+
+/**
  * addEntity() - Add a feature entity (e.g., seat)
  */
 

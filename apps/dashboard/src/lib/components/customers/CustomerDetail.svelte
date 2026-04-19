@@ -107,6 +107,25 @@
     return value.toLocaleString();
   }
 
+  function formatUsageBucketLabel(bucket: string) {
+    if (/^\d{4}-\d{2}$/.test(bucket)) {
+      return new Date(`${bucket}-01T00:00:00.000Z`).toLocaleDateString(
+        "en-US",
+        {
+          month: "short",
+          year: "numeric",
+          timeZone: "UTC",
+        },
+      );
+    }
+
+    return new Date(`${bucket}T00:00:00.000Z`).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  }
+
   function getHealthMessage(sub: any) {
     const reasons = Array.isArray(sub?.health?.reasons)
       ? sub.health.reasons
@@ -219,6 +238,7 @@
   const customerAccess = $derived(
     Array.isArray(data?.customerAccess) ? data.customerAccess : [],
   );
+  const usageHistory = $derived(data?.usageHistory ?? null);
   const scope = $derived(data?.scope ?? null);
   const scopedFeatureIds = $derived(
     Array.isArray(scope?.featureIds) ? scope.featureIds : null,
@@ -282,7 +302,37 @@
         iconColor: item.iconColor,
       }));
   });
-  const usageChartData = $derived(data?.usageChartData || null);
+  const usageChartData = $derived.by(() => {
+    if (
+      usageHistory &&
+      Array.isArray(usageHistory.series) &&
+      usageHistory.series.length > 0
+    ) {
+      const maxValue = Math.max(
+        ...usageHistory.series.map((point: any) => Number(point.value || 0)),
+        0,
+      );
+      const chartMax = maxValue > 0 ? Math.ceil(maxValue * 1.25) : 140;
+      const maxTick = Math.max(Math.ceil(chartMax / 4) * 4, 4);
+
+      return {
+        days: usageHistory.series.map((point: any) => ({
+          label: formatUsageBucketLabel(point.bucket),
+          value: Number(point.value || 0),
+        })),
+        max: maxTick,
+        ticks: [
+          maxTick,
+          Math.round(maxTick * 0.75),
+          Math.round(maxTick * 0.5),
+          Math.round(maxTick * 0.25),
+          0,
+        ],
+      };
+    }
+
+    return data?.usageChartData || null;
+  });
 
   let showExpired = $state(false);
 

@@ -10,6 +10,12 @@ export interface CustomerUsageLedgerScope {
   subscriptionIds?: string[] | null;
 }
 
+export interface CustomerUsageHistoryRow {
+  featureId: string;
+  amount: number;
+  createdAt: number;
+}
+
 export interface UsageLedgerRecord {
   id?: string;
   customerId: string;
@@ -608,6 +614,67 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
 
     return rows.map((row) => ({
       id: row.id,
+      featureId: row.feature_id,
+      amount: Number(row.amount || 0),
+      createdAt: Number(row.created_at || 0),
+    }));
+  }
+
+  async listUsageForCustomerRange(
+    customerId: string,
+    createdAtFrom: number,
+    createdAtTo: number,
+    featureId?: string | null,
+    scope?: CustomerUsageLedgerScope,
+  ): Promise<CustomerUsageHistoryRow[]> {
+    this.ensureSchema();
+
+    let sqlText = `SELECT feature_id, amount, created_at
+         FROM usage_records
+         WHERE customer_id = ?
+           AND created_at >= ?
+           AND created_at <= ?`;
+    const bindings: Array<string | number> = [
+      customerId,
+      createdAtFrom,
+      createdAtTo,
+    ];
+
+    if (featureId) {
+      sqlText += " AND feature_id = ?";
+      bindings.push(featureId);
+    }
+
+    const subscriptionIds = (scope?.subscriptionIds ?? []).filter(
+      (subscriptionId): subscriptionId is string =>
+        typeof subscriptionId === "string" && subscriptionId.length > 0,
+    );
+
+    if (subscriptionIds.length > 0) {
+      const placeholders = subscriptionIds.map(() => "?").join(", ");
+      sqlText += ` AND (subscription_id IN (${placeholders})`;
+      bindings.push(...subscriptionIds);
+      if (scope?.planId) {
+        sqlText += " OR (subscription_id IS NULL AND plan_id = ?)";
+        bindings.push(scope.planId);
+      }
+      sqlText += ")";
+    } else if (scope?.planId) {
+      sqlText += " AND plan_id = ?";
+      bindings.push(scope.planId);
+    }
+
+    sqlText += " ORDER BY created_at ASC";
+
+    const rows = this.ctx.storage.sql
+      .exec<{
+        feature_id: string;
+        amount: number;
+        created_at: number;
+      }>(sqlText, ...bindings)
+      .toArray();
+
+    return rows.map((row) => ({
       featureId: row.feature_id,
       amount: Number(row.amount || 0),
       createdAt: Number(row.created_at || 0),

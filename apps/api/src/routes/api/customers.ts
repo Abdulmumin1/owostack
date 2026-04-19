@@ -12,6 +12,7 @@ import {
   setCustomerFeatureBillingConfig,
   setCustomerOverageLimitConfig,
 } from "../../lib/customer-billing-config";
+import { buildCustomerUsageHistory } from "../../lib/customer-usage-history";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 import {
@@ -151,6 +152,69 @@ const entitySchema = z
   })
   .passthrough();
 
+const usageHistoryQuerySchema = z
+  .object({
+    range: z.enum(["7d", "30d", "90d", "custom"]).default("30d"),
+    granularity: z.enum(["day", "week", "month"]).default("day"),
+    feature: z.string().optional(),
+    groupBy: z.enum(["total", "feature"]).default("total"),
+    timezone: z.string().default("UTC"),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  .refine(
+    (value) =>
+      value.range !== "custom" ||
+      (typeof value.from === "string" && typeof value.to === "string"),
+    {
+      message: "Custom range requires from and to",
+      path: ["from"],
+    },
+  );
+
+const usageHistorySeriesPointSchema = z.object({
+  bucket: z.string(),
+  value: z.number(),
+});
+
+const usageHistoryFeatureSchema = z.object({
+  id: z.string(),
+  slug: z.string().nullable(),
+  name: z.string(),
+  unit: z.string().nullable(),
+});
+
+const usageHistoryBreakdownSchema = z.object({
+  feature: usageHistoryFeatureSchema,
+  totals: z.object({
+    usage: z.number(),
+    records: z.number(),
+  }),
+  series: z.array(usageHistorySeriesPointSchema),
+});
+
+const usageHistoryResponseSchema = z.object({
+  customer: z.object({
+    id: z.string(),
+  }),
+  query: z.object({
+    range: z.object({
+      from: z.string(),
+      to: z.string(),
+    }),
+    granularity: z.enum(["day", "week", "month"]),
+    feature: z.string().nullable(),
+    groupBy: z.enum(["total", "feature"]),
+    timezone: z.string(),
+  }),
+  totals: z.object({
+    usage: z.number(),
+    records: z.number(),
+  }),
+  series: z.array(usageHistorySeriesPointSchema),
+  breakdown: z.array(usageHistoryBreakdownSchema),
+});
+
 const createCustomerRoute = createRoute({
   method: "post",
   path: "/customers",
@@ -200,6 +264,33 @@ const getCustomerRoute = createRoute({
       description: "Customer returned successfully",
       ...jsonContent(customerResponseSchema),
     },
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const getCustomerUsageHistoryRoute = createRoute({
+  method: "get",
+  path: "/customers/{id}/usage/history",
+  operationId: "getCustomerUsageHistory",
+  tags: ["Customers"],
+  summary: "Get customer usage history",
+  description:
+    "Returns aggregated usage history for a customer, optionally filtered by feature and grouped for breakdown views.",
+  security: apiKeySecurity,
+  request: {
+    params: z.object({
+      id: z.string(),
+    }),
+    query: usageHistoryQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Customer usage history returned successfully",
+      ...jsonContent(usageHistoryResponseSchema),
+    },
+    400: badRequestResponse,
     401: unauthorizedResponse,
     404: notFoundResponse,
     500: internalServerErrorResponse,
@@ -581,6 +672,81 @@ export function createApiCustomersRoute(
     } catch (error) {
       console.error("[customers] error:", error);
       return c.json({ success: false, error: "Failed to get customer" }, 500);
+    }
+  });
+
+  app.openapi(getCustomerUsageHistoryRoute, async (c) => {
+    const db = c.get("db");
+    const organizationId = c.get("organizationId")!;
+
+    try {
+      const customerId = c.req.param("id");
+      const query = usageHistoryQuerySchema.safeParse({
+        range: c.req.query("range"),
+        granularity: c.req.query("granularity"),
+        feature: c.req.query("feature"),
+        groupBy: c.req.query("groupBy"),
+        timezone: c.req.query("timezone"),
+        from: c.req.query("from"),
+        to: c.req.query("to"),
+      });
+
+      if (!query.success) {
+        return c.json(zodErrorToResponse(query.error), 400);
+      }
+
+      const customer = await db.query.customers.findFirst({
+        where: and(
+          eq(schema.customers.organizationId, organizationId),
+          eq(schema.customers.id, customerId),
+        ),
+        columns: { id: true },
+      });
+
+      if (!customer) {
+        return c.json({ success: false, error: "Customer not found" }, 404);
+      }
+
+      const feature = query.data.feature
+        ? await resolveFeature(db, organizationId, query.data.feature)
+        : null;
+
+      if (query.data.feature && !feature) {
+        return c.json({ success: false, error: "Feature not found" }, 404);
+      }
+
+      const data = await buildCustomerUsageHistory({
+        db,
+        env: c.env,
+        organizationId,
+        customerId,
+        query: {
+          range: query.data.range,
+          granularity: query.data.granularity,
+          groupBy: query.data.groupBy,
+          timezone: query.data.timezone,
+          from: query.data.from,
+          to: query.data.to,
+          featureId: feature?.id ?? null,
+          featureRef: feature?.slug ?? feature?.id ?? null,
+        },
+      });
+
+      return c.json(data, 200);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.includes("Custom range requires from and to") ||
+          error.message.includes("Custom range must have from <= to") ||
+          error.message.includes("Invalid time zone"))
+      ) {
+        return c.json({ success: false, error: error.message }, 400);
+      }
+      console.error("[customers] usage-history error:", error);
+      return c.json(
+        { success: false, error: "Failed to get customer usage history" },
+        500,
+      );
     }
   });
 
