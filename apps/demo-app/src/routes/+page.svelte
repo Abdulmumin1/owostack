@@ -18,10 +18,12 @@
     CaretLeft,
     CaretRight
   } from "phosphor-svelte";
+  import { goto } from "$app/navigation";
   import { cn } from "$lib/utils";
   import BillingSettingsPanel from "$lib/BillingSettingsPanel.svelte";
+  import UsageDashboardPanel from "$lib/UsageDashboardPanel.svelte";
   import { tick } from "svelte";
-  import type { PublicPlan, CheckResult } from "owostack";
+  import type { PublicPlan, CheckResult, UsageHistoryResult } from "owostack";
 
   let { data } = $props();
 
@@ -51,9 +53,27 @@
   let isGenerating = $state(false);
   let attachError = $state<string | null>(null);
   let chatContainer = $state<HTMLDivElement>();
+  let usageHistory = $derived(data.usageHistory as UsageHistoryResult | null);
+  let usageFilters = $derived(
+    data.usageFilters as {
+      range: "7d" | "30d" | "90d" | "custom";
+      granularity: "day" | "week" | "month";
+      from: string;
+      to: string;
+    },
+  );
+  let usageGranularityInput = $state<"day" | "week" | "month">("day");
+  let usageFromInput = $state("");
+  let usageToInput = $state("");
 
   $effect(() => {
     currentTab = data.initialTab || "dashboard";
+  });
+
+  $effect(() => {
+    usageGranularityInput = usageFilters?.granularity || "day";
+    usageFromInput = usageFilters?.from || "";
+    usageToInput = usageFilters?.to || "";
   });
 
   function addLog(msg: string, type: 'info' | 'error' | 'success' = 'info', extraData?: any) {
@@ -163,6 +183,68 @@
     document.cookie = 'userId=; Max-Age=0; path=/; domain=' + location.hostname;
     window.location.reload();
   }
+
+  async function updateUsageQuery(params: {
+    range: "7d" | "30d" | "90d" | "custom";
+    granularity: "day" | "week" | "month";
+    from?: string;
+    to?: string;
+  }) {
+    const searchParams = new URLSearchParams(window.location.search);
+    searchParams.set("tab", "usage");
+    searchParams.set("usageRange", params.range);
+    searchParams.set("usageGranularity", params.granularity);
+
+    if (params.range === "custom" && params.from && params.to) {
+      searchParams.set("usageFrom", params.from);
+      searchParams.set("usageTo", params.to);
+    } else {
+      searchParams.delete("usageFrom");
+      searchParams.delete("usageTo");
+    }
+
+    await goto(`?${searchParams.toString()}`, {
+      keepFocus: true,
+      noScroll: true,
+    });
+  }
+
+  async function applyPresetUsageRange(range: "7d" | "30d" | "90d") {
+    await updateUsageQuery({
+      range,
+      granularity: usageGranularityInput,
+    });
+  }
+
+  async function applyCustomUsageRange() {
+    if (!usageFromInput || !usageToInput) return;
+
+    await updateUsageQuery({
+      range: "custom",
+      granularity: usageGranularityInput,
+      from: usageFromInput,
+      to: usageToInput,
+    });
+  }
+
+  async function applyCurrentUsageGranularity() {
+    if (usageFilters.range === "custom" && usageFromInput && usageToInput) {
+      await applyCustomUsageRange();
+      return;
+    }
+
+    await updateUsageQuery({
+      range:
+        usageFilters.range === "7d" ||
+        usageFilters.range === "90d" ||
+        usageFilters.range === "custom"
+          ? usageFilters.range === "custom"
+            ? "30d"
+            : usageFilters.range
+          : "30d",
+      granularity: usageGranularityInput,
+    });
+  }
 </script>
 
 <div class="flex h-screen bg-bg-primary text-text-primary font-sans selection:bg-accent/30">
@@ -180,6 +262,9 @@
       </button>
       <button onclick={() => currentTab = "billing"} class={cn("w-full flex items-center gap-3 px-3 py-2 rounded-sm text-[11px] font-bold uppercase tracking-wider transition-all", currentTab === "billing" ? "bg-bg-tertiary text-accent" : "text-text-muted hover:text-text-secondary hover:bg-bg-tertiary/50")}>
         <CreditCard size={18} weight={currentTab === 'billing' ? 'fill' : 'regular'} /> Billing
+      </button>
+      <button onclick={() => currentTab = "usage"} class={cn("w-full flex items-center gap-3 px-3 py-2 rounded-sm text-[11px] font-bold uppercase tracking-wider transition-all", currentTab === "usage" ? "bg-bg-tertiary text-accent" : "text-text-muted hover:text-text-secondary hover:bg-bg-tertiary/50")}>
+        <Pulse size={18} weight={currentTab === 'usage' ? 'fill' : 'regular'} /> Usage
       </button>
       <a href="/pricing" class="w-full flex items-center gap-3 px-3 py-2 rounded-sm text-[11px] font-bold uppercase tracking-wider text-text-muted hover:text-text-secondary hover:bg-bg-tertiary/50 transition-all">
         <Sparkle size={18} /> Pricing
@@ -364,6 +449,7 @@
              <BillingSettingsPanel
                billing={data.customer?.billing ?? null}
                wallet={data.wallet ?? null}
+               usage={data.usage ?? null}
                customerId={data.user?.id ?? "unknown"}
              />
            </div>
@@ -381,9 +467,101 @@
                    </div>
                 {/each}
              {:else}
-                <div class="p-8 border border-white/5 text-center text-text-muted text-xs">No invoices found.</div>
+               <div class="p-8 border border-white/5 text-center text-text-muted text-xs">No invoices found.</div>
              {/if}
            </div>
+         </div>
+      {:else if currentTab === 'usage'}
+         <div class="max-w-5xl mx-auto p-10 space-y-8">
+           <div>
+             <h1 class="text-2xl font-display font-bold">Usage Dashboard</h1>
+             <p class="text-text-muted mt-2">
+               Customer-facing metered usage powered by <span class="text-text-primary font-semibold">owo.customer.usageHistory()</span>.
+             </p>
+           </div>
+
+           <section class="card border-white/5 p-5 space-y-5">
+             <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+               <div class="space-y-2">
+                 <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted">Quick Range</p>
+                 <div class="flex flex-wrap gap-2">
+                   <button
+                     onclick={() => applyPresetUsageRange("7d")}
+                     class={cn(
+                       "btn h-9 px-4 text-[10px] font-bold uppercase tracking-widest",
+                       usageFilters.range === "7d" ? "btn-primary" : "btn-secondary",
+                     )}
+                   >
+                     7D
+                   </button>
+                   <button
+                     onclick={() => applyPresetUsageRange("30d")}
+                     class={cn(
+                       "btn h-9 px-4 text-[10px] font-bold uppercase tracking-widest",
+                       usageFilters.range === "30d" ? "btn-primary" : "btn-secondary",
+                     )}
+                   >
+                     30D
+                   </button>
+                   <button
+                     onclick={() => applyPresetUsageRange("90d")}
+                     class={cn(
+                       "btn h-9 px-4 text-[10px] font-bold uppercase tracking-widest",
+                       usageFilters.range === "90d" ? "btn-primary" : "btn-secondary",
+                     )}
+                   >
+                     90D
+                   </button>
+                 </div>
+               </div>
+
+               <label class="block space-y-2 min-w-[160px]">
+                 <span class="text-[10px] font-bold uppercase tracking-widest text-text-muted">Granularity</span>
+                 <select
+                   bind:value={usageGranularityInput}
+                   class="input h-9 bg-bg-secondary/40"
+                   onchange={applyCurrentUsageGranularity}
+                 >
+                   <option value="day">Day</option>
+                   <option value="week">Week</option>
+                   <option value="month">Month</option>
+                 </select>
+               </label>
+             </div>
+
+             <div class="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+               <label class="block space-y-2">
+                 <span class="text-[10px] font-bold uppercase tracking-widest text-text-muted">From</span>
+                 <input
+                   bind:value={usageFromInput}
+                   type="date"
+                   class="input h-10 bg-bg-secondary/40"
+                 />
+               </label>
+
+               <label class="block space-y-2">
+                 <span class="text-[10px] font-bold uppercase tracking-widest text-text-muted">To</span>
+                 <input
+                   bind:value={usageToInput}
+                   type="date"
+                   class="input h-10 bg-bg-secondary/40"
+                 />
+               </label>
+
+               <button
+                 onclick={applyCustomUsageRange}
+                 class={cn(
+                   "btn h-10 px-5 text-[10px] font-bold uppercase tracking-widest",
+                   usageFilters.range === "custom" ? "btn-primary" : "btn-secondary",
+                 )}
+                 disabled={!usageFromInput || !usageToInput}
+               >
+                 Apply Custom
+               </button>
+             </div>
+           </section>
+
+           <UsageDashboardPanel {usageHistory} />
          </div>
       {/if}
     </div>

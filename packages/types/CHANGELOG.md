@@ -1,5 +1,27 @@
 # @owostack/types
 
+## 0.4.2
+
+### Patch Changes
+
+- [#141](https://github.com/Abdulmumin1/owostack/pull/141) [`33c309c`](https://github.com/Abdulmumin1/owostack/commit/33c309ce0bf05378862fd882aa4d6f5499d2d97c) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Redesign credit-backed check and track responses to return a canonical `credits` object instead of loose top-level credit fields.
+
+  The new shape distinguishes between `credit_system` and `prepaid` balances, includes plan balance details consistently, and aligns direct credit-system feature checks with child features resolved through a credit pool.
+
+## 0.4.1
+
+### Patch Changes
+
+- [#137](https://github.com/Abdulmumin1/owostack/pull/137) [`df27166`](https://github.com/Abdulmumin1/owostack/commit/df2716678c83a3d39947479b3333729163ac12f6) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Add customer billing config support to the SDK, including `owo.customer` setters for per-feature overage config and customer-wide overage limits, plus enriched customer responses that include active billing config state.
+
+## 0.4.0
+
+### Minor Changes
+
+- [#130](https://github.com/Abdulmumin1/owostack/pull/130) [`646af7f`](https://github.com/Abdulmumin1/owostack/commit/646af7fdfecfb671f9dbf65460f26ea0ff216fe8) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Redesign credit-backed check and track responses to return a canonical `credits` object instead of loose top-level credit fields.
+
+  The new shape distinguishes between `credit_system` and `prepaid` balances, includes plan balance details consistently, and aligns direct credit-system feature checks with child features resolved through a credit pool.
+
 ## 0.3.3
 
 ### Patch Changes

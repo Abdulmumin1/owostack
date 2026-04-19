@@ -357,6 +357,12 @@
     "enabled": true,
   },
 
+  "send_email": [
+    {
+      "name": "SEND_EMAIL",
+    },
+  ],
+
   // Secrets (set via: wrangler secret put <NAME> [--env test|live])
   // ENCRYPTION_KEY
   // BETTER_AUTH_SECRET

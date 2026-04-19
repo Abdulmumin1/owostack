@@ -27,6 +27,7 @@ import {
   buildCustomerAccessSnapshot,
   filterAccessGrantingSubscriptions,
 } from "../../lib/customer-access";
+import { buildCustomerUsageHistory } from "../../lib/customer-usage-history";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 import { getSubscriptionHealthState } from "../../lib/subscription-health";
@@ -44,6 +45,10 @@ type FeatureMetaRow = {
   slug: string;
   unit: string | null;
 };
+
+function toUtcDayKey(timestamp: number) {
+  return new Date(timestamp).toISOString().split("T")[0]!;
+}
 
 const createCustomerSchema = z.object({
   organizationId: z.string(),
@@ -313,7 +318,7 @@ app.get("/:id", async (c) => {
       ),
     ];
 
-    const [accessPlanFeatures, manualEntitlementRows, creditBalanceRows] =
+    const [accessPlanFeatures, manualAccessEntitlementRows, creditBalanceRows] =
       await Promise.all([
         accessPlanIds.length > 0
           ? db
@@ -364,7 +369,10 @@ app.get("/:id", async (c) => {
               .where(
                 and(
                   eq(schema.entitlements.customerId, id),
-                  eq(schema.entitlements.source, "manual"),
+                  inArray(schema.entitlements.source, [
+                    "manual",
+                    "manual_bonus",
+                  ]),
                   or(
                     isNull(schema.entitlements.expiresAt),
                     gt(schema.entitlements.expiresAt, Date.now()),
@@ -382,6 +390,13 @@ app.get("/:id", async (c) => {
           .from(schema.creditSystemBalances)
           .where(eq(schema.creditSystemBalances.customerId, id)),
       ]);
+    const manualEntitlementRows = manualAccessEntitlementRows.filter(
+      (entitlement: { source: string }) => entitlement.source === "manual",
+    );
+    const manualBonusEntitlementRows = manualAccessEntitlementRows.filter(
+      (entitlement: { source: string }) =>
+        entitlement.source === "manual_bonus",
+    );
     const accessFeatureIds = [
       ...new Set(accessPlanFeatures.map((feature: any) => feature.featureId)),
     ];
@@ -422,6 +437,7 @@ app.get("/:id", async (c) => {
       planFeatures: accessPlanFeatures,
       planEntitlements: planEntitlementRows,
       manualEntitlements: manualEntitlementRows,
+      manualBonusEntitlements: manualBonusEntitlementRows,
       creditBalances: creditBalanceRows,
     });
 
@@ -660,50 +676,54 @@ app.get("/:id", async (c) => {
         })
       : eventsRaw;
 
-    // Calculate usage chart data
-    const days = [];
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const historyEnd = toUtcDayKey(Date.now());
+    const historyStart = toUtcDayKey(Date.now() - 6 * 24 * 60 * 60 * 1000);
+    const usageHistory = await buildCustomerUsageHistory({
+      db,
+      env: c.env,
+      organizationId: customer.organizationId,
+      customerId: id,
+      query: {
+        range: "custom",
+        from: historyStart,
+        to: historyEnd,
+        granularity: "day",
+        groupBy: "total",
+        timezone: "UTC",
+      },
+      scope: requestedPlanId
+        ? {
+            planId: requestedPlanId,
+            subscriptionIds: subscriptionsWithHealth
+              .map((subscription: any) => subscription.id)
+              .filter(
+                (subscriptionId: unknown): subscriptionId is string =>
+                  typeof subscriptionId === "string" &&
+                  subscriptionId.length > 0,
+              ),
+            featureIds: scopedFeatureIds,
+          }
+        : undefined,
+    });
 
-    const usageByDay = new Map<number, number>();
-    if (Array.isArray(recentUsage)) {
-      recentUsage.forEach((u: any) => {
-        if (!u.createdAt) return;
-        const d = new Date(u.createdAt);
-        d.setHours(0, 0, 0, 0);
-        const time = d.getTime();
-        usageByDay.set(
-          time,
-          (usageByDay.get(time) || 0) + (Number(u.amount) || 0),
-        );
-      });
-    }
-
-    let maxVal = 0;
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const val = usageByDay.get(d.getTime()) || 0;
-      if (val > maxVal) maxVal = val;
-    }
-
-    const chartMax = maxVal > 0 ? Math.ceil(maxVal * 1.25) : 140;
+    const chartMaxBase = Math.max(
+      ...usageHistory.series.map((point) => point.value),
+      0,
+    );
+    const chartMax = chartMaxBase > 0 ? Math.ceil(chartMaxBase * 1.25) : 140;
     const maxTick = Math.max(Math.ceil(chartMax / 4) * 4, 4);
-
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      days.push({
-        label: d.toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        }),
-        value: usageByDay.get(d.getTime()) || 0,
-      });
-    }
-
     const usageChartData = {
-      days,
+      days: usageHistory.series.map((point) => ({
+        label: new Date(`${point.bucket}T00:00:00.000Z`).toLocaleDateString(
+          "en-US",
+          {
+            month: "short",
+            day: "numeric",
+            timeZone: "UTC",
+          },
+        ),
+        value: point.value,
+      })),
       max: maxTick,
       ticks: [
         maxTick,
@@ -800,6 +820,7 @@ app.get("/:id", async (c) => {
         subscriptions: subscriptionsWithHealth,
         recentUsage,
         featureUsageSummary,
+        usageHistory,
         events,
         usageChartData,
         invoices,

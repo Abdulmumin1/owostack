@@ -2919,7 +2919,7 @@ function createPolarFixture(): AdapterContractFixture {
                 expectJsonRequest(request, secretKey);
                 expect(request.json<Record<string, unknown>>()).toEqual({
                   product_id: "prod_polar_plan_2",
-                  proration_behavior: "prorate",
+                  proration_behavior: "invoice",
                 });
               },
               respond: jsonResponse({ id: "sub_polar_1" }),

@@ -1,9 +1,19 @@
 import { DurableObject } from "cloudflare:workers";
 import type { UsagePricingSnapshot } from "./usage-pricing-snapshot";
+import {
+  normalizeUsageCoverageSource,
+  type UsageCoverageSource,
+} from "./usage-coverage";
 
 export interface CustomerUsageLedgerScope {
   planId?: string | null;
   subscriptionIds?: string[] | null;
+}
+
+export interface CustomerUsageHistoryRow {
+  featureId: string;
+  amount: number;
+  createdAt: number;
 }
 
 export interface UsageLedgerRecord {
@@ -18,6 +28,8 @@ export interface UsageLedgerRecord {
   periodEnd: number;
   subscriptionId?: string | null;
   planId?: string | null;
+  coverageSource?: UsageCoverageSource | null;
+  coverageReferenceId?: string | null;
   pricingSnapshot?: UsagePricingSnapshot | null;
   createdAt?: number;
   invoiceId?: string | null;
@@ -33,6 +45,8 @@ export interface UsageSumQuery {
   entityId?: string | null;
   subscriptionId?: string | null;
   planId?: string | null;
+  coverageSource?: UsageCoverageSource | null;
+  coverageReferenceId?: string | null;
   pricingSnapshot?: UsagePricingSnapshot | null;
   unbilledOnly?: boolean;
 }
@@ -46,6 +60,8 @@ export interface MarkInvoicedQuery {
   invoiceId: string;
   subscriptionId?: string | null;
   planId?: string | null;
+  coverageSource?: UsageCoverageSource | null;
+  coverageReferenceId?: string | null;
   pricingSnapshot?: UsagePricingSnapshot | null;
 }
 
@@ -63,6 +79,8 @@ export interface UnbilledUsagePeriodRow {
   lastCreatedAt: number;
   subscriptionId?: string | null;
   planId?: string | null;
+  coverageSource?: UsageCoverageSource;
+  coverageReferenceId?: string | null;
   pricingSnapshot?: UsagePricingSnapshot | null;
 }
 
@@ -129,6 +147,8 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
         period_end INTEGER NOT NULL,
         subscription_id TEXT,
         plan_id TEXT,
+        coverage_source TEXT,
+        coverage_reference_id TEXT,
         pricing_snapshot TEXT,
         invoice_id TEXT,
         created_at INTEGER NOT NULL
@@ -147,6 +167,8 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
       ["feature_name", "TEXT"],
       ["subscription_id", "TEXT"],
       ["plan_id", "TEXT"],
+      ["coverage_source", "TEXT"],
+      ["coverage_reference_id", "TEXT"],
       ["pricing_snapshot", "TEXT"],
     ];
 
@@ -178,6 +200,11 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
       ON usage_records (invoice_id)
     `);
 
+    this.ctx.storage.sql.exec(`
+      CREATE INDEX IF NOT EXISTS usage_records_customer_feature_coverage_idx
+      ON usage_records (customer_id, feature_id, coverage_source, coverage_reference_id)
+    `);
+
     this.initialized = true;
 
     // Schedule initial alarm if none exists
@@ -193,8 +220,8 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
 
     this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO usage_records
-        (id, customer_id, feature_id, feature_slug, feature_name, entity_id, amount, period_start, period_end, subscription_id, plan_id, pricing_snapshot, invoice_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, customer_id, feature_id, feature_slug, feature_name, entity_id, amount, period_start, period_end, subscription_id, plan_id, coverage_source, coverage_reference_id, pricing_snapshot, invoice_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       record.id || crypto.randomUUID(),
       record.customerId,
       record.featureId,
@@ -206,6 +233,8 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
       record.periodEnd,
       record.subscriptionId ?? null,
       record.planId ?? null,
+      normalizeUsageCoverageSource(record.coverageSource),
+      record.coverageReferenceId ?? null,
       record.pricingSnapshot ? JSON.stringify(record.pricingSnapshot) : null,
       record.invoiceId ?? null,
       record.createdAt ?? Date.now(),
@@ -223,8 +252,8 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
     for (const record of records) {
       const cursor = this.ctx.storage.sql.exec(
         `INSERT OR IGNORE INTO usage_records
-          (id, customer_id, feature_id, feature_slug, feature_name, entity_id, amount, period_start, period_end, subscription_id, plan_id, pricing_snapshot, invoice_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, customer_id, feature_id, feature_slug, feature_name, entity_id, amount, period_start, period_end, subscription_id, plan_id, coverage_source, coverage_reference_id, pricing_snapshot, invoice_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         record.id || crypto.randomUUID(),
         record.customerId,
         record.featureId,
@@ -236,6 +265,8 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
         record.periodEnd,
         record.subscriptionId ?? null,
         record.planId ?? null,
+        normalizeUsageCoverageSource(record.coverageSource),
+        record.coverageReferenceId ?? null,
         record.pricingSnapshot ? JSON.stringify(record.pricingSnapshot) : null,
         record.invoiceId ?? null,
         record.createdAt ?? Date.now(),
@@ -303,6 +334,25 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
         bindings.push(query.planId);
       }
     }
+    if (query.coverageSource !== undefined) {
+      if (query.coverageSource === null) {
+        sqlText += " AND coverage_source IS NULL";
+      } else if (query.coverageSource === "plan") {
+        sqlText += " AND (coverage_source = ? OR coverage_source IS NULL)";
+        bindings.push(query.coverageSource);
+      } else {
+        sqlText += " AND coverage_source = ?";
+        bindings.push(query.coverageSource);
+      }
+    }
+    if (query.coverageReferenceId !== undefined) {
+      if (query.coverageReferenceId === null) {
+        sqlText += " AND coverage_reference_id IS NULL";
+      } else {
+        sqlText += " AND coverage_reference_id = ?";
+        bindings.push(query.coverageReferenceId);
+      }
+    }
     if (query.pricingSnapshot !== undefined) {
       if (query.pricingSnapshot === null) {
         sqlText += " AND pricing_snapshot IS NULL";
@@ -360,6 +410,27 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
       }
     }
 
+    if (query.coverageSource !== undefined) {
+      if (query.coverageSource === null) {
+        sqlText += " AND coverage_source IS NULL";
+      } else if (query.coverageSource === "plan") {
+        sqlText += " AND (coverage_source = ? OR coverage_source IS NULL)";
+        bindings.push(query.coverageSource);
+      } else {
+        sqlText += " AND coverage_source = ?";
+        bindings.push(query.coverageSource);
+      }
+    }
+
+    if (query.coverageReferenceId !== undefined) {
+      if (query.coverageReferenceId === null) {
+        sqlText += " AND coverage_reference_id IS NULL";
+      } else {
+        sqlText += " AND coverage_reference_id = ?";
+        bindings.push(query.coverageReferenceId);
+      }
+    }
+
     if (query.pricingSnapshot !== undefined) {
       if (query.pricingSnapshot === null) {
         sqlText += " AND pricing_snapshot IS NULL";
@@ -403,6 +474,7 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
          FROM usage_records
          WHERE customer_id = ?
            AND invoice_id IS NULL
+           AND (coverage_source = 'plan' OR coverage_source IS NULL)
          GROUP BY feature_id`,
         customerId,
       )
@@ -436,6 +508,8 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
         period_end: number;
         subscription_id: string | null;
         plan_id: string | null;
+        coverage_source: string | null;
+        coverage_reference_id: string | null;
         pricing_snapshot: string | null;
         total_usage: number;
         last_created_at: number;
@@ -447,12 +521,15 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
                 period_end,
                 subscription_id,
                 plan_id,
+                coverage_source,
+                coverage_reference_id,
                 pricing_snapshot,
                 COALESCE(SUM(amount), 0) AS total_usage,
                 COALESCE(MAX(created_at), 0) AS last_created_at
          FROM usage_records
          WHERE customer_id = ?
            AND invoice_id IS NULL
+           AND (coverage_source = 'plan' OR coverage_source IS NULL)
            ${cutoffClause}
          GROUP BY feature_id,
                   feature_slug,
@@ -461,6 +538,8 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
                   period_end,
                   subscription_id,
                   plan_id,
+                  coverage_source,
+                  coverage_reference_id,
                   pricing_snapshot`,
         ...bindings,
       )
@@ -476,6 +555,8 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
       lastCreatedAt: Number(row.last_created_at || 0),
       subscriptionId: row.subscription_id,
       planId: row.plan_id,
+      coverageSource: normalizeUsageCoverageSource(row.coverage_source),
+      coverageReferenceId: row.coverage_reference_id,
       pricingSnapshot: this.parsePricingSnapshot(row.pricing_snapshot),
     }));
   }
@@ -533,6 +614,67 @@ export class UsageLedgerDO extends DurableObject<Record<string, unknown>> {
 
     return rows.map((row) => ({
       id: row.id,
+      featureId: row.feature_id,
+      amount: Number(row.amount || 0),
+      createdAt: Number(row.created_at || 0),
+    }));
+  }
+
+  async listUsageForCustomerRange(
+    customerId: string,
+    createdAtFrom: number,
+    createdAtTo: number,
+    featureId?: string | null,
+    scope?: CustomerUsageLedgerScope,
+  ): Promise<CustomerUsageHistoryRow[]> {
+    this.ensureSchema();
+
+    let sqlText = `SELECT feature_id, amount, created_at
+         FROM usage_records
+         WHERE customer_id = ?
+           AND created_at >= ?
+           AND created_at <= ?`;
+    const bindings: Array<string | number> = [
+      customerId,
+      createdAtFrom,
+      createdAtTo,
+    ];
+
+    if (featureId) {
+      sqlText += " AND feature_id = ?";
+      bindings.push(featureId);
+    }
+
+    const subscriptionIds = (scope?.subscriptionIds ?? []).filter(
+      (subscriptionId): subscriptionId is string =>
+        typeof subscriptionId === "string" && subscriptionId.length > 0,
+    );
+
+    if (subscriptionIds.length > 0) {
+      const placeholders = subscriptionIds.map(() => "?").join(", ");
+      sqlText += ` AND (subscription_id IN (${placeholders})`;
+      bindings.push(...subscriptionIds);
+      if (scope?.planId) {
+        sqlText += " OR (subscription_id IS NULL AND plan_id = ?)";
+        bindings.push(scope.planId);
+      }
+      sqlText += ")";
+    } else if (scope?.planId) {
+      sqlText += " AND plan_id = ?";
+      bindings.push(scope.planId);
+    }
+
+    sqlText += " ORDER BY created_at ASC";
+
+    const rows = this.ctx.storage.sql
+      .exec<{
+        feature_id: string;
+        amount: number;
+        created_at: number;
+      }>(sqlText, ...bindings)
+      .toArray();
+
+    return rows.map((row) => ({
       featureId: row.feature_id,
       amount: Number(row.amount || 0),
       createdAt: Number(row.created_at || 0),

@@ -1,4 +1,5 @@
 import type {
+  CustomerUsageHistoryRow,
   CustomerUsageLedgerScope,
   UsageLedgerDO,
   UsageLedgerRecord,
@@ -6,6 +7,7 @@ import type {
   UsageSumQuery,
 } from "./usage-ledger-do";
 import type { UsagePricingSnapshot } from "./usage-pricing-snapshot";
+import type { UsageCoverageSource } from "./usage-coverage";
 
 interface UsageLedgerOptions {
   usageLedger?: DurableObjectNamespace<UsageLedgerDO>;
@@ -82,6 +84,8 @@ export async function markUsageInvoiced(
     invoiceId: string;
     subscriptionId?: string | null;
     planId?: string | null;
+    coverageSource?: UsageCoverageSource | null;
+    coverageReferenceId?: string | null;
     pricingSnapshot?: UsagePricingSnapshot | null;
   },
 ): Promise<number | null> {
@@ -190,6 +194,31 @@ export async function featureUsageSummaryForCustomer(
       "[usage-ledger] featureUsageSummaryForCustomer failed:",
       error,
     );
+    return null;
+  }
+}
+
+export async function listUsageForCustomerRange(
+  opts: UsageLedgerOptions,
+  customerId: string,
+  createdAtFrom: number,
+  createdAtTo: number,
+  featureId?: string | null,
+  scope?: CustomerUsageLedgerScope,
+): Promise<CustomerUsageHistoryRow[] | null> {
+  const stub = getStub(opts);
+  if (!stub) return null;
+
+  try {
+    return await stub.listUsageForCustomerRange(
+      customerId,
+      createdAtFrom,
+      createdAtTo,
+      featureId,
+      scope,
+    );
+  } catch (error) {
+    console.error("[usage-ledger] listUsageForCustomerRange failed:", error);
     return null;
   }
 }
