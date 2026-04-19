@@ -76,4 +76,67 @@ describe("Owostack client error handling", () => {
       message: "Product slug is required",
     });
   });
+
+  it("builds customer usage history requests with query params", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          customer: { id: "cust_123" },
+          query: {
+            range: { from: "2026-04-01", to: "2026-04-30" },
+            granularity: "day",
+            feature: "api_calls",
+            groupBy: "feature",
+            timezone: "Africa/Lagos",
+          },
+          totals: { usage: 42, records: 3 },
+          series: [{ bucket: "2026-04-01", value: 42 }],
+          breakdown: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    const client = new Owostack({
+      secretKey: "owo_sk_test",
+      apiUrl: "http://localhost:8787/api/v1",
+    });
+
+    const result = await client.customer.usageHistory({
+      customer: "cust_123",
+      range: "custom",
+      granularity: "day",
+      feature: "api_calls",
+      groupBy: "feature",
+      timezone: "Africa/Lagos",
+      from: "2026-04-01",
+      to: "2026-04-30",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8787/api/v1/customers/cust_123/usage/history?range=custom&granularity=day&feature=api_calls&groupBy=feature&timezone=Africa%2FLagos&from=2026-04-01&to=2026-04-30",
+      expect.objectContaining({
+        method: "GET",
+        headers: {
+          Authorization: "Bearer owo_sk_test",
+        },
+      }),
+    );
+    expect(result).toEqual({
+      customer: { id: "cust_123" },
+      query: {
+        range: { from: "2026-04-01", to: "2026-04-30" },
+        granularity: "day",
+        feature: "api_calls",
+        groupBy: "feature",
+        timezone: "Africa/Lagos",
+      },
+      totals: { usage: 42, records: 3 },
+      series: [{ bucket: "2026-04-01", value: 42 }],
+      breakdown: [],
+    });
+  });
 });

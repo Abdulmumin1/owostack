@@ -11,6 +11,8 @@ Use `owo.customer()` to create or resolve a customer by email or ID. The respons
 
 For the dedicated guide covering customer-level billing overrides, precedence, and recommended usage, see [Customer Config](/sdk/customer-config).
 
+For customer-facing usage charts and usage dashboards, the same namespace also exposes `usageHistory()`.
+
 ## Signature
 
 ```ts
@@ -32,6 +34,17 @@ await owo.customer.setOverageLimit({
   customer: string,
   maxOverageAmount: number | null,
   onLimitReached?: "block" | "notify",
+});
+
+await owo.customer.usageHistory({
+  customer: string,
+  range?: "7d" | "30d" | "90d" | "custom",
+  granularity?: "day" | "week" | "month",
+  feature?: string | null,
+  groupBy?: "total" | "feature",
+  timezone?: string,
+  from?: string,
+  to?: string,
 });
 ```
 
@@ -67,9 +80,26 @@ Provide at least one of `overage` or `maxOverageUnits`. Pass `null` to clear an 
 
 Pass `null` for `maxOverageAmount` to remove the spend cap.
 
+### `owo.customer.usageHistory(params)`
+
+| Parameter     | Type                                          | Required | Description |
+| ------------- | --------------------------------------------- | -------- | ----------- |
+| `customer`    | `string`                                      | ✅       | Customer ID |
+| `range`       | `"7d" \| "30d" \| "90d" \| "custom"`          | -        | Preset range or custom window. Defaults to `30d`. |
+| `granularity` | `"day" \| "week" \| "month"`                  | -        | Bucket size for aggregation. Defaults to `day`. |
+| `feature`     | `string \| null`                              | -        | Optional feature slug or ID to filter to one feature. |
+| `groupBy`     | `"total" \| "feature"`                        | -        | Return only the total series or include per-feature breakdowns. Defaults to `total`. |
+| `timezone`    | `string`                                      | -        | IANA timezone used for bucket boundaries. Defaults to `UTC`. |
+| `from`        | `string`                                      | -        | Inclusive `YYYY-MM-DD` start date when `range` is `custom`. |
+| `to`          | `string`                                      | -        | Inclusive `YYYY-MM-DD` end date when `range` is `custom`. |
+
+Use `usageHistory()` when you want chart-friendly usage buckets.
+
+Use [`owo.billing.usage()`](/sdk/billing) when you want uninvoiced overage and estimated billable amounts.
+
 ## Returns
 
-All three methods return the customer plus the current customer billing config.
+`owo.customer()`, `setFeatureConfig()`, and `setOverageLimit()` all return the customer plus the current customer billing config.
 
 ```ts
 interface CustomerResult {
@@ -98,6 +128,50 @@ interface CustomerResult {
   };
   createdAt: number;
   updatedAt: number;
+}
+```
+
+`owo.customer.usageHistory()` returns aggregated usage history:
+
+```ts
+interface UsageHistoryResult {
+  customer: {
+    id: string;
+  };
+  query: {
+    range: {
+      from: string;
+      to: string;
+    };
+    granularity: "day" | "week" | "month";
+    feature: string | null;
+    groupBy: "total" | "feature";
+    timezone: string;
+  };
+  totals: {
+    usage: number;
+    records: number;
+  };
+  series: Array<{
+    bucket: string;
+    value: number;
+  }>;
+  breakdown: Array<{
+    feature: {
+      id: string;
+      slug: string | null;
+      name: string;
+      unit: string | null;
+    };
+    totals: {
+      usage: number;
+      records: number;
+    };
+    series: Array<{
+      bucket: string;
+      value: number;
+    }>;
+  }>;
 }
 ```
 
@@ -179,6 +253,48 @@ await owo.customer.setOverageLimit({
 });
 ```
 
+### Get Aggregate Usage History
+
+```ts
+const history = await owo.customer.usageHistory({
+  customer: "cust_123",
+  range: "30d",
+  granularity: "day",
+  groupBy: "total",
+  timezone: "Africa/Lagos",
+});
+
+console.log(history.totals.usage);
+console.log(history.series);
+```
+
+### Get Per-Feature Usage History
+
+```ts
+const history = await owo.customer.usageHistory({
+  customer: "cust_123",
+  range: "90d",
+  granularity: "week",
+  groupBy: "feature",
+});
+
+for (const feature of history.breakdown) {
+  console.log(feature.feature.slug, feature.totals.usage);
+}
+```
+
+### Use a Custom Date Window
+
+```ts
+const history = await owo.customer.usageHistory({
+  customer: "cust_123",
+  range: "custom",
+  granularity: "day",
+  from: "2026-04-01",
+  to: "2026-04-30",
+});
+```
+
 ## Using the Customer Object
 
 The returned customer object has convenience methods:
@@ -255,11 +371,13 @@ const { entities: seats } = await org.listEntities({ feature: "seats" });
 3. **Store metadata** - Use metadata for customer segmentation and analytics
 4. **Use spend caps as safety rails** - `setOverageLimit()` protects the whole customer across billable overage
 5. **Use feature config for exceptions** - `setFeatureConfig()` is best for one risky or contract-specific feature
-6. **Update on changes** - Call `customer()` when user data changes to keep billing records in sync
+6. **Use usageHistory for charts** - `usageHistory()` is for usage dashboards, not invoice estimation
+7. **Update on changes** - Call `customer()` when user data changes to keep billing records in sync
 
 ## Related
 
 - [Customer Config](/sdk/customer-config) - Customer-level billing overrides and spend caps
+- [billing](/sdk/billing) - Uninvoiced overage, invoices, and invoice generation
 - [`attach()`](/sdk/attach) - Subscribe customer to a plan
 - [Overage](/pricing/overage) - How plan overage and customer overrides interact
 - [`addEntity()`](/sdk/entities) - Add entities/seats (flat API)

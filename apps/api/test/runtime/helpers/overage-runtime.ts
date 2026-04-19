@@ -390,6 +390,32 @@ class SimulatedUsageLedgerStub {
       }));
   }
 
+  async listUsageForCustomerRange(
+    customerId: string,
+    createdAtFrom: number,
+    createdAtTo: number,
+    featureId?: string | null,
+    scope?: {
+      planId?: string | null;
+      subscriptionIds?: string[] | null;
+    },
+  ) {
+    return this.records
+      .filter((record) => {
+        if (record.customerId !== customerId) return false;
+        if (record.createdAt < createdAtFrom || record.createdAt > createdAtTo)
+          return false;
+        if (featureId && record.featureId !== featureId) return false;
+        return this.matchesScope(record, scope);
+      })
+      .sort((left, right) => left.createdAt - right.createdAt)
+      .map((record) => ({
+        featureId: record.featureId,
+        amount: record.amount,
+        createdAt: record.createdAt,
+      }));
+  }
+
   async featureUsageSummaryForCustomer(
     customerId: string,
     createdAtFrom: number,

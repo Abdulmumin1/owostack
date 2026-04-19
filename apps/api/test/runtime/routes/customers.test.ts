@@ -301,6 +301,17 @@ describe("Customers route runtime integration", () => {
         recordCount: 3,
       },
     ]);
+    expect(body.data.usageHistory.totals).toEqual({
+      usage: 9,
+      records: 3,
+    });
+    expect(body.data.usageHistory.series).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          value: 9,
+        }),
+      ]),
+    );
   });
 
   it("returns plan and bonus balances separately in customer access", async () => {
@@ -408,5 +419,97 @@ describe("Customers route runtime integration", () => {
         totalLimit: 5100,
       }),
     ]);
+  });
+
+  it("builds usage chart data from full history instead of the 20-row recent usage slice", async () => {
+    const now = Date.now();
+    const currentPeriodStart = now - 5 * 24 * 60 * 60 * 1000;
+    const currentPeriodEnd = now + 25 * 24 * 60 * 60 * 1000;
+
+    await insertCustomer(businessDb.d1, {
+      id: "cust_chart",
+      organizationId: "org_123",
+      email: "chart@example.com",
+    });
+    await insertPlan(businessDb.d1, {
+      id: "plan_chart",
+      organizationId: "org_123",
+      providerId: null,
+      providerPlanId: null,
+      paystackPlanId: null,
+      name: "Chart Plan",
+      slug: "chart-plan",
+      price: 5000,
+      currency: "USD",
+      type: "paid",
+    });
+    await insertFeature(businessDb.d1, {
+      id: "feature_chart_runs",
+      organizationId: "org_123",
+      slug: "chart-runs",
+      name: "Chart Runs",
+    });
+    await insertPlanFeature(businessDb.d1, {
+      id: "pf_chart_runs",
+      planId: "plan_chart",
+      featureId: "feature_chart_runs",
+      limitValue: 100,
+      usageModel: "included",
+      resetOnEnable: 1,
+      overage: "block",
+      overagePrice: null,
+    });
+    await insertSubscription(businessDb.d1, {
+      id: "sub_chart",
+      customerId: "cust_chart",
+      planId: "plan_chart",
+      providerId: null,
+      providerSubscriptionCode: null,
+      status: "active",
+      currentPeriodStart,
+      currentPeriodEnd,
+    });
+
+    for (let i = 0; i < 25; i += 1) {
+      await appendMeteredUsage(usageLedger, {
+        organizationId: "org_123",
+        customerId: "cust_chart",
+        featureId: "feature_chart_runs",
+        featureSlug: "chart-runs",
+        featureName: "Chart Runs",
+        subscriptionId: "sub_chart",
+        planId: "plan_chart",
+        amount: 1,
+        periodStart: currentPeriodStart,
+        periodEnd: currentPeriodEnd,
+        createdAt: now - i * 1_000,
+      });
+    }
+
+    const response = await app.request(
+      "/cust_chart",
+      { method: "GET" },
+      {
+        ENVIRONMENT: "test",
+        USAGE_LEDGER: usageLedger as unknown as DurableObjectNamespace<any>,
+      },
+    );
+
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data.recentUsage).toHaveLength(20);
+    expect(body.data.usageHistory.totals).toEqual({
+      usage: 25,
+      records: 25,
+    });
+    expect(body.data.usageChartData.days).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          value: 25,
+        }),
+      ]),
+    );
   });
 });

@@ -27,6 +27,8 @@ import type {
   CustomerResult,
   SetCustomerFeatureConfigParams,
   SetCustomerOverageLimitParams,
+  UsageHistoryParams,
+  UsageHistoryResult,
   AddEntityParams,
   AddEntityResult,
   RemoveEntityParams,
@@ -487,6 +489,7 @@ type CustomerFn = {
   setOverageLimit(
     params: SetCustomerOverageLimitParams,
   ): Promise<CustomerResult>;
+  usageHistory(params: UsageHistoryParams): Promise<UsageHistoryResult>;
 };
 
 function buildCustomerFn(client: Owostack): CustomerFn {
@@ -498,6 +501,22 @@ function buildCustomerFn(client: Owostack): CustomerFn {
 
   fn.setOverageLimit = (params: SetCustomerOverageLimitParams) =>
     client.post("/customers/overage-limit", params) as Promise<CustomerResult>;
+
+  fn.usageHistory = (params: UsageHistoryParams) => {
+    const query: Record<string, string> = {};
+    if (params.range) query.range = params.range;
+    if (params.granularity) query.granularity = params.granularity;
+    if (params.feature) query.feature = params.feature;
+    if (params.groupBy) query.groupBy = params.groupBy;
+    if (params.timezone) query.timezone = params.timezone;
+    if (params.from) query.from = params.from;
+    if (params.to) query.to = params.to;
+
+    return client.get(
+      `/customers/${encodeURIComponent(params.customer)}/usage/history`,
+      query,
+    ) as Promise<UsageHistoryResult>;
+  };
 
   return fn;
 }
@@ -719,6 +738,8 @@ export type {
   CustomerOverageLimitResult,
   SetCustomerFeatureConfigParams,
   SetCustomerOverageLimitParams,
+  UsageHistoryParams,
+  UsageHistoryResult,
   AddEntityParams,
   AddEntityResult,
   RemoveEntityParams,

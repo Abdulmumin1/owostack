@@ -40,7 +40,7 @@
         >Templates</a
       >
       <a
-        href={import.meta.env.VITE_GITHUB_URL}
+        href="https://github.com/abdulmumin1/owostack"
         class="hidden items-center gap-1.5 transition-colors hover:text-text-primary sm:flex"
       >
         <GithubLogo size={13} weight="duotone" />
