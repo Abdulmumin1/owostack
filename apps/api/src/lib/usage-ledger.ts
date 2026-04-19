@@ -1,4 +1,5 @@
 import type {
+  CustomerUsageHistoryRow,
   CustomerUsageLedgerScope,
   UsageLedgerDO,
   UsageLedgerRecord,
@@ -193,6 +194,31 @@ export async function featureUsageSummaryForCustomer(
       "[usage-ledger] featureUsageSummaryForCustomer failed:",
       error,
     );
+    return null;
+  }
+}
+
+export async function listUsageForCustomerRange(
+  opts: UsageLedgerOptions,
+  customerId: string,
+  createdAtFrom: number,
+  createdAtTo: number,
+  featureId?: string | null,
+  scope?: CustomerUsageLedgerScope,
+): Promise<CustomerUsageHistoryRow[] | null> {
+  const stub = getStub(opts);
+  if (!stub) return null;
+
+  try {
+    return await stub.listUsageForCustomerRange(
+      customerId,
+      createdAtFrom,
+      createdAtTo,
+      featureId,
+      scope,
+    );
+  } catch (error) {
+    console.error("[usage-ledger] listUsageForCustomerRange failed:", error);
     return null;
   }
 }
