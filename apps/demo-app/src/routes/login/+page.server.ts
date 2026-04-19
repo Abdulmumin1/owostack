@@ -20,7 +20,7 @@ export const actions: Actions = {
 
     try {
       const customer = await owo.customer({
-        id: "9ccc2ef5-bd3c-48ed-9d6b-9c9e198bbfa9",
+        id: crypto.randomUUID(),
         email,
         name,
         metadata: { source: "demo-app" },
