@@ -17,39 +17,36 @@
       </div>
 
       <p>
-        Billing sounds straightforward until it gets close to revenue. Then it
-        becomes one of the most operationally sensitive parts of your product.
+        When you're early, a simple subscription + some webhooks and a counter
+        in your db can hold up. but as grow, things start to break in unexpected
+        ways, and your team start to take more sprints to fix billing issues.
       </p>
 
       <p>
-        We kept running into the same tradeoff everywhere else: tools that were
-        powerful but painfully heavy, or tools that looked simple until you
-        needed real control over pricing, usage, trials, upgrades, or overage.
-        So we built <strong class="font-medium text-text-primary"
-          >Owostack</strong
-        >
-        to sit in the middle of that gap.
+        One small change can mean lost revenue, double charge users, or silently
+        fail in ways you don’t notice. support tickets pile up, invoices don’t
+        match usage, credits feel off, and you’re digging through logs trying to
+        trace which webhook or edge case broke things this time. we’ve seen this
+        play out over and over.
       </p>
 
       <p>
-        The goal was not to make “yet another billing dashboard.” The goal was
-        to build billing infrastructure that feels fast, programmable, and sane
-        enough for modern SaaS and AI products.
+        But billing is not your product, you should be taking that time to
+        innovate and deliver better to your customers.
       </p>
 
       <div
         class="py-8 my-10 bg-bg-secondary -mx-10 px-10 md:-mx-20 md:px-20 border-y border-border"
       >
         <p>
-          If you're building something usage-based, credit-based, or
+          If you're building something AI product, usage-based, credit-based, or
           subscription-heavy, that is exactly the kind of product we are trying
           to serve.
         </p>
 
         <p class="mt-6">
-          If you're curious but not sure how Owostack would fit your pricing
-          model, reach out. We are happy to help think through the setup with
-          you on
+          If you're curious but not sure how Owostack would fit your product,
+          reach out. We are happy to help think through the setup with you on
           <a
             href="https://discord.gg/jQ3TyEn6WR"
             class="link font-medium"
