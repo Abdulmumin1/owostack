@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
 
 type RepoSource = {
   title: string;
@@ -27,6 +28,52 @@ type StreamHandlers = {
   onDelta?: (payload: { text?: string }) => void;
   onSources?: (payload: { sources?: unknown }) => void;
   onDone?: (payload: unknown) => void;
+};
+
+const markdownComponents: Components = {
+  a: ({ node, ...props }) => (
+    <a
+      {...props}
+      className="text-[var(--color-fd-primary)] hover:underline"
+      target="_blank"
+      rel="noopener noreferrer"
+    />
+  ),
+  pre: ({ node, children, ...props }) => {
+    const child = React.Children.toArray(children)[0];
+
+    if (React.isValidElement(child)) {
+      const codeElement = child as React.ReactElement<{
+        className?: string;
+        children?: React.ReactNode;
+      }>;
+      const className =
+        typeof codeElement.props.className === "string"
+          ? codeElement.props.className
+          : "";
+      const code = extractCodeText(codeElement.props.children);
+      const language = getCodeLanguage(className) ?? inferCodeLanguage(code);
+
+      return <HighlightedCodeBlock code={code} language={language} />;
+    }
+
+    return (
+      <pre
+        {...props}
+        className="overflow-x-auto rounded-xl border border-[var(--color-fd-border)] bg-[var(--color-fd-background)] px-4 py-3 text-[0.85em] leading-6"
+      >
+        {children}
+      </pre>
+    );
+  },
+  code: ({ node, children, ...props }) => (
+    <code
+      {...props}
+      className="rounded border border-[var(--color-fd-border)] bg-[var(--color-fd-background)] px-1 py-0.5 text-[0.85em]"
+    >
+      {children}
+    </code>
+  ),
 };
 
 export function AIChatSidebar() {
@@ -211,18 +258,23 @@ export function AIChatSidebar() {
         />
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-fd-border)]">
-          <div>
-            <h2 className="text-lg font-medium text-[var(--color-fd-foreground)]">
-              AI Chat
+        <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-[var(--color-fd-border)]">
+          <div className="flex min-w-0 items-center gap-3">
+            <h2 className="text-lg font-medium leading-none text-[var(--color-fd-foreground)]">
+              Ask about owostack
             </h2>
-            <p className="text-sm text-[var(--color-fd-muted-foreground)]">
-              {statusMessage}
-            </p>
+            <div className="flex items-center gap-2 text-sm text-[var(--color-fd-muted-foreground)]">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  isLoading ? "bg-amber-400 animate-pulse" : "bg-emerald-400"
+                }`}
+              />
+              <span className="truncate">{summarizeStatus(statusMessage)}</span>
+            </div>
           </div>
           <button
             onClick={() => setIsOpen(false)}
-            className="p-2 text-[var(--color-fd-muted-foreground)] hover:text-[var(--color-fd-foreground)] rounded-md transition-colors"
+            className="mt-0.5 p-2 text-[var(--color-fd-muted-foreground)] hover:text-[var(--color-fd-foreground)] rounded-md transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -244,13 +296,13 @@ export function AIChatSidebar() {
                 }`}
               >
                 <span className="text-xs font-medium text-[var(--color-fd-muted-foreground)] px-1">
-                  {msg.role === "user" ? "You" : "Owostack AI"}
+                  {msg.role === "user" ? "You" : ""}
                 </span>
                 <div
-                  className={`px-4 py-3 max-w-[90%] text-sm rounded-lg ${
+                  className={`text-sm ${
                     msg.role === "user"
-                      ? "bg-[var(--color-fd-primary)] text-[var(--color-fd-primary-foreground)]"
-                      : "bg-[var(--color-fd-muted)] text-[var(--color-fd-foreground)] border border-[var(--color-fd-border)] prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-pre:bg-[var(--color-fd-background)] prose-pre:border prose-pre:border-[var(--color-fd-border)]"
+                      ? "max-w-[90%] rounded-lg bg-[var(--color-fd-primary)] px-4 py-3 text-[var(--color-fd-primary-foreground)]"
+                      : "w-full max-w-full text-[var(--color-fd-foreground)] prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-pre:bg-[var(--color-fd-background)] prose-pre:border prose-pre:border-[var(--color-fd-border)] prose-code:before:content-none prose-code:after:content-none [&_.chat-code-block_pre]:m-0 [&_.chat-code-block_pre]:overflow-x-auto [&_.chat-code-block_pre]:bg-transparent [&_.chat-code-block_pre]:p-3 [&_.chat-code-block_pre]:text-[0.85em] [&_.chat-code-block_pre]:leading-6 [&_.chat-code-block_code]:border-0 [&_.chat-code-block_code]:bg-transparent [&_.chat-code-block_code]:p-0 [&_.chat-code-block_code]:text-inherit [&_.chat-code-block_code]:rounded-none"
                   }`}
                 >
                   {msg.role === "user" ? (
@@ -265,31 +317,7 @@ export function AIChatSidebar() {
                     <div className="overflow-hidden">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
-                        components={{
-                          a: ({ node, ...props }) => (
-                            <a
-                              {...props}
-                              className="text-[var(--color-fd-primary)] hover:underline"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            />
-                          ),
-                          code: ({ node, className, children, ...props }) => {
-                            const isInline = !className;
-                            return isInline ? (
-                              <code
-                                {...props}
-                                className="bg-[var(--color-fd-background)] px-1 py-0.5 rounded border border-[var(--color-fd-border)] text-[0.85em]"
-                              >
-                                {children}
-                              </code>
-                            ) : (
-                              <code {...props} className={className}>
-                                {children}
-                              </code>
-                            );
-                          },
-                        }}
+                        components={markdownComponents}
                       >
                         {msg.content}
                       </ReactMarkdown>
@@ -380,6 +408,17 @@ export function AIChatSidebar() {
               </button>
             </div>
           </form>
+          <div className="mt-2 px-1 text-xs text-[var(--color-fd-muted-foreground)]">
+            Powered by{" "}
+            <a
+              href="https://github.com/Abdulmumin1/cull"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--color-fd-foreground)] hover:text-[var(--color-fd-primary)] hover:underline"
+            >
+              Cull
+            </a>
+          </div>
         </div>
       </div>
     </>
@@ -392,6 +431,59 @@ function createMessageId() {
   }
 
   return Math.random().toString(36).slice(2, 10);
+}
+
+function HighlightedCodeBlock({
+  code,
+  language,
+}: {
+  code: string;
+  language: string;
+}) {
+  const [html, setHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function highlight() {
+      try {
+        const { codeToHtml } = await import("shiki");
+        const highlighted = await codeToHtml(code, {
+          lang: language,
+          theme: "github-dark",
+        });
+
+        if (!cancelled) {
+          setHtml(highlighted);
+        }
+      } catch {
+        if (!cancelled) {
+          setHtml(null);
+        }
+      }
+    }
+
+    void highlight();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, language]);
+
+  if (!html) {
+    return (
+      <pre className="overflow-x-auto rounded-xl border border-[var(--color-fd-border)] bg-[#0d1117] px-3 py-2.5 text-[0.85em] leading-6">
+        <code className="font-mono whitespace-pre">{code}</code>
+      </pre>
+    );
+  }
+
+  return (
+    <div
+      className="chat-code-block overflow-hidden rounded-xl border border-[var(--color-fd-border)] bg-[#0d1117]"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
 }
 
 function updateMessage(
@@ -555,6 +647,30 @@ function formatStage(stage?: string) {
   }
 }
 
+function summarizeStatus(status: string) {
+  if (status === "Answer received.") {
+    return "Answered";
+  }
+
+  if (status === "Request failed.") {
+    return "Error";
+  }
+
+  if (status === "Ask a docs question.") {
+    return "Ready";
+  }
+
+  if (
+    status === "Generating answer." ||
+    status.startsWith("Working:") ||
+    status.includes("syncing")
+  ) {
+    return "Answering";
+  }
+
+  return status;
+}
+
 function getSourceHref(path: string) {
   if (/^https?:\/\//.test(path) || path.startsWith("/")) {
     return path;
@@ -589,4 +705,46 @@ function readStreamError(payload: unknown) {
 
 function errorMessage(value: unknown) {
   return value instanceof Error ? value.message : String(value);
+}
+
+function extractCodeText(value: React.ReactNode): string {
+  if (typeof value === "string") {
+    return value.replace(/\n$/, "");
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(extractCodeText).join("").replace(/\n$/, "");
+  }
+
+  if (React.isValidElement(value)) {
+    const element = value as React.ReactElement<{ children?: React.ReactNode }>;
+    return extractCodeText(element.props.children);
+  }
+
+  return "";
+}
+
+function getCodeLanguage(className: string) {
+  const match = /language-([\w-]+)/.exec(className);
+  return match?.[1] ?? null;
+}
+
+function inferCodeLanguage(code: string) {
+  if (
+    code.includes('from "owostack"') ||
+    code.includes("const ") ||
+    code.includes("import ")
+  ) {
+    return "typescript";
+  }
+
+  if (code.includes("<") && code.includes("/")) {
+    return "html";
+  }
+
+  if (code.includes("{") || code.includes("[")) {
+    return "javascript";
+  }
+
+  return "text";
 }
