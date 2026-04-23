@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
+import { Route as ApiAssistantStreamRouteImport } from './routes/api/assistant/stream'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -28,35 +29,49 @@ const ApiSearchRoute = ApiSearchRouteImport.update({
   path: '/api/search',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAssistantStreamRoute = ApiAssistantStreamRouteImport.update({
+  id: '/api/assistant/stream',
+  path: '/api/assistant/stream',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/$': typeof SplatRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/search': typeof ApiSearchRoute
+  '/api/assistant/stream': typeof ApiAssistantStreamRoute
 }
 export interface FileRoutesByTo {
   '/$': typeof SplatRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/search': typeof ApiSearchRoute
+  '/api/assistant/stream': typeof ApiAssistantStreamRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/$': typeof SplatRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/search': typeof ApiSearchRoute
+  '/api/assistant/stream': typeof ApiAssistantStreamRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/$' | '/sitemap.xml' | '/api/search'
+  fullPaths: '/$' | '/sitemap.xml' | '/api/search' | '/api/assistant/stream'
   fileRoutesByTo: FileRoutesByTo
-  to: '/$' | '/sitemap.xml' | '/api/search'
-  id: '__root__' | '/$' | '/sitemap.xml' | '/api/search'
+  to: '/$' | '/sitemap.xml' | '/api/search' | '/api/assistant/stream'
+  id:
+    | '__root__'
+    | '/$'
+    | '/sitemap.xml'
+    | '/api/search'
+    | '/api/assistant/stream'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   SplatRoute: typeof SplatRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiSearchRoute: typeof ApiSearchRoute
+  ApiAssistantStreamRoute: typeof ApiAssistantStreamRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +97,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSearchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/assistant/stream': {
+      id: '/api/assistant/stream'
+      path: '/api/assistant/stream'
+      fullPath: '/api/assistant/stream'
+      preLoaderRoute: typeof ApiAssistantStreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +111,7 @@ const rootRouteChildren: RootRouteChildren = {
   SplatRoute: SplatRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiSearchRoute: ApiSearchRoute,
+  ApiAssistantStreamRoute: ApiAssistantStreamRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
