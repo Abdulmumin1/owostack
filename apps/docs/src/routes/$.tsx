@@ -107,6 +107,7 @@ const clientLoader = browserCollections.docs.createClientLoader({
         <DocsTitle>{frontmatter.title}</DocsTitle>
         <DocsDescription>{frontmatter.description}</DocsDescription>
         <DocsBody>
+          <div className="fixed inset-0 z-1000 pointer-events-none bg-noise"></div>
           <MDX
             components={{
               ...defaultMdxComponents,
@@ -124,6 +125,7 @@ function Page() {
 
   return (
     <DocsLayout {...baseOptions()} tree={data.pageTree}>
+      <div className="fixed inset-0 z-1000 pointer-events-none bg-noise"></div>
       <Suspense>
         {clientLoader.useContent(data.path, {
           className: "",
