@@ -225,7 +225,7 @@ export function AIChatSidebar() {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 p-3 bg-[var(--color-fd-primary)] text-[var(--color-fd-primary-foreground)] rounded-full shadow-lg hover:scale-105 transition-transform z-50 flex items-center justify-center"
+          className="fixed bottom-6 right-6 p-3 bg-[var(--color-fd-primary)] text-[var(--color-fd-primary-foreground)] rounded-full hover:scale-105 transition-transform z-50 flex items-center justify-center"
         >
           <MessageCircle className="w-6 h-6" />
         </button>
@@ -247,7 +247,7 @@ export function AIChatSidebar() {
               ? width
               : undefined,
         }}
-        className={`fixed top-0 right-0 h-full w-full md:w-auto bg-[var(--color-fd-background)] border-l border-[var(--color-fd-border)] shadow-2xl z-50 transform transition-transform duration-300 flex flex-col ${
+        className={`fixed top-0 right-0 h-full w-full md:w-auto bg-[var(--color-fd-background)] border-l border-[var(--color-fd-border)] z-50 transform transition-transform duration-300 flex flex-col ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
