@@ -110,13 +110,16 @@
   let generatedApiKey = $state("");
   let apiKeyCopied = $state(false);
 
-  let theme = $state<"light" | "dark">("dark");
+  let theme = $state<"light" | "dark">("light");
   let themeInitialized = $state(false);
 
   $effect(() => {
     if (!themeInitialized) {
       untrack(() => {
-        const initialTheme = (page.data.theme as "light" | "dark") || (localStorage.getItem("theme") as "light" | "dark") || "dark";
+        const initialTheme =
+          (page.data.theme as "light" | "dark") ||
+          (localStorage.getItem("theme") as "light" | "dark") ||
+          "light";
         theme = initialTheme;
         themeInitialized = true;
       });

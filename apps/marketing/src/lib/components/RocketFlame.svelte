@@ -984,8 +984,7 @@
         } else if (isDark) {
           isLightMode = false;
         } else {
-          isLightMode = !window.matchMedia("(prefers-color-scheme: dark)")
-            .matches;
+          isLightMode = true;
         }
 
         // Update uniforms
@@ -1049,10 +1048,6 @@
         attributes: true,
         attributeFilter: ["class"],
       });
-
-      colorSchemeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      handleThemeChange = updateTheme;
-      colorSchemeMediaQuery.addEventListener("change", handleThemeChange);
     }
 
     // ── Post-processing: subtle cinematic composite ──
