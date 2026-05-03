@@ -12,12 +12,11 @@
         try {
           const theme =
             document.cookie.match(/theme=([^;]+)/)?.[1] ||
-            localStorage.getItem("theme");
-          if (theme) {
-            document.documentElement.classList.remove("light", "dark");
-            document.documentElement.classList.add(theme);
-            document.documentElement.setAttribute("data-theme", theme);
-          }
+            localStorage.getItem("theme") ||
+            "light";
+          document.documentElement.classList.remove("light", "dark");
+          document.documentElement.classList.add(theme);
+          document.documentElement.setAttribute("data-theme", theme);
         } catch (e) {}
       })();
     </script>

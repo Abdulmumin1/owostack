@@ -36,13 +36,6 @@
   pointer-events: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) .bg-noise {
-    background-color: #ffffff;
-    opacity: 0.04;
-  }
-}
-
 :root.dark .bg-noise {
   background-color: #ffffff;
   opacity: 0.02;
@@ -98,31 +91,6 @@
   --color-border-light: #2a2a2a;
   --color-border-strong: #444444;
   --color-text-dim: #5a5a5a;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --color-fd-background: #131313;
-    --color-fd-foreground: #f5f5f5;
-    --color-fd-primary: #f0b860;
-    --color-fd-primary-foreground: #1a1a1a;
-    --color-fd-secondary: #1a1a1a;
-    --color-fd-secondary-foreground: #b5b5b5;
-    --color-fd-border: #333333;
-    --color-fd-muted: #242424;
-    --color-fd-muted-foreground: #808080;
-    --color-fd-card: #1e1e1e;
-    --color-fd-card-foreground: #f5f5f5;
-    --color-fd-popover: #222222;
-    --color-fd-popover-foreground: #f5f5f5;
-    --color-fd-accent: #3d3020;
-    --color-fd-accent-foreground: #f5c878;
-    --color-fd-ring: #c07515;
-
-    --color-border-light: #2a2a2a;
-    --color-border-strong: #444444;
-    --color-text-dim: #5a5a5a;
-  }
 }
 
 /* =============================================================================

@@ -2,13 +2,12 @@
   import { page } from "$app/state";
   import { authClient, organization } from "$lib/auth-client";
   import { CircleNotch, CheckCircle, XCircle } from "phosphor-svelte";
-  import { onMount } from "svelte";
 
   // Auth is now handled server-side in hooks.server.ts
   // This page only handles the invitation acceptance
 
   let invitationId = $derived(page.params.invitationId);
-  let status = $state<"loading" | "success" | "error">("loading");
+  let status = $state<"idle" | "loading" | "success" | "error">("idle");
   let errorMessage = $state("");
   let organizationName = $state("");
 
@@ -29,16 +28,19 @@
     return match?.name || "the organization";
   }
 
-  onMount(async () => {
+  async function acceptInvitation() {
     if (!invitationId) {
       status = "error";
       errorMessage = "Invalid invitation link";
       return;
     }
 
+    status = "loading";
+    errorMessage = "";
+
     try {
       const result = await authClient.organization.acceptInvitation({
-        invitationId
+        invitationId,
       });
 
       if (result.error) {
@@ -54,7 +56,7 @@
       status = "error";
       errorMessage = e.message || "An unexpected error occurred";
     }
-  });
+  }
 
   function goToDashboard() {
     window.location.href = "/";
@@ -77,7 +79,21 @@
     </div>
 
     <div class="bg-bg-card border border-border rounded-lg p-8 shadow-sm">
-      {#if status === "loading"}
+      {#if status === "idle"}
+        <div class="flex flex-col items-center gap-4 py-4">
+          <div class="text-center">
+            <h2 class="text-lg font-display font-semibold text-text-primary mb-1">
+              Accept team invitation
+            </h2>
+            <p class="text-sm text-text-muted">
+              You are signed in. Confirm below to join this organization.
+            </p>
+          </div>
+          <button class="btn btn-primary w-full mt-4" onclick={acceptInvitation}>
+            Accept Invitation
+          </button>
+        </div>
+      {:else if status === "loading"}
         <div class="flex flex-col items-center gap-4 py-8">
           <CircleNotch size={48} class="animate-spin text-accent" />
           <p class="text-text-secondary">Accepting your invitation...</p>
