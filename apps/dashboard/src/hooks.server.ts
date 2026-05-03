@@ -25,6 +25,7 @@ const PROTECTED_ROUTES = [
   "/usage",
   "/events",
   "/onboarding",
+  "/accept-invitation",
 ];
 
 // Routes that are only for non-authenticated users (login, signup, etc.)
@@ -33,7 +34,6 @@ const PUBLIC_ONLY_ROUTES = [
   "/signup",
   "/forgot-password",
   "/reset-password",
-  "/auth/callback",
 ];
 
 // Check if a path matches any of the protected route patterns
@@ -118,7 +118,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   // Continue to resolve the request
   const response = await resolve(event, {
     transformPageChunk: ({ html }) => {
-      const theme = event.cookies.get("theme") || "dark";
+      const theme = event.cookies.get("theme") || "light";
       return html
         .replace("%theme_class%", theme)
         .replace("%theme_data%", theme);

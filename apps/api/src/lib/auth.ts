@@ -123,6 +123,13 @@ export function auth(env: Env) {
       },
     },
 
+    account: {
+      accountLinking: {
+        enabled: true,
+        trustedProviders: ["google", "github"],
+      },
+    },
+
     trustedOrigins: [
       "http://localhost:5173",
       "http://localhost:5174",
@@ -163,7 +170,7 @@ export function auth(env: Env) {
             env.DASHBOARD_URL ||
             env.BETTER_AUTH_URL?.replace(/localhost:\d+/, "localhost:5173") ||
             "http://localhost:5173";
-          const inviteLink = `${dashboardUrl}/join/${data.id}`;
+          const inviteLink = `${dashboardUrl}/accept-invitation/${data.id}`;
           console.log(
             `[AUTH] 📧 Organization invitation sent to ${data.email}`,
           );

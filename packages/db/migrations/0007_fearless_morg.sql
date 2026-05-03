@@ -1,0 +1,1 @@
+ALTER TABLE `accounts` ADD `id_token` text;

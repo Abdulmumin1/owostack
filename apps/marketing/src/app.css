@@ -122,52 +122,6 @@
   --color-info-bg: #1a2230;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --color-bg-primary: #131313;
-    --color-bg-secondary: #1a1a1a;
-    --color-bg-tertiary: #242424;
-    --color-bg-card: #1e1e1e;
-    --color-bg-card-hover: #282828;
-    --color-bg-elevated: #222222;
-
-    --color-border: #333333;
-    --color-border-light: #2a2a2a;
-    --color-border-strong: #444444;
-    --color-border-muted: #3a3a3a;
-
-    --color-accent: #f0b860;
-    --color-accent-hover: #f5c878;
-    --color-accent-border: #c07515;
-    --color-accent-light: #3d3020;
-    --color-accent-contrast: #1a1a1a;
-
-    --color-secondary: #3dc88a;
-    --color-secondary-hover: #50d89c;
-    --color-secondary-border: #167a52;
-    --color-secondary-light: #1a3028;
-
-    --color-tertiary: #6b9be0;
-    --color-tertiary-hover: #88afe8;
-    --color-tertiary-border: #2d4f8f;
-    --color-tertiary-light: #1a2530;
-
-    --color-text-primary: #f5f5f5;
-    --color-text-secondary: #b5b5b5;
-    --color-text-muted: #808080;
-    --color-text-dim: #8a8888;
-
-    --color-success: #3dc88a;
-    --color-success-bg: #1a2d24;
-    --color-warning: #f0b860;
-    --color-warning-bg: #2d281a;
-    --color-error: #e06666;
-    --color-error-bg: #2d1a1a;
-    --color-info: #6b9be0;
-    --color-info-bg: #1a2230;
-  }
-}
-
 /* =============================================================================
    Base
    ============================================================================= */
@@ -636,13 +590,6 @@ tbody tr:last-child td {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='2.5' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1, 0 0 0 0 1, 0 0 0 0 1, 1 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
   opacity: 0.12;
   pointer-events: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) .bg-noise {
-    background-color: #ffffff;
-    opacity: 0.08;
-  }
 }
 
 :root.dark .bg-noise {
