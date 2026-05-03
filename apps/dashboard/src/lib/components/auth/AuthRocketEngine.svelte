@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
 
-  const fps = 12;
+  const BASE_FPS = 12;
+  const BOOST_FPS = 48;
   const sourceCols = 175;
   const sourceRows = 118;
   const minCols = 96;
@@ -13,12 +14,12 @@
   let asciiFrames = $state<string[]>([]);
   let frameIndex = $state(0);
   let gridSize = $state({ cols: sourceCols, rows: sourceRows });
+  let boost = $state(false);
 
-  let interval: ReturnType<typeof setInterval> | undefined;
   let resizeObserver: ResizeObserver | undefined;
   let intersectionObserver: IntersectionObserver | undefined;
-  let visible = true;
-  let reduceMotion = false;
+  let visible = $state(true);
+  let reduceMotion = $state(false);
 
   let currentFrame = $derived(
     resampleFrame(
@@ -27,6 +28,17 @@
       gridSize.rows,
     ),
   );
+
+  $effect(() => {
+    if (!visible || reduceMotion || asciiFrames.length <= 1) return;
+
+    const fps = boost ? BOOST_FPS : BASE_FPS;
+    const interval = setInterval(() => {
+      frameIndex = (frameIndex + 1) % asciiFrames.length;
+    }, 1000 / fps);
+
+    return () => clearInterval(interval);
+  });
 
   function measure() {
     if (!host || !measureProbe) return;
@@ -107,20 +119,12 @@
       frameIndex = 0;
       await tick();
       measure();
-
-      if (!reduceMotion && asciiFrames.length > 1) {
-        interval = setInterval(() => {
-          if (!visible) return;
-          frameIndex = (frameIndex + 1) % asciiFrames.length;
-        }, 1000 / fps);
-      }
     }
 
     void loadFrames();
 
     return () => {
       destroyed = true;
-      if (interval) clearInterval(interval);
       window.removeEventListener("resize", measure);
       window.visualViewport?.removeEventListener("resize", measure);
       resizeObserver?.disconnect();
@@ -131,15 +135,23 @@
 
 <div
   bind:this={host}
-  class="relative h-full w-full overflow-hidden bg-bg-secondary text-accent pointer-events-none"
-  aria-hidden="true"
+  role="button"
+  tabindex="0"
+  aria-label="Ignite rocket engine"
+  class="relative h-full w-full overflow-hidden bg-bg-secondary text-accent cursor-pointer select-none transition-transform duration-150 ease-out"
+  class:scale-[1.02]={boost}
+  onpointerdown={() => (boost = true)}
+  onpointerup={() => (boost = false)}
+  onpointerleave={() => (boost = false)}
 >
-  <div class="absolute inset-4 border border-border/70 bg-bg-primary/10"></div>
+  <div class="absolute"></div>
   <span
     bind:this={measureProbe}
     class="pointer-events-none absolute opacity-0 whitespace-pre font-mono text-[12px] leading-[0.65] tracking-[-0.18em]"
     >{probeText}</span
   >
   <pre
-    class="relative z-10 pointer-events-none m-0 whitespace-pre font-mono text-[12px] leading-[0.65] tracking-[-0.18em] opacity-80">{currentFrame}</pre>
+    class="relative z-10 pointer-events-none m-0 whitespace-pre font-mono text-[12px] leading-[0.65] tracking-[-0.18em] opacity-80 transition-opacity duration-75"
+    class:opacity-100={boost}
+    class:[text-shadow:0_0_6px_currentColor]={boost}>{currentFrame}</pre>
 </div>
