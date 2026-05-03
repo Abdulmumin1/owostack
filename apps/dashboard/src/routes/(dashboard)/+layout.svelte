@@ -6,6 +6,7 @@
     BuildingsIcon,
     CaretDown,
     ChartBar,
+    Calendar,
     Check,
     CircleNotch,
     Coins,
@@ -710,6 +711,14 @@
       <!-- Settings Button -->
 
       <a
+        href="https://owostack.com/talk-to-founder"
+        target="_blank"
+        class="w-full flex items-center gap-3 px-3 mb-3 rounded-lg transition-all duration-200 text-text-secondary"
+      >
+        <Calendar size={16} class="text-zinc-500" weight="duotone" />
+        <span>Book a call</span>
+      </a>
+      <a
         href="https://docs.owostack.com"
         target="_blank"
         class="w-full flex items-center gap-3 px-3 mb-3 rounded-lg transition-all duration-200 text-text-secondary"
@@ -940,11 +949,13 @@
                               weight="duotone"
                             />
                             <input
-                              type={field.secret && !deployShowSecrets[secretKey]
+                              type={field.secret &&
+                              !deployShowSecrets[secretKey]
                                 ? "password"
                                 : "text"}
-                              value={deployCredentials[providerId]?.[field.key] ||
-                                ""}
+                              value={deployCredentials[providerId]?.[
+                                field.key
+                              ] || ""}
                               oninput={(e) => {
                                 if (!deployCredentials[providerId])
                                   deployCredentials[providerId] = {};
@@ -969,20 +980,33 @@
                                 {#if deployShowSecrets[secretKey]}<EyeSlash
                                     size={14}
                                     weight="duotone"
-                                  />{:else}<Eye size={14} weight="duotone" />{/if}
+                                  />{:else}<Eye
+                                    size={14}
+                                    weight="duotone"
+                                  />{/if}
                               </button>
                             {/if}
                           </div>
                           {#if isWebhookSecret}
                             {@const liveApiUrl = getApiUrlForEnv("live")}
                             {@const webhookUrl = `${liveApiUrl}/webhooks/${projectId}/${providerId}`}
-                            <div class="flex items-center gap-2 bg-bg-secondary/50 border border-border px-2 py-1.5">
-                              <Globe size={10} class="text-text-dim shrink-0" weight="duotone" />
-                              <code class="flex-1 font-mono text-[10px] text-text-dim truncate">{webhookUrl}</code>
+                            <div
+                              class="flex items-center gap-2 bg-bg-secondary/50 border border-border px-2 py-1.5"
+                            >
+                              <Globe
+                                size={10}
+                                class="text-text-dim shrink-0"
+                                weight="duotone"
+                              />
+                              <code
+                                class="flex-1 font-mono text-[10px] text-text-dim truncate"
+                                >{webhookUrl}</code
+                              >
                               <button
                                 type="button"
                                 class="text-text-dim hover:text-text-primary transition-colors shrink-0"
-                                onclick={() => navigator.clipboard.writeText(webhookUrl)}
+                                onclick={() =>
+                                  navigator.clipboard.writeText(webhookUrl)}
                                 title="Copy webhook URL"
                               >
                                 <Copy size={10} weight="fill" />
