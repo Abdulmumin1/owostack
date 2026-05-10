@@ -297,7 +297,7 @@
               >// Subscribe a customer to a plan</span
             >
 <span class="text-accent font-medium">await</span> owo.<span
-              class="text-black dark:text-white">attach</span
+              class="text-text-primary">attach</span
             >(&#123;
   customer: <span class="text-amber-400">"user@acme.com"</span>,
   product:  <span class="text-amber-400">"pro"</span>,
@@ -308,14 +308,14 @@
             >
 <span class="text-accent font-medium">const</span> &#123; allowed &#125; = <span
               class="text-accent font-medium">await</span
-            > owo.<span class="text-black dark:text-white">check</span>(&#123;
+            > owo.<span class="text-text-primary">check</span>(&#123;
   customer: <span class="text-amber-400">"user@acme.com"</span>,
   feature:  <span class="text-amber-400">"gpu-inference"</span>,
 &#125;);
 
 <span class="text-text-secondary italic">// Record usage</span>
 <span class="text-accent font-medium">await</span> owo.<span
-              class="text-black dark:text-white">track</span
+              class="text-text-primary">track</span
             >(&#123;
   customer: <span class="text-amber-400">"user@acme.com"</span>,
   feature:  <span class="text-amber-400">"gpu-inference"</span>,
