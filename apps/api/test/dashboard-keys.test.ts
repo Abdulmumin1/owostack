@@ -42,9 +42,11 @@ describe("Dashboard API keys", () => {
   const hashApiKeyMock = vi.fn(async () => "hashed-key");
   const getSessionMock = vi.fn(async () => ({
     user: { id: "user_123" },
-    session: { id: "session_123" },
+    session: { id: "session_123", activeOrganizationId: "org_uuid_123" },
   }));
-  const resolveOrganizationIdMock = vi.fn(async () => null);
+  const getAccessibleOrganizationMock = vi.fn(async () => ({
+    id: "org_uuid_123",
+  }));
   const keyDeps: DashboardKeysDependencies = {
     generateApiKey:
       generateApiKeyMock as unknown as DashboardKeysDependencies["generateApiKey"],
@@ -54,7 +56,7 @@ describe("Dashboard API keys", () => {
 
   const dashboardApp = createDashboardShell({
     getSession: getSessionMock,
-    resolveOrganizationId: resolveOrganizationIdMock,
+    getAccessibleOrganization: getAccessibleOrganizationMock,
   });
   dashboardApp.route("/keys", createDashboardKeysRoute(keyDeps));
 
@@ -111,7 +113,7 @@ describe("Dashboard API keys", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(resolveOrganizationIdMock).not.toHaveBeenCalled();
+    expect(getAccessibleOrganizationMock).not.toHaveBeenCalled();
     expect(authInsertValuesMock).toHaveBeenCalledWith(
       expect.objectContaining({
         organizationId: "org_uuid_123",

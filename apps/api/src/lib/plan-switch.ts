@@ -1,6 +1,7 @@
 import { eq, and, inArray } from "drizzle-orm";
 import { createDb, schema } from "@owostack/db";
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
+import { mergeBillingMetadata } from "./billing-metadata";
 import { ensurePlanSynced } from "./plan-sync";
 import { buildRenewalSetupFailureMetadata } from "./renewal-setup";
 import { shouldResetUsageOnPlanEnable } from "./usage-scope";
@@ -181,10 +182,16 @@ export async function previewSwitch(
   db: DB,
   customerId: string,
   newPlanId: string,
+  organizationId?: string,
 ): Promise<SwitchPreview> {
   // Fetch the new plan
   const newPlan = await db.query.plans.findFirst({
-    where: eq(schema.plans.id, newPlanId),
+    where: organizationId
+      ? and(
+          eq(schema.plans.id, newPlanId),
+          eq(schema.plans.organizationId, organizationId),
+        )
+      : eq(schema.plans.id, newPlanId),
   });
 
   if (!newPlan) {
@@ -288,7 +295,12 @@ export async function executeSwitch(
   } = {},
 ): Promise<SwitchResult> {
   const newPlan = await db.query.plans.findFirst({
-    where: eq(schema.plans.id, newPlanId),
+    where: options.organizationId
+      ? and(
+          eq(schema.plans.id, newPlanId),
+          eq(schema.plans.organizationId, options.organizationId),
+        )
+      : eq(schema.plans.id, newPlanId),
   });
 
   if (!newPlan) {
@@ -296,7 +308,12 @@ export async function executeSwitch(
   }
 
   const customer = await db.query.customers.findFirst({
-    where: eq(schema.customers.id, customerId),
+    where: options.organizationId
+      ? and(
+          eq(schema.customers.id, customerId),
+          eq(schema.customers.organizationId, options.organizationId),
+        )
+      : eq(schema.customers.id, customerId),
   });
 
   if (!customer) {
@@ -545,11 +562,10 @@ async function handleUpgrade(
       subscriptionId: providerSubCode,
       newPlanId: planRef,
       prorationMode: "prorated_immediately",
-      metadata: {
+      metadata: mergeBillingMetadata(options.metadata, {
         old_plan_id: existingSub.plan.id,
         new_plan_id: newPlan.id,
-        ...options.metadata,
-      },
+      }),
       environment: provider.account.environment,
       account: provider.account,
     });
@@ -808,15 +824,14 @@ async function createUpgradeCheckout(
     amount: proratedAmount,
     currency: newPlan.currency || "USD",
     callbackUrl: options.callbackUrl,
-    metadata: {
+    metadata: mergeBillingMetadata(options.metadata, {
       type: "plan_upgrade",
       old_plan_id: existingSub.plan.id,
       old_subscription_id: existingSub.id,
       new_plan_id: newPlan.id,
       customer_id: customer.id,
       prorated_amount: proratedAmount,
-      ...options.metadata,
-    },
+    }),
     environment: provider.account.environment,
     account: provider.account,
   });
@@ -1021,13 +1036,12 @@ async function handleOneTimePurchase(
     amount: plan.price,
     currency: plan.currency || "USD",
     callbackUrl: options.callbackUrl,
-    metadata: {
+    metadata: mergeBillingMetadata(options.metadata, {
       type: "one_time_purchase",
       plan_id: plan.id,
       plan_slug: plan.slug,
       customer_id: customer.id,
-      ...options.metadata,
-    },
+    }),
     environment: provider.account.environment,
     account: provider.account,
   });
@@ -1155,13 +1169,12 @@ async function handleNewSubscription(
     amount: newPlan.price,
     currency: newPlan.currency || "USD",
     callbackUrl: options.callbackUrl,
-    metadata: {
+    metadata: mergeBillingMetadata(options.metadata, {
       type: "new_subscription",
       plan_id: newPlan.id,
       plan_slug: newPlan.slug,
       customer_id: customer.id,
-      ...options.metadata,
-    },
+    }),
     environment: provider.account.environment,
     account: provider.account,
   });

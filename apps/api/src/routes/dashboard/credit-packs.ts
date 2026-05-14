@@ -98,8 +98,16 @@ app.post("/", async (c) => {
     providerId,
     metadata,
   } = parsed.data;
-  const organizationId = c.get("organizationId") ?? orgIdFromData;
+  const organizationId = c.get("organizationId");
   const db = c.get("db");
+
+  if (!organizationId) {
+    return c.json({ success: false, error: "Organization ID required" }, 400);
+  }
+
+  if (orgIdFromData !== organizationId) {
+    return c.json({ success: false, error: "Organization mismatch" }, 403);
+  }
 
   const slug = name
     .toLowerCase()
@@ -224,8 +232,17 @@ app.patch("/:id", async (c) => {
   }
 
   const db = c.get("db");
+  const organizationId = c.get("organizationId");
+
+  if (!organizationId) {
+    return c.json({ success: false, error: "Organization ID required" }, 400);
+  }
+
   const existing = await (db.query as any).creditPacks?.findFirst?.({
-    where: eq((schema as any).creditPacks.id, id),
+    where: and(
+      eq((schema as any).creditPacks.id, id),
+      eq((schema as any).creditPacks.organizationId, organizationId),
+    ),
   });
 
   if (!existing) {
@@ -356,11 +373,21 @@ app.patch("/:id", async (c) => {
 app.delete("/:id", async (c) => {
   const id = c.req.param("id");
   const db = c.get("db");
+  const organizationId = c.get("organizationId");
+
+  if (!organizationId) {
+    return c.json({ success: false, error: "Organization ID required" }, 400);
+  }
 
   try {
     const deleted = await (db as any)
       .delete((schema as any).creditPacks)
-      .where(eq((schema as any).creditPacks.id, id))
+      .where(
+        and(
+          eq((schema as any).creditPacks.id, id),
+          eq((schema as any).creditPacks.organizationId, organizationId),
+        ),
+      )
       .returning({ id: (schema as any).creditPacks.id });
 
     if (deleted.length === 0) {

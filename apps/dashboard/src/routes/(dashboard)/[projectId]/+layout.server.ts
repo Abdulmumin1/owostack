@@ -1,5 +1,10 @@
 import type { LayoutServerLoad } from "./$types";
 import { error, redirect } from "@sveltejs/kit";
+import {
+  fetchDashboardData,
+  fetchOrganizations,
+  setActiveOrganization,
+} from "$lib/server/dashboard-api";
 
 /**
  * Server layout for project routes
@@ -9,8 +14,6 @@ import { error, redirect } from "@sveltejs/kit";
  * 2. Sets the active organization for Better Auth
  * 3. Returns org data to the client
  */
-
-import { PUBLIC_API_URL_LIVE, PUBLIC_API_URL_TEST } from "$env/static/public";
 
 export const load: LayoutServerLoad = async ({
   params,
@@ -29,36 +32,10 @@ export const load: LayoutServerLoad = async ({
   }
 
   // Get the API URL
-  const apiUrl =
-    PUBLIC_API_URL_TEST || PUBLIC_API_URL_LIVE || "http://localhost:8787";
-
-  // Forward the original request cookies to Better Auth
   const cookieHeader = request.headers.get("cookie") || "";
 
   try {
-    // Fetch user's organizations from Better Auth
-    const orgsResponse = await fetch(`${apiUrl}/api/auth/organization/list`, {
-      headers: {
-        Cookie: cookieHeader,
-      },
-      credentials: "include",
-    });
-
-    if (!orgsResponse.ok) {
-      console.error(
-        "[Layout Server] Failed to fetch organizations: " +
-          PUBLIC_API_URL_TEST +
-          " " +
-          PUBLIC_API_URL_LIVE,
-        await orgsResponse.text(),
-      );
-      throw error(500, "Failed to fetch organizations");
-    }
-
-    const result = await orgsResponse.json();
-    const organizations = Array.isArray(result) ? result : result.data || [];
-
-    // Find the organization matching projectId (can be ID or slug)
+    const organizations = await fetchOrganizations(cookieHeader);
     const organization = organizations.find(
       (org: any) => org.id === projectId || org.slug === projectId,
     );
@@ -68,21 +45,10 @@ export const load: LayoutServerLoad = async ({
       throw error(404, "Organization not found");
     }
 
-    // Set the active organization via Better Auth API
-    const setActiveResponse = await fetch(
-      `${apiUrl}/api/auth/organization/set-active`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: cookieHeader,
-          Origin: url.origin,
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          organizationId: organization.id,
-        }),
-      },
+    const setActiveResponse = await setActiveOrganization(
+      cookieHeader,
+      url.origin,
+      organization.id,
     );
 
     if (!setActiveResponse.ok) {
@@ -98,7 +64,6 @@ export const load: LayoutServerLoad = async ({
       );
     }
 
-    // Return organization data to client
     const metadata =
       organization.metadata &&
       typeof organization.metadata === "object" &&
@@ -108,7 +73,36 @@ export const load: LayoutServerLoad = async ({
     const activeEnvironment =
       metadata.activeEnvironment === "live" ? "live" : "test";
 
+    const [testAccountsResult, liveAccountsResult, currencyResult] =
+      await Promise.allSettled([
+        fetchDashboardData<{ data: any[] }>(
+          "test",
+          cookieHeader,
+          `/api/dashboard/providers/accounts?organizationId=${organization.id}`,
+        ),
+        fetchDashboardData<{ data: any[] }>(
+          "live",
+          cookieHeader,
+          `/api/dashboard/providers/accounts?organizationId=${organization.id}`,
+        ),
+        fetchDashboardData<{ data: { defaultCurrency?: string } }>(
+          activeEnvironment,
+          cookieHeader,
+          `/api/dashboard/config/default-currency?organizationId=${organization.id}`,
+        ),
+      ]);
+
+    const testAccounts =
+      testAccountsResult.status === "fulfilled" ? testAccountsResult.value.data : [];
+    const liveAccounts =
+      liveAccountsResult.status === "fulfilled" ? liveAccountsResult.value.data : [];
+    const defaultCurrency =
+      currencyResult.status === "fulfilled"
+        ? currencyResult.value.data?.defaultCurrency || null
+        : null;
+
     return {
+      organizations,
       organization: {
         id: organization.id,
         name: organization.name,
@@ -117,6 +111,11 @@ export const load: LayoutServerLoad = async ({
         metadata: organization.metadata,
       },
       activeEnvironment,
+      environmentStatus: {
+        testConnected: testAccounts.some((a: any) => a.environment === "test"),
+        liveConnected: liveAccounts.some((a: any) => a.environment === "live"),
+        defaultCurrency,
+      },
       user: locals.user,
     };
   } catch (err: any) {

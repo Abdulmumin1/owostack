@@ -1,10 +1,18 @@
 import type { MiddlewareHandler } from "hono";
 import type { createDb } from "@owostack/db";
 import { schema } from "@owostack/db";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
 
 type DB = ReturnType<typeof createDb>;
 const API_KEY_CACHE_TTL_SECONDS = 60;
+
+function buildActiveApiKeyWhere(hash: string, now: number) {
+  return and(
+    eq(schema.apiKeys.hash, hash),
+    isNull(schema.apiKeys.revokedAt),
+    or(isNull(schema.apiKeys.expiresAt), gt(schema.apiKeys.expiresAt, now)),
+  );
+}
 
 /**
  * Middleware to validate API keys from Database
@@ -57,10 +65,14 @@ export function apiKeyAuth(): MiddlewareHandler {
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
+    const now = Date.now();
     const [keyRecord] = await db
-      .select()
+      .select({
+        id: schema.apiKeys.id,
+        organizationId: schema.apiKeys.organizationId,
+      })
       .from(schema.apiKeys)
-      .where(eq(schema.apiKeys.hash, hashHex))
+      .where(buildActiveApiKeyWhere(hashHex, now))
       .limit(1);
 
     if (!keyRecord) {
@@ -173,19 +185,7 @@ export async function verifyApiKey(
   const hash = await hashApiKey(apiKey);
   const cache = options.cache;
   const cacheKey = getApiKeyCacheKey(hash);
-
-  if (cache) {
-    const cachedRecord = await cache.get(cacheKey, "json");
-    if (cachedRecord) {
-      const parsed = cachedRecord as { id: string; organizationId: string };
-
-      if (!options.skipLastUsedTouch) {
-        await touchApiKeyLastUsedAt(db, parsed.id, options.waitUntil);
-      }
-
-      return parsed;
-    }
-  }
+  const now = Date.now();
 
   const [keyRecord] = await db
     .select({
@@ -193,7 +193,7 @@ export async function verifyApiKey(
       organizationId: schema.apiKeys.organizationId,
     })
     .from(schema.apiKeys)
-    .where(eq(schema.apiKeys.hash, hash))
+    .where(buildActiveApiKeyWhere(hash, now))
     .limit(1);
 
   if (!keyRecord) return null;

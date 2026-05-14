@@ -232,6 +232,11 @@ app.get("/", async (c) => {
 app.get("/:id", async (c) => {
   const id = c.req.param("id");
   const db = c.get("db");
+  const organizationId = c.get("organizationId");
+
+  if (!organizationId) {
+    return c.json({ error: "Organization ID required" }, 400);
+  }
 
   try {
     // 1. Get subscription with plan
@@ -241,6 +246,13 @@ app.get("/:id", async (c) => {
     });
 
     if (!subscription) {
+      return c.json({ success: false, error: "Subscription not found" }, 404);
+    }
+
+    if (
+      subscription.customer.organizationId !== organizationId ||
+      subscription.plan.organizationId !== organizationId
+    ) {
       return c.json({ success: false, error: "Subscription not found" }, 404);
     }
 
@@ -520,9 +532,14 @@ app.post("/preview-switch", async (c) => {
 
   const { customerId, newPlanId } = parsed.data;
   const db = c.get("db");
+  const organizationId = c.get("organizationId");
+
+  if (!organizationId) {
+    return c.json({ success: false, error: "Organization ID required" }, 400);
+  }
 
   try {
-    const preview = await previewSwitch(db, customerId, newPlanId);
+    const preview = await previewSwitch(db, customerId, newPlanId, organizationId);
     return c.json({ success: true, data: preview });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 400);
@@ -548,9 +565,12 @@ app.post("/switch-plan", async (c) => {
   }
 
   const { customerId, newPlanId } = parsed.data;
-  // Use resolved organization ID from context (middleware resolves slug to UUID)
-  const organizationId = c.get("organizationId") ?? parsed.data.organizationId;
+  const organizationId = c.get("organizationId");
   const db = c.get("db");
+
+  if (!organizationId) {
+    return c.json({ success: false, error: "Organization ID required" }, 400);
+  }
 
   // Environment comes directly from ENVIRONMENT variable
   const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);

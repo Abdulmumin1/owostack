@@ -36,6 +36,11 @@ writeup/
 # Wrangler
 .wrangler
 wrangler.toml.local
+
+# Security audit
+report.md
+chump-audit-progress.md
+
 plan.md
 task.md
 *.bak

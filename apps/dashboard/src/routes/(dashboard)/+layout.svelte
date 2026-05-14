@@ -37,10 +37,10 @@
     X,
   } from "phosphor-svelte";
   import { page } from "$app/state";
+  import { resolve } from "$app/paths";
   import { untrack } from "svelte";
   import {
     useSession,
-    organization,
     authClient,
     apiFetch,
   } from "$lib/auth-client";
@@ -64,7 +64,7 @@
   // Auth is now handled server-side in hooks.server.ts
   // No client-side redirect needed here
 
-  let projects = $state<any[]>([]);
+  let projects = $derived((page.data.organizations as any[] | undefined) ?? []);
   let showProjectDropdown = $state(false);
   let showUserDropdown = $state(false);
   let collapsedGroups = $state<Record<string, boolean>>({
@@ -76,15 +76,35 @@
   let settingsActiveTab = $state("general");
   const initialActiveEnvironment =
     (page.data.activeEnvironment as "test" | "live" | undefined) ?? "test";
-  const initialProjectIdentifier = page.params.projectId;
 
   const pageActiveEnvironment = $derived(
     (page.data.activeEnvironment as "test" | "live" | undefined) ?? "test",
   );
+  const pageEnvironmentStatus = $derived(
+    (page.data.environmentStatus as
+      | {
+          testConnected?: boolean;
+          liveConnected?: boolean;
+          defaultCurrency?: string | null;
+        }
+      | undefined) ?? {},
+  );
+  const initialEnvironmentStatus =
+    ((page.data.environmentStatus as
+      | {
+          testConnected?: boolean;
+          liveConnected?: boolean;
+          defaultCurrency?: string | null;
+        }
+      | undefined) ?? {}) as {
+      testConnected?: boolean;
+      liveConnected?: boolean;
+      defaultCurrency?: string | null;
+    };
 
   let activeEnvironment = $state<"test" | "live">(initialActiveEnvironment);
-  let testConnected = $state(false);
-  let liveConnected = $state(false);
+  let testConnected = $state(Boolean(initialEnvironmentStatus.testConnected));
+  let liveConnected = $state(Boolean(initialEnvironmentStatus.liveConnected));
   let isSwitching = $state(false);
 
   let showDeployModal = $state(false);
@@ -199,11 +219,11 @@
       const [testAccountsRes, liveAccountsRes] = await Promise.all([
         fetchDashboardForEnv(
           "test",
-          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+          `/api/dashboard/providers/accounts?organizationId=${projectApiId}`,
         ),
         fetchDashboardForEnv(
           "live",
-          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+          `/api/dashboard/providers/accounts?organizationId=${projectApiId}`,
         ),
       ]);
 
@@ -255,7 +275,7 @@
       await fetchDashboardForEnv("live", "/api/dashboard/providers/accounts", {
         method: "POST",
         body: JSON.stringify({
-          organizationId: projectId,
+          organizationId: projectApiId,
           providerId,
           environment: "live",
           credentials,
@@ -279,7 +299,7 @@
       // 1. Export from test (current) API
       const testApiUrl = getApiUrlForEnv("test");
       const exportRes = await fetch(
-        `${testApiUrl}/api/dashboard/catalog/export?organizationId=${projectId}`,
+        `${testApiUrl}/api/dashboard/catalog/export?organizationId=${projectApiId}`,
         { credentials: "include" },
       );
       const exportData = await exportRes.json();
@@ -296,7 +316,7 @@
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({
-            organizationId: projectId,
+            organizationId: projectApiId,
             catalog: exportData.data,
           }),
         },
@@ -346,7 +366,7 @@
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          organizationId: projectId,
+          organizationId: projectApiId,
           name: "Production Key",
         }),
       });
@@ -384,15 +404,6 @@
     }
   }
 
-  // Fetch user's organizations
-  $effect(() => {
-    if ($session.data) {
-      organization.list().then(({ data }) => {
-        if (data) projects = data;
-      });
-    }
-  });
-
   // Get current project identifier from URL (can be ID or slug)
   let projectIdentifier = $derived(page.params.projectId);
   let currentProject = $derived(
@@ -400,15 +411,64 @@
       (p) => p.id === projectIdentifier || p.slug === projectIdentifier,
     ) || { name: "Select Project", slug: "" },
   );
+  let serverOrganizationId = $derived(
+    (page.data.organization as { id?: string } | undefined)?.id || null,
+  );
 
   // Use slug for navigation if available, otherwise fall back to ID
   let projectId = $derived(
     currentProject?.slug || currentProject?.id || projectIdentifier,
   );
+  let projectApiId = $derived(
+    serverOrganizationId || currentProject?.id || projectIdentifier,
+  );
+  let activeOrganizationReady = $state(false);
+  let syncedOrganizationId = $state<string | null>(null);
+  let syncActiveOrganizationPromise = $state<Promise<void> | null>(null);
 
-  if (initialProjectIdentifier) {
-    hydrateEnvironment(initialActiveEnvironment, initialProjectIdentifier);
+  async function ensureActiveOrganization() {
+    if (!serverOrganizationId) {
+      activeOrganizationReady = true;
+      return;
+    }
+
+    if (syncedOrganizationId === serverOrganizationId) {
+      activeOrganizationReady = true;
+      return;
+    }
+
+    if (syncActiveOrganizationPromise) {
+      await syncActiveOrganizationPromise;
+      return;
+    }
+
+    activeOrganizationReady = false;
+    syncActiveOrganizationPromise = authClient.organization
+      .setActive({
+        organizationId: serverOrganizationId,
+      })
+      .then((result) => {
+        if (result.error) {
+          throw new Error(
+            result.error.message || "Failed to set active organization",
+          );
+        }
+
+        syncedOrganizationId = serverOrganizationId;
+        activeOrganizationReady = true;
+      })
+      .finally(() => {
+        syncActiveOrganizationPromise = null;
+      });
+
+    await syncActiveOrganizationPromise;
   }
+
+  $effect(() => {
+    if (projectApiId) {
+      hydrateEnvironment(initialActiveEnvironment, projectApiId);
+    }
+  });
 
   async function handleLogout() {
     await authClient.signOut();
@@ -418,9 +478,20 @@
   // Load environment status when project changes
   $effect(() => {
     if (projectId) {
-      hydrateEnvironment(pageActiveEnvironment, projectId);
-      activeEnvironment = pageActiveEnvironment;
-      loadEnvironmentStatus();
+      void (async () => {
+        try {
+          await ensureActiveOrganization();
+          hydrateEnvironment(pageActiveEnvironment, projectApiId);
+          activeEnvironment = pageActiveEnvironment;
+          testConnected = Boolean(pageEnvironmentStatus.testConnected);
+          liveConnected = Boolean(pageEnvironmentStatus.liveConnected);
+          if (pageEnvironmentStatus.defaultCurrency) {
+            defaultCurrency.set(pageEnvironmentStatus.defaultCurrency);
+          }
+        } catch (e) {
+          console.error("Failed to set active organization", e);
+        }
+      })();
     }
   });
 
@@ -430,15 +501,15 @@
         await Promise.all([
           fetchDashboardForEnv(
             "test",
-            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+            `/api/dashboard/providers/accounts?organizationId=${projectApiId}`,
           ),
           fetchDashboardForEnv(
             "live",
-            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+            `/api/dashboard/providers/accounts?organizationId=${projectApiId}`,
           ),
           loadActiveEnvironment(),
           apiFetch(
-            `/api/dashboard/config/default-currency?organizationId=${projectId}`,
+            `/api/dashboard/config/default-currency?organizationId=${projectApiId}`,
           ),
         ]);
 
@@ -589,10 +660,12 @@
             <div
               class="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded z-50"
               onclick={(e) => e.stopPropagation()}
+              onkeydown={(e) => e.stopPropagation()}
+              role="presentation"
             >
-              {#each projects as project}
+              {#each projects as project (project.id)}
                 <a
-                  href="/{project.slug || project.id}/plans"
+                  href={resolve(`/${project.slug || project.id}/plans`)}
                   class="block px-3 py-1 text-xs text-text-secondary hover:bg-bg-card-hover hover:text-text-primary transition-colors border-l-2 border-transparent hover:border-accent {project.id ===
                     projectIdentifier || project.slug === projectIdentifier
                     ? 'border-accent bg-bg-card-hover text-text-primary'
@@ -617,7 +690,7 @@
       </div>
 
       <!-- Grouped Navigation like Autumn -->
-      {#each navGroups as group}
+      {#each navGroups as group (group.label || group.items.map((item) => item.href).join('|'))}
         {#if group.label}
           {#if group.collapsible}
             <button
@@ -648,11 +721,11 @@
             class="space-y-0.5 mb-2"
             transition:slide|local={{ duration: 200 }}
           >
-            {#each group.items as item}
+            {#each group.items as item (item.href)}
               {@const href = `/${projectId}${item.href}`}
               {@const active = isActive(href)}
               <a
-                {href}
+                href={resolve(href)}
                 class="flex items-center gap-3 px-3 transition-all duration-200 rounded-lg {active
                   ? 'bg-bg-card text-text-primary font-base text-sm'
                   : 'text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary'} py-1 text-sm"
@@ -677,7 +750,7 @@
       </div>
       <nav class="space-y-1 mb-8">
         <a
-          href="/"
+          href={resolve("/")}
           class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 {page
             .url.pathname === '/'
             ? 'bg-bg-card text-text-primary shadow-sm ring-1 ring-black/5 dark:ring-white/10 font-medium'
@@ -770,6 +843,8 @@
             class="absolute bottom-full left-4 right-4 mb-2 bg-bg-card border border-border shadow-2xl py-1 z-50 overflow-hidden"
             transition:slide={{ duration: 150 }}
             onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+            role="presentation"
           >
             <button
               class="w-full flex items-center justify-between px-4 py-2.5 text-[10px] font-bold text-text-secondary hover:text-text-primary hover:bg-black/5 dark:hover:bg-white/5 transition-colors uppercase tracking-widest border-b border-border/50"
@@ -835,7 +910,16 @@
       </div>
     {/if}
     <div class="p-8 max-w-7xl mx-auto w-full">
-      {@render children()}
+      {#if activeOrganizationReady}
+        {@render children()}
+      {:else}
+        <div class="w-full min-h-[240px] flex items-center justify-center">
+          <div class="flex items-center gap-2 text-text-secondary text-sm">
+            <CircleNotch size={16} class="animate-spin" weight="duotone" />
+            <span>Loading workspace...</span>
+          </div>
+        </div>
+      {/if}
     </div>
   </main>
 
@@ -916,7 +1000,7 @@
               {/if}
 
               <div class="mt-3 space-y-4">
-                {#each testProviderIds as providerId}
+                {#each testProviderIds as providerId (providerId)}
                   {@const config = getProviderConfig(providerId)}
                   {@const isLive = liveProviderIds.has(providerId)}
                   {@const isSaving = deploySavingProvider === providerId}
@@ -938,7 +1022,7 @@
                       {/if}
                     </div>
                     {#if !isLive && config}
-                      {#each config.fields as field}
+                      {#each config.fields as field (field.key)}
                         {@const secretKey = `${providerId}.${field.key}`}
                         {@const isWebhookSecret = field.key === "webhookSecret"}
                         <div class="space-y-1">

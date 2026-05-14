@@ -32,6 +32,44 @@ export const chargeSuccessDependencies: ChargeSuccessDependencies = {
   upsertPaymentMethod,
 };
 
+async function findSubscriptionInOrganization(
+  ctx: WebhookContext,
+  subscriptionId: string,
+) {
+  const subscription = await ctx.db.query.subscriptions.findFirst({
+    where: eq(schema.subscriptions.id, subscriptionId),
+    with: {
+      customer: true,
+      plan: true,
+    },
+  });
+
+  if (!subscription) {
+    return null;
+  }
+
+  if (
+    subscription.customer.organizationId !== ctx.organizationId ||
+    subscription.plan.organizationId !== ctx.organizationId
+  ) {
+    return null;
+  }
+
+  return subscription;
+}
+
+async function findPlanInOrganization(
+  ctx: WebhookContext,
+  planId: string,
+) {
+  return ctx.db.query.plans.findFirst({
+    where: and(
+      eq(schema.plans.id, planId),
+      eq(schema.plans.organizationId, ctx.organizationId),
+    ),
+  });
+}
+
 async function resolveChargeSuccessCustomer(
   ctx: WebhookContext,
 ): Promise<any | null> {
@@ -353,7 +391,12 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
           paidAt: Date.now(),
           updatedAt: Date.now(),
         })
-        .where(eq(schema.invoices.id, invoiceId));
+        .where(
+          and(
+            eq(schema.invoices.id, invoiceId),
+            eq(schema.invoices.organizationId, organizationId),
+          ),
+        );
       await clearCustomerOverageBlockForInvoice(db, invoiceId);
     } catch (e) {
       console.warn(`[WEBHOOK] Failed to mark invoice ${invoiceId} as paid:`, e);
@@ -371,16 +414,23 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
       `[WEBHOOK] Pending subscription activation: sub=${pendingSubId}, customer=${dbCustomer.id}`,
     );
     try {
-      const planId = metadata.plan_id ? String(metadata.plan_id) : null;
+      const pendingSubscription = await findSubscriptionInOrganization(
+        ctx,
+        pendingSubId,
+      );
+
+      if (
+        !pendingSubscription ||
+        pendingSubscription.status !== "pending" ||
+        pendingSubscription.customerId !== dbCustomer.id
+      ) {
+        return;
+      }
+
       let periodMs = 30 * 24 * 60 * 60 * 1000;
 
-      if (planId) {
-        const plan = await db.query.plans.findFirst({
-          where: eq(schema.plans.id, planId),
-        });
-        if (plan) {
-          periodMs = intervalToMs(plan.interval);
-        }
+      if (pendingSubscription.plan) {
+        periodMs = intervalToMs(pendingSubscription.plan.interval);
       }
 
       const startMs = safeParseDate(event.payment?.paidAt) || Date.now();
@@ -418,16 +468,13 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
               : null,
           updatedAt: Date.now(),
         })
-        .where(eq(schema.subscriptions.id, pendingSubId));
+        .where(eq(schema.subscriptions.id, pendingSubscription.id));
 
-      // Provision entitlements for newly activated subscription
-      if (metadata.plan_id) {
-        await chargeSuccessDependencies.provisionEntitlements(
-          db,
-          dbCustomer.id,
-          String(metadata.plan_id),
-        );
-      }
+      await chargeSuccessDependencies.provisionEntitlements(
+        db,
+        dbCustomer.id,
+        pendingSubscription.planId,
+      );
 
       // Invalidate cache
       if (ctx.cache) {
@@ -767,7 +814,7 @@ async function handlePlanUpgrade(
   ctx: WebhookContext,
   dbCustomer: any,
 ): Promise<void> {
-  const { db, organizationId, event, workflows } = ctx;
+  const { organizationId, event, workflows } = ctx;
   const { metadata } = event;
   const newPlanId = metadata.new_plan_id as string;
   const oldSubId = metadata.old_subscription_id as string;
@@ -776,15 +823,22 @@ async function handlePlanUpgrade(
 
   let oldProviderSubCode: string | undefined;
   if (oldSubId) {
-    const oldSub = await db.query.subscriptions.findFirst({
-      where: eq(schema.subscriptions.id, oldSubId),
-    });
+    const oldSub = await findSubscriptionInOrganization(ctx, oldSubId);
     if (oldSub) {
+      if (oldSub.customerId !== dbCustomer.id) {
+        return;
+      }
+
       oldProviderSubCode =
         oldSub.providerSubscriptionCode ||
         oldSub.paystackSubscriptionCode ||
         undefined;
     }
+  }
+
+  const newPlan = await findPlanInOrganization(ctx, newPlanId);
+  if (!newPlan) {
+    return;
   }
 
   if (workflows.planUpgrade) {
@@ -794,7 +848,7 @@ async function handlePlanUpgrade(
           customerId: dbCustomer.id,
           oldSubscriptionId: oldSubId,
           oldPlanId,
-          newPlanId,
+          newPlanId: newPlan.id,
           organizationId,
           providerId: upgradeProviderId,
           environment: (metadata.environment as string) || "test",
@@ -817,7 +871,7 @@ async function handlePlanUpgrade(
         dbCustomer,
         oldSubId,
         oldPlanId,
-        newPlanId,
+        newPlan.id,
         upgradeProviderId,
       );
     }
@@ -827,7 +881,7 @@ async function handlePlanUpgrade(
       dbCustomer,
       oldSubId,
       oldPlanId,
-      newPlanId,
+      newPlan.id,
       upgradeProviderId,
     );
   }
@@ -1114,14 +1168,17 @@ async function handleSubscriptionPayment(
       ? metadata.old_subscription_id
       : null;
   if (oldSubId) {
-    const now = Date.now();
-    await db
-      .update(schema.subscriptions)
-      .set({ status: "canceled", canceledAt: now, updatedAt: now })
-      .where(eq(schema.subscriptions.id, oldSubId));
-    console.log(
-      `[WEBHOOK] Cancelled old free subscription ${oldSubId} after successful upgrade payment`,
-    );
+    const oldSub = await findSubscriptionInOrganization(ctx, oldSubId);
+    if (oldSub && oldSub.customerId === dbCustomer.id) {
+      const now = Date.now();
+      await db
+        .update(schema.subscriptions)
+        .set({ status: "canceled", canceledAt: now, updatedAt: now })
+        .where(eq(schema.subscriptions.id, oldSubId));
+      console.log(
+        `[WEBHOOK] Cancelled old free subscription ${oldSubId} after successful upgrade payment`,
+      );
+    }
   }
 
   // Invalidate cached subscriptions so /check and /track see the updated period
@@ -1300,11 +1357,13 @@ async function handlePlanUpgradeInline(
   // Cancel old subscription (fetch once, reuse for billing cycle below)
   let oldSub: any = null;
   if (oldSubId) {
-    oldSub = await db.query.subscriptions.findFirst({
-      where: eq(schema.subscriptions.id, oldSubId),
-    });
+    oldSub = await findSubscriptionInOrganization(ctx, oldSubId);
 
     if (oldSub) {
+      if (oldSub.customerId !== dbCustomer.id) {
+        return;
+      }
+
       const subCode =
         oldSub.providerSubscriptionCode || oldSub.paystackSubscriptionCode;
       if (
@@ -1338,7 +1397,10 @@ async function handlePlanUpgradeInline(
 
   // Create new subscription
   const newPlan = await db.query.plans.findFirst({
-    where: eq(schema.plans.id, newPlanId),
+    where: and(
+      eq(schema.plans.id, newPlanId),
+      eq(schema.plans.organizationId, organizationId),
+    ),
   });
   const periodMs = newPlan
     ? intervalToMs(newPlan.interval)

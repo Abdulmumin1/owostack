@@ -37,8 +37,16 @@ async function recoverSubscriptionForStatusEvent(
   if (metadataSubscriptionId) {
     const subById = await db.query.subscriptions.findFirst({
       where: eq(schema.subscriptions.id, metadataSubscriptionId),
+      with: {
+        customer: true,
+        plan: true,
+      },
     });
-    if (subById) {
+    if (
+      subById &&
+      subById.customer.organizationId === organizationId &&
+      subById.plan.organizationId === organizationId
+    ) {
       console.log(
         `[WEBHOOK] Recovered sub ${subById.id} via metadata.subscription_id=${metadataSubscriptionId}`,
       );
@@ -83,6 +91,17 @@ export function handleSubscriptionStatus(status: string) {
       const customerId = event.metadata.customer_id as string;
       if (customerId) {
         try {
+          const customer = await db.query.customers.findFirst({
+            where: and(
+              eq(schema.customers.id, customerId),
+              eq(schema.customers.organizationId, organizationId),
+            ),
+          });
+
+          if (!customer) {
+            return;
+          }
+
           await subscriptionStatusDependencies.upsertPaymentMethod(db, {
             customerId,
             organizationId,
@@ -108,7 +127,19 @@ export function handleSubscriptionStatus(status: string) {
         eq(schema.subscriptions.paystackSubscriptionCode, subscriptionCode),
         eq(schema.subscriptions.providerSubscriptionCode, subscriptionCode),
       ),
+      with: {
+        customer: true,
+        plan: true,
+      },
     });
+
+    if (
+      sub &&
+      (sub.customer.organizationId !== organizationId ||
+        sub.plan.organizationId !== organizationId)
+    ) {
+      sub = null;
+    }
 
     if (!sub) {
       sub = await recoverSubscriptionForStatusEvent(ctx);

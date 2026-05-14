@@ -1,6 +1,6 @@
 import { redirect } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
-import { PUBLIC_API_URL_TEST, PUBLIC_API_URL_LIVE } from "$env/static/public";
+import { fetchOrganizations } from "$lib/server/dashboard-api";
 
 /**
  * Root dashboard page load function
@@ -14,25 +14,10 @@ export const load: PageServerLoad = async ({ locals, request }) => {
   }
 
   // 2. Fetch user's organizations
-  const apiUrl =
-    PUBLIC_API_URL_TEST || PUBLIC_API_URL_LIVE || "http://localhost:8787";
   const cookieHeader = request.headers.get("cookie") || "";
 
   try {
-    const orgsResponse = await fetch(`${apiUrl}/api/auth/organization/list`, {
-      headers: {
-        Cookie: cookieHeader,
-      },
-      credentials: "include",
-    });
-
-    if (!orgsResponse.ok) {
-      // Fallback to empty if error
-      return { organizations: [], user: locals.user };
-    }
-
-    const result = await orgsResponse.json();
-    const organizations = Array.isArray(result) ? result : result.data || [];
+    const organizations = await fetchOrganizations(cookieHeader);
 
     // 3. If no organizations, redirect to onboarding
     if (organizations.length === 0) {
@@ -42,37 +27,10 @@ export const load: PageServerLoad = async ({ locals, request }) => {
     // 4. Redirect to the last visited organization
     let targetOrg = null;
 
-    // Fetch the currently active organization from Better Auth
-    try {
-      const activeOrgResponse = await fetch(
-        `${apiUrl}/api/auth/organization/get-full-organization`,
-        {
-          headers: { Cookie: cookieHeader },
-          credentials: "include",
-        },
-      );
-
-      if (activeOrgResponse.ok) {
-        const activeOrgResult = await activeOrgResponse.json();
-        // The API returns the org object directly or in a `data` field depending on Better Auth version
-        const activeOrg = activeOrgResult?.id
-          ? activeOrgResult
-          : activeOrgResult?.data;
-        if (activeOrg && activeOrg.id) {
-          targetOrg = organizations.find((org: any) => org.id === activeOrg.id);
-        }
-      }
-    } catch (e) {
-      console.error("[Dashboard Load] Failed to fetch active organization", e);
-    }
-
-    // Check if there's an active organization in the session from Better Auth (fallback)
-    if (!targetOrg) {
-      const activeOrgId =
-        locals.session?.activeOrganizationId || locals.session?.organizationId;
-      if (activeOrgId) {
-        targetOrg = organizations.find((org: any) => org.id === activeOrgId);
-      }
+    const activeOrgId =
+      locals.session?.activeOrganizationId || locals.session?.organizationId;
+    if (activeOrgId) {
+      targetOrg = organizations.find((org: any) => org.id === activeOrgId);
     }
 
     // Fallback to the first organization if none matches or no active org is set

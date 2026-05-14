@@ -144,13 +144,20 @@ app.openapi(generateSubscriptionCheckoutRoute, async (c) => {
       return c.json({ error: "Pending subscription not found" }, 404);
     }
 
-    const { plan, customer } = subscription;
-    if (!plan || !customer) {
-      return c.json({ error: "Invalid subscription data" }, 400);
-    }
+      const { plan, customer } = subscription;
+      if (!plan || !customer) {
+        return c.json({ error: "Invalid subscription data" }, 400);
+      }
 
-    // Direct activation for completely free plans (no card required, price 0)
-    if (plan.price === 0) {
+      if (
+        plan.organizationId !== keyRecord.organizationId ||
+        customer.organizationId !== keyRecord.organizationId
+      ) {
+        return c.json({ error: "Pending subscription not found" }, 404);
+      }
+
+      // Direct activation for completely free plans (no card required, price 0)
+      if (plan.price === 0) {
       const now = Date.now();
       const periodMs = 30 * 24 * 60 * 60 * 1000;
       await db

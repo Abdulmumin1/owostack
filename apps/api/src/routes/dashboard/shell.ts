@@ -1,8 +1,7 @@
 import { Hono } from "hono";
-import { eq, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { auth } from "../../lib/auth";
-import { resolveOrganizationId } from "../../lib/organization-resolver";
 import type { Env, Variables } from "../../index";
 
 export type DashboardShellDependencies = {
@@ -13,7 +12,11 @@ export type DashboardShellDependencies = {
     user: Variables["user"];
     session: Variables["session"];
   } | null>;
-  resolveOrganizationId: typeof resolveOrganizationId;
+  getAccessibleOrganization: (
+    env: Env,
+    headers: Headers,
+    identifier: string,
+  ) => Promise<{ id: string } | null>;
 };
 
 const defaultDependencies: DashboardShellDependencies = {
@@ -21,7 +24,24 @@ const defaultDependencies: DashboardShellDependencies = {
     auth(env).api.getSession({
       headers,
     }),
-  resolveOrganizationId,
+  getAccessibleOrganization: async (env, headers, identifier) => {
+    const authApi = auth(env).api as any;
+
+    const organizations = await authApi.listOrganizations?.({
+      headers,
+    });
+
+    if (!Array.isArray(organizations)) {
+      return null;
+    }
+
+    const organization = organizations.find(
+      (org: { id: string; slug?: string | null }) =>
+        org.id === identifier || org.slug === identifier,
+    );
+
+    return organization?.id ? { id: organization.id } : null;
+  },
 };
 
 export function createDashboardShell(
@@ -31,58 +51,92 @@ export function createDashboardShell(
   const dashboardRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
   dashboardRoutes.use("*", async (c, next) => {
-    const session = await deps.getSession(c.env, c.req.raw.headers);
+    const authResult = await deps.getSession(c.env, c.req.raw.headers);
 
-    if (!session) {
+    if (!authResult) {
       return c.json({ error: "Unauthorized" }, 401);
     }
 
-    c.set("user", session.user);
-    c.set("session", session.session);
+    if (!authResult.user || !authResult.session) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
 
-    let organizationId: string | undefined;
-    organizationId = c.req.query("organizationId");
-    if (!organizationId && ["POST", "PATCH", "PUT"].includes(c.req.method)) {
+    c.set("user", authResult.user);
+    c.set("session", authResult.session);
+
+    const activeOrganizationId =
+      authResult.session.activeOrganizationId ||
+      authResult.session.organizationId;
+
+    let requestedOrganizationId: string | undefined;
+    requestedOrganizationId = c.req.query("organizationId");
+    if (
+      !requestedOrganizationId &&
+      ["POST", "PATCH", "PUT"].includes(c.req.method)
+    ) {
       try {
         const body = await c.req.json();
-        organizationId = body?.organizationId;
+        requestedOrganizationId = body?.organizationId;
       } catch {}
     }
 
-    if (organizationId) {
-      const db = c.get("db");
-      const authDb = c.get("authDb");
+    const authDb = c.get("authDb");
+    const db = c.get("db");
+    let organizationId = activeOrganizationId;
 
-      const authOrg = await authDb.query.organizations.findFirst({
-        where: or(
-          eq(schema.organizations.id, organizationId),
-          eq(schema.organizations.slug, organizationId),
-        ),
-      });
-      const resolvedId =
-        authOrg?.id ?? (await deps.resolveOrganizationId(db, organizationId));
-      const finalOrgId = resolvedId || organizationId;
+    if (requestedOrganizationId) {
+      if (activeOrganizationId) {
+        if (requestedOrganizationId !== activeOrganizationId) {
+          const activeOrganization = await authDb.query.organizations.findFirst({
+            where: eq(schema.organizations.id, activeOrganizationId),
+            columns: { id: true, slug: true },
+          });
 
-      c.set("organizationId", finalOrgId);
-
-      const existing = await db.query.organizations.findFirst({
-        where: eq(schema.organizations.id, finalOrgId),
-        columns: { id: true },
-      });
-      if (!existing) {
-        const org =
-          authOrg ??
-          (await authDb.query.organizations.findFirst({
-            where: eq(schema.organizations.id, finalOrgId),
-          }));
-        if (org) {
-          await db
-            .insert(schema.organizations)
-            .values(org)
-            .onConflictDoNothing();
+          if (
+            !activeOrganization ||
+            requestedOrganizationId !== activeOrganization.slug
+          ) {
+            return c.json({ error: "Forbidden" }, 403);
+          }
         }
+      } else {
+        const requestedOrganization = await deps.getAccessibleOrganization(
+          c.env,
+          c.req.raw.headers,
+          requestedOrganizationId,
+        );
+
+        if (!requestedOrganization) {
+          return c.json({ error: "Forbidden" }, 403);
+        }
+
+        organizationId = requestedOrganization.id;
       }
     }
+
+    if (!organizationId) {
+      return c.json({ error: "No active organization" }, 403);
+    }
+
+    const existing = await db.query.organizations.findFirst({
+      where: eq(schema.organizations.id, organizationId),
+      columns: { id: true },
+    });
+
+    if (!existing) {
+      const authOrg = await authDb.query.organizations.findFirst({
+        where: eq(schema.organizations.id, organizationId),
+      });
+
+      if (authOrg) {
+        await db
+          .insert(schema.organizations)
+          .values(authOrg)
+          .onConflictDoNothing();
+      }
+    }
+
+    c.set("organizationId", organizationId);
 
     return await next();
   });

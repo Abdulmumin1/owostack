@@ -36,7 +36,7 @@ app.get("/config/active-environment", async (c) => {
 app.post("/switch-environment", async (c) => {
   const body = await c.req.json();
   const { environment } = body;
-  const organizationId = c.get("organizationId") ?? body.organizationId;
+  const organizationId = c.get("organizationId");
 
   if (!organizationId || !["test", "live"].includes(environment)) {
     return c.json({ success: false, error: "Invalid parameters" }, 400);
@@ -142,7 +142,8 @@ app.get("/config/default-currency", async (c) => {
 // Update org default currency
 app.put("/config/default-currency", async (c) => {
   const body = await c.req.json();
-  const { organizationId, defaultCurrency } = body;
+  const organizationId = c.get("organizationId");
+  const { defaultCurrency } = body;
 
   if (!organizationId || !defaultCurrency) {
     return c.json(

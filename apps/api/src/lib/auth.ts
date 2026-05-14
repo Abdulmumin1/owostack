@@ -78,14 +78,15 @@ export function auth(env: Env) {
       forgetPassword: {
         enabled: true,
       },
-      async sendResetPassword({ user, token }, request) {
-        // In dev, use the origin or localhost dashboard
-        const origin =
-          request?.headers.get("origin") || "http://localhost:5173";
-        const resetURL = `${origin}/reset-password?token=${token}`;
+      async sendResetPassword({ user, token }, _request) {
+        const dashboardUrl =
+          env.DASHBOARD_URL ||
+          (env.BETTER_AUTH_URL?.includes("localhost")
+            ? env.BETTER_AUTH_URL.replace(/localhost:\d+/, "localhost:5173")
+            : "http://localhost:5173");
+        const resetURL = `${dashboardUrl}/reset-password?token=${token}`;
 
         console.log(`[AUTH] 🔑 Password reset requested for ${user.email}`);
-        console.log(`[AUTH] 🔗 Reset URL: ${resetURL}`);
 
         await sendEmail(env, {
           to: user.email,
@@ -174,7 +175,6 @@ export function auth(env: Env) {
           console.log(
             `[AUTH] 📧 Organization invitation sent to ${data.email}`,
           );
-          console.log(`[AUTH] 🔗 Invite link: ${inviteLink}`);
 
           await sendEmail(env, {
             to: data.email,

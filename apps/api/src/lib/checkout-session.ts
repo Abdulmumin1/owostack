@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { schema } from "@owostack/db";
+import { mergeBillingMetadata } from "./billing-metadata";
 import {
   getProviderRegistry,
   loadProviderAccounts,
@@ -26,6 +27,14 @@ export async function createCheckoutSessionForSubscription(
   });
 
   if (!subscription) {
+    throw new Error("Subscription not found");
+  }
+
+  if (
+    options.organizationId &&
+    (subscription.plan.organizationId !== options.organizationId ||
+      subscription.customer.organizationId !== options.organizationId)
+  ) {
     throw new Error("Subscription not found");
   }
 
@@ -57,7 +66,6 @@ export async function createCheckoutSessionForSubscription(
   // Use subscription's providerId if set, else plan's, else organization's default
   // Wait, in current code we have logic for finding account.
 
-  console.log(explicitProvider, accounts);
   let selectedAccount = accounts.find(
     (a: any) =>
       a.providerId === explicitProvider && a.environment === providerEnv,
@@ -87,19 +95,21 @@ export async function createCheckoutSessionForSubscription(
     amount: plan.price,
     currency: plan.currency || "USD",
     callbackUrl: options.callbackUrl,
-    metadata: {
-      type: "pending_activation",
-      pending_activation: "true",
-      subscription_id: subscription.id,
-      plan_id: plan.id,
-      customer_id: customer.id,
-      organization_id: organizationId,
-      environment: workerEnv,
-      provider_id: selectedAccount.providerId,
-      ...(typeof subscription.metadata === "object"
-        ? (subscription.metadata as any)
-        : {}),
-    },
+    metadata: mergeBillingMetadata(
+      typeof subscription.metadata === "object"
+        ? (subscription.metadata as Record<string, unknown>)
+        : undefined,
+      {
+        type: "pending_activation",
+        pending_activation: "true",
+        subscription_id: subscription.id,
+        plan_id: plan.id,
+        customer_id: customer.id,
+        organization_id: organizationId,
+        environment: workerEnv,
+        provider_id: selectedAccount.providerId,
+      },
+    ),
     environment: providerEnv,
     account: selectedAccount,
   });
