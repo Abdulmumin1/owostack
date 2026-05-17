@@ -658,6 +658,52 @@ function slugToName(slug: string): string {
     .join(" ");
 }
 
+function collectReferencedCreditSystems(
+  catalog: CatalogEntry[],
+): CreditSystemDefinition[] {
+  const creditSystems = catalog.filter(
+    (entry): entry is CreditSystemDefinition => entry._type === "credit_system",
+  );
+  const knownCreditSystemSlugs = new Set(creditSystems.map((cs) => cs.slug));
+
+  for (const entry of catalog) {
+    if (entry._type !== "plan") continue;
+
+    for (const feature of entry.features) {
+      const creditSystemHandle = _creditSystemRegistry.get(feature.slug);
+      if (!creditSystemHandle || knownCreditSystemSlugs.has(feature.slug)) {
+        continue;
+      }
+
+      creditSystems.push(creditSystemHandle._buildDefinition());
+      knownCreditSystemSlugs.add(feature.slug);
+    }
+  }
+
+  return creditSystems;
+}
+
+function collectCatalogFeatureSlugs(catalog: CatalogEntry[]): Set<string> {
+  const featureSlugs = new Set<string>();
+
+  for (const entry of catalog) {
+    if (entry._type !== "plan") continue;
+
+    for (const feature of entry.features) {
+      if (_creditSystemRegistry.has(feature.slug)) continue;
+      featureSlugs.add(feature.slug);
+    }
+  }
+
+  for (const creditSystem of collectReferencedCreditSystems(catalog)) {
+    for (const feature of creditSystem.features) {
+      featureSlugs.add(feature.feature);
+    }
+  }
+
+  return featureSlugs;
+}
+
 /**
  * Extract SyncPayload from catalog.
  */
@@ -693,11 +739,19 @@ export function buildSyncPayload(
     }
   }
 
+  const creditSystems: SyncPayload["creditSystems"] = collectReferencedCreditSystems(
+    catalog,
+  ).map((cs) => ({
+    slug: cs.slug,
+    name: cs.name,
+    description: cs.description,
+    features: cs.features,
+  }));
+
   // Also collect features referenced by credit systems (they may not be
   // directly attached to any plan but still need to exist in the DB)
-  for (const entry of catalog) {
-    if (entry._type !== "credit_system") continue;
-    for (const csFeature of entry.features) {
+  for (const creditSystem of creditSystems) {
+    for (const csFeature of creditSystem.features) {
       const featureSlug = csFeature.feature;
       if (!featureMap.has(featureSlug)) {
         const handle = _featureRegistry.get(featureSlug);
@@ -705,53 +759,6 @@ export function buildSyncPayload(
           slug: featureSlug,
           type: "metered" as const,
           name: handle?.featureName || slugToName(featureSlug),
-        });
-      }
-    }
-  }
-
-  // Also check credit systems discovered via plan features (not directly in catalog)
-  for (const entry of catalog) {
-    if (entry._type !== "plan") continue;
-    for (const f of entry.features) {
-      const csHandle = _creditSystemRegistry.get(f.slug);
-      if (csHandle) {
-        const def = csHandle._buildDefinition();
-        for (const csFeature of def.features) {
-          const featureSlug = csFeature.feature;
-          if (!featureMap.has(featureSlug)) {
-            const handle = _featureRegistry.get(featureSlug);
-            featureMap.set(featureSlug, {
-              slug: featureSlug,
-              type: "metered" as const,
-              name: handle?.featureName || slugToName(featureSlug),
-            });
-          }
-        }
-      }
-    }
-  }
-
-  const creditSystems: SyncPayload["creditSystems"] = catalog
-    .filter((e): e is CreditSystemDefinition => e._type === "credit_system")
-    .map((cs) => ({
-      slug: cs.slug,
-      name: cs.name,
-      description: cs.description,
-      features: cs.features,
-    }));
-
-  for (const entry of catalog) {
-    if (entry._type !== "plan") continue;
-    for (const f of entry.features) {
-      const csHandle = _creditSystemRegistry.get(f.slug);
-      if (csHandle && !creditSystems.find((cs) => cs.slug === f.slug)) {
-        const def = csHandle._buildDefinition();
-        creditSystems.push({
-          slug: def.slug,
-          name: def.name,
-          description: def.description,
-          features: def.features,
         });
       }
     }
@@ -851,14 +858,8 @@ export function bindFeatureHandles(
   catalog?: CatalogEntry[],
 ): void {
   if (catalog) {
-    const slugsInCatalog = new Set<string>();
-    for (const entry of catalog) {
-      if (entry._type === "plan") {
-        for (const f of entry.features) {
-          slugsInCatalog.add(f.slug);
-        }
-      }
-    }
+    const slugsInCatalog = collectCatalogFeatureSlugs(catalog);
+
     for (const [slug, handle] of _featureRegistry) {
       if (slugsInCatalog.has(slug)) {
         handle._client = client;

@@ -128,10 +128,7 @@ app.patch("/:id", async (c) => {
   try {
     const [feature] = await db
       .update(schema.features)
-      .set({
-        ...parsed.data,
-        updatedAt: new Date(),
-      })
+      .set(parsed.data)
       .where(eq(schema.features.id, id))
       .returning();
 

@@ -1,4 +1,5 @@
 import { json } from "@sveltejs/kit";
+import { calculateChatCost, defaultChatModel, getChatModelById } from "$lib/chat-models";
 import { owo } from "$lib/server/owo";
 import type { RequestHandler } from "./$types";
 
@@ -9,20 +10,27 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
   }
 
   const body = await request.json();
-  const modelId = body.model || "gemini";
+  const requestedModelId =
+    typeof body.model === "string" ? body.model : defaultChatModel.id;
+  const model = getChatModelById(requestedModelId);
   const messages = body.messages || [];
 
-  const multipliers: Record<string, number> = {
-    gemini: 1,
-    pro: 3,
-    ultra: 10,
-  };
-  const cost = 5 * (multipliers[modelId] || 1);
+  if (!model) {
+    return json(
+      {
+        error: `Invalid model '${requestedModelId}'. Supported models: gemini, flash, pro.`,
+      },
+      { status: 400 },
+    );
+  }
+
+  const modelId = model.id;
+  const cost = calculateChatCost(modelId);
   const featureId = "ai-credits";
 
   try {
     // Check if user is using a premium model but doesn't have access
-    if (modelId !== "gemini") {
+    if (model.premium) {
       const modelCheck = await owo.check({
         customer: userId,
         feature: "premium-models",

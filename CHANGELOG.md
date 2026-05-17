@@ -9,6 +9,17 @@
   - Prevents environment state mismatch between server and client
   - Added `hydrateEnvironment()` helper to sync environment and project ID atomically
   - Ensures correct API endpoint selection on initial render
+- **SDK**: Fixed credit-system child feature handles not binding when only referenced through credit systems
+  - Catalog binding now includes direct plan features, direct credit system definitions, and credit-system child features discovered through plan-linked credit systems
+  - Added regression coverage for both direct credit-system catalog entries and plan-linked `.credits(...)` usage
+- **Demo app**: Fixed chat model pricing drift between UI and API metering
+  - Moved model ids and multipliers into a shared chat model catalog
+  - Server now validates model ids and uses the same price table as the frontend
+- **Dashboard API**: Fixed feature PATCH updates writing a non-existent `updatedAt` column
+  - Feature edits now only persist schema-backed fields
+- **Dashboard API**: Fixed credit-system mapping replacement and manual override grants to avoid partial writes and duplicate logical rows
+  - Credit-system create/update now validates mappings before replacing rows and uses batched writes for atomic replacement in the D1 path
+  - Manual overrides now use an atomic upsert backed by a unique partial index for manual/manual_bonus logical keys
 
 ### Changed
 
