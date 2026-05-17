@@ -1,5 +1,11 @@
 # owostack
 
+## 0.4.4
+
+### Patch Changes
+
+- [#162](https://github.com/Abdulmumin1/owostack/pull/162) [`6aa4af8`](https://github.com/Abdulmumin1/owostack/commit/6aa4af83475d883611b6c7d19d21b5f1aa0035b0) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Bind feature handles for features that are only referenced through credit systems in the configured catalog.
+
 ## 0.4.3
 
 ### Patch Changes
