@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
 
@@ -19,6 +19,59 @@ const createCreditSystemSchema = z.object({
     )
     .default([]),
 });
+
+async function validateFeatureMappings(params: {
+  db: any;
+  organizationId?: string;
+  mappings: Array<{ featureId: string; cost: number }>;
+}) {
+  const { db, organizationId, mappings } = params;
+
+  const uniqueFeatureIds = [...new Set(mappings.map((mapping) => mapping.featureId))];
+
+  if (uniqueFeatureIds.length !== mappings.length) {
+    return {
+      ok: false as const,
+      status: 400,
+      body: {
+        success: false,
+        error: "Duplicate featureId values are not allowed in credit system mappings",
+      },
+    };
+  }
+
+  if (uniqueFeatureIds.length === 0) {
+    return { ok: true as const };
+  }
+
+  const featureWhere = organizationId
+    ? and(
+        inArray(schema.features.id, uniqueFeatureIds),
+        eq(schema.features.organizationId, organizationId),
+      )
+    : inArray(schema.features.id, uniqueFeatureIds);
+
+  const features = await db.query.features.findMany({
+    where: featureWhere,
+  });
+  const foundFeatureIds = new Set(features.map((feature: any) => feature.id));
+  const missingFeatureIds = uniqueFeatureIds.filter(
+    (featureId) => !foundFeatureIds.has(featureId),
+  );
+
+  if (missingFeatureIds.length > 0) {
+    return {
+      ok: false as const,
+      status: 400,
+      body: {
+        success: false,
+        error: `Unknown featureId values: ${missingFeatureIds.join(", ")}`,
+      },
+    };
+  }
+
+  return { ok: true as const };
+}
 
 app.post("/", async (c) => {
   const body = await c.req.json();
@@ -43,48 +96,73 @@ app.post("/", async (c) => {
     .replace(/^-|-$/g, "");
 
   try {
-    // D1 doesn't support Drizzle transactions - use sequential operations instead
-    const featureId = crypto.randomUUID();
+    const validation = await validateFeatureMappings({
+      db,
+      organizationId,
+      mappings: csFeatures,
+    });
 
-    // 1. Create the feature
-    const [feat] = await db
-      .insert(schema.features)
-      .values({
-        id: featureId,
-        organizationId,
-        name: name,
-        slug: slug,
-        type: "metered",
-        meterType: "consumable",
-        unit: "credit",
-      })
-      .returning();
-
-    // 2. Create the credit system (uses same ID as feature)
-    const [cs] = await (db as any)
-      .insert((schema as any).creditSystems)
-      .values({
-        id: feat.id,
-        organizationId,
-        name,
-        slug,
-        description,
-      })
-      .returning();
-
-    // 3. Create credit system features if any
-    if (csFeatures.length > 0) {
-      await (db as any).insert((schema as any).creditSystemFeatures).values(
-        csFeatures.map((f) => ({
-          id: crypto.randomUUID(),
-          creditSystemId: cs.id,
-          featureId: f.featureId,
-          cost: f.cost,
-        })),
-      );
+    if (!validation.ok) {
+      return c.json(validation.body, validation.status);
     }
 
-    return c.json({ success: true, data: cs });
+    const featureId = crypto.randomUUID();
+    const now = Date.now();
+
+    await c.env.DB.batch([
+      c.env.DB
+        .prepare(
+          `INSERT INTO features
+           (id, organization_id, name, slug, type, meter_type, unit, source, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          featureId,
+          organizationId,
+          name,
+          slug,
+          "metered",
+          "consumable",
+          "credit",
+          "dashboard",
+          now,
+        ),
+      c.env.DB
+        .prepare(
+          `INSERT INTO credit_systems
+           (id, organization_id, name, slug, description, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(featureId, organizationId, name, slug, description ?? null, now, now),
+      ...csFeatures.map((feature) =>
+        c.env.DB
+          .prepare(
+            `INSERT INTO credit_system_features
+             (id, credit_system_id, feature_id, cost, created_at)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            featureId,
+            feature.featureId,
+            feature.cost,
+            now,
+          ),
+      ),
+    ]);
+
+    const createdSystem = await (db.query as any).creditSystems?.findFirst({
+      where: eq((schema as any).creditSystems.id, featureId),
+      with: {
+        features: {
+          with: {
+            feature: true,
+          },
+        },
+      },
+    });
+
+    return c.json({ success: true, data: createdSystem || { id: featureId } });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
   }
@@ -227,6 +305,41 @@ const updateCreditSystemSchema = z.object({
     .optional(),
 });
 
+async function validateCreditSystemFeatureMappings(params: {
+  db: any;
+  creditSystemId: string;
+  organizationId?: string;
+  mappings: Array<{ featureId: string; cost: number }>;
+}) {
+  const { db, creditSystemId, organizationId, mappings } = params;
+
+  const creditSystem = await (db.query as any).creditSystems?.findFirst({
+    where: organizationId
+      ? and(
+          eq((schema as any).creditSystems.id, creditSystemId),
+          eq((schema as any).creditSystems.organizationId, organizationId),
+        )
+      : eq((schema as any).creditSystems.id, creditSystemId),
+  });
+
+  if (!creditSystem) {
+    return {
+      ok: false as const,
+      status: 404,
+      body: {
+        success: false,
+        error: "Credit system not found",
+      },
+    };
+  }
+
+  return validateFeatureMappings({
+    db,
+    organizationId,
+    mappings,
+  });
+}
+
 app.put("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
@@ -238,8 +351,22 @@ app.put("/:id", async (c) => {
 
   const { name, description, features: csFeatures } = parsed.data;
   const db = c.get("db");
+  const organizationId = c.get("organizationId") as string | undefined;
 
   try {
+    if (csFeatures !== undefined) {
+      const validation = await validateCreditSystemFeatureMappings({
+        db,
+        creditSystemId: id,
+        organizationId,
+        mappings: csFeatures,
+      });
+
+      if (!validation.ok) {
+        return c.json(validation.body, validation.status);
+      }
+    }
+
     // Update credit system name/description
     if (name !== undefined || description !== undefined) {
       const updateData: any = {};
@@ -272,22 +399,30 @@ app.put("/:id", async (c) => {
 
     // Update feature mappings if provided
     if (csFeatures !== undefined) {
-      // Delete existing mappings
-      await (db as any)
-        .delete((schema as any).creditSystemFeatures)
-        .where(eq((schema as any).creditSystemFeatures.creditSystemId, id));
+      const statements = [
+        c.env.DB
+          .prepare(
+            "DELETE FROM credit_system_features WHERE credit_system_id = ?",
+          )
+          .bind(id),
+        ...csFeatures.map((feature) =>
+          c.env.DB
+            .prepare(
+              `INSERT INTO credit_system_features
+               (id, credit_system_id, feature_id, cost, created_at)
+               VALUES (?, ?, ?, ?, ?)`,
+            )
+            .bind(
+              crypto.randomUUID(),
+              id,
+              feature.featureId,
+              feature.cost,
+              Date.now(),
+            ),
+        ),
+      ];
 
-      // Insert new mappings
-      if (csFeatures.length > 0) {
-        await (db as any).insert((schema as any).creditSystemFeatures).values(
-          csFeatures.map((f) => ({
-            id: crypto.randomUUID(),
-            creditSystemId: id,
-            featureId: f.featureId,
-            cost: f.cost,
-          })),
-        );
-      }
+      await c.env.DB.batch(statements);
     }
 
     // Return updated credit system

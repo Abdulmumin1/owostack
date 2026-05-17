@@ -30,6 +30,10 @@ const MIGRATION_FILES = [
     "../../../../../packages/db/migrations/0006_broken_molecule_man.sql",
     import.meta.url,
   ),
+  new URL(
+    "../../../../../packages/db/migrations/0008_noble_pluto.sql",
+    import.meta.url,
+  ),
 ];
 
 type SqliteRunResult = {
@@ -139,8 +143,15 @@ export class SqliteD1Database {
 
   async batch(statements: Array<BoundStatement>) {
     const results = [];
-    for (const statement of statements) {
-      results.push(await statement.__executeForBatch());
+    this.db.exec("BEGIN");
+    try {
+      for (const statement of statements) {
+        results.push(await statement.__executeForBatch());
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
     }
     return results;
   }

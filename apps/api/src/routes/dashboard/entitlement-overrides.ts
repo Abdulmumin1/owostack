@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
@@ -116,26 +116,14 @@ app.post("/", async (c) => {
       );
     }
 
-    // 3. Upsert override
+    // 3. Upsert override atomically
     const now = Date.now();
-    const id = crypto.randomUUID();
     const source = mode === "bonus" ? "manual_bonus" : "manual";
-
-    // Remove any existing grant for this feature/source to avoid duplicates
-    await db
-      .delete(schema.entitlements)
-      .where(
-        and(
-          eq(schema.entitlements.customerId, customerId),
-          eq(schema.entitlements.featureId, featureId),
-          eq(schema.entitlements.source, source),
-        ),
-      );
 
     const [override] = await db
       .insert(schema.entitlements)
       .values({
-        id,
+        id: crypto.randomUUID(),
         customerId,
         featureId,
         limitValue,
@@ -146,6 +134,22 @@ app.post("/", async (c) => {
         grantedReason: reason || null,
         createdAt: now,
         updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.entitlements.customerId,
+          schema.entitlements.featureId,
+          schema.entitlements.source,
+        ],
+        targetWhere: sql`${schema.entitlements.entityId} is null and (${schema.entitlements.source} = 'manual' or ${schema.entitlements.source} = 'manual_bonus')`,
+        set: {
+          limitValue,
+          resetInterval,
+          expiresAt: expiresAt || null,
+          grantedBy: user?.id || "system",
+          grantedReason: reason || null,
+          updatedAt: now,
+        },
       })
       .returning();
 
