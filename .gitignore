@@ -8,7 +8,8 @@ dist
 .cloudflare
 build
 .turbo
-
+report.md
+chump-audit-progress.md
 # Environment
 .env
 .env.local

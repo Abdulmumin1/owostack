@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   sqliteTable,
   text,
@@ -307,6 +308,11 @@ export const entitlements = sqliteTable(
       table.customerId,
       table.featureId,
     ),
+    uniqueIndex("entitlements_manual_override_uniq_idx")
+      .on(table.customerId, table.featureId, table.source)
+      .where(
+        sql`${table.entityId} is null and (${table.source} = 'manual' or ${table.source} = 'manual_bonus')`,
+      ),
     index("entitlements_entity_idx").on(
       table.customerId,
       table.featureId,

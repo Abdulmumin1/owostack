@@ -19,6 +19,7 @@
     CaretRight
   } from "phosphor-svelte";
   import { goto } from "$app/navigation";
+  import { chatModels, type ChatModel } from "$lib/chat-models";
   import { cn } from "$lib/utils";
   import BillingSettingsPanel from "$lib/BillingSettingsPanel.svelte";
   import UsageDashboardPanel from "$lib/UsageDashboardPanel.svelte";
@@ -40,12 +41,7 @@
   let logs = $state<{id: number, time: string, msg: string, data?: any, type: 'info' | 'error' | 'success'}[]>([]);
   let isLogsCollapsed = $state(true);
   
-  const models = [
-    { id: "gemini", name: "Gemini 3.1 Flash-Lite", multiplier: 1, premium: false },
-    { id: "flash", name: "Gemini 3 Flash", multiplier: 3, premium: true },
-    { id: "pro", name: "Gemini 3.1 Pro", multiplier: 10, premium: true }
-  ];
-  let selectedModel = $state(models[0]);
+  let selectedModel = $state<ChatModel>(chatModels[0]);
   let messages = $state<{ role: "user" | "ai"; text: string }[]>([
     { role: "ai", text: "Welcome to your AI assistant! Your active credit balance is shown above." }
   ]);
@@ -371,7 +367,7 @@
 
               <div class="p-4 border-t border-white/5 bg-bg-secondary/20 space-y-4">
                   <div class="flex gap-2 flex-wrap">
-                     {#each models as m}
+                     {#each chatModels as m}
                         <button 
                           onclick={() => selectedModel = m} 
                           disabled={m.premium && !isPremium}
