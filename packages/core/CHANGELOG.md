@@ -1,5 +1,11 @@
 # owostack
 
+## 0.4.5
+
+### Patch Changes
+
+- [#165](https://github.com/Abdulmumin1/owostack/pull/165) [`3dd03eb`](https://github.com/Abdulmumin1/owostack/commit/3dd03eb3b8996fb8cabee7b580491a28d6bdc2dc) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Fail closed when shared feature handles are rebound to a different Owostack client.
+
 ## 0.4.4
 
 ### Patch Changes
