@@ -42,6 +42,37 @@ describe("usage-rating", () => {
     ]);
   });
 
+  it("rates graduated usage above a finite final tier at the final tier rate", () => {
+    const rated = rateUsage({
+      usageModel: "usage_based",
+      ratingModel: "graduated",
+      usage: 150,
+      tiers: [{ upTo: 100, unitPrice: 1 }],
+    });
+
+    expect(rated.billableQuantity).toBe(150);
+    expect(rated.amount).toBe(150);
+    expect(rated.tierBreakdown).toEqual([
+      { tier: 0, units: 150, unitPrice: 1, amount: 150 },
+    ]);
+  });
+
+  it("rates graduated delta usage above a finite final tier at the final tier rate", () => {
+    const rated = rateUsageDelta({
+      usageModel: "usage_based",
+      ratingModel: "graduated",
+      previousUsage: 90,
+      usage: 150,
+      tiers: [{ upTo: 100, unitPrice: 1 }],
+    });
+
+    expect(rated.billableQuantity).toBe(60);
+    expect(rated.amount).toBe(60);
+    expect(rated.tierBreakdown).toEqual([
+      { tier: 0, units: 60, unitPrice: 1, amount: 60 },
+    ]);
+  });
+
   it("rates volume pricing at the reached tier for all billable usage", () => {
     const rated = rateUsage({
       usageModel: "usage_based",
