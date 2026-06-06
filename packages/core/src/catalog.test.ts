@@ -111,4 +111,26 @@ describe("catalog credit system feature binding", () => {
       customer: "cust_456",
     });
   });
+
+  it("fails closed when rebinding a shared feature handle to a different client", () => {
+    const apiCalls = metered("api-calls", { name: "API Calls" });
+    const catalog = [
+      plan("starter", {
+        name: "Starter",
+        price: 1900,
+        currency: "NGN",
+        interval: "monthly",
+        features: [apiCalls.limit(100)],
+      }),
+    ];
+    const sandboxClient = { environment: "sandbox" };
+    const liveClient = { environment: "live" };
+
+    bindFeatureHandles(sandboxClient, catalog);
+
+    expect(() => bindFeatureHandles(liveClient, catalog)).toThrow(
+      "Feature 'api-calls' is already bound to a different Owostack client",
+    );
+    expect(apiCalls._client).toBe(sandboxClient);
+  });
 });
