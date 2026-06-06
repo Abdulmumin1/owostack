@@ -236,7 +236,11 @@ export function rateUsage(params: RateUsageParams): RatedUsage {
 
   for (let index = 0; index < tiers.length; index += 1) {
     const tier = tiers[index];
-    const tierBound = tier.upTo ?? Number.POSITIVE_INFINITY;
+    const isFinalTier = index === tiers.length - 1;
+    const tierBound =
+      tier.upTo === null || isFinalTier
+        ? Number.POSITIVE_INFINITY
+        : tier.upTo;
     const tierCapacity = tierBound - previousBound;
     const unitsInTier = Math.min(remainingUsage, tierCapacity);
 
