@@ -219,7 +219,10 @@ app.delete("/:id", async (c) => {
 
   try {
     const entitlement = await db.query.entitlements.findFirst({
-      where: eq(schema.entitlements.id, id),
+      where: and(
+        eq(schema.entitlements.id, id),
+        inArray(schema.entitlements.source, ["manual", "manual_bonus"]),
+      ),
       with: {
         customer: true,
       },
@@ -232,7 +235,14 @@ app.delete("/:id", async (c) => {
       return c.json({ success: false, error: "Override not found" }, 404);
     }
 
-    await db.delete(schema.entitlements).where(eq(schema.entitlements.id, id));
+    await db
+      .delete(schema.entitlements)
+      .where(
+        and(
+          eq(schema.entitlements.id, id),
+          inArray(schema.entitlements.source, ["manual", "manual_bonus"]),
+        ),
+      );
 
     // Invalidate cache
     if (c.env.CACHE) {

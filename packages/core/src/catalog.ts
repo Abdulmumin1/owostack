@@ -704,6 +704,17 @@ function collectCatalogFeatureSlugs(catalog: CatalogEntry[]): Set<string> {
   return featureSlugs;
 }
 
+function bindHandleToClient(handle: any, client: any) {
+  if (handle._client && handle._client !== client) {
+    throw new Error(
+      `Feature '${handle.slug}' is already bound to a different Owostack client. ` +
+        `Create separate feature handles per client/catalog instead of sharing module-global handles across clients.`,
+    );
+  }
+
+  handle._client = client;
+}
+
 /**
  * Extract SyncPayload from catalog.
  */
@@ -862,12 +873,12 @@ export function bindFeatureHandles(
 
     for (const [slug, handle] of _featureRegistry) {
       if (slugsInCatalog.has(slug)) {
-        handle._client = client;
+        bindHandleToClient(handle, client);
       }
     }
   } else {
     for (const handle of _featureRegistry.values()) {
-      handle._client = client;
+      bindHandleToClient(handle, client);
     }
   }
 }

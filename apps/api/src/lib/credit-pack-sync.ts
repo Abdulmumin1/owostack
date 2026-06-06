@@ -1,9 +1,13 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { schema, createDb } from "@owostack/db";
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
 import { syncCreditPackProductWithResolvedProvider } from "./credit-pack-provider-sync";
 
 type DB = ReturnType<typeof createDb>;
+
+function nullableColumnMatches(column: any, value: string | null) {
+  return value === null ? isNull(column) : eq(column, value);
+}
 
 /**
  * Ensure a credit pack has a providerProductId + providerPriceId.
@@ -64,7 +68,7 @@ export async function ensureCreditPackSynced(
     currentProductId !== result.providerProductId ||
     currentPriceId !== result.providerPriceId
   ) {
-    await (db as any)
+    const updated = await (db as any)
       .update((schema as any).creditPacks)
       .set({
         providerProductId: result.providerProductId,
@@ -72,7 +76,45 @@ export async function ensureCreditPackSynced(
         providerId: result.providerId,
         updatedAt: Date.now(),
       })
-      .where(eq((schema as any).creditPacks.id, pack.id));
+      .where(
+        and(
+          eq((schema as any).creditPacks.id, pack.id),
+          nullableColumnMatches(
+            (schema as any).creditPacks.providerProductId,
+            currentProductId,
+          ),
+          nullableColumnMatches(
+            (schema as any).creditPacks.providerPriceId,
+            currentPriceId,
+          ),
+        ),
+      )
+      .returning({
+        providerProductId: (schema as any).creditPacks.providerProductId,
+        providerPriceId: (schema as any).creditPacks.providerPriceId,
+      });
+
+    if (updated.length === 0) {
+      const winner = await (db.query as any).creditPacks?.findFirst?.({
+        where: eq((schema as any).creditPacks.id, pack.id),
+        columns: {
+          providerProductId: true,
+          providerPriceId: true,
+        },
+      });
+
+      if (winner?.providerProductId && winner?.providerPriceId) {
+        console.warn(
+          `[credit-pack-sync] Race: pack ${pack.id} already synced, using product=${winner.providerProductId}, price=${winner.providerPriceId}`,
+        );
+        return {
+          productId: winner.providerProductId,
+          priceId: winner.providerPriceId,
+        };
+      }
+
+      return null;
+    }
   }
 
   console.log(
