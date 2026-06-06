@@ -103,4 +103,38 @@ describe("Dashboard entitlement override route runtime integration", () => {
       grantedReason: "Expanded grant",
     });
   });
+
+  it("returns 404 and preserves plan entitlements when deleting through override endpoint", async () => {
+    await businessDb.db.insert(schema.entitlements).values({
+      id: "ent_plan_123",
+      customerId: "cust_123",
+      featureId: "feature_ai_credits",
+      source: "plan",
+      entityId: "sub_123",
+      limitValue: 1000,
+      resetInterval: "monthly",
+    });
+
+    const response = await app.request(
+      "/ent_plan_123",
+      { method: "DELETE" },
+      RUNTIME_ROUTE_ENV,
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: "Override not found",
+    });
+
+    const planEntitlement = await businessDb.db.query.entitlements.findFirst({
+      where: eq(schema.entitlements.id, "ent_plan_123"),
+    });
+    expect(planEntitlement).toMatchObject({
+      id: "ent_plan_123",
+      source: "plan",
+      customerId: "cust_123",
+      featureId: "feature_ai_credits",
+    });
+  });
 });
