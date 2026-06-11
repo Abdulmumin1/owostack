@@ -874,19 +874,42 @@ async function handleCreditPurchase(
     return;
   }
 
-  // Dedup: if this payment reference was already processed, skip to avoid double credits
-  if (reference) {
-    const existingPurchase = await (
-      db as any
-    ).query.creditPurchases?.findFirst?.({
-      where: eq((schema as any).creditPurchases.paymentReference, reference),
-    });
-    if (existingPurchase) {
-      console.log(
-        `[WEBHOOK] Credit purchase already processed: ref=${reference}, skipping`,
-      );
-      return;
-    }
+  if (!reference) {
+    console.error(
+      `[WEBHOOK] Credit purchase missing payment reference: customer=${dbCustomer.id}, pack=${creditPackId || "manual"}`,
+    );
+    return;
+  }
+
+  // Claim the provider payment reference before granting credits. The unique
+  // index on credit_purchases.payment_reference makes this safe across
+  // concurrent duplicate webhook deliveries; exactly one delivery gets to top up.
+  const purchaseId = crypto.randomUUID();
+  const purchaseInsert = await (db as any)
+    .insert((schema as any).creditPurchases)
+    .values({
+      id: purchaseId,
+      customerId: dbCustomer.id,
+      creditPackId: creditPackId || null,
+      creditSystemId,
+      credits: creditsAmount,
+      quantity: resolvedQuantity,
+      price: event.payment?.amount || 0,
+      currency: event.payment?.currency || "USD",
+      paymentReference: reference,
+      providerId: event.provider,
+      metadata: event.raw,
+    })
+    .onConflictDoNothing({
+      target: (schema as any).creditPurchases.paymentReference,
+    })
+    .returning({ id: (schema as any).creditPurchases.id });
+
+  if (!purchaseInsert[0]) {
+    console.log(
+      `[WEBHOOK] Credit purchase already processed: ref=${reference}, skipping`,
+    );
+    return;
   }
 
   // Atomic upsert into credit_system_balances (uses UNIQUE index)
@@ -896,21 +919,6 @@ async function handleCreditPurchase(
     creditSystemId,
     creditsAmount,
   );
-
-  // Record the purchase in the ledger
-  await (db as any).insert((schema as any).creditPurchases).values({
-    id: crypto.randomUUID(),
-    customerId: dbCustomer.id,
-    creditPackId: creditPackId || null,
-    creditSystemId,
-    credits: creditsAmount,
-    quantity: resolvedQuantity,
-    price: event.payment?.amount || 0,
-    currency: event.payment?.currency || "USD",
-    paymentReference: reference || null,
-    providerId: event.provider,
-    metadata: event.raw,
-  });
 
   console.log(
     `[WEBHOOK] Credit purchase: customer=${dbCustomer.id}, credits=${creditsAmount}, qty=${resolvedQuantity}, pack=${creditPackId || "manual"}, system=${creditSystemId}`,

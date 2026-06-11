@@ -39,7 +39,9 @@ const billingDb: BillingDb = {
   },
   insert: vi.fn(() => ({
     values: vi.fn(() => ({
-      onConflictDoNothing: vi.fn(async () => null),
+      onConflictDoNothing: vi.fn(() => ({
+        returning: vi.fn(async () => [{ id: "inserted" }]),
+      })),
     })),
   })),
   update: vi.fn(() => ({
@@ -160,6 +162,19 @@ describe("Webhook route pipeline behavior", () => {
     });
 
     const insertValues = vi.fn(
+      (payload: { paymentReference?: string }) => ({
+        onConflictDoNothing: vi.fn(() => ({
+          returning: vi.fn(async () => {
+            if (payload.paymentReference) {
+              if (processedRefs.has(payload.paymentReference)) return [];
+              processedRefs.add(payload.paymentReference);
+            }
+            return [{ id: "cp_1" }];
+          }),
+        })),
+      }),
+    );
+    const legacyInsertValues = vi.fn(
       async (payload: { paymentReference?: string }) => {
         if (payload.paymentReference) {
           processedRefs.add(payload.paymentReference);
@@ -230,7 +245,8 @@ describe("Webhook route pipeline behavior", () => {
     expect(res1.status).toBe(200);
     expect(res2.status).toBe(200);
     expect(handlerHandleMock).toHaveBeenCalledTimes(2);
-    expect(insertValues).toHaveBeenCalledTimes(1);
+    expect(insertValues).toHaveBeenCalledTimes(2);
+    expect(legacyInsertValues).not.toHaveBeenCalled();
   });
 
   it("prefers decrypted provider account webhookSecret for signature verification", async () => {
