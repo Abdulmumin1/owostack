@@ -1,5 +1,11 @@
 # @owostack/types
 
+## 0.4.6
+
+### Patch Changes
+
+- [#189](https://github.com/Abdulmumin1/owostack/pull/189) [`3f48a2a`](https://github.com/Abdulmumin1/owostack/commit/3f48a2a1d75b39519c7bb03224e67854450fa006) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Add the transient collecting invoice status used while overage auto-collection is in progress.
+
 ## 0.4.3
 
 ### Patch Changes
