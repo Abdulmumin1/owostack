@@ -484,7 +484,7 @@ export interface Invoice {
   currency: string;
 
   /** Invoice status */
-  status: "draft" | "open" | "paid" | "void";
+  status: "draft" | "open" | "collecting" | "paid" | "void";
 
   /** Line items */
   lineItems?: InvoiceLineItem[];

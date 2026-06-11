@@ -67,6 +67,122 @@ async function appendMeteredUsage(
 }
 
 describe("OverageBillingWorkflow runtime integration", () => {
+  it("claims an invoice before threshold auto-collection so concurrent workflow starts charge once", async () => {
+    const db = createSqliteD1Database();
+    const appDb = createDb(db);
+    const usageLedger = new SimulatedUsageLedgerNamespace();
+    let releaseCharge: (() => void) | null = null;
+    let resolveChargeStarted: (() => void) | null = null;
+    const chargeStarted = new Promise<void>((resolve) => {
+      resolveChargeStarted = resolve;
+    });
+    const adapter = new SimulatedProviderAdapter({
+      expectedEnvironment: "live",
+      onChargeAuthorization: async () => {
+        resolveChargeStarted?.();
+        await new Promise<void>((release) => {
+          releaseCharge = release;
+        });
+        return Result.ok({ reference: "charge_ref_once" });
+      },
+    });
+
+    const previousDependencies = OverageBillingWorkflow.dependencies;
+    OverageBillingWorkflow.dependencies = {
+      ...previousDependencies,
+      getAdapter: (providerId) =>
+        providerId === "paystack" ? adapter : getAdapter(providerId),
+    };
+
+    try {
+      await seedOverageWorkflowBase(db, {
+        customer: {
+          id: "cust_1",
+          email: "customer@example.com",
+        },
+        providerAccount: {
+          providerId: "paystack",
+          environment: "test",
+        },
+        plan: {
+          id: "plan_1",
+          currency: "USD",
+        },
+        paymentMethod: {
+          id: "pm_1",
+          providerId: "paystack",
+          token: "AUTH_123",
+          isDefault: 1,
+        },
+        subscription: {
+          id: "sub_1",
+          providerId: "paystack",
+          providerSubscriptionCode: "sub_code_1",
+        },
+      });
+      await insertOverageSettings(db, {
+        organizationId: "org_1",
+        autoCollect: 1,
+      });
+      await insertBillingRun(db, {
+        id: "run_1",
+        organizationId: "org_1",
+        customerId: "cust_1",
+        usageWindowEnd: 2500,
+      });
+      await appendMeteredUsage(usageLedger);
+
+      const env = buildWorkflowEnv(db, {
+        ENVIRONMENT: "production",
+        USAGE_LEDGER: usageLedger as unknown as DurableObjectNamespace<any>,
+      });
+      const payload = {
+        organizationId: "org_1",
+        customerId: "cust_1",
+        trigger: "threshold" as const,
+        billingRunId: "run_1",
+      };
+
+      const firstRun = runWorkflow(OverageBillingWorkflow, env, payload);
+      await chargeStarted;
+      const invoiceWhileCharging = await appDb.query.invoices.findFirst({
+        where: eq(schema.invoices.customerId, "cust_1"),
+      });
+
+      expect(invoiceWhileCharging).toMatchObject({
+        status: "collecting",
+      });
+
+      const secondRun = runWorkflow(OverageBillingWorkflow, env, payload);
+      await secondRun;
+
+      releaseCharge?.();
+      await firstRun;
+
+      const invoice = await appDb.query.invoices.findFirst({
+        where: eq(schema.invoices.customerId, "cust_1"),
+      });
+      const paymentAttempts = await appDb.query.paymentAttempts.findMany({
+        where: eq(schema.paymentAttempts.invoiceId, invoice?.id || ""),
+      });
+
+      expect(invoice).toMatchObject({
+        status: "paid",
+        amountPaid: 25000,
+        amountDue: 0,
+      });
+      expect(paymentAttempts).toHaveLength(1);
+      expect(paymentAttempts[0]).toMatchObject({
+        status: "succeeded",
+        providerReference: "charge_ref_once",
+      });
+      expect(adapter.operations).toHaveLength(1);
+    } finally {
+      OverageBillingWorkflow.dependencies = previousDependencies;
+      db.close();
+    }
+  });
+
   it("uses the billing run cutoff, creates a threshold invoice, and completes on successful charge", async () => {
     const db = createSqliteD1Database();
     const appDb = createDb(db);
@@ -584,7 +700,8 @@ describe("OverageBillingWorkflow runtime integration", () => {
         new Set(
           (invoice?.items || []).map(
             (item) =>
-              ((item.metadata || {}) as Record<string, unknown>).billingGroupKey,
+              ((item.metadata || {}) as Record<string, unknown>)
+                .billingGroupKey,
           ),
         ).size,
       ).toBe(2);
