@@ -701,7 +701,7 @@ export const invoices = sqliteTable(
     // Invoice details
     number: text("number"), // Human-readable invoice number (INV-001)
     idempotencyKey: text("idempotency_key"),
-    status: text("status").notNull().default("draft"), // draft, open, paid, void, uncollectible
+    status: text("status").notNull().default("draft"), // draft, open, collecting, paid, void, uncollectible
     currency: text("currency").notNull().default("NGN"),
 
     // Amounts (in smallest unit - kobo/cents)

@@ -1019,10 +1019,12 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
         return;
       }
 
-      // Step 5c: Re-check invoice status before charging (guards against concurrent
-      // workflows — e.g. cron + threshold — both trying to charge the same invoice).
-      const invoiceStillOpen = await step.do(
-        "pre-charge-status-check",
+      // Step 5c: Claim the invoice before charging. This is the local durable
+      // boundary before the external provider call; without an atomic open ->
+      // collecting transition, two workflow instances can both pass a read-only
+      // status check and both charge the saved card.
+      const invoiceChargeClaim = await step.do(
+        "claim-invoice-for-charge",
         async () => {
           const row = await this.env.DB.prepare(
             "SELECT status FROM invoices WHERE id = ? LIMIT 1",
@@ -1074,23 +1076,51 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             };
           }
 
-          return { shouldCharge: true, reason: null, status: "open" };
+          const claim = await this.env.DB.prepare(
+            `UPDATE invoices
+             SET status = 'collecting', updated_at = ?
+             WHERE id = ?
+               AND status = 'open'
+               AND NOT EXISTS (
+                 SELECT 1
+                 FROM payment_attempts
+                 WHERE invoice_id = ? AND status = 'succeeded'
+               )`,
+          )
+            .bind(Date.now(), invoice.invoiceId, invoice.invoiceId)
+            .run();
+
+          if ((claim.meta?.changes ?? 0) !== 1) {
+            const current = await this.env.DB.prepare(
+              "SELECT status FROM invoices WHERE id = ? LIMIT 1",
+            )
+              .bind(invoice.invoiceId)
+              .first<{ status: string }>();
+
+            return {
+              shouldCharge: false,
+              reason: "invoice_charge_already_claimed" as const,
+              status: current?.status || null,
+            };
+          }
+
+          return { shouldCharge: true, reason: null, status: "collecting" };
         },
       );
 
-      if (!invoiceStillOpen.shouldCharge) {
+      if (!invoiceChargeClaim.shouldCharge) {
         console.log(
-          `[OverageBilling] Invoice ${invoice.number} charge skipped (${invoiceStillOpen.reason}).`,
+          `[OverageBilling] Invoice ${invoice.number} charge skipped (${invoiceChargeClaim.reason}).`,
         );
         if (
           thresholdRun &&
-          (invoiceStillOpen.reason === "invoice_already_paid" ||
-            invoiceStillOpen.reason === "payment_attempt_already_succeeded")
+          (invoiceChargeClaim.reason === "invoice_already_paid" ||
+            invoiceChargeClaim.reason === "payment_attempt_already_succeeded")
         ) {
           await clearThresholdBlockAndComplete(
             "complete-threshold-run-paid-before-charge",
             {
-              outcome: invoiceStillOpen.reason,
+              outcome: invoiceChargeClaim.reason,
               invoiceId: invoice.invoiceId,
               invoiceNumber: invoice.number,
             },
@@ -1099,10 +1129,10 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
           await completeThresholdRun(
             "complete-threshold-run-non-open-invoice",
             {
-              outcome: invoiceStillOpen.reason,
+              outcome: invoiceChargeClaim.reason,
               invoiceId: invoice.invoiceId,
               invoiceNumber: invoice.number,
-              invoiceStatus: invoiceStillOpen.status,
+              invoiceStatus: invoiceChargeClaim.status,
             },
           );
         }
@@ -1245,7 +1275,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
 
         if (chargeSucceeded) {
           await this.env.DB.prepare(
-            "UPDATE invoices SET status = 'paid', amount_paid = ?, amount_due = 0, updated_at = ? WHERE id = ?",
+            "UPDATE invoices SET status = 'paid', amount_paid = ?, amount_due = 0, updated_at = ? WHERE id = ? AND status = 'collecting'",
           )
             .bind(invoice.total, now, invoice.invoiceId)
             .run();
@@ -1253,6 +1283,12 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
             `[OverageBilling] Invoice ${invoice.number} marked as paid.`,
           );
         } else {
+          await this.env.DB.prepare(
+            "UPDATE invoices SET status = 'open', updated_at = ? WHERE id = ? AND status = 'collecting'",
+          )
+            .bind(now, invoice.invoiceId)
+            .run();
+
           // Leave as open — can be retried or paid manually
           console.log(
             `[OverageBilling] Invoice ${invoice.number} remains open (charge failed).`,
