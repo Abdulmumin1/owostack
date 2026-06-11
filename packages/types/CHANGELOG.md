@@ -1,5 +1,11 @@
 # @owostack/types
 
+## 0.4.3
+
+### Patch Changes
+
+- [#148](https://github.com/Abdulmumin1/owostack/pull/148) [`0d6faa2`](https://github.com/Abdulmumin1/owostack/commit/0d6faa2b6c876886f9c58e3cf74b3bc7409ba4e0) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Add `customer.usageHistory()` to the SDK and export the matching customer usage history types.
+
 ## 0.4.2
 
 ### Patch Changes

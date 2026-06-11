@@ -477,6 +477,9 @@ export const creditPurchases = sqliteTable(
   (table) => [
     index("credit_purchases_customer_idx").on(table.customerId),
     index("credit_purchases_pack_idx").on(table.creditPackId),
+    uniqueIndex("credit_purchases_payment_reference_uniq_idx").on(
+      table.paymentReference,
+    ),
   ],
 );
 

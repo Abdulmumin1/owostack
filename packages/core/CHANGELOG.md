@@ -1,5 +1,26 @@
 # owostack
 
+## 0.4.5
+
+### Patch Changes
+
+- [#165](https://github.com/Abdulmumin1/owostack/pull/165) [`3dd03eb`](https://github.com/Abdulmumin1/owostack/commit/3dd03eb3b8996fb8cabee7b580491a28d6bdc2dc) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Fail closed when shared feature handles are rebound to a different Owostack client.
+
+## 0.4.4
+
+### Patch Changes
+
+- [#162](https://github.com/Abdulmumin1/owostack/pull/162) [`6aa4af8`](https://github.com/Abdulmumin1/owostack/commit/6aa4af83475d883611b6c7d19d21b5f1aa0035b0) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Bind feature handles for features that are only referenced through credit systems in the configured catalog.
+
+## 0.4.3
+
+### Patch Changes
+
+- [#148](https://github.com/Abdulmumin1/owostack/pull/148) [`0d6faa2`](https://github.com/Abdulmumin1/owostack/commit/0d6faa2b6c876886f9c58e3cf74b3bc7409ba4e0) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Add `customer.usageHistory()` to the SDK and export the matching customer usage history types.
+
+- Updated dependencies [[`0d6faa2`](https://github.com/Abdulmumin1/owostack/commit/0d6faa2b6c876886f9c58e3cf74b3bc7409ba4e0)]:
+  - @owostack/types@0.4.3
+
 ## 0.4.2
 
 ### Patch Changes
