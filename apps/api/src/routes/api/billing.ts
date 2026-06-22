@@ -29,6 +29,14 @@ import {
 
 const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
+export const billingRouteDependencies = {
+  getProviderRegistry,
+};
+
+export function resetBillingRouteDependencies() {
+  billingRouteDependencies.getProviderRegistry = getProviderRegistry;
+}
+
 // Middleware for API Key Auth
 app.use("*", async (c, next) => {
   const authHeader = c.req.header("Authorization");
@@ -492,6 +500,24 @@ app.openapi(payInvoiceRoute, async (c) => {
     });
   }
 
+  if (invoice.status === "collecting") {
+    trackBusinessEvent(c.env, {
+      event: "billing.invoice.pay",
+      outcome: "already_processing",
+      organizationId,
+      customerId: invoice.customerId,
+      value: Number(invoice.total || 0),
+      currency: invoice.currency || null,
+    });
+    return c.json(
+      {
+        success: false,
+        error: "Invoice payment is already being processed",
+      },
+      409,
+    );
+  }
+
   if (invoice.status !== "open") {
     trackBusinessEvent(c.env, {
       event: "billing.invoice.pay",
@@ -549,7 +575,7 @@ app.openapi(payInvoiceRoute, async (c) => {
   // Environment comes directly from ENVIRONMENT variable
   const providerEnv = deriveProviderEnvironment(c.env.ENVIRONMENT, null);
 
-  const registry = getProviderRegistry();
+  const registry = billingRouteDependencies.getProviderRegistry();
   const accounts = await loadProviderAccounts(
     db,
     organizationId,
@@ -674,16 +700,85 @@ app.openapi(payInvoiceRoute, async (c) => {
   // 4. Try auto-charge if customer has a saved payment method
   const authCode = customer.providerAuthorizationCode;
   if (authCode && adapter.chargeAuthorization) {
+    let claimedForAutoCharge = false;
     try {
-      // Re-check invoice status to guard against concurrent pay requests
-      const freshInvoice = await db.query.invoices.findFirst({
+      const now = Date.now();
+      const claim = await db
+        .update(schema.invoices)
+        .set({ status: "collecting", updatedAt: now })
+        .where(
+          and(
+            eq(schema.invoices.id, invoice.id),
+            eq(schema.invoices.organizationId, organizationId),
+            eq(schema.invoices.status, "open"),
+          ),
+        );
+
+      if ((claim?.meta?.changes ?? 0) !== 1) {
+        const currentInvoice = await db.query.invoices.findFirst({
+          where: and(
+            eq(schema.invoices.id, invoice.id),
+            eq(schema.invoices.organizationId, organizationId),
+          ),
+        });
+        if (currentInvoice?.status === "paid") {
+          await clearCustomerOverageBlockForInvoice(db, invoice.id);
+          return c.json({
+            success: true,
+            paid: true,
+            invoice: {
+              id: invoice.id,
+              number: invoice.number,
+              total: invoice.total,
+              currency: invoice.currency,
+              status: "paid",
+            },
+          });
+        }
+
+        trackBusinessEvent(c.env, {
+          event: "billing.invoice.pay",
+          outcome: "auto_charge_already_claimed",
+          organizationId,
+          customerId: customer.id,
+          providerId: selectedProviderId,
+          value: Number(invoice.amountDue || 0),
+          currency: invoice.currency || null,
+        });
+
+        return c.json(
+          {
+            success: false,
+            error: "Invoice payment is already being processed",
+          },
+          409,
+        );
+      }
+      claimedForAutoCharge = true;
+
+      const existingSuccess = await db.query.paymentAttempts.findFirst({
         where: and(
-          eq(schema.invoices.id, invoice.id),
-          eq(schema.invoices.status, "open"),
+          eq(schema.paymentAttempts.invoiceId, invoice.id),
+          eq(schema.paymentAttempts.status, "succeeded"),
         ),
       });
-      if (!freshInvoice) {
+      if (existingSuccess) {
         await clearCustomerOverageBlockForInvoice(db, invoice.id);
+        await db
+          .update(schema.invoices)
+          .set({
+            status: "paid",
+            amountPaid: invoice.amountDue,
+            amountDue: 0,
+            paidAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(schema.invoices.id, invoice.id),
+              eq(schema.invoices.status, "collecting"),
+            ),
+          );
         return c.json({
           success: true,
           paid: true,
@@ -697,7 +792,7 @@ app.openapi(payInvoiceRoute, async (c) => {
         });
       }
 
-      const chargeRef = `inv-${invoice.id.slice(0, 8)}-${Date.now()}`;
+      const chargeRef = invoice.id;
       const chargeResult = await adapter.chargeAuthorization({
         customer: {
           id: customer.providerCustomerId || customer.id,
@@ -719,18 +814,34 @@ app.openapi(payInvoiceRoute, async (c) => {
       });
 
       if (chargeResult.isOk()) {
-        // Mark invoice as paid
-        const now = Date.now();
+        const paidAt = Date.now();
+        await db.insert(schema.paymentAttempts).values({
+          id: crypto.randomUUID(),
+          invoiceId: invoice.id,
+          amount: invoice.amountDue,
+          currency: invoice.currency,
+          status: "succeeded",
+          provider: selectedProviderId,
+          providerReference: chargeResult.value.reference || chargeRef,
+          attemptNumber: 1,
+          createdAt: paidAt,
+        });
+
         await db
           .update(schema.invoices)
           .set({
             status: "paid",
             amountPaid: invoice.amountDue,
             amountDue: 0,
-            paidAt: now,
-            updatedAt: now,
+            paidAt,
+            updatedAt: paidAt,
           })
-          .where(eq(schema.invoices.id, invoice.id));
+          .where(
+            and(
+              eq(schema.invoices.id, invoice.id),
+              eq(schema.invoices.status, "collecting"),
+            ),
+          );
         await clearCustomerOverageBlockForInvoice(db, invoice.id);
 
         trackBusinessEvent(c.env, {
@@ -757,6 +868,29 @@ app.openapi(payInvoiceRoute, async (c) => {
       }
 
       // Charge failed — fall through to checkout
+      const failedAt = Date.now();
+      await db.insert(schema.paymentAttempts).values({
+        id: crypto.randomUUID(),
+        invoiceId: invoice.id,
+        amount: invoice.amountDue,
+        currency: invoice.currency,
+        status: "failed",
+        provider: selectedProviderId,
+        providerReference: chargeRef,
+        attemptNumber: 1,
+        lastError: chargeResult.error.message,
+        createdAt: failedAt,
+      });
+      await db
+        .update(schema.invoices)
+        .set({ status: "open", updatedAt: failedAt })
+        .where(
+          and(
+            eq(schema.invoices.id, invoice.id),
+            eq(schema.invoices.status, "collecting"),
+          ),
+        );
+      claimedForAutoCharge = false;
       console.warn(
         `[billing] Auto-charge failed for invoice ${invoice.id}:`,
         chargeResult.error.message,
@@ -771,6 +905,18 @@ app.openapi(payInvoiceRoute, async (c) => {
         currency: invoice.currency || null,
       });
     } catch (e) {
+      if (claimedForAutoCharge) {
+        const failedAt = Date.now();
+        await db
+          .update(schema.invoices)
+          .set({ status: "open", updatedAt: failedAt })
+          .where(
+            and(
+              eq(schema.invoices.id, invoice.id),
+              eq(schema.invoices.status, "collecting"),
+            ),
+          );
+      }
       console.warn(`[billing] Auto-charge error for invoice ${invoice.id}:`, e);
       trackBusinessEvent(c.env, {
         event: "billing.invoice.pay",
