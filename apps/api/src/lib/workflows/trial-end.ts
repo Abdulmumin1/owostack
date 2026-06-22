@@ -61,6 +61,16 @@ function parseMetadata(
   return metadata;
 }
 
+function mergeMetadata(
+  metadata: string | Record<string, unknown> | null | undefined,
+  updates: Record<string, unknown>,
+): string {
+  return JSON.stringify({
+    ...parseMetadata(metadata),
+    ...updates,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Params
 // ---------------------------------------------------------------------------
@@ -351,8 +361,63 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
     const MAX_CHARGE_ATTEMPTS = 3;
     let chargeSucceeded = false;
     let lastChargeError = "";
+    const chargeReference = `trial-conversion:${subscriptionId}`;
 
-    for (let attempt = 0; attempt < MAX_CHARGE_ATTEMPTS; attempt++) {
+    const existingChargeState = await step.do(
+      "load-trial-conversion-charge-state",
+      async () => {
+        const row = await this.env.DB.prepare(
+          "SELECT metadata FROM subscriptions WHERE id = ? LIMIT 1",
+        )
+          .bind(subscriptionId)
+          .first<{ metadata: string | null }>();
+        const metadata = parseMetadata(row?.metadata);
+
+        return {
+          status: metadata.trial_conversion_charge_status,
+          reference: metadata.trial_conversion_charge_reference,
+        };
+      },
+    );
+
+    if (
+      existingChargeState.status === "succeeded" &&
+      existingChargeState.reference === chargeReference
+    ) {
+      chargeSucceeded = true;
+      console.log(
+        `[TrialEndWorkflow] Existing trial conversion charge found: subscription=${subscriptionId}, ref=${chargeReference}`,
+      );
+    } else {
+      await step.do("mark-trial-conversion-charge-processing", async () => {
+        const row = await this.env.DB.prepare(
+          "SELECT metadata FROM subscriptions WHERE id = ? LIMIT 1",
+        )
+          .bind(subscriptionId)
+          .first<{ metadata: string | null }>();
+        const now = Date.now();
+        await this.env.DB.prepare(
+          "UPDATE subscriptions SET metadata = ?, updated_at = ? WHERE id = ?",
+        )
+          .bind(
+            mergeMetadata(row?.metadata, {
+              trial_conversion_charge_status: "processing",
+              trial_conversion_charge_reference: chargeReference,
+              trial_conversion_charge_started_at: now,
+              trial_conversion_charge_last_error: null,
+            }),
+            now,
+            subscriptionId,
+          )
+          .run();
+      });
+    }
+
+    for (
+      let attempt = 0;
+      !chargeSucceeded && attempt < MAX_CHARGE_ATTEMPTS;
+      attempt++
+    ) {
       const result = await step.do(
         `charge-card-attempt-${attempt}`,
         async () => {
@@ -374,6 +439,7 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
               authorizationCode: resolvedAuthCode,
               amount: amount!,
               currency: currency || "USD",
+              reference: chargeReference,
               metadata: {
                 subscription_id: subscriptionId,
                 plan_id: planId,
@@ -428,6 +494,29 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
 
       if (result.success) {
         chargeSucceeded = true;
+        await step.do("mark-trial-conversion-charge-succeeded", async () => {
+          const row = await this.env.DB.prepare(
+            "SELECT metadata FROM subscriptions WHERE id = ? LIMIT 1",
+          )
+            .bind(subscriptionId)
+            .first<{ metadata: string | null }>();
+          const now = Date.now();
+          await this.env.DB.prepare(
+            "UPDATE subscriptions SET metadata = ?, updated_at = ? WHERE id = ?",
+          )
+            .bind(
+              mergeMetadata(row?.metadata, {
+                trial_conversion_charge_status: "succeeded",
+                trial_conversion_charge_reference: chargeReference,
+                trial_conversion_charge_provider_reference: result.reference,
+                trial_conversion_charge_completed_at: now,
+                trial_conversion_charge_last_error: null,
+              }),
+              now,
+              subscriptionId,
+            )
+            .run();
+        });
         break;
       }
 
@@ -449,6 +538,27 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
     }
 
     if (!chargeSucceeded) {
+      await step.do("mark-trial-conversion-charge-failed", async () => {
+        const row = await this.env.DB.prepare(
+          "SELECT metadata FROM subscriptions WHERE id = ? LIMIT 1",
+        )
+          .bind(subscriptionId)
+          .first<{ metadata: string | null }>();
+        const now = Date.now();
+        await this.env.DB.prepare(
+          "UPDATE subscriptions SET metadata = ?, updated_at = ? WHERE id = ?",
+        )
+          .bind(
+            mergeMetadata(row?.metadata, {
+              trial_conversion_charge_status: "failed",
+              trial_conversion_charge_reference: chargeReference,
+              trial_conversion_charge_last_error: lastChargeError,
+            }),
+            now,
+            subscriptionId,
+          )
+          .run();
+      });
       console.error(
         `[TrialEndWorkflow] All charge attempts failed: subscription=${subscriptionId}, lastError=${lastChargeError}`,
       );
