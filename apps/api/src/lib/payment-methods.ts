@@ -92,16 +92,26 @@ export async function getDefaultPaymentMethod(
   db: any,
   customerId: string,
 ): Promise<{ token: string; providerId: string; type: string } | null> {
-  const result = await db.run(
-    sql`SELECT token, provider_id, type FROM payment_methods
-        WHERE customer_id = ${customerId} AND is_valid = 1 AND is_default = 1
-        LIMIT 1`,
-  );
-  const row = result?.results?.[0];
+  const [row] = await db
+    .select({
+      token: schema.paymentMethods.token,
+      providerId: schema.paymentMethods.providerId,
+      type: schema.paymentMethods.type,
+    })
+    .from(schema.paymentMethods)
+    .where(
+      and(
+        eq(schema.paymentMethods.customerId, customerId),
+        eq(schema.paymentMethods.isValid, true),
+        eq(schema.paymentMethods.isDefault, true),
+      ),
+    )
+    .limit(1);
+
   if (!row) return null;
   return {
-    token: row.token as string,
-    providerId: row.provider_id as string,
-    type: row.type as string,
+    token: row.token,
+    providerId: row.providerId,
+    type: row.type,
   };
 }
