@@ -39,6 +39,15 @@ function getLocale(currency: string): string {
   return CURRENCY_LOCALE[currency.toUpperCase()] || "en-US";
 }
 
+export function getCurrencyMinorUnitExponent(
+  currency: string = "USD",
+): number {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+  }).resolvedOptions().maximumFractionDigits ?? 2;
+}
+
 /**
  * Format an amount (in minor units, e.g. kobo/cents) as a currency string.
  * Automatically picks the right locale based on the currency code.
@@ -47,10 +56,12 @@ export function formatCurrency(
   amount: number,
   currency: string = "USD",
 ): string {
-  const major = amount / 100;
+  const currencyCode = currency.toUpperCase();
+  const major = amount / 10 ** getCurrencyMinorUnitExponent(currencyCode);
+
   return new Intl.NumberFormat(getLocale(currency), {
     style: "currency",
-    currency: currency.toUpperCase(),
+    currency: currencyCode,
     minimumFractionDigits: 0,
   }).format(major);
 }
