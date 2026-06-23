@@ -1,6 +1,6 @@
 {
   "name": "owosk",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "CLI for Owostack - sync catalog, manage billing infrastructure",
   "license": "Apache-2.0",
   "repository": {
@@ -22,7 +22,9 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --clean",
     "dev": "tsup src/index.ts --format esm --watch",
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "test": "vitest",
+    "lint": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",
@@ -36,7 +38,8 @@
     "@types/node": "^22.19.10",
     "tsup": "^8.5.1",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
   },
   "publishConfig": {
     "access": "public"

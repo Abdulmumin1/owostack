@@ -29,11 +29,33 @@ function normalizeOverage(
   return overage === "charge" ? "charge" : "block";
 }
 
-function normalizeFeature(pf: any, creditSystemSlugs: Set<string>) {
+function normalizeMetadata(value: unknown): string | null {
+  if (value == null) return null;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function normalizeFeature(
+  pf: any,
+  creditSystemSlugs: Set<string>,
+  featureDefs: Map<string, any>,
+) {
+  const def = featureDefs.get(pf.slug) || {};
   const usageModel = pf.usageModel || "included";
   const isCreditSystemFeature = creditSystemSlugs.has(pf.slug);
+  const type = pf.type ?? def.type ?? null;
+
   return {
     slug: pf.slug,
+    name: pf.name ?? def.name ?? null,
+    type,
+    meterType:
+      type === "boolean"
+        ? null
+        : (pf.meterType ?? def.meterType ?? "consumable"),
     enabled: pf.enabled,
     limit: pf.limit ?? null,
     trialLimit: pf.trialLimit ?? null,
@@ -56,7 +78,11 @@ function normalizeFeature(pf: any, creditSystemSlugs: Set<string>) {
   };
 }
 
-function normalizePlan(plan: any, creditSystemSlugs: Set<string>) {
+function normalizePlan(
+  plan: any,
+  creditSystemSlugs: Set<string>,
+  featureDefs: Map<string, any>,
+) {
   return {
     slug: plan.slug,
     name: plan.name ?? null,
@@ -69,8 +95,12 @@ function normalizePlan(plan: any, creditSystemSlugs: Set<string>) {
     trialDays: plan.trialDays ?? 0,
     isAddon: plan.isAddon ?? false,
     autoEnable: plan.autoEnable ?? false,
+    provider: plan.provider ?? plan.providerId ?? null,
+    metadata: normalizeMetadata(plan.metadata),
     features: (plan.features || [])
-      .map((feature: any) => normalizeFeature(feature, creditSystemSlugs))
+      .map((feature: any) =>
+        normalizeFeature(feature, creditSystemSlugs, featureDefs),
+      )
       .sort((a: any, b: any) => a.slug.localeCompare(b.slug)),
   };
 }
@@ -89,19 +119,13 @@ function normalizeCreditSystem(cs: any) {
   };
 }
 
-export interface DiffResult {
-  onlyLocal: string[];
-  onlyRemote: string[];
-  changed: { slug: string; details: string[] }[];
-  creditSystems: {
-    onlyLocal: string[];
-    onlyRemote: string[];
-    changed: { slug: string; details: string[] }[];
-  };
-  creditPacks: {
-    onlyLocal: string[];
-    onlyRemote: string[];
-    changed: { slug: string; details: string[] }[];
+function normalizeFeatureDef(feature: any) {
+  const type = feature.type ?? null;
+  return {
+    slug: feature.slug,
+    name: feature.name ?? null,
+    type,
+    meterType: type === "boolean" ? null : (feature.meterType ?? "consumable"),
   };
 }
 
@@ -115,31 +139,50 @@ function normalizeCreditPack(pack: any) {
     currency: pack.currency ?? null,
     creditSystem: pack.creditSystem || pack.creditSystemId || null,
     provider: pack.provider ?? null,
+    metadata: normalizeMetadata(pack.metadata),
   };
 }
 
-export function diffPlans(
-  localPlans: any[],
-  remotePlans: any[],
-  localCreditSystems: any[] = [],
-  remoteCreditSystems: any[] = [],
-  localCreditPacks: any[] = [],
-  remoteCreditPacks: any[] = [],
-): DiffResult {
-  const creditSystemSlugs = new Set<string>([
-    ...localCreditSystems.map((cs) => cs.slug),
-    ...remoteCreditSystems.map((cs) => cs.slug),
-  ]);
-  const localMap = new Map<string, any>();
-  const remoteMap = new Map<string, any>();
+export interface DiffSection {
+  onlyLocal: string[];
+  onlyRemote: string[];
+  changed: { slug: string; details: string[] }[];
+}
 
-  for (const p of localPlans) {
-    localMap.set(p.slug, normalizePlan(p, creditSystemSlugs));
-  }
-  for (const p of remotePlans) {
-    remoteMap.set(p.slug, normalizePlan(p, creditSystemSlugs));
-  }
+export interface DiffResult {
+  onlyLocal: string[];
+  onlyRemote: string[];
+  changed: { slug: string; details: string[] }[];
+  features: DiffSection;
+  creditSystems: DiffSection;
+  creditPacks: DiffSection;
+}
 
+function compareObjects<T extends Record<string, any>>(
+  local: T,
+  remote: T,
+  fields: Array<keyof T>,
+): string[] {
+  const details: string[] = [];
+  for (const field of fields) {
+    const localVal = local[field];
+    const remoteVal = remote[field];
+    if (JSON.stringify(localVal) !== JSON.stringify(remoteVal)) {
+      details.push(
+        `${String(field)}: ${pc.green(JSON.stringify(localVal))} → ${pc.red(
+          JSON.stringify(remoteVal),
+        )}`,
+      );
+    }
+  }
+  return details;
+}
+
+function diffMaps<T extends Record<string, any>>(
+  localMap: Map<string, T>,
+  remoteMap: Map<string, T>,
+  fields: Array<keyof T>,
+): DiffSection {
   const onlyLocal: string[] = [];
   const onlyRemote: string[] = [];
   const changed: { slug: string; details: string[] }[] = [];
@@ -153,76 +196,154 @@ export function diffPlans(
 
   for (const slug of localMap.keys()) {
     if (!remoteMap.has(slug)) continue;
-    const local = localMap.get(slug);
-    const remote = remoteMap.get(slug);
-    const details: string[] = [];
+    const local = localMap.get(slug)!;
+    const remote = remoteMap.get(slug)!;
+    const details = compareObjects(local, remote, fields);
+    if (details.length > 0) {
+      changed.push({ slug, details });
+    }
+  }
 
-    const fields: Array<keyof typeof local> = [
-      "name",
-      "description",
-      "price",
-      "currency",
-      "interval",
-      "billingType",
-      "planGroup",
-      "trialDays",
-      "isAddon",
-      "autoEnable",
-    ];
-    for (const field of fields) {
-      if (local[field] !== remote[field]) {
-        const localVal = JSON.stringify(local[field]);
-        const remoteVal = JSON.stringify(remote[field]);
-        details.push(
-          `${String(field)}: ${pc.green(localVal)} → ${pc.red(remoteVal)}`,
-        );
+  return { onlyLocal, onlyRemote, changed };
+}
+
+function collectFeatureDefs(plans: any[]): Map<string, any> {
+  const defs = new Map<string, any>();
+  for (const plan of plans) {
+    for (const feature of plan.features || []) {
+      if (feature.slug && !defs.has(feature.slug)) {
+        defs.set(feature.slug, feature);
       }
     }
+  }
+  return defs;
+}
 
-    const localFeatures = new Map<string, any>(
+export interface DiffPlansInput {
+  localPlans: any[];
+  remotePlans: any[];
+  localFeatures?: any[];
+  remoteFeatures?: any[];
+  localCreditSystems?: any[];
+  remoteCreditSystems?: any[];
+  localCreditPacks?: any[];
+  remoteCreditPacks?: any[];
+}
+
+export function diffPlans(input: DiffPlansInput): DiffResult {
+  const {
+    localPlans = [],
+    remotePlans = [],
+    localFeatures = [],
+    remoteFeatures = [],
+    localCreditSystems = [],
+    remoteCreditSystems = [],
+    localCreditPacks = [],
+    remoteCreditPacks = [],
+  } = input;
+
+  const creditSystemSlugs = new Set<string>([
+    ...localCreditSystems.map((cs) => cs.slug),
+    ...remoteCreditSystems.map((cs) => cs.slug),
+  ]);
+
+  // Build feature-definition maps so feature metadata (name/type/meterType)
+  // is included when normalizing per-plan features.
+  const localFeatureDefs = new Map<string, any>(
+    localFeatures.map((f) => [f.slug, normalizeFeatureDef(f)]),
+  );
+  for (const [slug, def] of collectFeatureDefs(localPlans)) {
+    if (!localFeatureDefs.has(slug)) localFeatureDefs.set(slug, def);
+  }
+
+  const remoteFeatureDefs = new Map<string, any>(
+    remoteFeatures.map((f) => [f.slug, normalizeFeatureDef(f)]),
+  );
+  for (const [slug, def] of collectFeatureDefs(remotePlans)) {
+    if (!remoteFeatureDefs.has(slug)) remoteFeatureDefs.set(slug, def);
+  }
+
+  const localPlanMap = new Map<string, any>();
+  const remotePlanMap = new Map<string, any>();
+
+  for (const plan of localPlans) {
+    localPlanMap.set(
+      plan.slug,
+      normalizePlan(plan, creditSystemSlugs, localFeatureDefs),
+    );
+  }
+  for (const plan of remotePlans) {
+    remotePlanMap.set(
+      plan.slug,
+      normalizePlan(plan, creditSystemSlugs, remoteFeatureDefs),
+    );
+  }
+
+  const planSection = diffMaps(localPlanMap, remotePlanMap, [
+    "name",
+    "description",
+    "price",
+    "currency",
+    "interval",
+    "billingType",
+    "planGroup",
+    "trialDays",
+    "isAddon",
+    "autoEnable",
+    "provider",
+    "metadata",
+  ]);
+
+  // Compute per-feature differences inside each changed plan so the
+  // summary shows which feature settings drifted.
+  const changed: { slug: string; details: string[] }[] = [];
+  for (const slug of localPlanMap.keys()) {
+    if (!remotePlanMap.has(slug)) continue;
+    const local = localPlanMap.get(slug);
+    const remote = remotePlanMap.get(slug);
+    const details: string[] = [
+      ...(planSection.changed.find((c) => c.slug === slug)?.details ?? []),
+    ];
+
+    const localFeatureMap = new Map<string, any>(
       local.features.map((f: any) => [f.slug, f]),
     );
-    const remoteFeatures = new Map<string, any>(
+    const remoteFeatureMap = new Map<string, any>(
       remote.features.map((f: any) => [f.slug, f]),
     );
 
-    for (const fslug of localFeatures.keys()) {
-      if (!remoteFeatures.has(fslug)) {
+    for (const fslug of localFeatureMap.keys()) {
+      if (!remoteFeatureMap.has(fslug)) {
         details.push(`  ${pc.green("+")} feature ${pc.bold(fslug)}`);
         continue;
       }
-      const lf = localFeatures.get(fslug);
-      const rf = remoteFeatures.get(fslug);
-      if (JSON.stringify(lf) !== JSON.stringify(rf)) {
+      const lf = localFeatureMap.get(fslug);
+      const rf = remoteFeatureMap.get(fslug);
+      const featureDetails = compareObjects(lf, rf, [
+        "enabled",
+        "name",
+        "type",
+        "meterType",
+        "limit",
+        "trialLimit",
+        "reset",
+        "usageModel",
+        "pricePerUnit",
+        "billingUnits",
+        "ratingModel",
+        "tiers",
+        "overage",
+        "overagePrice",
+        "maxOverageUnits",
+        "creditCost",
+      ]).map((line) => `      ${line}`);
+      if (featureDetails.length > 0) {
         details.push(`  ${pc.yellow("~")} feature ${pc.bold(fslug)}`);
-        const featureFields: Array<keyof typeof lf> = [
-          "enabled",
-          "limit",
-          "trialLimit",
-          "reset",
-          "usageModel",
-          "pricePerUnit",
-          "billingUnits",
-          "ratingModel",
-          "tiers",
-          "overage",
-          "overagePrice",
-          "maxOverageUnits",
-          "creditCost",
-        ];
-        for (const ff of featureFields) {
-          if (JSON.stringify(lf[ff]) !== JSON.stringify(rf[ff])) {
-            const lv = lf[ff] === null ? "unlimited" : String(lf[ff]);
-            const rv = rf[ff] === null ? "unlimited" : String(rf[ff]);
-            details.push(
-              `      ${pc.dim(String(ff))}: ${pc.green(lv)} → ${pc.red(rv)}`,
-            );
-          }
-        }
+        details.push(...featureDetails);
       }
     }
-    for (const fslug of remoteFeatures.keys()) {
-      if (!localFeatures.has(fslug)) {
+    for (const fslug of remoteFeatureMap.keys()) {
+      if (!localFeatureMap.has(fslug)) {
         details.push(`  ${pc.red("-")} feature ${pc.bold(fslug)}`);
       }
     }
@@ -231,6 +352,29 @@ export function diffPlans(
       changed.push({ slug, details });
     }
   }
+
+  // Top-level feature definitions diff (name, type, meterType).
+  // Only compare this section when the remote side explicitly provides a
+  // features collection; otherwise plan-embedded feature metadata is already
+  // compared above, and credit-system-only feature metadata is not fetchable.
+  const featureSection =
+    remoteFeatures.length > 0
+      ? diffMaps(
+          new Map<string, any>(
+            [
+              ...localFeatures.map(normalizeFeatureDef),
+              ...Array.from(localFeatureDefs.values()),
+            ].map((f) => [f.slug, f]),
+          ),
+          new Map<string, any>(
+            [
+              ...remoteFeatures.map(normalizeFeatureDef),
+              ...Array.from(remoteFeatureDefs.values()),
+            ].map((f) => [f.slug, f]),
+          ),
+          ["name", "type", "meterType"],
+        )
+      : { onlyLocal: [], onlyRemote: [], changed: [] };
 
   // Credit Systems diff
   const localCsMap = new Map<string, any>();
@@ -243,33 +387,13 @@ export function diffPlans(
     remoteCsMap.set(cs.slug, normalizeCreditSystem(cs));
   }
 
-  const csOnlyLocal: string[] = [];
-  const csOnlyRemote: string[] = [];
-  const csChanged: { slug: string; details: string[] }[] = [];
-
-  for (const slug of localCsMap.keys()) {
-    if (!remoteCsMap.has(slug)) csOnlyLocal.push(slug);
-  }
-  for (const slug of remoteCsMap.keys()) {
-    if (!localCsMap.has(slug)) csOnlyRemote.push(slug);
-  }
-
+  const csSection = diffMaps(localCsMap, remoteCsMap, ["name", "description"]);
+  // Re-add credit-system feature-level details using the existing custom format.
   for (const slug of localCsMap.keys()) {
     if (!remoteCsMap.has(slug)) continue;
     const local = localCsMap.get(slug);
     const remote = remoteCsMap.get(slug);
-    const details: string[] = [];
-
-    if (local.name !== remote.name) {
-      details.push(
-        `name: ${pc.green(JSON.stringify(local.name))} → ${pc.red(JSON.stringify(remote.name))}`,
-      );
-    }
-    if (local.description !== remote.description) {
-      details.push(
-        `description: ${pc.green(JSON.stringify(local.description))} → ${pc.red(JSON.stringify(remote.description))}`,
-      );
-    }
+    const csFeatureDetails: string[] = [];
 
     const localF = new Map<string, any>(
       (local.features || []).map((f: any) => [f.feature, f]),
@@ -280,25 +404,34 @@ export function diffPlans(
 
     for (const fslug of localF.keys()) {
       if (!remoteF.has(fslug)) {
-        details.push(`  ${pc.green("+")} credit cost for ${pc.bold(fslug)}`);
+        csFeatureDetails.push(
+          `  ${pc.green("+")} credit cost for ${pc.bold(fslug)}`,
+        );
         continue;
       }
       const lf = localF.get(fslug);
       const rf = remoteF.get(fslug);
       if (lf.creditCost !== rf.creditCost) {
-        details.push(
+        csFeatureDetails.push(
           `  ${pc.yellow("~")} credit cost for ${pc.bold(fslug)}: ${pc.green(String(lf.creditCost))} → ${pc.red(String(rf.creditCost))}`,
         );
       }
     }
     for (const fslug of remoteF.keys()) {
       if (!localF.has(fslug)) {
-        details.push(`  ${pc.red("-")} credit cost for ${pc.bold(fslug)}`);
+        csFeatureDetails.push(
+          `  ${pc.red("-")} credit cost for ${pc.bold(fslug)}`,
+        );
       }
     }
 
-    if (details.length > 0) {
-      csChanged.push({ slug, details });
+    if (csFeatureDetails.length > 0) {
+      const existing = csSection.changed.find((c) => c.slug === slug);
+      if (existing) {
+        existing.details.push(...csFeatureDetails);
+      } else {
+        csSection.changed.push({ slug, details: csFeatureDetails });
+      }
     }
   }
 
@@ -311,61 +444,24 @@ export function diffPlans(
   for (const pack of remoteCreditPacks)
     remotePackMap.set(pack.slug, normalizeCreditPack(pack));
 
-  const packOnlyLocal: string[] = [];
-  const packOnlyRemote: string[] = [];
-  const packChanged: { slug: string; details: string[] }[] = [];
-
-  for (const slug of localPackMap.keys()) {
-    if (!remotePackMap.has(slug)) packOnlyLocal.push(slug);
-  }
-  for (const slug of remotePackMap.keys()) {
-    if (!localPackMap.has(slug)) packOnlyRemote.push(slug);
-  }
-
-  for (const slug of localPackMap.keys()) {
-    if (!remotePackMap.has(slug)) continue;
-    const local = localPackMap.get(slug);
-    const remote = remotePackMap.get(slug);
-    const details: string[] = [];
-
-    const packFields: Array<keyof typeof local> = [
-      "name",
-      "description",
-      "credits",
-      "price",
-      "currency",
-      "creditSystem",
-      "provider",
-    ];
-    for (const field of packFields) {
-      if (local[field] !== remote[field]) {
-        const localVal = JSON.stringify(local[field]);
-        const remoteVal = JSON.stringify(remote[field]);
-        details.push(
-          `${String(field)}: ${pc.green(localVal)} → ${pc.red(remoteVal)}`,
-        );
-      }
-    }
-
-    if (details.length > 0) {
-      packChanged.push({ slug, details });
-    }
-  }
+  const packSection = diffMaps(localPackMap, remotePackMap, [
+    "name",
+    "description",
+    "credits",
+    "price",
+    "currency",
+    "creditSystem",
+    "provider",
+    "metadata",
+  ]);
 
   return {
-    onlyLocal,
-    onlyRemote,
+    onlyLocal: planSection.onlyLocal,
+    onlyRemote: planSection.onlyRemote,
     changed,
-    creditSystems: {
-      onlyLocal: csOnlyLocal,
-      onlyRemote: csOnlyRemote,
-      changed: csChanged,
-    },
-    creditPacks: {
-      onlyLocal: packOnlyLocal,
-      onlyRemote: packOnlyRemote,
-      changed: packChanged,
-    },
+    features: featureSection,
+    creditSystems: csSection,
+    creditPacks: packSection,
   };
 }
 
@@ -374,6 +470,10 @@ export function printDiff(diff: DiffResult): void {
     diff.onlyLocal.length > 0 ||
     diff.onlyRemote.length > 0 ||
     diff.changed.length > 0;
+  const hasFeatureDiff =
+    diff.features.onlyLocal.length > 0 ||
+    diff.features.onlyRemote.length > 0 ||
+    diff.features.changed.length > 0;
   const hasCsDiff =
     diff.creditSystems.onlyLocal.length > 0 ||
     diff.creditSystems.onlyRemote.length > 0 ||
@@ -383,7 +483,7 @@ export function printDiff(diff: DiffResult): void {
     diff.creditPacks.onlyRemote.length > 0 ||
     diff.creditPacks.changed.length > 0;
 
-  if (!hasPlanDiff && !hasCsDiff && !hasPackDiff) {
+  if (!hasPlanDiff && !hasFeatureDiff && !hasCsDiff && !hasPackDiff) {
     p.log.success(pc.green("Everything is in sync. No differences found."));
     return;
   }
@@ -415,25 +515,51 @@ export function printDiff(diff: DiffResult): void {
     p.note(lines.join("\n"), "Plans Diff");
   }
 
+  if (hasFeatureDiff) {
+    const lines: string[] = [];
+    if (diff.features.onlyLocal.length > 0) {
+      for (const slug of diff.features.onlyLocal) {
+        lines.push(
+          `${pc.green("+")} ${pc.bold(slug)} ${pc.dim("(local only — will be created on sync)")}`,
+        );
+      }
+    }
+    if (diff.features.onlyRemote.length > 0) {
+      for (const slug of diff.features.onlyRemote) {
+        lines.push(
+          `${pc.red("-")} ${pc.bold(slug)} ${pc.dim("(remote only — not in local config)")}`,
+        );
+      }
+    }
+    if (diff.features.changed.length > 0) {
+      for (const item of diff.features.changed) {
+        lines.push(`${pc.yellow("~")} ${pc.bold(item.slug)}`);
+        for (const line of item.details) {
+          lines.push(`  ${line}`);
+        }
+      }
+    }
+    p.note(lines.join("\n"), "Features Diff");
+  }
+
   if (hasCsDiff) {
     const csLines: string[] = [];
-    const csDiff = diff.creditSystems;
-    if (csDiff.onlyLocal.length > 0) {
-      for (const slug of csDiff.onlyLocal) {
+    if (diff.creditSystems.onlyLocal.length > 0) {
+      for (const slug of diff.creditSystems.onlyLocal) {
         csLines.push(
           `${pc.green("+")} ${pc.bold(slug)} ${pc.dim("(local only — will be created on sync)")}`,
         );
       }
     }
-    if (csDiff.onlyRemote.length > 0) {
-      for (const slug of csDiff.onlyRemote) {
+    if (diff.creditSystems.onlyRemote.length > 0) {
+      for (const slug of diff.creditSystems.onlyRemote) {
         csLines.push(
           `${pc.red("-")} ${pc.bold(slug)} ${pc.dim("(remote only — not in local config)")}`,
         );
       }
     }
-    if (csDiff.changed.length > 0) {
-      for (const item of csDiff.changed) {
+    if (diff.creditSystems.changed.length > 0) {
+      for (const item of diff.creditSystems.changed) {
         csLines.push(`${pc.yellow("~")} ${pc.bold(item.slug)}`);
         for (const line of item.details) {
           csLines.push(`  ${line}`);
@@ -445,23 +571,22 @@ export function printDiff(diff: DiffResult): void {
 
   if (hasPackDiff) {
     const packLines: string[] = [];
-    const packDiff = diff.creditPacks;
-    if (packDiff.onlyLocal.length > 0) {
-      for (const slug of packDiff.onlyLocal) {
+    if (diff.creditPacks.onlyLocal.length > 0) {
+      for (const slug of diff.creditPacks.onlyLocal) {
         packLines.push(
           `${pc.green("+")} ${pc.bold(slug)} ${pc.dim("(local only — will be created on sync)")}`,
         );
       }
     }
-    if (packDiff.onlyRemote.length > 0) {
-      for (const slug of packDiff.onlyRemote) {
+    if (diff.creditPacks.onlyRemote.length > 0) {
+      for (const slug of diff.creditPacks.onlyRemote) {
         packLines.push(
           `${pc.red("-")} ${pc.bold(slug)} ${pc.dim("(remote only — not in local config)")}`,
         );
       }
     }
-    if (packDiff.changed.length > 0) {
-      for (const item of packDiff.changed) {
+    if (diff.creditPacks.changed.length > 0) {
+      for (const item of diff.creditPacks.changed) {
         packLines.push(`${pc.yellow("~")} ${pc.bold(item.slug)}`);
         for (const line of item.details) {
           packLines.push(`  ${line}`);
@@ -480,6 +605,18 @@ export function printDiff(diff: DiffResult): void {
       : "",
     diff.changed.length > 0
       ? `${pc.yellow(pc.bold(diff.changed.length.toString()))} plans modified`
+      : "",
+  ].filter(Boolean);
+
+  const featureParts = [
+    diff.features.onlyLocal.length > 0
+      ? `${pc.green(pc.bold(diff.features.onlyLocal.length.toString()))} features to add`
+      : "",
+    diff.features.onlyRemote.length > 0
+      ? `${pc.red(pc.bold(diff.features.onlyRemote.length.toString()))} features to remove`
+      : "",
+    diff.features.changed.length > 0
+      ? `${pc.yellow(pc.bold(diff.features.changed.length.toString()))} features modified`
       : "",
   ].filter(Boolean);
 
@@ -507,7 +644,9 @@ export function printDiff(diff: DiffResult): void {
       : "",
   ].filter(Boolean);
 
-  const parts = [...planParts, ...csParts, ...packParts].join(pc.dim("  ·  "));
+  const parts = [...planParts, ...featureParts, ...csParts, ...packParts].join(
+    pc.dim("  ·  "),
+  );
 
   p.log.info(parts);
 }

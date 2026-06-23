@@ -87,14 +87,16 @@ async function runSyncSingle(options: {
   s.stop("Remote catalog fetched");
 
   // Show diff
-  const diff = diffPlans(
-    localPayload?.plans ?? [],
+  const diff = diffPlans({
+    localPlans: localPayload?.plans ?? [],
     remotePlans,
-    localPayload?.creditSystems ?? [],
+    localFeatures: localPayload?.features ?? [],
+    remoteFeatures: [],
+    localCreditSystems: localPayload?.creditSystems ?? [],
     remoteCreditSystems,
-    localPayload?.creditPacks ?? [],
+    localCreditPacks: localPayload?.creditPacks ?? [],
     remoteCreditPacks,
-  );
+  });
   printDiff(diff);
 
   // Check if there are any changes
@@ -102,6 +104,9 @@ async function runSyncSingle(options: {
     diff.onlyLocal.length > 0 ||
     diff.onlyRemote.length > 0 ||
     diff.changed.length > 0 ||
+    diff.features.onlyLocal.length > 0 ||
+    diff.features.onlyRemote.length > 0 ||
+    diff.features.changed.length > 0 ||
     diff.creditSystems.onlyLocal.length > 0 ||
     diff.creditSystems.onlyRemote.length > 0 ||
     diff.creditSystems.changed.length > 0 ||
@@ -169,6 +174,26 @@ async function runSyncSingle(options: {
     }
     if (diff.changed.length > 0) {
       for (const item of diff.changed) {
+        lines.push(`${pc.cyan("~")} ${pc.bold(item.slug)}`);
+        for (const detail of item.details) {
+          lines.push(`  ${detail}`);
+        }
+      }
+    }
+
+    // Feature changes
+    if (diff.features.onlyLocal.length > 0) {
+      for (const slug of diff.features.onlyLocal) {
+        lines.push(`${pc.green("+")} ${pc.bold(slug)}`);
+      }
+    }
+    if (diff.features.onlyRemote.length > 0) {
+      for (const slug of diff.features.onlyRemote) {
+        lines.push(`${pc.red("-")} ${pc.bold(slug)}`);
+      }
+    }
+    if (diff.features.changed.length > 0) {
+      for (const item of diff.features.changed) {
         lines.push(`${pc.cyan("~")} ${pc.bold(item.slug)}`);
         for (const detail of item.details) {
           lines.push(`  ${detail}`);

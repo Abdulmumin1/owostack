@@ -210,6 +210,7 @@ export function createApiPlansRoute(
         trialCardRequired: p.trialCardRequired ?? false,
         provider: p.providerId || null,
         autoEnable: p.autoEnable,
+        metadata: p.metadata || null,
         features: (p.planFeatures || []).map((pf: any) => {
           const featureType = pf.feature?.type ?? "metered";
           const isBoolean = featureType === "boolean";
@@ -295,6 +296,8 @@ export function createApiPlansRoute(
       planGroup: p.planGroup || null,
       trialDays: p.trialDays,
       trialCardRequired: p.trialCardRequired ?? false,
+      provider: p.providerId || null,
+      metadata: p.metadata || null,
       features: (p.planFeatures || []).map((pf: any) => {
         const featureType = pf.feature?.type ?? "metered";
         const isBoolean = featureType === "boolean";
