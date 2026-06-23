@@ -955,6 +955,9 @@ export const paymentMethods = sqliteTable(
       table.providerId,
       table.token,
     ),
+    uniqueIndex("pm_customer_org_default_uniq")
+      .on(table.customerId, table.organizationId)
+      .where(sql`${table.isDefault} = 1`),
   ],
 );
 
