@@ -75,14 +75,16 @@ export async function runDiff(options: DiffOptions) {
     s.stop("Remote catalog fetched");
 
     printDiff(
-      diffPlans(
-        localPayload?.plans ?? [],
-        livePlans,
-        localPayload?.creditSystems ?? [],
-        liveCreditSystems,
-        localPayload?.creditPacks ?? [],
-        liveCreditPacks,
-      ),
+      diffPlans({
+        localPlans: localPayload?.plans ?? [],
+        remotePlans: livePlans,
+        localFeatures: localPayload?.features ?? [],
+        remoteFeatures: [],
+        localCreditSystems: localPayload?.creditSystems ?? [],
+        remoteCreditSystems: liveCreditSystems,
+        localCreditPacks: localPayload?.creditPacks ?? [],
+        remoteCreditPacks: liveCreditPacks,
+      }),
     );
   } else {
     p.log.step(pc.cyan("Sandbox Mode: Comparing with SANDBOX environment"));
@@ -125,14 +127,16 @@ export async function runDiff(options: DiffOptions) {
     s.stop("Remote catalog fetched");
 
     printDiff(
-      diffPlans(
-        localPayload?.plans ?? [],
+      diffPlans({
+        localPlans: localPayload?.plans ?? [],
         remotePlans,
-        localPayload?.creditSystems ?? [],
+        localFeatures: localPayload?.features ?? [],
+        remoteFeatures: [],
+        localCreditSystems: localPayload?.creditSystems ?? [],
         remoteCreditSystems,
-        localPayload?.creditPacks ?? [],
+        localCreditPacks: localPayload?.creditPacks ?? [],
         remoteCreditPacks,
-      ),
+      }),
     );
   }
 
