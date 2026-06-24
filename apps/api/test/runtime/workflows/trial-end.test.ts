@@ -80,7 +80,7 @@ describe("TrialEndWorkflow runtime integration", () => {
 
       const subscription = await db
         .prepare(
-          `SELECT status, provider_subscription_code, paystack_subscription_code
+          `SELECT status, provider_subscription_code, paystack_subscription_code, metadata
            FROM subscriptions
            WHERE id = ?
            LIMIT 1`,
@@ -90,11 +90,20 @@ describe("TrialEndWorkflow runtime integration", () => {
           status: string;
           provider_subscription_code: string | null;
           paystack_subscription_code: string | null;
+          metadata: string | null;
         }>();
+      const metadata = JSON.parse(subscription?.metadata || "{}");
 
       expect(subscription?.status).toBe("active");
       expect(subscription?.provider_subscription_code).toBe("sub_remote_2");
       expect(subscription?.paystack_subscription_code).toBe("sub_remote_2");
+      expect(metadata.trial_conversion_charge_status).toBe("succeeded");
+      expect(metadata.trial_conversion_charge_reference).toBe(
+        "trial-conversion:sub_trial_1",
+      );
+      expect(metadata.trial_conversion_charge_provider_reference).toBe(
+        "trial-conversion:sub_trial_1",
+      );
       expect(adapter.operations).toEqual([
         {
           kind: "chargeAuthorization",
@@ -104,7 +113,7 @@ describe("TrialEndWorkflow runtime integration", () => {
           authorizationCode: "AUTH_paystack",
           amount: 3000,
           currency: "NGN",
-          reference: undefined,
+          reference: "trial-conversion:sub_trial_1",
         },
         {
           kind: "createSubscription",
@@ -116,6 +125,106 @@ describe("TrialEndWorkflow runtime integration", () => {
           startDate: "2026-04-05T17:00:15.000Z",
         },
       ]);
+    } finally {
+      TrialEndWorkflow.dependencies = previousDependencies;
+      db.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not charge again when a previous trial conversion charge was recorded", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-06T17:00:15.000Z"));
+
+    const db = createSqliteD1Database();
+    const adapter = new SimulatedProviderAdapter({
+      expectedEnvironment: "live",
+      onChargeAuthorization: async () =>
+        Result.err({
+          code: "request_failed",
+          message: "duplicate charge should not be attempted",
+          providerId: "paystack",
+        }),
+    });
+    const previousDependencies = TrialEndWorkflow.dependencies;
+
+    TrialEndWorkflow.dependencies = {
+      getAdapter: (providerId) =>
+        providerId === "paystack" ? adapter : getAdapter(providerId),
+      resolveProviderAccount,
+      intervalToMs,
+      provisionEntitlements: async () => undefined,
+      invalidateSubscriptionCache,
+    };
+
+    try {
+      await seedWorkflowBase(db, {
+        providerAccount: {
+          environment: "test",
+        },
+        paymentMethods: [
+          {
+            id: "pm_paystack_default",
+            providerId: "paystack",
+            token: "AUTH_paystack",
+            isDefault: 1,
+          },
+        ],
+      });
+      await insertSubscription(db, {
+        id: "sub_trial_recovered",
+        status: "trialing",
+        metadata: {
+          trial_conversion_charge_status: "succeeded",
+          trial_conversion_charge_reference:
+            "trial-conversion:sub_trial_recovered",
+          trial_conversion_charge_provider_reference:
+            "trial-conversion:sub_trial_recovered",
+        },
+      });
+
+      await runWorkflow(
+        TrialEndWorkflow,
+        buildWorkflowEnv(db, { ENVIRONMENT: "production" }),
+        {
+          subscriptionId: "sub_trial_recovered",
+          customerId: "cust_1",
+          planId: "plan_1",
+          organizationId: "org_1",
+          providerId: "paystack",
+          environment: "test",
+          trialEndMs: Date.now(),
+          amount: 3000,
+          currency: "NGN",
+          email: "customer@example.com",
+        },
+      );
+
+      expect(adapter.operations).toEqual([
+        {
+          kind: "createSubscription",
+          environment: "live",
+          customerId: "cus_remote_1",
+          email: "customer@example.com",
+          authorizationCode: "AUTH_paystack",
+          planId: "plan_remote_1",
+          startDate: "2026-04-05T17:00:15.000Z",
+        },
+      ]);
+      const subscription = await db
+        .prepare(
+          `SELECT status, provider_subscription_code
+           FROM subscriptions
+           WHERE id = ?
+           LIMIT 1`,
+        )
+        .bind("sub_trial_recovered")
+        .first<{
+          status: string;
+          provider_subscription_code: string | null;
+        }>();
+      expect(subscription?.status).toBe("active");
+      expect(subscription?.provider_subscription_code).toBe("sub_remote_1");
     } finally {
       TrialEndWorkflow.dependencies = previousDependencies;
       db.close();
