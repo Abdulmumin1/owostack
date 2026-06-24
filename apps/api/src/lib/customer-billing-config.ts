@@ -277,7 +277,7 @@ export function applyCustomerFeatureBillingOverride<T extends object>(
   const effectiveOverage =
     planFeatureRecord.usageModel === "usage_based"
       ? planFeatureRecord.overage
-      : override?.overage ?? "block";
+      : override?.overage ?? planFeatureRecord.overage ?? "block";
 
   return {
     ...planFeature,

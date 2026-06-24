@@ -297,7 +297,7 @@ describe("Customer billing config runtime integration", () => {
     });
   });
 
-  it("blocks plan overage by default until the customer explicitly enables it", async () => {
+  it("preserves plan charge overage when the customer has no feature override", async () => {
     const now = Date.now();
     const currentPeriodStart = now - 2 * 24 * 60 * 60 * 1000;
     const currentPeriodEnd = now + 28 * 24 * 60 * 60 * 1000;
@@ -385,12 +385,15 @@ describe("Customer billing config runtime integration", () => {
 
     expect(checkResponse.status).toBe(200);
     const body = await checkResponse.json();
-    expect(body.allowed).toBe(false);
-    expect(body.code).toBe("limit_exceeded");
-    expect(body.details.overage ?? null).toBeNull();
+    expect(body.allowed).toBe(true);
+    expect(body.code).toBe("overage_allowed");
+    expect(body.details.overage).toMatchObject({
+      type: "charge",
+      willBeBilled: true,
+    });
   });
 
-  it("enforces a customer feature max overage cap once customer overage is enabled", async () => {
+  it("preserves plan charge overage when a customer override only sets max units", async () => {
     const now = Date.now();
     const currentPeriodStart = now - 2 * 24 * 60 * 60 * 1000;
     const currentPeriodEnd = now + 28 * 24 * 60 * 60 * 1000;
@@ -460,7 +463,6 @@ describe("Customer billing config runtime integration", () => {
     const configResponse = await setCustomerFeatureConfig({
       customer: "cust_2",
       feature: "agent-runs",
-      overage: "charge",
       maxOverageUnits: 2,
     });
     expect(configResponse.status).toBe(200);
