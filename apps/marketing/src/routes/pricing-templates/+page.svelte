@@ -120,97 +120,82 @@
           <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {#each group.items as template}
               <article
-                class="card card-elevated card-interactive flex flex-col p-8"
+                class="flex flex-col border border-border/40 bg-bg-card transition-colors hover:border-border"
               >
-                <div class="mb-6 flex items-start justify-between">
-                  <div
-                    class="flex items-center justify-center rounded-sm overflow-hidden text-text-muted"
-                  >
-                    <InspiredLogo
-                      logoUrl={template.logoUrl}
-                      alt={template.inspiredBy}
-                      size={40}
-                    />
+                <!-- Header -->
+                <div class="border-b border-border/40 p-6 md:p-8">
+                  <h3 class="text-xl md:text-2xl font-normal tracking-tight text-text-primary">
+                    {template.title}
+                  </h3>
+                </div>
+
+                <!-- Body -->
+                <div class="flex flex-1 flex-col border-b border-border/40 p-6 md:p-8">
+                  <div class="mb-6 flex items-start justify-between">
+                    <div class="flex items-center justify-center overflow-hidden rounded-sm text-text-muted">
+                      <InspiredLogo
+                        logoUrl={template.logoUrl}
+                        alt={template.inspiredBy}
+                        size={32}
+                      />
+                    </div>
+                    <div class="rounded-full border border-border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-dim">
+                      {template.category}
+                    </div>
                   </div>
-                  <div
-                    class="rounded-full border border-border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-dim"
-                  >
-                    {template.category}
+
+                  <p class="mb-8 text-sm leading-relaxed text-text-secondary">
+                    {template.summary}
+                  </p>
+
+                  <div class="mt-auto">
+                    <div class="mb-1.5 flex items-center gap-2">
+                      <span class="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                        Used by {template.inspiredBy}
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-1.5 text-[10px] text-text-dim">
+                      <CheckCircle size={10} class="text-secondary" weight="fill" />
+                      <span>{template.socialProof}</span>
+                    </div>
                   </div>
                 </div>
 
-                <!-- Company attribution with social proof -->
-                <div class="mb-3 flex items-center gap-2">
-                  <span
-                    class="text-[10px] font-semibold uppercase tracking-wider text-text-muted"
-                  >
-                    Used by {template.inspiredBy}
-                  </span>
-                </div>
-
-                <div
-                  class="mb-4 flex items-center gap-1.5 text-[10px] text-text-dim"
-                >
-                  <CheckCircle size={10} class="text-secondary" weight="fill" />
-                  <span>{template.socialProof}</span>
-                </div>
-
-                <h3
-                  class="mb-4 text-2xl font-bold tracking-tight text-text-primary"
-                >
-                  {template.title}
-                </h3>
-                <p class="mb-10 text-sm leading-relaxed text-text-secondary">
-                  {template.summary}
-                </p>
-
-                <div class="mt-auto space-y-4">
-                  <div
-                    class="rounded-lg border border-border bg-bg-secondary/30"
-                  >
-                    {#each template.breakdown.slice(0, 2) as item}
-                      <div
-                        class="grid grid-cols-[0.8fr_1.2fr] gap-3 border-b border-border/40 p-3 last:border-b-0"
-                      >
-                        <div
-                          class="text-[10px] font-semibold uppercase tracking-wide text-text-dim"
-                        >
-                          {item.label}
-                        </div>
-                        <div class="text-xs font-semibold text-text-primary">
-                          {item.value}
-                        </div>
+                <!-- Breakdown -->
+                <div class="flex flex-col">
+                  {#each template.breakdown.slice(0, 3) as item}
+                    <div class="flex items-center justify-between border-b border-border/40 px-6 py-4 last:border-b-0">
+                      <div class="text-sm text-text-secondary">
+                        {item.label}: <span class="text-text-primary font-medium">{item.value}</span>
                       </div>
-                    {/each}
-                  </div>
+                      <CheckCircle size={14} class="text-text-muted" />
+                    </div>
+                  {/each}
+                </div>
 
-                  <div class="flex items-center justify-between pt-2">
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-2 text-xs font-semibold text-text-muted transition-colors hover:text-text-primary"
-                      onclick={() => copyTemplate(template)}
-                    >
-                      {#if copiedSlug === template.slug}
-                        <CheckCircle
-                          size={14}
-                          weight="fill"
-                          class="text-secondary"
-                        />
-                        Copied
-                      {:else}
-                        <Copy size={14} />
-                        Copy code
-                      {/if}
-                    </button>
+                <!-- Actions -->
+                <div class="flex items-center justify-between border-t border-border/40 bg-bg-secondary/10 px-6 py-4">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-2 text-xs font-semibold text-text-muted transition-colors hover:text-text-primary"
+                    onclick={() => copyTemplate(template)}
+                  >
+                    {#if copiedSlug === template.slug}
+                      <CheckCircle size={14} weight="fill" class="text-secondary" />
+                      Copied
+                    {:else}
+                      <Copy size={14} />
+                      Copy code
+                    {/if}
+                  </button>
 
-                    <a
-                      href={`/pricing-templates/${template.slug}`}
-                      class="inline-flex items-center gap-1.5 text-xs font-semibold text-text-primary transition-colors hover:text-accent"
-                    >
-                      View pattern
-                      <ArrowRight size={14} weight="bold" />
-                    </a>
-                  </div>
+                  <a
+                    href={`/pricing-templates/${template.slug}`}
+                    class="inline-flex items-center gap-1.5 text-xs font-semibold text-text-primary transition-colors hover:text-accent"
+                  >
+                    View pattern
+                    <ArrowRight size={14} weight="bold" />
+                  </a>
                 </div>
               </article>
             {/each}
