@@ -18,21 +18,22 @@ export const actions: Actions = {
       return { error: "Email and name are required" };
     }
 
+    let customer;
     try {
-      const customer = await owo.customer({
+      customer = await owo.customer({
         id: crypto.randomUUID(),
         email,
         name,
         metadata: { source: "demo-app" },
       });
-
-      cookies.set("userId", customer.id, { path: "/" });
-      cookies.set("userEmail", customer.email, { path: "/" });
-      cookies.set("userName", customer.name || "", { path: "/" });
-
-      throw redirect(303, "/");
     } catch (error: any) {
       return { error: error.message || "Failed to onboard" };
     }
+
+    cookies.set("userId", customer.id, { path: "/" });
+    cookies.set("userEmail", customer.email, { path: "/" });
+    cookies.set("userName", customer.name || "", { path: "/" });
+
+    throw redirect(303, "/");
   },
 };
