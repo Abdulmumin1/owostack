@@ -8,6 +8,7 @@ import { err, ok } from "./helpers/result";
 interface BillingDb {
   query: {
     organizations: { findFirst: Mock };
+    projects: { findMany: Mock };
     providerAccounts: { findMany: Mock };
     customers: { findFirst: Mock; findMany: Mock };
     creditPurchases: { findFirst: Mock };
@@ -33,6 +34,7 @@ const registryGetMock = vi.fn();
 const billingDb: BillingDb = {
   query: {
     organizations: { findFirst: vi.fn() },
+    projects: { findMany: vi.fn() },
     providerAccounts: { findMany: vi.fn() },
     customers: { findFirst: vi.fn(), findMany: vi.fn() },
     creditPurchases: { findFirst: vi.fn() },
@@ -106,17 +108,25 @@ describe("Webhook route pipeline behavior", () => {
     const organization = {
       id: "org_1",
       slug: "org_1",
-      webhookSecret: "project_wh_secret",
-      testWebhookSecret: null,
-      liveWebhookSecret: null,
-      testSecretKey: null,
-      liveSecretKey: null,
     };
 
     authDb.query.organizations.findFirst.mockResolvedValue(organization);
     billingDb.query.organizations.findFirst.mockResolvedValue({
       id: "org_1",
     });
+    billingDb.query.projects.findMany.mockResolvedValue([
+      {
+        id: "project_1",
+        organizationId: "org_1",
+        webhookSecret: "project_wh_secret",
+        testWebhookSecret: null,
+        liveWebhookSecret: null,
+        testSecretKey: null,
+        liveSecretKey: null,
+        activeEnvironment: "test",
+        environment: "test",
+      },
+    ]);
     billingDb.query.providerAccounts.findMany.mockResolvedValue([]);
 
     decryptMock.mockImplementation(async (input: string) => `dec_${input}`);
@@ -371,15 +381,19 @@ describe("Webhook route pipeline behavior", () => {
 
   it("falls back to decrypted environment secret key when no provider secrets are configured", async () => {
     billingDb.query.providerAccounts.findMany.mockResolvedValue([]);
-    authDb.query.organizations.findFirst.mockResolvedValue({
-      id: "org_1",
-      slug: "org_1",
-      webhookSecret: null,
-      testWebhookSecret: null,
-      liveWebhookSecret: null,
-      testSecretKey: "enc_test_secret",
-      liveSecretKey: null,
-    });
+    billingDb.query.projects.findMany.mockResolvedValue([
+      {
+        id: "project_1",
+        organizationId: "org_1",
+        webhookSecret: null,
+        testWebhookSecret: null,
+        liveWebhookSecret: null,
+        testSecretKey: "enc_test_secret",
+        liveSecretKey: null,
+        activeEnvironment: "test",
+        environment: "test",
+      },
+    ]);
 
     const res = await app.request(
       "/webhooks/org_1",

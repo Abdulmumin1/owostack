@@ -211,6 +211,28 @@ export function createWebhookRoutes(
 
     const scopedProviderAccounts =
       providerAccounts.length > 0 ? providerAccounts : allProviderAccounts;
+    let scopedProjects: any[] | undefined;
+    const getScopedProjects = async () => {
+      if (scopedProjects !== undefined) return scopedProjects;
+
+      const projects = await db.query.projects.findMany({
+        where: eq(schema.projects.organizationId, org.id),
+      });
+      const matchingProjects = projects.filter((project: any) => {
+        const activeEnvironment = project?.activeEnvironment;
+        const legacyEnvironment = project?.environment;
+        return (
+          activeEnvironment === workerEnv ||
+          legacyEnvironment === workerEnv ||
+          (!activeEnvironment && !legacyEnvironment)
+        );
+      });
+
+      scopedProjects =
+        matchingProjects.length > 0 ? matchingProjects : projects;
+      return scopedProjects;
+    };
+
     let secretAccountId: string | null = null;
     for (const pa of scopedProviderAccounts) {
       const creds = (pa as any).credentials || {};
@@ -246,33 +268,46 @@ export function createWebhookRoutes(
     }
 
     if (!secret) {
-      const orgWebhookSecret =
-        workerEnv === "live" ? org.liveWebhookSecret : org.testWebhookSecret;
-      secret = orgWebhookSecret || org.webhookSecret;
-      if (secret) {
-        secretSource = "organization_webhook_secret";
+      for (const project of await getScopedProjects()) {
+        const projectWebhookSecret =
+          workerEnv === "live"
+            ? project.liveWebhookSecret
+            : project.testWebhookSecret;
+        secret = projectWebhookSecret || project.webhookSecret;
+        if (secret) {
+          secretSource = "project_webhook_secret";
+          break;
+        }
       }
     }
 
     if (!secret) {
-      const encryptedKey =
-        workerEnv === "live" ? org.liveSecretKey : org.testSecretKey;
-      if (encryptedKey) {
+      for (const project of await getScopedProjects()) {
+        const encryptedKey =
+          workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
+        if (!encryptedKey) {
+          continue;
+        }
+
         try {
           secret = (
             await deps.decrypt(encryptedKey, c.env.ENCRYPTION_KEY)
           ).trim();
-          secretSource = `organization_${workerEnv}_secret_key_encrypted`;
+          secretSource = `project_${workerEnv}_secret_key_encrypted`;
           console.log(
-            `[WEBHOOK-ROUTE] No webhookSecret, falling back to ${workerEnv} secret key for org=${organizationId}`,
+            `[WEBHOOK-ROUTE] No webhookSecret, falling back to project ${workerEnv} secret key for org=${organizationId}`,
           );
         } catch (e) {
           console.error(
-            `[WEBHOOK-ROUTE] Failed to decrypt key for verification:`,
+            `[WEBHOOK-ROUTE] Failed to decrypt project key for verification:`,
             e,
           );
           secret = encryptedKey.trim();
-          secretSource = `organization_${workerEnv}_secret_key_plaintext`;
+          secretSource = `project_${workerEnv}_secret_key_plaintext`;
+        }
+
+        if (secret) {
+          break;
         }
       }
     }
