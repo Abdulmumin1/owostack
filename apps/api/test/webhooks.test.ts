@@ -18,6 +18,7 @@ describe("Webhooks API", () => {
     })),
     query: {
       organizations: { findFirst: vi.fn() },
+      projects: { findMany: vi.fn() },
       providerAccounts: { findMany: vi.fn() },
     },
   };
@@ -34,11 +35,6 @@ describe("Webhooks API", () => {
     id: orgId,
     name: "Test Org",
     slug: "test-org",
-    webhookSecret: secret,
-    testSecretKey: "encrypted_key",
-    testWebhookSecret: secret,
-    liveWebhookSecret: null,
-    liveSecretKey: null,
   };
 
   const adapter = {
@@ -104,6 +100,19 @@ describe("Webhooks API", () => {
 
     authDb.query.organizations.findFirst.mockResolvedValue(mockOrg);
     billingDb.query.organizations.findFirst.mockResolvedValue({ id: orgId });
+    billingDb.query.projects.findMany.mockResolvedValue([
+      {
+        id: "project_123",
+        organizationId: orgId,
+        testWebhookSecret: secret,
+        liveWebhookSecret: null,
+        testSecretKey: null,
+        liveSecretKey: null,
+        webhookSecret: null,
+        activeEnvironment: "test",
+        environment: "test",
+      },
+    ]);
     billingDb.query.providerAccounts.findMany.mockResolvedValue([]);
     registryGetMock.mockImplementation((providerId: string) =>
       providerId === "paystack" ? adapter : undefined,
@@ -195,15 +204,24 @@ describe("Webhooks API", () => {
     expect(handlerHandleMock).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the organization-specific webhook secret", async () => {
-    const orgSecret = "org_specific_secret";
-    authDb.query.organizations.findFirst.mockResolvedValue({
-      ...mockOrg,
-      testWebhookSecret: orgSecret,
-    });
+  it("uses the project-specific webhook secret", async () => {
+    const projectSecret = "project_specific_secret";
+    billingDb.query.projects.findMany.mockResolvedValue([
+      {
+        id: "project_123",
+        organizationId: orgId,
+        testWebhookSecret: projectSecret,
+        liveWebhookSecret: null,
+        testSecretKey: null,
+        liveSecretKey: null,
+        webhookSecret: null,
+        activeEnvironment: "test",
+        environment: "test",
+      },
+    ]);
 
     const payload = JSON.stringify({ event: "test" });
-    const signature = createHmac("sha512", orgSecret)
+    const signature = createHmac("sha512", projectSecret)
       .update(payload)
       .digest("hex");
 
