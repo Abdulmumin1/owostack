@@ -3607,7 +3607,7 @@ app.openapi(
                 );
               }
               trackAddonBalanceAfter = computeRemainingAddonBalance(
-                currentAddonBalance ?? 0,
+                currentTrackAddonBalance ?? 0,
                 coverage.addonAmount,
                 deductResult.remaining,
               );
@@ -3729,8 +3729,8 @@ app.openapi(
                 );
               }
               trackAddonBalanceAfter = computeRemainingAddonBalance(
-                currentAddonBalance ?? 0,
-                effectiveValue,
+                currentTrackAddonBalance ?? 0,
+                coverage.addonAmount,
                 deductResult.remaining,
               );
             }

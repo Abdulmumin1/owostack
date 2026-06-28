@@ -103,7 +103,7 @@ app.post("/", async (c) => {
     });
 
     if (!validation.ok) {
-      return c.json(validation.body, validation.status);
+      return c.json(validation.body, validation.status as any);
     }
 
     const featureId = crypto.randomUUID();
@@ -363,7 +363,7 @@ app.put("/:id", async (c) => {
       });
 
       if (!validation.ok) {
-        return c.json(validation.body, validation.status);
+        return c.json(validation.body, validation.status as any);
       }
     }
 

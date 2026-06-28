@@ -35,7 +35,7 @@ function createOpenApiApp() {
   return app;
 }
 
-export function getOpenApiDocument() {
+export function getOpenApiDocument(): any {
   const app = createOpenApiApp();
 
   return app.getOpenAPI31Document({
@@ -121,4 +121,4 @@ export function getOpenApiDocument() {
   } as any);
 }
 
-export const openApiDocument = getOpenApiDocument();
+export const openApiDocument: any = getOpenApiDocument();

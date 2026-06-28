@@ -374,15 +374,15 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
         const metadata = parseMetadata(row?.metadata);
 
         return {
-          status: metadata.trial_conversion_charge_status,
-          reference: metadata.trial_conversion_charge_reference,
+          status: (metadata as Record<string, unknown>).trial_conversion_charge_status as string | undefined,
+          reference: (metadata as Record<string, unknown>).trial_conversion_charge_reference as string | undefined,
         };
       },
     );
 
     if (
-      existingChargeState.status === "succeeded" &&
-      existingChargeState.reference === chargeReference
+      existingChargeState?.status === "succeeded" &&
+      existingChargeState?.reference === chargeReference
     ) {
       chargeSucceeded = true;
       console.log(

@@ -1,5 +1,5 @@
 import { schema } from "@owostack/db";
-import { eq, and, or } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
 import { upsertPaymentMethod } from "../../payment-methods";
 import { buildRenewalSetupRecoveryUpdate } from "../../renewal-setup";
