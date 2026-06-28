@@ -10,13 +10,120 @@ import {
 import { createSqliteD1Database } from "../helpers/sqlite-d1";
 import {
   buildWorkflowEnv,
+  ImmediateWorkflowStep,
   insertSubscription,
   runWorkflow,
   seedWorkflowBase,
   SimulatedProviderAdapter,
 } from "../helpers/workflow-runtime";
 
+class ActivateBeforeStep extends ImmediateWorkflowStep {
+  constructor(
+    private readonly db: D1Database,
+    private readonly stepName: string,
+    private readonly subscriptionId: string,
+  ) {
+    super();
+  }
+
+  override async do<T>(...args: unknown[]): Promise<T> {
+    if (args[0] === this.stepName) {
+      await this.db
+        .prepare("UPDATE subscriptions SET status = 'active' WHERE id = ?")
+        .bind(this.subscriptionId)
+        .run();
+    }
+
+    return super.do<T>(...args);
+  }
+}
+
 describe("TrialEndWorkflow runtime integration", () => {
+  it("does not expire an already-activated trial from the no-card fallback", async () => {
+    const db = createSqliteD1Database();
+
+    try {
+      await seedWorkflowBase(db, { paymentMethods: [] });
+      await insertSubscription(db, {
+        id: "sub_trial_activated",
+        status: "trialing",
+      });
+
+      await runWorkflow(
+        TrialEndWorkflow,
+        buildWorkflowEnv(db),
+        {
+          subscriptionId: "sub_trial_activated",
+          customerId: "cust_1",
+          planId: "plan_1",
+          organizationId: "org_1",
+          providerId: "paystack",
+          environment: "test",
+          trialEndMs: Date.now(),
+          amount: 3000,
+          currency: "NGN",
+          email: "customer@example.com",
+        },
+        new ActivateBeforeStep(db, "expire-subscription", "sub_trial_activated"),
+      );
+
+      const subscription = await db
+        .prepare("SELECT status FROM subscriptions WHERE id = ? LIMIT 1")
+        .bind("sub_trial_activated")
+        .first<{ status: string }>();
+
+      expect(subscription?.status).toBe("active");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("does not expire an already-activated trial from the no-provider fallback", async () => {
+    const db = createSqliteD1Database();
+
+    try {
+      await seedWorkflowBase(db, {
+        providerAccount: { providerId: "stripe" },
+        paymentMethods: [{ id: "pm_paystack", token: "AUTH_paystack" }],
+      });
+      await insertSubscription(db, {
+        id: "sub_trial_activated_no_provider",
+        status: "trialing",
+      });
+
+      await runWorkflow(
+        TrialEndWorkflow,
+        buildWorkflowEnv(db),
+        {
+          subscriptionId: "sub_trial_activated_no_provider",
+          customerId: "cust_1",
+          planId: "plan_1",
+          organizationId: "org_1",
+          providerId: "paystack",
+          environment: "test",
+          trialEndMs: Date.now(),
+          amount: 3000,
+          currency: "NGN",
+          email: "customer@example.com",
+        },
+        new ActivateBeforeStep(
+          db,
+          "expire-no-provider",
+          "sub_trial_activated_no_provider",
+        ),
+      );
+
+      const subscription = await db
+        .prepare("SELECT status FROM subscriptions WHERE id = ? LIMIT 1")
+        .bind("sub_trial_activated_no_provider")
+        .first<{ status: string }>();
+
+      expect(subscription?.status).toBe("active");
+    } finally {
+      db.close();
+    }
+  });
+
   it("uses the same-provider saved card even when another provider owns the global default method", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-06T17:00:15.000Z"));

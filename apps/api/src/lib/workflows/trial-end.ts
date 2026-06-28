@@ -297,11 +297,17 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
     if (!resolvedAuthCode || !resolvedEmail || !amount || amount <= 0) {
       await step.do("expire-subscription", async () => {
         const now = Date.now();
-        await this.env.DB.prepare(
-          "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ?",
+        const result = await this.env.DB.prepare(
+          "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'trialing'",
         )
           .bind(now, subscriptionId)
           .run();
+        if (Number((result as any)?.meta?.changes || 0) === 0) {
+          console.log(
+            `[TrialEndWorkflow] Skipped expiry (no card/data): subscription=${subscriptionId} is no longer trialing`,
+          );
+          return;
+        }
         await this.deps.invalidateSubscriptionCache(
           this.env,
           organizationId,
@@ -341,11 +347,17 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
       // Can't charge — expire the subscription instead
       await step.do("expire-no-provider", async () => {
         const now = Date.now();
-        await this.env.DB.prepare(
-          "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ?",
+        const result = await this.env.DB.prepare(
+          "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'trialing'",
         )
           .bind(now, subscriptionId)
           .run();
+        if (Number((result as any)?.meta?.changes || 0) === 0) {
+          console.log(
+            `[TrialEndWorkflow] Skipped expiry (no provider key): subscription=${subscriptionId} is no longer trialing`,
+          );
+          return;
+        }
         console.log(
           `[TrialEndWorkflow] Expired (no provider key): subscription=${subscriptionId}`,
         );
