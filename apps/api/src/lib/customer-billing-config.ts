@@ -59,7 +59,7 @@ export async function getCustomerFeatureBillingConfigs(
       ),
     );
 
-  return rows.map((row) => ({
+  return rows.map((row: any) => ({
     feature: {
       id: row.featureId,
       slug: row.featureSlug,
@@ -248,17 +248,17 @@ export async function resolveCustomerFeatureBillingOverride(
       ),
     );
 
-  const rowByFeatureId = new Map(rows.map((row) => [row.featureId, row]));
+  const rowByFeatureId = new Map(rows.map((row: any) => [row.featureId, row]));
 
   for (const featureId of requestedFeatureIds) {
     const row = rowByFeatureId.get(featureId);
     if (!row) continue;
     return {
       overage:
-        row.overage === "block" || row.overage === "charge"
-          ? row.overage
+        (row as any).overage === "block" || (row as any).overage === "charge"
+          ? (row as any).overage
           : null,
-      maxOverageUnits: row.maxOverageUnits ?? null,
+      maxOverageUnits: (row as any).maxOverageUnits ?? null,
     };
   }
 

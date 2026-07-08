@@ -268,7 +268,7 @@ export function createWebhookRoutes(
     }
 
     if (!secret) {
-      for (const project of await getScopedProjects()) {
+      for (const project of (await getScopedProjects()) ?? []) {
         const projectWebhookSecret =
           workerEnv === "live"
             ? project.liveWebhookSecret
@@ -282,7 +282,7 @@ export function createWebhookRoutes(
     }
 
     if (!secret) {
-      for (const project of await getScopedProjects()) {
+      for (const project of (await getScopedProjects()) ?? []) {
         const encryptedKey =
           workerEnv === "live" ? project.liveSecretKey : project.testSecretKey;
         if (!encryptedKey) {

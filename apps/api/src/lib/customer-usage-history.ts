@@ -245,14 +245,14 @@ async function loadUsageSourceRows(params: {
     .orderBy(schema.usageDailySummaries.date);
 
   return dailyRows
-    .map((row) => ({
+    .map((row: any) => ({
       featureId: row.featureId,
       dayKey: row.dayKey,
       amount: Number(row.amount || 0),
       records: Number(row.records || 0),
     }))
     .filter(
-      (row) => row.dayKey >= params.fromDayKey && row.dayKey <= params.toDayKey,
+      (row: any) => row.dayKey >= params.fromDayKey && row.dayKey <= params.toDayKey,
     );
 }
 
@@ -279,7 +279,7 @@ async function loadFeatureMeta(
     );
 
   return new Map(
-    features.map((feature) => [
+    features.map((feature: any) => [
       feature.id,
       {
         id: feature.id,
