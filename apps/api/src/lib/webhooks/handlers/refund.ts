@@ -16,10 +16,25 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
     return;
   }
 
-  const refundAmount = event.refund?.amount || 0;
+  const refundAmount = event.refund?.amount;
+  const refundReference = event.refund?.reference;
   console.log(
-    `[WEBHOOK] Processing refund for org=${organizationId}, customer=${email}, amount=${refundAmount}, ref=${event.refund?.reference}`,
+    `[WEBHOOK] Processing refund for org=${organizationId}, customer=${email}, amount=${refundAmount ?? "unknown"}, ref=${refundReference}`,
   );
+
+  if (!refundReference) {
+    console.warn(
+      `[WEBHOOK] refund.success without payment reference for org=${organizationId}, customer=${email}`,
+    );
+    return;
+  }
+
+  if (refundAmount === undefined || refundAmount === null) {
+    console.warn(
+      `[WEBHOOK] refund.success with unknown amount for org=${organizationId}, customer=${email}, ref=${refundReference}`,
+    );
+    return;
+  }
 
   // 1. Find customer
   let dbCustomer = null;
@@ -49,9 +64,30 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
 
   const now = Date.now();
 
-  // 2. Find all active/trialing subscriptions (with plan prices for comparison)
-  const activeSubs = await db.query.subscriptions.findMany({
+  // 2. Correlate the refund to the original payment attempt before side effects.
+  const paymentAttempt = await db.query.paymentAttempts.findFirst({
     where: and(
+      eq(schema.paymentAttempts.providerReference, refundReference),
+      eq(schema.paymentAttempts.status, "succeeded"),
+    ),
+    with: { invoice: true },
+  });
+
+  if (
+    !paymentAttempt?.invoice ||
+    paymentAttempt.invoice.organizationId !== organizationId ||
+    paymentAttempt.invoice.customerId !== dbCustomer.id ||
+    !paymentAttempt.invoice.subscriptionId
+  ) {
+    console.warn(
+      `[WEBHOOK] Refund: payment reference ${refundReference} did not match a subscription invoice for customer ${dbCustomer.id}`,
+    );
+    return;
+  }
+
+  const targetSub = await db.query.subscriptions.findFirst({
+    where: and(
+      eq(schema.subscriptions.id, paymentAttempt.invoice.subscriptionId),
       eq(schema.subscriptions.customerId, dbCustomer.id),
       or(
         eq(schema.subscriptions.status, "active"),
@@ -61,100 +97,102 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
     with: { plan: true },
   });
 
-  // 3. Determine if this is a full or partial refund
-  //    Full refund: refund amount >= any active plan's price (provider amounts are in smallest unit)
-  //    Partial refund: refund amount < all plan prices → record it but keep access
-  //    NOTE: refundAmount === 0 is treated as full refund — when a provider sends a refund
-  //    event without an amount, we assume the entire charge was refunded (conservative default).
-  //    IMPORTANT: Only compare amounts when currencies match to avoid incorrect comparisons
-  //    (e.g., 10000 kobo NGN != 10000 cents USD)
-  const refundCurrency = event.refund?.currency?.toUpperCase();
-  const isFullRefund =
-    refundAmount === 0 ||
-    activeSubs.some(
-      (sub: { plan?: { price: number; currency?: string | null } | null }) => {
-        if (!sub.plan) return false;
-        // If currency info is available, only match when currencies are the same
-        if (
-          refundCurrency &&
-          sub.plan.currency &&
-          sub.plan.currency.toUpperCase() !== refundCurrency
-        ) {
-          return false;
-        }
-        return refundAmount >= sub.plan.price;
-      },
+  if (!targetSub) {
+    console.warn(
+      `[WEBHOOK] Refund: subscription ${paymentAttempt.invoice.subscriptionId} is not active/trialing for customer ${dbCustomer.id}`,
     );
-
-  if (!isFullRefund) {
-    // Partial refund — record on subscription metadata, don't revoke access
-    console.log(
-      `[WEBHOOK] Partial refund (${refundAmount}) for customer ${dbCustomer.id} — recording without revoking access`,
-    );
-    for (const sub of activeSubs) {
-      const existingMeta =
-        typeof sub.metadata === "object" && sub.metadata
-          ? (sub.metadata as Record<string, unknown>)
-          : {};
-      const refunds = Array.isArray(existingMeta.refunds)
-        ? existingMeta.refunds
-        : [];
-      refunds.push({
-        amount: refundAmount,
-        currency: event.refund?.currency,
-        reference: event.refund?.reference,
-        reason: event.refund?.reason,
-        at: now,
-      });
-      await db
-        .update(schema.subscriptions)
-        .set({ metadata: { ...existingMeta, refunds }, updatedAt: now })
-        .where(eq(schema.subscriptions.id, sub.id));
-    }
     return;
   }
 
-  // 4. Full refund — cancel each subscription (on provider + locally)
-  for (const sub of activeSubs) {
-    const subCode =
-      sub.providerSubscriptionCode || sub.paystackSubscriptionCode;
+  // 3. Determine if this is a full or partial refund.
+  //    Full refund: refund amount >= matched active plan's price (minor units).
+  //    Missing refund amounts are treated as unknown above and do not revoke access.
+  //    IMPORTANT: Only compare amounts when currencies match to avoid incorrect comparisons
+  //    (e.g., 10000 kobo NGN != 10000 cents USD)
+  const refundCurrency = event.refund?.currency?.toUpperCase();
+  const isFullRefund = (() => {
+    if (!targetSub.plan) return false;
     if (
-      adapter &&
-      providerAccount &&
-      subCode &&
-      subCode !== "one-time" &&
-      !subCode.startsWith("trial-") &&
-      !subCode.startsWith("charge") &&
-      !subCode.startsWith("upgrade")
+      refundCurrency &&
+      targetSub.plan.currency &&
+      targetSub.plan.currency.toUpperCase() !== refundCurrency
     ) {
-      try {
-        await adapter.cancelSubscription({
-          subscription: { id: subCode, status: sub.status || "active" },
-          environment: providerAccount.environment,
-          account: providerAccount,
-        });
-      } catch (e) {
-        console.warn(
-          `[WEBHOOK] Refund: provider cancel failed for sub ${subCode}:`,
-          e,
-        );
-      }
+      return false;
     }
+    return refundAmount >= targetSub.plan.price;
+  })();
 
+  if (!isFullRefund) {
+    // Partial refund — record on the matched subscription metadata, don't revoke access
+    console.log(
+      `[WEBHOOK] Partial refund (${refundAmount}) for subscription ${targetSub.id} — recording without revoking access`,
+    );
+    const existingMeta =
+      typeof targetSub.metadata === "object" && targetSub.metadata
+        ? (targetSub.metadata as Record<string, unknown>)
+        : {};
+    const refunds = Array.isArray(existingMeta.refunds)
+      ? existingMeta.refunds
+      : [];
+    refunds.push({
+      amount: refundAmount,
+      currency: event.refund?.currency,
+      reference: refundReference,
+      reason: event.refund?.reason,
+      at: now,
+    });
     await db
       .update(schema.subscriptions)
-      .set({ status: "refunded", canceledAt: now, updatedAt: now })
-      .where(eq(schema.subscriptions.id, sub.id));
-
-    console.log(
-      `[WEBHOOK] Refund: canceled subscription ${sub.id} (plan=${sub.planId})`,
-    );
+      .set({ metadata: { ...existingMeta, refunds }, updatedAt: now })
+      .where(eq(schema.subscriptions.id, targetSub.id));
+    return;
   }
 
-  // 5. Revoke all entitlements for this customer
+  // 4. Full refund — cancel only the matched subscription (on provider + locally)
+  const subCode =
+    targetSub.providerSubscriptionCode || targetSub.paystackSubscriptionCode;
+  if (
+    adapter &&
+    providerAccount &&
+    subCode &&
+    subCode !== "one-time" &&
+    !subCode.startsWith("trial-") &&
+    !subCode.startsWith("charge") &&
+    !subCode.startsWith("upgrade")
+  ) {
+    try {
+      await adapter.cancelSubscription({
+        subscription: { id: subCode, status: targetSub.status || "active" },
+        environment: providerAccount.environment,
+        account: providerAccount,
+      });
+    } catch (e) {
+      console.warn(
+        `[WEBHOOK] Refund: provider cancel failed for sub ${subCode}:`,
+        e,
+      );
+    }
+  }
+
+  await db
+    .update(schema.subscriptions)
+    .set({ status: "refunded", canceledAt: now, updatedAt: now })
+    .where(eq(schema.subscriptions.id, targetSub.id));
+
+  console.log(
+    `[WEBHOOK] Refund: canceled subscription ${targetSub.id} (plan=${targetSub.planId})`,
+  );
+
+  // 5. Revoke plan entitlements for this customer. Entitlements are customer/feature scoped today,
+  // so this is the narrowest safe persisted predicate available without subscription-scoped grants.
   await db
     .delete(schema.entitlements)
-    .where(eq(schema.entitlements.customerId, dbCustomer.id));
+    .where(
+      and(
+        eq(schema.entitlements.customerId, dbCustomer.id),
+        eq(schema.entitlements.source, "plan"),
+      ),
+    );
 
   // 5b. Invalidate cache so /check returns denied immediately
   if (cache) {
@@ -188,7 +226,7 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
   }
 
   console.log(
-    `[WEBHOOK] Refund: revoked all entitlements for customer ${dbCustomer.id}`,
+    `[WEBHOOK] Refund: revoked plan entitlements for refunded subscription ${targetSub.id}`,
   );
 
   // 6. Deduct credits if the original charge added them
