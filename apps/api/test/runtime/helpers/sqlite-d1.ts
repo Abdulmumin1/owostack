@@ -42,6 +42,10 @@ const MIGRATION_FILES = [
     "../../../../../packages/db/migrations/0010_single_default_payment_method.sql",
     import.meta.url,
   ),
+  new URL(
+    "../../../../../packages/db/migrations/0011_customer_alias_uniqueness.sql",
+    import.meta.url,
+  ),
 ];
 
 type SqliteRunResult = {
