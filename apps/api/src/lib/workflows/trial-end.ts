@@ -297,11 +297,17 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
     if (!resolvedAuthCode || !resolvedEmail || !amount || amount <= 0) {
       await step.do("expire-subscription", async () => {
         const now = Date.now();
-        await this.env.DB.prepare(
-          "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ?",
+        const result = await this.env.DB.prepare(
+          "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'trialing'",
         )
           .bind(now, subscriptionId)
           .run();
+        if (Number((result as any)?.meta?.changes || 0) === 0) {
+          console.log(
+            `[TrialEndWorkflow] Skipped expiry (no card/data): subscription=${subscriptionId} is no longer trialing`,
+          );
+          return;
+        }
         await this.deps.invalidateSubscriptionCache(
           this.env,
           organizationId,
@@ -341,11 +347,17 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
       // Can't charge — expire the subscription instead
       await step.do("expire-no-provider", async () => {
         const now = Date.now();
-        await this.env.DB.prepare(
-          "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ?",
+        const result = await this.env.DB.prepare(
+          "UPDATE subscriptions SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'trialing'",
         )
           .bind(now, subscriptionId)
           .run();
+        if (Number((result as any)?.meta?.changes || 0) === 0) {
+          console.log(
+            `[TrialEndWorkflow] Skipped expiry (no provider key): subscription=${subscriptionId} is no longer trialing`,
+          );
+          return;
+        }
         console.log(
           `[TrialEndWorkflow] Expired (no provider key): subscription=${subscriptionId}`,
         );
@@ -374,15 +386,15 @@ export class TrialEndWorkflow extends WorkflowEntrypoint<
         const metadata = parseMetadata(row?.metadata);
 
         return {
-          status: metadata.trial_conversion_charge_status,
-          reference: metadata.trial_conversion_charge_reference,
+          status: (metadata as Record<string, unknown>).trial_conversion_charge_status as string | undefined,
+          reference: (metadata as Record<string, unknown>).trial_conversion_charge_reference as string | undefined,
         };
       },
     );
 
     if (
-      existingChargeState.status === "succeeded" &&
-      existingChargeState.reference === chargeReference
+      existingChargeState?.status === "succeeded" &&
+      existingChargeState?.reference === chargeReference
     ) {
       chargeSucceeded = true;
       console.log(

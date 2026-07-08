@@ -1,5 +1,11 @@
 # owosk
 
+## 0.4.7
+
+### Patch Changes
+
+- [#193](https://github.com/Abdulmumin1/owostack/pull/193) [`eded5b0`](https://github.com/Abdulmumin1/owostack/commit/eded5b026241261bb73bba9edc42bb28274f034b) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Fix CLI catalog diffs so provider, metadata, and feature-definition changes are detected before sync, and fail closed when credit catalog fetches fail.
+
 ## 0.4.6
 
 ### Patch Changes
