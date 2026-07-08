@@ -41,8 +41,9 @@ function parsePricingTiers(raw: unknown): PricingTier[] | null {
 }
 
 /**
- * Check if a customer has a stored payment method (card on file or provider-managed).
- * Queries the payment_methods table — works for all providers.
+ * Check if a customer has a chargeable payment method.
+ * Overage collection loads the valid default payment method, so the guard must
+ * require the same durable billing precondition before approving paid usage.
  */
 export async function hasPaymentMethod(
   db: any,
@@ -53,14 +54,27 @@ export async function hasPaymentMethod(
       where: and(
         eq(schema.paymentMethods.customerId, customerId),
         eq(schema.paymentMethods.isValid, true),
+        eq(schema.paymentMethods.isDefault, true),
       ),
     });
     return !!paymentMethod;
   }
 
+  if (typeof (db as any).prepare === "function") {
+    const paymentMethod = await (db as D1Database)
+      .prepare(
+        `SELECT 1 FROM payment_methods
+         WHERE customer_id = ? AND is_valid = 1 AND is_default = 1
+         LIMIT 1`,
+      )
+      .bind(customerId)
+      .first();
+    return !!paymentMethod;
+  }
+
   const result = await (db as any).run(
     sql`SELECT 1 FROM payment_methods
-        WHERE customer_id = ${customerId} AND is_valid = 1
+        WHERE customer_id = ${customerId} AND is_valid = 1 AND is_default = 1
         LIMIT 1`,
   );
   return !!result?.results?.[0];
