@@ -882,8 +882,9 @@ async function handleCreditPurchase(
   }
 
   // Claim the provider payment reference before granting credits. The unique
-  // index on credit_purchases.payment_reference makes this safe across
-  // concurrent duplicate webhook deliveries; exactly one delivery gets to top up.
+  // index on credit_purchases.payment_reference makes the reference claim
+  // durable, while status/appliedAt lets retries finish a claimed-but-unapplied
+  // purchase without double-applying credits.
   const purchaseId = crypto.randomUUID();
   const purchaseInsert = await (db as any)
     .insert((schema as any).creditPurchases)
@@ -898,31 +899,91 @@ async function handleCreditPurchase(
       currency: event.payment?.currency || "USD",
       paymentReference: reference,
       providerId: event.provider,
+      status: "pending",
+      appliedAt: null,
       metadata: event.raw,
     })
     .onConflictDoNothing({
       target: (schema as any).creditPurchases.paymentReference,
     })
-    .returning({ id: (schema as any).creditPurchases.id });
+    .returning({
+      id: (schema as any).creditPurchases.id,
+      status: (schema as any).creditPurchases.status,
+      customerId: (schema as any).creditPurchases.customerId,
+      creditSystemId: (schema as any).creditPurchases.creditSystemId,
+      credits: (schema as any).creditPurchases.credits,
+    });
 
-  if (!purchaseInsert[0]) {
+  let purchase = purchaseInsert[0] as
+    | { id: string; status: string; customerId?: string; creditSystemId?: string | null; credits?: number }
+    | undefined;
+  if (!purchase) {
+    purchase = await (db as any).query.creditPurchases.findFirst({
+      where: eq((schema as any).creditPurchases.paymentReference, reference),
+      columns: {
+        id: true,
+        status: true,
+        customerId: true,
+        creditSystemId: true,
+        credits: true,
+      },
+    });
+  }
+
+  if (!purchase) {
+    throw new Error(
+      `[WEBHOOK] Credit purchase claim disappeared after reference claim: ref=${reference}`,
+    );
+  }
+
+  if (purchase?.status === "completed") {
     console.log(
       `[WEBHOOK] Credit purchase already processed: ref=${reference}, skipping`,
     );
     return;
   }
 
-  // Atomic upsert into credit_system_balances (uses UNIQUE index)
-  await chargeSuccessDependencies.topUpScopedBalance(
+  await applyCreditPurchaseBalance(
     db,
-    dbCustomer.id,
-    creditSystemId,
-    creditsAmount,
+    purchase.id,
+    purchase.customerId ?? dbCustomer.id,
+    purchase.creditSystemId ?? creditSystemId,
+    purchase.credits ?? creditsAmount,
   );
 
   console.log(
     `[WEBHOOK] Credit purchase: customer=${dbCustomer.id}, credits=${creditsAmount}, qty=${resolvedQuantity}, pack=${creditPackId || "manual"}, system=${creditSystemId}`,
   );
+}
+
+async function applyCreditPurchaseBalance(
+  db: any,
+  purchaseId: string,
+  customerId: string,
+  creditSystemId: string,
+  amount: number,
+): Promise<void> {
+  const now = Date.now();
+
+  await (db as any).run(
+    sql`INSERT INTO credit_balance_ledger (id, purchase_id, customer_id, credit_system_id, amount, created_at)
+        VALUES (${crypto.randomUUID()}, ${purchaseId}, ${customerId}, ${creditSystemId}, ${amount}, ${now})
+        ON CONFLICT (purchase_id) DO NOTHING`,
+  );
+
+  await (db as any).run(
+    sql`INSERT INTO credit_system_balances (id, customer_id, credit_system_id, balance, updated_at)
+        SELECT ${crypto.randomUUID()}, ${customerId}, ${creditSystemId}, COALESCE(SUM(amount), 0), ${now}
+        FROM credit_balance_ledger
+        WHERE customer_id = ${customerId} AND credit_system_id = ${creditSystemId}
+        ON CONFLICT (customer_id, credit_system_id)
+        DO UPDATE SET balance = excluded.balance, updated_at = ${now}`,
+  );
+
+  await (db as any)
+    .update((schema as any).creditPurchases)
+    .set({ status: "completed", appliedAt: now })
+    .where(eq((schema as any).creditPurchases.id, purchaseId));
 }
 
 async function handleOneTimePurchase(

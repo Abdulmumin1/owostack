@@ -622,6 +622,11 @@ export class BillingService {
           existingItemKeys.add(itemKey);
         }
 
+      }
+    };
+
+    const markInvoiceUsage = async () => {
+      for (const f of unbilled.features) {
         const ledgerMarked = await this.deps.markUsageInvoiced(
           {
             usageLedger: this.opts?.usageLedger,
@@ -651,6 +656,38 @@ export class BillingService {
           );
         }
       }
+    };
+
+    const voidInvoiceAfterLedgerFailure = async (
+      cause: unknown,
+      invoiceMetadata: Record<string, unknown>,
+    ) => {
+      const releasedUsageRecords = await this.deps.releaseUsageInvoice(
+        {
+          usageLedger: this.opts?.usageLedger,
+          organizationId,
+        },
+        invoiceId,
+      );
+
+      if (releasedUsageRecords === null) {
+        throw cause;
+      }
+
+      await this.db
+        .update(schema.invoices)
+        .set({
+          status: "void",
+          amountDue: 0,
+          updatedAt: Date.now(),
+          metadata: {
+            ...invoiceMetadata,
+            sourceTrigger: options.sourceTrigger,
+            voidedReason: "usage_ledger_mark_failed",
+            releasedUsageRecords,
+          },
+        })
+        .where(eq(schema.invoices.id, invoiceId));
     };
 
     try {
@@ -694,6 +731,18 @@ export class BillingService {
       throw new Error(
         `[billing] Invoice ${invoiceId} disappeared after creation`,
       );
+    }
+
+    try {
+      await markInvoiceUsage();
+    } catch (error) {
+      await voidInvoiceAfterLedgerFailure(
+        error,
+        typeof finalInvoice.metadata === "object" && finalInvoice.metadata
+          ? (finalInvoice.metadata as Record<string, unknown>)
+          : {},
+      );
+      throw error;
     }
 
     const featureSlugById = new Map(
