@@ -474,6 +474,8 @@ export const creditPurchases = sqliteTable(
     currency: text("currency").notNull().default("NGN"),
     paymentReference: text("payment_reference"),
     providerId: text("provider_id"),
+    status: text("status").notNull().default("pending"),
+    appliedAt: integer("applied_at"),
     metadata: text("metadata", { mode: "json" }).$type<
       Record<string, unknown>
     >(),
@@ -486,6 +488,33 @@ export const creditPurchases = sqliteTable(
     index("credit_purchases_pack_idx").on(table.creditPackId),
     uniqueIndex("credit_purchases_payment_reference_uniq_idx").on(
       table.paymentReference,
+    ),
+  ],
+);
+
+export const creditBalanceLedger = sqliteTable(
+  "credit_balance_ledger",
+  {
+    id: text("id").primaryKey(),
+    purchaseId: text("purchase_id")
+      .notNull()
+      .references(() => creditPurchases.id, { onDelete: "cascade" }),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    creditSystemId: text("credit_system_id")
+      .notNull()
+      .references(() => creditSystems.id, { onDelete: "cascade" }),
+    amount: integer("amount").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("credit_balance_ledger_purchase_uniq").on(table.purchaseId),
+    index("credit_balance_ledger_balance_idx").on(
+      table.customerId,
+      table.creditSystemId,
     ),
   ],
 );

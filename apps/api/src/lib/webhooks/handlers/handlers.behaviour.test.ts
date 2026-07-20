@@ -26,14 +26,36 @@ interface MockDb {
     customerOverageBlocks: { findFirst: Mock };
     credits: { findFirst: Mock };
     creditPurchases: { findFirst: Mock };
+    paymentAttempts: { findFirst: Mock };
   };
   insert: Mock;
   update: Mock;
   delete: Mock;
+  run: Mock;
 }
 
 function createDbMock() {
-  const insertValuesMock = vi.fn(async () => []);
+  const returningMock = vi.fn(async () => [
+    {
+      id: "purchase_inserted_1",
+      status: "pending",
+      customerId: "cus_1",
+      creditSystemId: "cs_1",
+      credits: 60,
+    },
+  ]);
+  const onConflictDoNothingMock = vi.fn(() => {
+    const promise = Promise.resolve([]);
+    return Object.assign(promise, {
+      returning: returningMock,
+    });
+  });
+  const insertValuesMock = vi.fn(() => {
+    const promise = Promise.resolve([]);
+    return Object.assign(promise, {
+      onConflictDoNothing: onConflictDoNothingMock,
+    });
+  });
   const insertMock = vi.fn(() => ({
     values: insertValuesMock,
   }));
@@ -52,6 +74,7 @@ function createDbMock() {
       returning: deleteWhereMock,
     })),
   }));
+  const runMock = vi.fn(async () => ({ success: true }));
 
   const db: MockDb = {
     query: {
@@ -62,15 +85,18 @@ function createDbMock() {
       customerOverageBlocks: { findFirst: vi.fn() },
       credits: { findFirst: vi.fn() },
       creditPurchases: { findFirst: vi.fn() },
+      paymentAttempts: { findFirst: vi.fn() },
     },
     insert: insertMock,
     update: updateMock,
     delete: deleteMock,
+    run: runMock,
   };
 
   return {
     db,
     insertValuesMock,
+    returningMock,
     updateSetMock,
     deleteMock,
   };
@@ -164,7 +190,7 @@ describe("Webhook handlers behavior", () => {
   });
 
   it("charge.success credit purchase recalculates quantity from checkout line items and tops up scoped balance", async () => {
-    const { db, insertValuesMock } = createDbMock();
+    const { db, insertValuesMock, updateSetMock } = createDbMock();
 
     db.query.customers.findFirst.mockResolvedValue({
       id: "cus_1",
@@ -201,11 +227,9 @@ describe("Webhook handlers behavior", () => {
 
     await handleChargeSuccess(makeCtx(db, event));
 
-    expect(topUpScopedBalanceMock).toHaveBeenCalledWith(
-      db,
-      "cus_1",
-      "cs_1",
-      60,
+    expect(db.run).toHaveBeenCalledTimes(2);
+    expect(updateSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "completed" }),
     );
 
     const purchaseInsert = insertValuesMock.mock.calls[0]?.[0];
@@ -215,14 +239,21 @@ describe("Webhook handlers behavior", () => {
   });
 
   it("charge.success credit purchase is idempotent when payment reference already processed", async () => {
-    const { db, insertValuesMock } = createDbMock();
+    const { db, insertValuesMock, returningMock } = createDbMock();
 
     db.query.customers.findFirst.mockResolvedValue({
       id: "cus_1",
       email: "customer@example.com",
       organizationId: "org_1",
     });
-    db.query.creditPurchases.findFirst.mockResolvedValue({ id: "cp_existing" });
+    returningMock.mockResolvedValueOnce([]);
+    db.query.creditPurchases.findFirst.mockResolvedValue({
+      id: "cp_existing",
+      status: "completed",
+      customerId: "cus_1",
+      creditSystemId: "cs_1",
+      credits: 20,
+    });
 
     const event = {
       type: "charge.success",
@@ -248,7 +279,8 @@ describe("Webhook handlers behavior", () => {
     await handleChargeSuccess(makeCtx(db, event));
 
     expect(topUpScopedBalanceMock).not.toHaveBeenCalled();
-    expect(insertValuesMock).not.toHaveBeenCalled();
+    expect(insertValuesMock).toHaveBeenCalledTimes(1);
+    expect(db.run).not.toHaveBeenCalled();
   });
 
   it("charge.success skips processing when customer email is ambiguous", async () => {
@@ -1070,6 +1102,22 @@ describe("Webhook handlers behavior", () => {
       email: "partial@example.com",
       organizationId: "org_1",
     });
+    db.query.paymentAttempts.findFirst.mockResolvedValue({
+      id: "pay_partial_1",
+      invoice: {
+        id: "inv_1",
+        organizationId: "org_1",
+        customerId: "cus_3",
+        subscriptionId: "sub_partial",
+      },
+    });
+    db.query.subscriptions.findFirst.mockResolvedValue({
+      id: "sub_partial",
+      planId: "plan_1",
+      status: "active",
+      metadata: { existing: true },
+      plan: { price: 10000, currency: "USD" },
+    });
     db.query.subscriptions.findMany.mockResolvedValue([
       {
         id: "sub_partial",
@@ -1318,6 +1366,25 @@ describe("Webhook handlers behavior", () => {
       id: "cus_4",
       email: "full@example.com",
       organizationId: "org_1",
+    });
+    db.query.paymentAttempts.findFirst.mockResolvedValue({
+      id: "pay_full_1",
+      invoice: {
+        id: "inv_1",
+        organizationId: "org_1",
+        customerId: "cus_4",
+        subscriptionId: "sub_full",
+      },
+    });
+    db.query.subscriptions.findFirst.mockResolvedValue({
+      id: "sub_full",
+      customerId: "cus_4",
+      planId: "plan_1",
+      status: "active",
+      providerSubscriptionCode: "sub_provider_live",
+      paystackSubscriptionCode: null,
+      metadata: {},
+      plan: { price: 10000, currency: "USD" },
     });
     db.query.subscriptions.findMany.mockResolvedValue([
       {
