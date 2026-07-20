@@ -46,6 +46,13 @@ export const customers = sqliteTable(
     index("customers_org_idx").on(table.organizationId),
     index("customers_email_idx").on(table.email),
     index("customers_external_idx").on(table.externalId),
+    uniqueIndex("customers_org_email_uniq").on(
+      table.organizationId,
+      table.email,
+    ),
+    uniqueIndex("customers_org_external_uniq")
+      .on(table.organizationId, table.externalId)
+      .where(sql`${table.externalId} is not null`),
   ],
 );
 
