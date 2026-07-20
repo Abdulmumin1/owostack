@@ -43,6 +43,10 @@ const MIGRATION_FILES = [
     import.meta.url,
   ),
   new URL(
+    "../../../../../packages/db/migrations/0011_customer_alias_uniqueness.sql",
+    import.meta.url,
+  ),
+  new URL(
     "../../../../../packages/db/migrations/0011_credit_balance_ledger.sql",
     import.meta.url,
   ),
