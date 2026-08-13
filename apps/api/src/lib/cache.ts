@@ -15,17 +15,46 @@ type CacheKey =
   | `org:${string}:feature:${string}`
   | `org:${string}:subscriptions:${string}`
   | `org:${string}:planFeatures:${string}`
-  | `org:${string}:manualEntitlement:${string}`;
+  | `org:${string}:manualEntitlement:${string}`
+  | `org:${string}:catalog:${string}:feature:${string}`
+  | `org:${string}:catalog:${string}:planFeatures:${string}`
+  | `org:${string}:catalogVersion`;
 
 export class EntitlementCache {
-  constructor(private kv: KVNamespace) {}
+  constructor(
+    private kv: KVNamespace,
+    private readonly catalogVersion: string | null = null,
+  ) {}
 
   private normalizeTtl(ttl: number): number {
     return Math.max(KV_MIN_TTL, Math.ceil(ttl));
   }
 
   private key(type: string, orgId: string, id: string): CacheKey {
+    if (
+      this.catalogVersion &&
+      (type === "feature" || type === "planFeatures")
+    ) {
+      return `org:${orgId}:catalog:${this.catalogVersion}:${type}:${id}` as CacheKey;
+    }
+
     return `org:${orgId}:${type}:${id}` as CacheKey;
+  }
+
+  withCatalogVersion(catalogVersion: string): EntitlementCache {
+    return new EntitlementCache(this.kv, catalogVersion);
+  }
+
+  async getCatalogVersion(orgId: string): Promise<string | null> {
+    return await this.kv.get(`org:${orgId}:catalogVersion`);
+  }
+
+  async setCatalogVersion(orgId: string, version: string): Promise<void> {
+    await this.kv.put(`org:${orgId}:catalogVersion`, version);
+  }
+
+  async invalidateCatalog(orgId: string): Promise<void> {
+    await this.setCatalogVersion(orgId, crypto.randomUUID());
   }
 
   // ==========================================================================

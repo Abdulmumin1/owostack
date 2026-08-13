@@ -421,6 +421,17 @@ function scheduleCacheOp(c: any, op: Promise<unknown>, label: string) {
   );
 }
 
+async function getCatalogScopedCache(
+  kv: KVNamespace | undefined,
+  organizationId: string,
+): Promise<EntitlementCache | null> {
+  if (!kv) return null;
+
+  const cache = new EntitlementCache(kv);
+  const catalogVersion = await cache.getCatalogVersion(organizationId);
+  return catalogVersion ? cache.withCatalogVersion(catalogVersion) : cache;
+}
+
 async function persistUsageRecord(
   c: any,
   db: any,
@@ -1162,7 +1173,6 @@ app.openapi(
     } = c.req.valid("json");
     const db = c.get("db");
     const organizationId = c.get("organizationId");
-    const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
 
     if (!organizationId) {
       return c.json(
@@ -1170,6 +1180,7 @@ app.openapi(
         500,
       );
     }
+    const cache = await getCatalogScopedCache(c.env.CACHE, organizationId);
 
     // 1 & 2. Resolve Customer and Feature in parallel
     let customer;
@@ -2814,7 +2825,6 @@ app.openapi(
     } = c.req.valid("json");
     const db = c.get("db");
     const organizationId = c.get("organizationId");
-    const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
     const now = Date.now();
 
     if (!organizationId) {
@@ -2823,6 +2833,7 @@ app.openapi(
         500,
       );
     }
+    const cache = await getCatalogScopedCache(c.env.CACHE, organizationId);
 
     // 1 & 2. Resolve Customer and Feature in parallel
     let trackCustomer;

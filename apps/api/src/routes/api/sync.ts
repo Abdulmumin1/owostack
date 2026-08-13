@@ -13,6 +13,7 @@ import { getMinimumChargeAmount } from "../../lib/provider-minimums";
 import { sanitizeOneTimePlanFlags } from "../../lib/plans";
 import { syncProviderPlan } from "../../lib/plan-provider-sync";
 import { syncCreditPackProduct } from "../../lib/credit-pack-provider-sync";
+import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 import {
@@ -936,6 +937,11 @@ app.openapi(syncCatalogRoute, async (c) => {
       );
       result.plans.created.push(planDef.slug);
     }
+  }
+
+  if (c.env.CACHE) {
+    const cache = new EntitlementCache(c.env.CACHE);
+    await cache.invalidateCatalog(organizationId);
   }
 
   return c.json(result, 200);
