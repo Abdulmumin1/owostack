@@ -139,10 +139,7 @@ app.patch("/:id", async (c) => {
     // Invalidate cache
     if (c.env.CACHE) {
       const cache = new EntitlementCache(c.env.CACHE);
-      await Promise.all([
-        cache.invalidateFeature(feature.organizationId, feature.id),
-        cache.invalidateFeature(feature.organizationId, feature.slug),
-      ]);
+      await cache.invalidateCatalog(feature.organizationId);
     }
 
     return c.json({ success: true, data: feature });
@@ -167,10 +164,7 @@ app.delete("/:id", async (c) => {
     // Invalidate cache
     if (feature && c.env.CACHE) {
       const cache = new EntitlementCache(c.env.CACHE);
-      await Promise.all([
-        cache.invalidateFeature(feature.organizationId, feature.id),
-        cache.invalidateFeature(feature.organizationId, feature.slug),
-      ]);
+      await cache.invalidateCatalog(feature.organizationId);
     }
 
     return c.json({ success: true });

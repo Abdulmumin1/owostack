@@ -4,6 +4,7 @@ import { schema } from "@owostack/db";
 import syncRoute, {
   resetSyncRouteDependencies,
 } from "../../../src/routes/api/sync";
+import entitlementsRoute from "../../../src/routes/api/entitlements";
 import {
   planProviderSyncDependencies,
   resetPlanProviderSyncDependencies,
@@ -25,6 +26,29 @@ import {
   SimulatedCatalogProviderAdapter,
 } from "../helpers/catalog-runtime";
 import { insertOrganization } from "../helpers/workflow-runtime";
+import {
+  insertCustomer,
+  insertPlan,
+  insertSubscription,
+} from "../helpers/workflow-runtime";
+import { insertFeature, insertPlanFeature } from "../helpers/overage-runtime";
+
+class StatefulRuntimeKv {
+  private readonly entries = new Map<string, string>();
+
+  async get(key: string, type?: "json"): Promise<unknown> {
+    const value = this.entries.get(key) ?? null;
+    return type === "json" && value ? JSON.parse(value) : value;
+  }
+
+  async put(key: string, value: string): Promise<void> {
+    this.entries.set(key, value);
+  }
+
+  async delete(key: string): Promise<void> {
+    this.entries.delete(key);
+  }
+}
 
 describe("Sync route runtime integration", () => {
   let businessDb: ReturnType<typeof createRuntimeBusinessDb>;
@@ -447,5 +471,233 @@ describe("Sync route runtime integration", () => {
         description: undefined,
       },
     ]);
+  });
+
+  it("does not reuse cached entitlements after sync removes a feature or lowers its limit", async () => {
+    const cache = new StatefulRuntimeKv();
+    const cacheEnv = {
+      ...RUNTIME_ROUTE_ENV,
+      CACHE: cache as unknown as KVNamespace,
+    };
+    const entitlementsApp = createRouteTestApp(entitlementsRoute, {
+      db: businessDb.db,
+      authDb: businessDb.db,
+    });
+    const now = Date.now();
+
+    await insertCustomer(businessDb.d1, {
+      id: "cust_catalog_cache",
+      organizationId: "org_123",
+    });
+    await insertPlan(businessDb.d1, {
+      id: "plan_catalog_cache",
+      organizationId: "org_123",
+      slug: "catalog-cache",
+      name: "Catalog Cache",
+      price: 0,
+      type: "free",
+      source: "sdk",
+    });
+    await insertFeature(businessDb.d1, {
+      id: "feature_catalog_boolean",
+      organizationId: "org_123",
+      slug: "priority-support",
+      name: "Priority Support",
+      type: "boolean",
+      source: "sdk",
+    });
+    await insertFeature(businessDb.d1, {
+      id: "feature_catalog_metered",
+      organizationId: "org_123",
+      slug: "api-calls",
+      name: "API Calls",
+      type: "metered",
+      source: "sdk",
+    });
+    await insertPlanFeature(businessDb.d1, {
+      id: "pf_catalog_boolean",
+      planId: "plan_catalog_cache",
+      featureId: "feature_catalog_boolean",
+    });
+    await insertPlanFeature(businessDb.d1, {
+      id: "pf_catalog_metered",
+      planId: "plan_catalog_cache",
+      featureId: "feature_catalog_metered",
+      limitValue: 10,
+      overage: "block",
+    });
+    await insertSubscription(businessDb.d1, {
+      id: "sub_catalog_cache",
+      customerId: "cust_catalog_cache",
+      planId: "plan_catalog_cache",
+      status: "active",
+      currentPeriodStart: now,
+      currentPeriodEnd: now + 30 * 24 * 60 * 60 * 1000,
+    });
+
+    const initialSync = await app.request(
+      "/",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          features: [
+            {
+              slug: "priority-support",
+              type: "boolean",
+              name: "Priority Support",
+            },
+            { slug: "api-calls", type: "metered", name: "API Calls" },
+          ],
+          plans: [
+            {
+              slug: "catalog-cache",
+              name: "Catalog Cache",
+              price: 0,
+              currency: "USD",
+              interval: "monthly",
+              features: [
+                { slug: "priority-support", enabled: true },
+                {
+                  slug: "api-calls",
+                  enabled: true,
+                  limit: 10,
+                  overage: "block",
+                },
+              ],
+            },
+          ],
+        }),
+      },
+      cacheEnv,
+    );
+    expect(initialSync.status).toBe(200);
+
+    const initialBooleanCheck = await entitlementsApp.request(
+      "/check",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customer: "cust_catalog_cache",
+          feature: "priority-support",
+        }),
+      },
+      cacheEnv,
+    );
+    expect(await initialBooleanCheck.json()).toMatchObject({
+      allowed: true,
+      code: "access_granted",
+    });
+
+    const initialMeteredCheck = await entitlementsApp.request(
+      "/check",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customer: "cust_catalog_cache",
+          feature: "api-calls",
+          value: 6,
+        }),
+      },
+      cacheEnv,
+    );
+    expect(await initialMeteredCheck.json()).toMatchObject({
+      allowed: true,
+      limit: 10,
+    });
+
+    const resync = await app.request(
+      "/",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          features: [
+            {
+              slug: "priority-support",
+              type: "boolean",
+              name: "Priority Support",
+            },
+            { slug: "api-calls", type: "metered", name: "API Calls" },
+          ],
+          plans: [
+            {
+              slug: "catalog-cache",
+              name: "Catalog Cache",
+              price: 0,
+              currency: "USD",
+              interval: "monthly",
+              features: [
+                { slug: "priority-support", enabled: false },
+                {
+                  slug: "api-calls",
+                  enabled: true,
+                  limit: 5,
+                  overage: "block",
+                },
+              ],
+            },
+          ],
+        }),
+      },
+      cacheEnv,
+    );
+    expect(resync.status).toBe(200);
+
+    const removedFeatureCheck = await entitlementsApp.request(
+      "/check",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customer: "cust_catalog_cache",
+          feature: "priority-support",
+        }),
+      },
+      cacheEnv,
+    );
+    expect(await removedFeatureCheck.json()).toMatchObject({
+      allowed: false,
+      code: "feature_not_in_plan",
+    });
+
+    const loweredLimitCheck = await entitlementsApp.request(
+      "/check",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customer: "cust_catalog_cache",
+          feature: "api-calls",
+          value: 6,
+        }),
+      },
+      cacheEnv,
+    );
+    expect(await loweredLimitCheck.json()).toMatchObject({
+      allowed: false,
+      code: "limit_exceeded",
+      limit: 5,
+    });
   });
 });
