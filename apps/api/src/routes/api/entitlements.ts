@@ -35,6 +35,10 @@ import {
   resolveUsagePlanScope,
   shouldResetUsageOnPlanEnable,
 } from "../../lib/usage-scope";
+import {
+  MAX_TRIAL_DURATION_MS,
+  selectAccessGrantingPlanFeature,
+} from "../../lib/customer-access";
 import { isCustomerResolutionConflictError } from "../../lib/customer-resolution";
 import {
   applyCustomerFeatureBillingOverride,
@@ -81,8 +85,6 @@ const jsonContentTypePattern = /^application\/([a-z-]+\+)?json\b/i;
 function getEntitlementsDependencies(c: any): EntitlementsDependencies {
   return c.get?.("entitlementsDeps") ?? defaultDependencies;
 }
-
-const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
 
 function getUsageModel(
   planFeature: any,
@@ -1520,15 +1522,14 @@ app.openapi(
       };
     } else {
       // No manual override, check plan features
-      for (const pf of planFeatures) {
-        const sub = subscriptions.find(
-          (s: { planId: string }) => s.planId === pf.planId,
-        );
-        if (sub) {
-          accessGrantingSubscription = sub;
-          accessGrantingPlanFeature = pf;
-          break;
-        }
+      const accessGrant = selectAccessGrantingPlanFeature(
+        subscriptions,
+        planFeatures,
+        now,
+      );
+      if (accessGrant) {
+        accessGrantingSubscription = accessGrant.subscription;
+        accessGrantingPlanFeature = accessGrant.planFeature;
       }
 
       // Credit system fallback: feature may belong to a credit system pool
@@ -3165,15 +3166,14 @@ app.openapi(
         usageModel: "included",
       } as (typeof planFeatures)[number];
     } else {
-      for (const pf of planFeatures) {
-        const sub = subscriptions.find(
-          (s: { planId: string }) => s.planId === pf.planId,
-        );
-        if (sub) {
-          accessGrantingSubscription = sub;
-          accessGrantingPlanFeature = pf;
-          break;
-        }
+      const accessGrant = selectAccessGrantingPlanFeature(
+        subscriptions,
+        planFeatures,
+        trackNow,
+      );
+      if (accessGrant) {
+        accessGrantingSubscription = accessGrant.subscription;
+        accessGrantingPlanFeature = accessGrant.planFeature;
       }
 
       // Credit system fallback

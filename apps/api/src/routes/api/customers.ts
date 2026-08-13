@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and, or, count } from "drizzle-orm";
+import { eq, and, or, count, desc, inArray, sql } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
 import { resolveOrCreateCustomer } from "../../lib/customers";
@@ -13,6 +13,7 @@ import {
   setCustomerOverageLimitConfig,
 } from "../../lib/customer-billing-config";
 import { buildCustomerUsageHistory } from "../../lib/customer-usage-history";
+import { selectAccessGrantingPlanFeature } from "../../lib/customer-access";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 import {
@@ -485,6 +486,59 @@ async function resolveFeature(
   });
 }
 
+async function resolveEntityLimit(
+  db: any,
+  customerId: string,
+  featureId: string,
+): Promise<number | null | undefined> {
+  const subscriptions = await db.query.subscriptions.findMany({
+    where: and(
+      eq(schema.subscriptions.customerId, customerId),
+      inArray(schema.subscriptions.status, [
+        "active",
+        "trialing",
+        "pending_cancel",
+      ]),
+    ),
+    with: { plan: true },
+    orderBy: [
+      desc(schema.subscriptions.currentPeriodEnd),
+      desc(schema.subscriptions.currentPeriodStart),
+      desc(schema.subscriptions.id),
+    ],
+  });
+  const planIds = [
+    ...new Set(subscriptions.map((subscription: any) => subscription.planId)),
+  ];
+  if (planIds.length === 0) return undefined;
+
+  const planFeatures: Array<{
+    id: string;
+    planId: string;
+    limitValue: number | null;
+    trialLimitValue: number | null;
+  }> = await db.query.planFeatures.findMany({
+    where: and(
+      inArray(schema.planFeatures.planId, planIds),
+      eq(schema.planFeatures.featureId, featureId),
+    ),
+    orderBy: [desc(schema.planFeatures.planId), desc(schema.planFeatures.id)],
+  });
+  const accessGrant = selectAccessGrantingPlanFeature(
+    subscriptions.map((subscription: any) => ({
+      ...subscription,
+      planType: subscription.plan?.type,
+    })),
+    planFeatures,
+  );
+  if (!accessGrant) return undefined;
+
+  return accessGrant.subscription.status === "trialing" &&
+    accessGrant.planFeature.trialLimitValue !== null
+    ? accessGrant.planFeature.trialLimitValue
+    : accessGrant.planFeature.limitValue;
+}
+
 async function buildCustomerResponse(
   db: any,
   organizationId: string,
@@ -926,29 +980,16 @@ export function createApiCustomersRoute(
         return c.json({ success: false, error: "Feature not found" }, 404);
       }
 
-      // Check against limit from active subscription
-      const subscription = await db.query.subscriptions.findFirst({
-        where: and(
-          eq(schema.subscriptions.customerId, customer.id),
-          eq(schema.subscriptions.status, "active"),
-        ),
-        with: {
-          plan: true,
-        },
-      });
-
-      let limit: number | null = null;
-      if (subscription) {
-        const planFeature = await db.query.planFeatures.findFirst({
-          where: and(
-            eq(schema.planFeatures.planId, subscription.planId),
-            eq(schema.planFeatures.featureId, feature.id),
-          ),
-        });
-
-        if (planFeature) {
-          limit = planFeature.limitValue ?? null;
-        }
+      const limit = await resolveEntityLimit(db, customer.id, feature.id);
+      if (limit === undefined) {
+        return c.json(
+          {
+            success: false,
+            error: "Feature is not included in the customer's current plan",
+            code: "feature_not_in_plan",
+          },
+          400,
+        );
       }
 
       // Check for existing entity
@@ -1015,112 +1056,83 @@ export function createApiCustomersRoute(
         }
       }
 
-      // Atomically check count and insert to prevent race conditions
-      // Use a transaction or rely on unique constraint for idempotency
-      let finalCount = 0;
+      const now = Date.now();
+      let insert;
       try {
-        const insertEntityWithLimitCheck = async (executor: any) => {
-          // Count both active and pending_removal entities for billing accuracy
-          // (pending_removal entities are still billed until period end)
-          const entityCount = await executor
-            .select({ count: count() })
-            .from(schema.entities)
-            .where(
-              and(
-                eq(schema.entities.customerId, customer.id),
-                eq(schema.entities.featureId, feature.id),
-                or(
-                  eq(schema.entities.status, "active"),
-                  eq(schema.entities.status, "pending_removal"),
-                ),
-              ),
-            );
-
-          const currentCount = entityCount[0]?.count || 0;
-
-          // Validate limit (if limit is set and we would exceed it)
-          if (limit !== null && currentCount >= limit) {
-            throw new Error(
-              `Limit exceeded: ${currentCount}/${limit} ${featureSlug} used`,
-            );
-          }
-
-          // Create entity (will fail with unique constraint if race condition occurred)
-          await executor.insert(schema.entities).values({
-            id: crypto.randomUUID(),
-            customerId: customer.id,
-            featureId: feature.id,
-            entityId,
-            name: entityName || null,
-            email: entityEmail || null,
-            metadata: entityMetadata || null,
-            status: "active",
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          });
-
-          finalCount = currentCount + 1;
-        };
-
-        try {
-          await db.transaction(async (tx: any) => {
-            await insertEntityWithLimitCheck(tx);
-          });
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          const isD1TransactionUnsupported =
-            message.includes("state.storage.transaction") ||
-            message.includes("BEGIN TRANSACTION") ||
-            message.includes("SAVEPOINT");
-
-          if (!isD1TransactionUnsupported) {
-            throw error;
-          }
-
-          console.warn(
-            "[customers] DB transaction unsupported; adding entity without transaction",
-          );
-          await insertEntityWithLimitCheck(db);
-        }
-      } catch (err: any) {
-        // Check if it's a limit exceeded error we threw
-        if (err.message?.includes("Limit exceeded")) {
-          const match = err.message.match(/(\d+)\/(\d+)/);
-          const current = match ? parseInt(match[1]) : 0;
-          const limitVal = match ? parseInt(match[2]) : null;
-          return c.json(
-            {
-              success: false,
-              error: err.message,
-              code: "limit_exceeded",
-              current: current,
-              limit: limitVal,
-              feature: featureSlug,
-            },
-            400,
-          );
-        }
-
-        if (err.message?.includes("UNIQUE constraint")) {
+        insert = await db.run(
+          sql`INSERT INTO entities (id, customer_id, feature_id, entity_id, name, email, metadata, status, created_at, updated_at)
+              SELECT ${crypto.randomUUID()}, ${customer.id}, ${feature.id}, ${entityId}, ${entityName || null}, ${entityEmail || null}, ${entityMetadata ? JSON.stringify(entityMetadata) : null}, 'active', ${now}, ${now}
+              WHERE ${limit} IS NULL OR (
+                SELECT COUNT(*) FROM entities
+                WHERE customer_id = ${customer.id}
+                  AND feature_id = ${feature.id}
+                  AND status IN ('active', 'pending_removal')
+              ) < ${limit}`,
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes("UNIQUE constraint")
+        ) {
           return c.json(
             { success: false, error: "Entity already exists" },
             409,
           );
         }
-
-        // Re-throw other errors
-        throw err;
+        throw error;
       }
+
+      if ((insert.meta?.changes ?? 0) !== 1) {
+        const entityCount = await db
+          .select({ count: count() })
+          .from(schema.entities)
+          .where(
+            and(
+              eq(schema.entities.customerId, customer.id),
+              eq(schema.entities.featureId, feature.id),
+              or(
+                eq(schema.entities.status, "active"),
+                eq(schema.entities.status, "pending_removal"),
+              ),
+            ),
+          );
+        const currentCount = entityCount[0]?.count || 0;
+        return c.json(
+          {
+            success: false,
+            error: `Limit exceeded: ${currentCount}/${limit} ${featureSlug} used`,
+            code: "limit_exceeded",
+            current: currentCount,
+            limit,
+            feature: featureSlug,
+          },
+          400,
+        );
+      }
+
+      const finalCount = await db
+        .select({ count: count() })
+        .from(schema.entities)
+        .where(
+          and(
+            eq(schema.entities.customerId, customer.id),
+            eq(schema.entities.featureId, feature.id),
+            or(
+              eq(schema.entities.status, "active"),
+              eq(schema.entities.status, "pending_removal"),
+            ),
+          ),
+        );
 
       return c.json(
         {
           success: true,
           entityId,
           featureId: featureSlug,
-          count: finalCount,
+          count: finalCount[0]?.count || 0,
           limit,
-          remaining: limit !== null ? limit - finalCount : null,
+          remaining:
+            limit !== null ? limit - (finalCount[0]?.count || 0) : null,
         },
         200,
       );
