@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and } from "drizzle-orm";
+import { eq, and, exists } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
 import type { Env, Variables } from "../../index";
@@ -131,6 +131,28 @@ app.openapi(generateSubscriptionCheckoutRoute, async (c) => {
       where: and(
         eq(schema.subscriptions.id, id),
         eq(schema.subscriptions.status, "pending"),
+        exists(
+          db
+            .select({ id: schema.customers.id })
+            .from(schema.customers)
+            .where(
+              and(
+                eq(schema.customers.id, schema.subscriptions.customerId),
+                eq(schema.customers.organizationId, keyRecord.organizationId),
+              ),
+            ),
+        ),
+        exists(
+          db
+            .select({ id: schema.plans.id })
+            .from(schema.plans)
+            .where(
+              and(
+                eq(schema.plans.id, schema.subscriptions.planId),
+                eq(schema.plans.organizationId, keyRecord.organizationId),
+              ),
+            ),
+        ),
       ),
       with: {
         plan: true,
