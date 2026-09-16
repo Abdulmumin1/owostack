@@ -160,8 +160,14 @@ const usageHistoryQuerySchema = z
     feature: z.string().optional(),
     groupBy: z.enum(["total", "feature"]).default("total"),
     timezone: z.string().default("UTC"),
-    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
   })
   .refine(
     (value) =>
@@ -486,11 +492,37 @@ async function resolveFeature(
   });
 }
 
+/**
+ * Resolve the seat/entity limit a customer is entitled to for a feature.
+ *
+ * - `number`    -> enforce this limit
+ * - `null`      -> entitled with no limit
+ * - `undefined` -> no current access grant entitles the feature (fail closed)
+ *
+ * A manual entitlement override takes precedence over plan features, matching
+ * how /check and /track resolve access.
+ */
 async function resolveEntityLimit(
   db: any,
   customerId: string,
   featureId: string,
+  now: number = Date.now(),
 ): Promise<number | null | undefined> {
+  const manualEntitlement = await db.query.entitlements.findFirst({
+    where: and(
+      eq(schema.entitlements.customerId, customerId),
+      eq(schema.entitlements.featureId, featureId),
+      eq(schema.entitlements.source, "manual"),
+      or(
+        sql`${schema.entitlements.expiresAt} IS NULL`,
+        sql`${schema.entitlements.expiresAt} > ${now}`,
+      ),
+    ),
+  });
+  if (manualEntitlement) {
+    return manualEntitlement.limitValue ?? null;
+  }
+
   const subscriptions = await db.query.subscriptions.findMany({
     where: and(
       eq(schema.subscriptions.customerId, customerId),
@@ -530,6 +562,7 @@ async function resolveEntityLimit(
       planType: subscription.plan?.type,
     })),
     planFeatures,
+    now,
   );
   if (!accessGrant) return undefined;
 

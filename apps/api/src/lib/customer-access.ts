@@ -186,8 +186,27 @@ export function filterAccessGrantingSubscriptions(
   });
 }
 
+/**
+ * Rows loaded with `with: { plan: true }` carry the plan type on the relation
+ * rather than on a `planType` column. Free plans must be recognised so the
+ * paid-period grace check does not evict them.
+ */
+function resolveSubscriptionPlanType(
+  subscription: CustomerAccessSubscription & {
+    plan?: { type?: unknown } | null;
+  },
+): string | null {
+  if (subscription.planType !== undefined && subscription.planType !== null) {
+    return subscription.planType;
+  }
+  const relationType = subscription.plan?.type;
+  return typeof relationType === "string" ? relationType : null;
+}
+
 export function selectAccessGrantingPlanFeature<
-  Subscription extends CustomerAccessSubscription,
+  Subscription extends CustomerAccessSubscription & {
+    plan?: { type?: unknown } | null;
+  },
   PlanFeature extends { id?: string; planId: string },
 >(
   subscriptions: Subscription[],
@@ -208,7 +227,15 @@ export function selectAccessGrantingPlanFeature<
 
   const validSubscriptions = subscriptions.filter(
     (subscription) =>
-      filterAccessGrantingSubscriptions([subscription], now).length === 1,
+      filterAccessGrantingSubscriptions(
+        [
+          {
+            ...subscription,
+            planType: resolveSubscriptionPlanType(subscription),
+          },
+        ],
+        now,
+      ).length === 1,
   );
   validSubscriptions.sort((left, right) => {
     const endDiff =
@@ -478,7 +505,8 @@ async function resolveMeteredBalance(params: {
             coverageSource: "plan",
             scope: usageLedgerScope,
             legacyPlanScope: legacyUsageLedgerScope,
-            legacyCreatedAtFloor: params.subscription?.currentPeriodStart ?? null,
+            legacyCreatedAtFloor:
+              params.subscription?.currentPeriodStart ?? null,
           },
         );
 

@@ -226,4 +226,80 @@ describe("Customer entity limit runtime integration", () => {
     ]);
     expect(entityCount?.count).toBe(1);
   });
+  it("honours a manual entitlement override when no plan feature grants the feature", async () => {
+    const now = Date.now();
+    await seedEntityFeature();
+    await insertPlan(businessDb.d1, {
+      id: "plan_without_members",
+      organizationId: "org_123",
+      name: "No Members",
+      slug: "no-members",
+    });
+    await insertSubscription(businessDb.d1, {
+      id: "sub_without_members",
+      customerId: "cust_1",
+      planId: "plan_without_members",
+      status: "active",
+      currentPeriodStart: now - 60_000,
+      currentPeriodEnd: now + 60_000,
+    });
+    await businessDb.d1
+      .prepare(
+        `INSERT INTO entitlements
+         (id, customer_id, feature_id, limit_value, reset_interval, source, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        "ent_manual_members",
+        "cust_1",
+        "feature_members",
+        2,
+        "monthly",
+        "manual",
+        now,
+        now,
+      )
+      .run();
+
+    expect((await addEntity("member_1")).status).toBe(200);
+    expect((await addEntity("member_2")).status).toBe(200);
+    const rejected = await addEntity("member_3");
+
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toMatchObject({
+      code: "limit_exceeded",
+      current: 2,
+      limit: 2,
+    });
+  });
+
+  it("ignores expired manual overrides and fails closed", async () => {
+    const now = Date.now();
+    await seedEntityFeature();
+    await businessDb.d1
+      .prepare(
+        `INSERT INTO entitlements
+         (id, customer_id, feature_id, limit_value, reset_interval, source, expires_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        "ent_manual_expired",
+        "cust_1",
+        "feature_members",
+        5,
+        "monthly",
+        "manual",
+        now - 1_000,
+        now,
+        now,
+      )
+      .run();
+
+    const response = await addEntity("member_1");
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: "feature_not_in_plan",
+    });
+  });
 });
