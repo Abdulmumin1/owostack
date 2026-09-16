@@ -35,6 +35,10 @@ import {
   resolveUsagePlanScope,
   shouldResetUsageOnPlanEnable,
 } from "../../lib/usage-scope";
+import {
+  MAX_TRIAL_DURATION_MS,
+  selectAccessGrantingPlanFeature,
+} from "../../lib/customer-access";
 import { isCustomerResolutionConflictError } from "../../lib/customer-resolution";
 import {
   applyCustomerFeatureBillingOverride,
@@ -81,8 +85,6 @@ const jsonContentTypePattern = /^application\/([a-z-]+\+)?json\b/i;
 function getEntitlementsDependencies(c: any): EntitlementsDependencies {
   return c.get?.("entitlementsDeps") ?? defaultDependencies;
 }
-
-const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
 
 function getUsageModel(
   planFeature: any,
@@ -254,7 +256,11 @@ function computeTotalAvailableBalance(
     return null;
   }
 
-  return Math.max(0, planBalance) + Math.max(0, bonusBalance) + Math.max(0, addonBalance);
+  return (
+    Math.max(0, planBalance) +
+    Math.max(0, bonusBalance) +
+    Math.max(0, addonBalance)
+  );
 }
 
 function computeRemainingAddonBalance(
@@ -263,7 +269,10 @@ function computeRemainingAddonBalance(
   reportedRemaining?: number,
 ): number {
   const expectedRemaining = Math.max(0, startingBalance - deductedAmount);
-  if (typeof reportedRemaining !== "number" || !Number.isFinite(reportedRemaining)) {
+  if (
+    typeof reportedRemaining !== "number" ||
+    !Number.isFinite(reportedRemaining)
+  ) {
     return expectedRemaining;
   }
 
@@ -419,6 +428,17 @@ function scheduleCacheOp(c: any, op: Promise<unknown>, label: string) {
       console.warn(`[entitlements] cache ${label} failed:`, error);
     }),
   );
+}
+
+async function getCatalogScopedCache(
+  kv: KVNamespace | undefined,
+  organizationId: string,
+): Promise<EntitlementCache | null> {
+  if (!kv) return null;
+
+  const cache = new EntitlementCache(kv);
+  const catalogVersion = await cache.getCatalogVersion(organizationId);
+  return catalogVersion ? cache.withCatalogVersion(catalogVersion) : cache;
 }
 
 async function persistUsageRecord(
@@ -929,6 +949,64 @@ async function getAddonBalance(
   return deps.getScopedBalance(db, customerId, creditSystemId);
 }
 
+/**
+ * Prepaid balance model (planFeature.creditCost without a credit system):
+ * usage consumes `credits.balance`. The reservation is a single guarded
+ * UPDATE so concurrent requests cannot both spend the same balance.
+ */
+function resolvePrepaidCost(
+  planFeature: { creditCost?: number | null } | null | undefined,
+  creditContext: unknown,
+  value: number,
+): number {
+  if (creditContext) return 0;
+  const creditCost = Number(planFeature?.creditCost ?? 0);
+  if (!Number.isFinite(creditCost) || creditCost <= 0) return 0;
+  return value * creditCost;
+}
+
+async function tryDeductPrepaidCredits(
+  db: any,
+  customerId: string,
+  amount: number,
+): Promise<boolean> {
+  const result = await db.run(
+    sql`UPDATE credits
+        SET balance = balance - ${amount}, updated_at = ${Date.now()}
+        WHERE customer_id = ${customerId} AND balance >= ${amount}`,
+  );
+  return (result?.meta?.changes ?? result?.changes ?? 0) > 0;
+}
+
+/**
+ * Compensating action for a reservation whose usage was later denied
+ * (e.g. the usage meter rejected the track after credits were reserved).
+ */
+async function refundPrepaidCredits(
+  db: any,
+  customerId: string,
+  amount: number,
+): Promise<void> {
+  if (amount <= 0) return;
+  await db.run(
+    sql`UPDATE credits
+        SET balance = balance + ${amount}, updated_at = ${Date.now()}
+        WHERE customer_id = ${customerId}`,
+  );
+}
+
+/** Read-only affordability check for /check calls that do not send an event. */
+async function hasPrepaidCredits(
+  db: any,
+  customerId: string,
+  amount: number,
+): Promise<boolean> {
+  const creditRecord = await db.query.credits.findFirst({
+    where: eq(schema.credits.customerId, customerId),
+  });
+  return (creditRecord?.balance ?? 0) >= amount;
+}
+
 // ---------------------------------------------------------------------------
 // Credit System Resolution Helper
 // ---------------------------------------------------------------------------
@@ -1162,7 +1240,6 @@ app.openapi(
     } = c.req.valid("json");
     const db = c.get("db");
     const organizationId = c.get("organizationId");
-    const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
 
     if (!organizationId) {
       return c.json(
@@ -1170,6 +1247,7 @@ app.openapi(
         500,
       );
     }
+    const cache = await getCatalogScopedCache(c.env.CACHE, organizationId);
 
     // 1 & 2. Resolve Customer and Feature in parallel
     let customer;
@@ -1520,15 +1598,14 @@ app.openapi(
       };
     } else {
       // No manual override, check plan features
-      for (const pf of planFeatures) {
-        const sub = subscriptions.find(
-          (s: { planId: string }) => s.planId === pf.planId,
-        );
-        if (sub) {
-          accessGrantingSubscription = sub;
-          accessGrantingPlanFeature = pf;
-          break;
-        }
+      const accessGrant = selectAccessGrantingPlanFeature(
+        subscriptions,
+        planFeatures,
+        now,
+      );
+      if (accessGrant) {
+        accessGrantingSubscription = accessGrant.subscription;
+        accessGrantingPlanFeature = accessGrant.planFeature;
       }
 
       // Credit system fallback: feature may belong to a credit system pool
@@ -1716,7 +1793,10 @@ app.openapi(
         usage: number | null,
         limit: number | null,
         addonBalance: number | null | undefined = currentAddonBalance,
-        manualBonusBalance: number | null | undefined = currentManualBonusBalance,
+        manualBonusBalance:
+          | number
+          | null
+          | undefined = currentManualBonusBalance,
       ) =>
         buildCreditsPayload({
           creditContext,
@@ -1730,7 +1810,10 @@ app.openapi(
       const toAvailableBalance = (
         planBalance: number | null,
         addonBalance: number | null | undefined = currentAddonBalance,
-        manualBonusBalance: number | null | undefined = currentManualBonusBalance,
+        manualBonusBalance:
+          | number
+          | null
+          | undefined = currentManualBonusBalance,
       ) =>
         computeTotalAvailableBalance(
           planBalance,
@@ -2022,19 +2105,17 @@ app.openapi(
                     ...(coverage.manualBonusAmount > 0
                       ? {
                           bonusCreditsUsed: coverage.manualBonusAmount,
-                          bonusCreditsRemaining:
-                            sendEvent
-                              ? responseManualBonusBalance
-                              : currentManualBonusBalance,
+                          bonusCreditsRemaining: sendEvent
+                            ? responseManualBonusBalance
+                            : currentManualBonusBalance,
                         }
                       : {}),
                     ...(coverage.addonAmount > 0
                       ? {
                           addonCreditsUsed: coverage.addonAmount,
-                          addonCreditsRemaining:
-                            sendEvent
-                              ? responseAddonBalance
-                              : currentAddonBalance,
+                          addonCreditsRemaining: sendEvent
+                            ? responseAddonBalance
+                            : currentAddonBalance,
                         }
                       : {}),
                   },
@@ -2110,7 +2191,9 @@ app.openapi(
               usage: doResult.usage,
               limit: doResult.limit,
               balance: toAvailableBalance(
-                doResult.limit === null ? null : doResult.limit - doResult.usage,
+                doResult.limit === null
+                  ? null
+                  : doResult.limit - doResult.usage,
                 blockAddonCredits,
               ),
               resetsAt,
@@ -2130,6 +2213,39 @@ app.openapi(
           );
         }
 
+        // Prepaid balance model: a plain check must report affordability,
+        // and a check with sendEvent must own an atomic reservation.
+        const prepaidCost = resolvePrepaidCost(
+          planFeature,
+          creditContext,
+          value,
+        );
+        if (prepaidCost > 0) {
+          const affordable = sendEvent
+            ? await tryDeductPrepaidCredits(db, customer.id, prepaidCost)
+            : await hasPrepaidCredits(db, customer.id, prepaidCost);
+          if (!affordable) {
+            return c.json(
+              {
+                allowed: false,
+                code: "insufficient_credits",
+                usage: doResult.usage,
+                limit: doResult.limit,
+                balance: toAvailableBalance(doResult.balance),
+                resetsAt,
+                resetInterval: planFeature.resetInterval,
+                credits: buildCredits(doResult.usage, doResult.limit),
+                details: buildDetails(
+                  `Insufficient credits — required: ${prepaidCost}.`,
+                  undefined,
+                  doResult.usage,
+                ),
+              },
+              200,
+            );
+          }
+        }
+
         // sendEvent: atomically track usage if check passed
         if (sendEvent) {
           const trackResult = await usageMeter.track(
@@ -2138,6 +2254,8 @@ app.openapi(
             currentConfig,
           );
           if (trackResult && !trackResult.allowed) {
+            // The meter denied the usage after credits were reserved — give them back.
+            await refundPrepaidCredits(db, customer.id, prepaidCost);
             // Add-on credit fallback for race condition (check passed but track failed)
             if (creditContext) {
               const deductResult = await tryDeductAddonCredits(
@@ -2184,7 +2302,7 @@ app.openapi(
                       doResult.limit === null
                         ? null
                         : (trackResult.balance ??
-                          doResult.limit - doResult.usage),
+                            doResult.limit - doResult.usage),
                       computeRemainingAddonBalance(
                         currentAddonBalance ?? 0,
                         effectiveValue,
@@ -2270,24 +2388,6 @@ app.openapi(
             },
             "check:track-inline",
           );
-
-          // Deduct from credits.balance for prepaid model (not credit systems)
-          if (
-            !creditContext &&
-            planFeature.creditCost &&
-            planFeature.creditCost > 0
-          ) {
-            const cost = value * planFeature.creditCost;
-            c.executionCtx.waitUntil(
-              db
-                .update(schema.credits)
-                .set({
-                  balance: sql`${schema.credits.balance} - ${cost}`,
-                  updatedAt: Date.now(),
-                })
-                .where(eq(schema.credits.customerId, customer.id)),
-            );
-          }
         }
 
         // Include add-on credit balance in response for credit system features
@@ -2297,7 +2397,9 @@ app.openapi(
             code: "access_granted",
             usage: doResult.usage,
             limit: doResult.limit,
-            balance: toAvailableBalance(doResult.limit === null ? null : doResult.balance),
+            balance: toAvailableBalance(
+              doResult.limit === null ? null : doResult.balance,
+            ),
             resetsAt,
             resetInterval: planFeature.resetInterval,
             ...(doResult.rolloverBalance > 0
@@ -2570,19 +2672,17 @@ app.openapi(
                   ...(coverage.manualBonusAmount > 0
                     ? {
                         bonusCreditsUsed: coverage.manualBonusAmount,
-                        bonusCreditsRemaining:
-                          sendEvent
-                            ? responseManualBonusBalance
-                            : currentManualBonusBalance,
+                        bonusCreditsRemaining: sendEvent
+                          ? responseManualBonusBalance
+                          : currentManualBonusBalance,
                       }
                     : {}),
                   ...(coverage.addonAmount > 0
                     ? {
                         addonCreditsUsed: coverage.addonAmount,
-                        addonCreditsRemaining:
-                          sendEvent
-                            ? responseAddonBalance
-                            : currentAddonBalance,
+                        addonCreditsRemaining: sendEvent
+                          ? responseAddonBalance
+                          : currentAddonBalance,
                       }
                     : {}),
                 },
@@ -2599,14 +2699,14 @@ app.openapi(
             db,
             customer.id,
             effectiveFeatureId,
-              currentPeriodStart,
-              currentPeriodEnd,
-              planFeature.limitValue,
-              planFeature.maxOverageUnits,
-              coverage.remainder,
-              {
-                usageLedger: c.env.USAGE_LEDGER,
-                organizationId: organizationId || null,
+            currentPeriodStart,
+            currentPeriodEnd,
+            planFeature.limitValue,
+            planFeature.maxOverageUnits,
+            coverage.remainder,
+            {
+              usageLedger: c.env.USAGE_LEDGER,
+              organizationId: organizationId || null,
               ...usageLedgerScope,
               legacyCreatedAtFloor: subscription.currentPeriodStart,
             },
@@ -2678,21 +2778,14 @@ app.openapi(
         );
       }
 
-      // If it costs credits (prepaid balance model), check balance.
-      // NOTE: Credit systems do NOT use credits.balance — they enforce via usage_records pool.
-      // Only planFeature.creditCost triggers the prepaid balance check.
-      if (
-        !creditContext &&
-        planFeature.creditCost &&
-        planFeature.creditCost > 0
-      ) {
-        const cost = value * planFeature.creditCost;
-        const creditRecord = await db.query.credits.findFirst({
-          where: eq(schema.credits.customerId, customer.id),
-        });
-        const creditBalance = creditRecord?.balance || 0;
-
-        if (creditBalance < cost) {
+      // Prepaid balance model: a plain check must report affordability,
+      // and a check with sendEvent must own an atomic reservation.
+      const prepaidCost = resolvePrepaidCost(planFeature, creditContext, value);
+      if (prepaidCost > 0) {
+        const affordable = sendEvent
+          ? await tryDeductPrepaidCredits(db, customer.id, prepaidCost)
+          : await hasPrepaidCredits(db, customer.id, prepaidCost);
+        if (!affordable) {
           return c.json(
             {
               allowed: false,
@@ -2704,7 +2797,7 @@ app.openapi(
               resetInterval: planFeature.resetInterval,
               credits: buildCredits(currentUsage, effectiveLimit),
               details: buildDetails(
-                `Insufficient credits — balance: ${creditBalance}, required: ${cost}.`,
+                `Insufficient credits — required: ${prepaidCost}.`,
                 undefined,
                 currentUsage,
               ),
@@ -2738,22 +2831,6 @@ app.openapi(
           },
           "check:track-inline-db-only",
         );
-
-        // Deduct from credits.balance for prepaid model (not credit systems)
-        if (
-          !creditContext &&
-          planFeature.creditCost &&
-          planFeature.creditCost > 0
-        ) {
-          const cost = value * planFeature.creditCost;
-          await db
-            .update(schema.credits)
-            .set({
-              balance: sql`${schema.credits.balance} - ${cost}`,
-              updatedAt: Date.now(),
-            })
-            .where(eq(schema.credits.customerId, customer.id));
-        }
       }
 
       return c.json(
@@ -2814,7 +2891,6 @@ app.openapi(
     } = c.req.valid("json");
     const db = c.get("db");
     const organizationId = c.get("organizationId");
-    const cache = c.env.CACHE ? new EntitlementCache(c.env.CACHE) : null;
     const now = Date.now();
 
     if (!organizationId) {
@@ -2823,6 +2899,7 @@ app.openapi(
         500,
       );
     }
+    const cache = await getCatalogScopedCache(c.env.CACHE, organizationId);
 
     // 1 & 2. Resolve Customer and Feature in parallel
     let trackCustomer;
@@ -3165,15 +3242,14 @@ app.openapi(
         usageModel: "included",
       } as (typeof planFeatures)[number];
     } else {
-      for (const pf of planFeatures) {
-        const sub = subscriptions.find(
-          (s: { planId: string }) => s.planId === pf.planId,
-        );
-        if (sub) {
-          accessGrantingSubscription = sub;
-          accessGrantingPlanFeature = pf;
-          break;
-        }
+      const accessGrant = selectAccessGrantingPlanFeature(
+        subscriptions,
+        planFeatures,
+        trackNow,
+      );
+      if (accessGrant) {
+        accessGrantingSubscription = accessGrant.subscription;
+        accessGrantingPlanFeature = accessGrant.planFeature;
       }
 
       // Credit system fallback
@@ -3361,6 +3437,46 @@ app.openapi(
         addonBalance ?? 0,
       );
 
+    // Prepaid balance model: reserve credits atomically before any usage is
+    // recorded. If the usage meter later denies the event the reservation is
+    // released again via releasePrepaidReservation().
+    const prepaidCost = resolvePrepaidCost(
+      planFeature,
+      trackCreditContext,
+      value,
+    );
+    let prepaidReservation = 0;
+    const releasePrepaidReservation = async () => {
+      if (prepaidReservation > 0) {
+        const amount = prepaidReservation;
+        prepaidReservation = 0;
+        await refundPrepaidCredits(db, customer.id, amount);
+      }
+    };
+    if (
+      prepaidCost > 0 &&
+      !(await tryDeductPrepaidCredits(db, customer.id, prepaidCost))
+    ) {
+      return c.json(
+        {
+          success: false,
+          allowed: false,
+          code: "insufficient_credits",
+          usage: null,
+          limit: effectiveLimit,
+          balance: null,
+          resetsAt: new Date(periodEnd).toISOString(),
+          resetInterval: planFeature.resetInterval,
+          credits: buildTrackCredits(null, effectiveLimit),
+          details: buildTrackDetails(
+            `Insufficient credits — required: ${prepaidCost}.`,
+          ),
+        },
+        200,
+      );
+    }
+    prepaidReservation = prepaidCost;
+
     try {
       // ===========================================================================
       // Use Durable Object for atomic real-time tracking (if available)
@@ -3378,14 +3494,15 @@ app.openapi(
       let persistedManualBonusAmount = 0;
       let persistedAddonAmount = 0;
       let trackAddonBalanceAfter = currentTrackAddonBalance ?? 0;
-      let trackSuccessCode: "tracked" | "tracked_overage" | "addon_credits_used" | "bonus_credits_used" =
-        "tracked";
-      let trackSuccessDetail:
-        | {
-            message: string;
-            extra?: Record<string, unknown>;
-          }
-        | null = null;
+      let trackSuccessCode:
+        | "tracked"
+        | "tracked_overage"
+        | "addon_credits_used"
+        | "bonus_credits_used" = "tracked";
+      let trackSuccessDetail: {
+        message: string;
+        extra?: Record<string, unknown>;
+      } | null = null;
 
       // When credit system resolved, use credit system slug for DO key
       // When entity is provided, scope DO feature key and DB queries by entity
@@ -3432,6 +3549,7 @@ app.openapi(
           );
 
           if (!usageBasedGuard.allowed) {
+            await releasePrepaidReservation();
             return c.json(
               {
                 success: false,
@@ -3487,6 +3605,7 @@ app.openapi(
             ledgerUsage === null &&
             hasAuthoritativeUsageLedger(c, organizationId)
           ) {
+            await releasePrepaidReservation();
             return c.json(
               {
                 success: false,
@@ -3540,6 +3659,7 @@ app.openapi(
             );
 
             if (!consumeIncludedResult.allowed) {
+              await releasePrepaidReservation();
               return c.json(
                 {
                   success: false,
@@ -3580,6 +3700,7 @@ app.openapi(
                 deps,
               );
               if (!deductResult.deducted) {
+                await releasePrepaidReservation();
                 return c.json(
                   {
                     success: false,
@@ -3665,6 +3786,7 @@ app.openapi(
             );
 
             if (!overageGuard.allowed) {
+              await releasePrepaidReservation();
               return c.json(
                 {
                   success: false,
@@ -3702,6 +3824,7 @@ app.openapi(
                 deps,
               );
               if (!deductResult.deducted) {
+                await releasePrepaidReservation();
                 return c.json(
                   {
                     success: false,
@@ -3741,6 +3864,7 @@ app.openapi(
             persistedAddonAmount = coverage.addonAmount;
           } else {
             const blockUsage = doResult.usage ?? null;
+            await releasePrepaidReservation();
             return c.json(
               {
                 success: false,
@@ -3786,6 +3910,7 @@ app.openapi(
         );
 
         if (!usageBasedGuard.allowed) {
+          await releasePrepaidReservation();
           return c.json(
             {
               success: false,
@@ -3837,27 +3962,6 @@ app.openapi(
         "track:main",
       );
 
-      // Deduct Credits if applicable (prepaid balance model)
-      // NOTE: Credit systems do NOT use credits.balance — they enforce via usage_records pool.
-      // This runs regardless of DO availability — credits.balance is a separate DB counter.
-      if (
-        subscription &&
-        !trackCreditContext &&
-        planFeature.creditCost &&
-        planFeature.creditCost > 0
-      ) {
-        const cost = value * planFeature.creditCost;
-        c.executionCtx.waitUntil(
-          db
-            .update(schema.credits)
-            .set({
-              balance: sql`${schema.credits.balance} - ${cost}`,
-              updatedAt: Date.now(),
-            })
-            .where(eq(schema.credits.customerId, customer.id)),
-        );
-      }
-
       // Determine if this was an overage usage
       const isOverage = trackedAsOverage;
 
@@ -3888,8 +3992,9 @@ app.openapi(
         currentTrackManualBonusBalance - persistedManualBonusAmount,
       );
 
-      const responseCode =
-        trackedAsOverage ? "tracked_overage" : trackSuccessCode;
+      const responseCode = trackedAsOverage
+        ? "tracked_overage"
+        : trackSuccessCode;
       return c.json(
         {
           success: true,
@@ -3927,21 +4032,22 @@ app.openapi(
                   trackSuccessDetail.extra,
                   successUsage,
                 )
-            : usageModel === "usage_based"
-              ? buildTrackDetails(
-                  `Usage tracked successfully. This usage is billable.`,
-                  undefined,
-                  successUsage,
-                )
-              : buildTrackDetails(
-                  `Usage tracked successfully (${doResult?.balance ?? "n/a"} remaining).`,
-                  undefined,
-                  successUsage,
-                ),
+              : usageModel === "usage_based"
+                ? buildTrackDetails(
+                    `Usage tracked successfully. This usage is billable.`,
+                    undefined,
+                    successUsage,
+                  )
+                : buildTrackDetails(
+                    `Usage tracked successfully (${doResult?.balance ?? "n/a"} remaining).`,
+                    undefined,
+                    successUsage,
+                  ),
         },
         200,
       );
     } catch (e: any) {
+      await releasePrepaidReservation().catch(() => {});
       console.error("Track failed:", e);
       return c.json(
         {

@@ -81,6 +81,8 @@ function providerLabel(providerId: string): string {
       return "Dodo Payments";
     case "polar":
       return "Polar";
+    case "bachs":
+      return "Bachs";
     default:
       return providerId;
   }
@@ -483,6 +485,96 @@ async function validatePolarCredentials(
   }
 }
 
+async function validateBachsCredentials(
+  environment: ProviderEnvironment,
+  credentials: Record<string, unknown>,
+): Promise<ProviderValidationResult> {
+  const secretKey = getStringCredential(credentials, "secretKey");
+  if (!secretKey) {
+    return fail("secretKey", "Bachs secret key is required");
+  }
+
+  if (!secretKey.startsWith("sk_")) {
+    return fail("secretKey", "Bachs secret key must start with sk_");
+  }
+  if (environment === "test" && !secretKey.startsWith("sk_sandbox_")) {
+    return fail(
+      "secretKey",
+      "Bachs secret key must be a sandbox key (sk_sandbox_...) for the test environment",
+    );
+  }
+  if (environment === "live" && !secretKey.startsWith("sk_live_")) {
+    return fail(
+      "secretKey",
+      "Bachs secret key must be a live key (sk_live_...) for the live environment",
+    );
+  }
+
+  const webhookSecret = getStringCredential(credentials, "webhookSecret");
+  if (!webhookSecret) {
+    return fail(
+      "webhookSecret",
+      "Bachs webhook signing secret is required (Developer Portal → Webhooks)",
+    );
+  }
+
+  const customBaseUrl = getStringCredential(credentials, "baseUrl");
+  const baseUrl =
+    customBaseUrl ||
+    (environment === "live"
+      ? "https://api.bachs.io"
+      : "https://sandbox-api.bachs.io");
+
+  const probes = [
+    { path: "/v1/products?limit=1", field: "products:read" },
+    { path: "/v1/customers?limit=1", field: "customers:read" },
+  ];
+
+  try {
+    for (const probe of probes) {
+      const response = await httpRequest({
+        url: `${baseUrl}${probe.path}`,
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          Accept: "application/json",
+        },
+      });
+
+      if (response.ok) {
+        continue;
+      }
+
+      const message = extractMessage(response);
+      if (response.status === 403) {
+        return fail(
+          "secretKey",
+          `Bachs key is missing the ${probe.field} scope: ${message}`,
+        );
+      }
+
+      return fail("secretKey", `Bachs rejected the secret key: ${message}`);
+    }
+
+    return success(
+      "authentication_and_environment",
+      {
+        provider: "bachs",
+        baseUrl,
+        probes: probes.map((probe) => probe.path),
+      },
+      [
+        "Bachs authentication was verified with read probes. Write scopes (products:write, payments:write, refunds:write, subscriptions:write) cannot be confirmed without a side-effecting call.",
+        "Bachs subscriptions are USD card-only today; other currencies work for one-time payments.",
+      ],
+    );
+  } catch (error) {
+    return fail(
+      "secretKey",
+      `Bachs validation request failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 export async function validateProviderCredentials(
   params: ProviderValidationParams,
 ): Promise<ProviderValidationResult> {
@@ -498,6 +590,8 @@ export async function validateProviderCredentials(
       return validateDodoCredentials(params.environment, params.credentials);
     case "polar":
       return validatePolarCredentials(params.environment, params.credentials);
+    case "bachs":
+      return validateBachsCredentials(params.environment, params.credentials);
     default:
       return fail(
         "providerId",

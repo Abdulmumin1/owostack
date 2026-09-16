@@ -1190,7 +1190,7 @@ export class OverageBillingWorkflow extends WorkflowEntrypoint<
                   chargeResult.error.message ||
                   JSON.stringify(chargeResult.error);
                 const permanent =
-                  /invalid_authorization|validation_error|invalid_request/.test(
+                  /invalid_authorization|validation_error|invalid_request|unsupported/.test(
                     errCode,
                   ) ||
                   /invalid_authorization|validation_error|invalid_request|authorization.*(invalid|expired|not found)|customer id/i.test(

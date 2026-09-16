@@ -17,8 +17,34 @@ import {
 import { syncProviderPlan } from "../../lib/plan-provider-sync";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
+import { EntitlementCache } from "../../lib/cache";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+/**
+ * Plan and plan-feature edits change what /check and /track are allowed to
+ * serve from the versioned catalog cache. Bump the organization's catalog
+ * version so cached feature and plan-feature entries are no longer read.
+ */
+async function invalidateCatalogForPlan(
+  c: any,
+  db: any,
+  planId: string | null | undefined,
+): Promise<void> {
+  if (!c.env.CACHE || !planId) return;
+  try {
+    const plan = await db.query.plans.findFirst({
+      where: eq(schema.plans.id, planId),
+      columns: { organizationId: true },
+    });
+    if (!plan?.organizationId) return;
+    await new EntitlementCache(c.env.CACHE).invalidateCatalog(
+      plan.organizationId,
+    );
+  } catch (error) {
+    console.warn("[plans] Failed to invalidate catalog cache:", error);
+  }
+}
 const ACTIVE_SUBSCRIPTION_STATUSES: string[] = [
   "active",
   "trialing",
@@ -546,6 +572,8 @@ app.patch("/:id", async (c) => {
       }
     }
 
+    await invalidateCatalogForPlan(c, db, updated.id);
+
     return c.json({ success: true, data: responsePlan });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
@@ -557,7 +585,16 @@ app.delete("/:id", async (c) => {
   const db = c.get("db");
 
   try {
+    const existing = await db.query.plans.findFirst({
+      where: eq(schema.plans.id, id),
+      columns: { organizationId: true },
+    });
     await db.delete(schema.plans).where(eq(schema.plans.id, id));
+    if (c.env.CACHE && existing?.organizationId) {
+      await new EntitlementCache(c.env.CACHE).invalidateCatalog(
+        existing.organizationId,
+      );
+    }
     return c.json({ success: true });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
@@ -628,6 +665,8 @@ app.patch("/features/:planFeatureId", async (c) => {
       .where(eq(schema.planFeatures.id, planFeatureId))
       .returning();
 
+    await invalidateCatalogForPlan(c, db, updated?.planId ?? existing.planId);
+
     return c.json({ success: true, data: updated });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
@@ -639,9 +678,14 @@ app.delete("/features/:planFeatureId", async (c) => {
   const db = c.get("db");
 
   try {
+    const existing = await db.query.planFeatures.findFirst({
+      where: eq(schema.planFeatures.id, planFeatureId),
+      columns: { planId: true },
+    });
     await db
       .delete(schema.planFeatures)
       .where(eq(schema.planFeatures.id, planFeatureId));
+    await invalidateCatalogForPlan(c, db, existing?.planId);
     return c.json({ success: true });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
@@ -789,6 +833,8 @@ app.post("/:planId/features", async (c) => {
         ...normalizedValues,
       })
       .returning();
+
+    await invalidateCatalogForPlan(c, db, planId);
 
     return c.json({ success: true, data: planFeature });
   } catch (e: any) {

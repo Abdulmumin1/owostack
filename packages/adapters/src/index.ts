@@ -348,6 +348,11 @@ export { paystackAdapter } from "./paystack";
 export { dodoAdapter } from "./dodo";
 export { polarAdapter } from "./polar";
 export { stripeAdapter } from "./stripe";
+export {
+  bachsAdapter,
+  BACHS_SUPPORTED_CURRENCIES,
+  BACHS_SUBSCRIPTION_CURRENCIES,
+} from "./bachs";
 export { selectProvider } from "./selector";
 export { resolveProvider } from "./provider-factory";
 

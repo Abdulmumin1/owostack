@@ -12,7 +12,7 @@ import { insertOrganization } from "../helpers/workflow-runtime";
 
 const env = {
   ENCRYPTION_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
-  ENABLED_PROVIDERS: "paystack,stripe,dodopayments,polar",
+  ENABLED_PROVIDERS: "paystack,stripe,dodopayments,polar,bachs",
 };
 
 type QueuedResponse =
@@ -325,6 +325,167 @@ describe("Dashboard provider validation runtime integration", () => {
     expect(await response.json()).toEqual({
       success: false,
       error: "Polar token is missing permission for customers: Forbidden",
+    });
+
+    const accounts = await businessDb.db.query.providerAccounts.findMany({
+      where: eq(schema.providerAccounts.organizationId, "org_123"),
+    });
+    expect(accounts).toHaveLength(0);
+  });
+  it("rejects Bachs live accounts configured with a sandbox key before any network call", async () => {
+    const recorder = createFetchRecorder([]);
+    globalThis.fetch = recorder.fetch as typeof globalThis.fetch;
+
+    const response = await app.request(
+      "/accounts",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organizationId: "org_123",
+          providerId: "bachs",
+          environment: "live",
+          credentials: {
+            secretKey: "sk_sandbox_abc",
+            webhookSecret: "whsec_abc",
+          },
+        }),
+      },
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      success: false,
+      error:
+        "Bachs secret key must be a live key (sk_live_...) for the live environment",
+    });
+    expect(recorder.calls).toEqual([]);
+
+    const accounts = await businessDb.db.query.providerAccounts.findMany({
+      where: eq(schema.providerAccounts.organizationId, "org_123"),
+    });
+    expect(accounts).toHaveLength(0);
+  });
+
+  it("requires a Bachs webhook signing secret because every delivery is signed", async () => {
+    const recorder = createFetchRecorder([]);
+    globalThis.fetch = recorder.fetch as typeof globalThis.fetch;
+
+    const response = await app.request(
+      "/validate",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          providerId: "bachs",
+          environment: "test",
+          credentials: { secretKey: "sk_sandbox_abc" },
+        }),
+      },
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Bachs webhook signing secret is required");
+    expect(recorder.calls).toEqual([]);
+  });
+
+  it("creates a Bachs account after sandbox read probes succeed and encrypts both secrets", async () => {
+    const recorder = createFetchRecorder([
+      new Response(JSON.stringify({ items: [], pagination: {} }), {
+        status: 200,
+      }),
+      new Response(JSON.stringify({ items: [], pagination: {} }), {
+        status: 200,
+      }),
+    ]);
+    globalThis.fetch = recorder.fetch as typeof globalThis.fetch;
+
+    const response = await app.request(
+      "/accounts",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organizationId: "org_123",
+          providerId: "bachs",
+          environment: "test",
+          credentials: {
+            secretKey: " sk_sandbox_abc ",
+            webhookSecret: "whsec_bachs_abc",
+          },
+        }),
+      },
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.validation.status).toBe("verified");
+    expect(recorder.calls.map((call) => call.url)).toEqual([
+      "https://sandbox-api.bachs.io/v1/products?limit=1",
+      "https://sandbox-api.bachs.io/v1/customers?limit=1",
+    ]);
+    expect(recorder.calls[0]?.init?.headers).toMatchObject({
+      Authorization: "Bearer sk_sandbox_abc",
+    });
+
+    const accounts = await businessDb.db.query.providerAccounts.findMany({
+      where: eq(schema.providerAccounts.organizationId, "org_123"),
+    });
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]?.providerId).toBe("bachs");
+    expect(accounts[0]?.credentials.secretKey).not.toBe("sk_sandbox_abc");
+    expect(accounts[0]?.credentials.webhookSecret).not.toBe("whsec_bachs_abc");
+    expect(
+      await decrypt(
+        accounts[0]?.credentials.secretKey as string,
+        env.ENCRYPTION_KEY,
+      ),
+    ).toBe("sk_sandbox_abc");
+    expect(
+      await decrypt(
+        accounts[0]?.credentials.webhookSecret as string,
+        env.ENCRYPTION_KEY,
+      ),
+    ).toBe("whsec_bachs_abc");
+    expect(planSyncCalls).toEqual([
+      { organizationId: "org_123", providerId: "bachs" },
+    ]);
+  });
+
+  it("rejects Bachs keys missing a read scope with the failing scope named", async () => {
+    const recorder = createFetchRecorder([
+      new Response(JSON.stringify({ items: [] }), { status: 200 }),
+      new Response(
+        JSON.stringify({ detail: "Missing scope", error_code: "FORBIDDEN" }),
+        { status: 403 },
+      ),
+    ]);
+    globalThis.fetch = recorder.fetch as typeof globalThis.fetch;
+
+    const response = await app.request(
+      "/accounts",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organizationId: "org_123",
+          providerId: "bachs",
+          environment: "test",
+          credentials: {
+            secretKey: "sk_sandbox_abc",
+            webhookSecret: "whsec_abc",
+          },
+        }),
+      },
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      success: false,
+      error: "Bachs key is missing the customers:read scope: Missing scope",
     });
 
     const accounts = await businessDb.db.query.providerAccounts.findMany({
