@@ -32,23 +32,7 @@ import {
   insertSubscription,
 } from "../helpers/workflow-runtime";
 import { insertFeature, insertPlanFeature } from "../helpers/overage-runtime";
-
-class StatefulRuntimeKv {
-  private readonly entries = new Map<string, string>();
-
-  async get(key: string, type?: "json"): Promise<unknown> {
-    const value = this.entries.get(key) ?? null;
-    return type === "json" && value ? JSON.parse(value) : value;
-  }
-
-  async put(key: string, value: string): Promise<void> {
-    this.entries.set(key, value);
-  }
-
-  async delete(key: string): Promise<void> {
-    this.entries.delete(key);
-  }
-}
+import { StatefulRuntimeKv } from "../helpers/kv-runtime";
 
 describe("Sync route runtime integration", () => {
   let businessDb: ReturnType<typeof createRuntimeBusinessDb>;
