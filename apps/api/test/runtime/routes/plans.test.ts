@@ -10,6 +10,7 @@ import { createRouteTestApp } from "../../helpers/route-harness";
 import { createRuntimeBusinessDb } from "../helpers/business-db";
 import {
   createSimulatedProviderRegistry,
+  insertApiKey,
   insertProviderRule,
   insertRuntimeProviderAccount,
   RUNTIME_ROUTE_ENV,
@@ -22,6 +23,8 @@ import {
   insertSubscription,
 } from "../helpers/workflow-runtime";
 import { insertFeature, insertPlanFeature } from "../helpers/overage-runtime";
+import { StatefulRuntimeKv } from "../helpers/kv-runtime";
+import entitlementsRoute from "../../../src/routes/api/entitlements";
 
 describe("Plans route runtime integration", () => {
   let businessDb: ReturnType<typeof createRuntimeBusinessDb>;
@@ -620,5 +623,97 @@ describe("Plans route runtime integration", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.success).toBe(false);
+  });
+  it("invalidates the catalog cache when a plan feature limit is edited from the dashboard", async () => {
+    const cache = new StatefulRuntimeKv();
+    const cacheEnv = {
+      ...RUNTIME_ROUTE_ENV,
+      CACHE: cache as unknown as KVNamespace,
+    };
+    const apiKey = await insertApiKey(businessDb.d1, {
+      organizationId: "org_123",
+      apiKey: "owo_sk_plans_cache_runtime",
+    });
+    const entitlementsApp = createRouteTestApp(entitlementsRoute, {
+      db: businessDb.db,
+      authDb: businessDb.db,
+    });
+    const now = Date.now();
+
+    await insertCustomer(businessDb.d1, {
+      id: "cust_plan_cache",
+      organizationId: "org_123",
+    });
+    await insertPlan(businessDb.d1, {
+      id: "plan_cache_edit",
+      organizationId: "org_123",
+      slug: "cache-edit",
+      name: "Cache Edit",
+      price: 0,
+      type: "free",
+    });
+    await insertFeature(businessDb.d1, {
+      id: "feature_cache_edit",
+      organizationId: "org_123",
+      slug: "cache-edit-calls",
+      name: "Cache Edit Calls",
+      type: "metered",
+    });
+    await insertPlanFeature(businessDb.d1, {
+      id: "pf_cache_edit",
+      planId: "plan_cache_edit",
+      featureId: "feature_cache_edit",
+      limitValue: 10,
+      overage: "block",
+    });
+    await insertSubscription(businessDb.d1, {
+      id: "sub_cache_edit",
+      customerId: "cust_plan_cache",
+      planId: "plan_cache_edit",
+      status: "active",
+      currentPeriodStart: now,
+      currentPeriodEnd: now + 30 * 24 * 60 * 60 * 1000,
+    });
+
+    const check = () =>
+      entitlementsApp.request(
+        "/check",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            customer: "cust_plan_cache",
+            feature: "cache-edit-calls",
+            value: 6,
+          }),
+        },
+        cacheEnv,
+      );
+
+    // Warm the cache with the original limit.
+    expect(await (await check()).json()).toMatchObject({
+      allowed: true,
+      limit: 10,
+    });
+
+    const edit = await app.request(
+      "/features/pf_cache_edit",
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limitValue: 5 }),
+      },
+      cacheEnv,
+    );
+    expect(edit.status).toBe(200);
+
+    expect(await (await check()).json()).toMatchObject({
+      allowed: false,
+      code: "limit_exceeded",
+      limit: 5,
+    });
   });
 });
