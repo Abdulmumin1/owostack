@@ -2982,11 +2982,873 @@ function createPolarFixture(): AdapterContractFixture {
   };
 }
 
+function createBachsFixture(): AdapterContractFixture {
+  const secretKey = "sk_sandbox_contract_key";
+  const origin = "https://sandbox-api.bachs.io";
+
+  async function signBachs(secret: string, timestamp: string, payload: string) {
+    return signHexHmac(secret, `${timestamp}.${payload}`, "SHA-256");
+  }
+
+  return {
+    buildAccount() {
+      return buildAccount({
+        id: "acct_bachs_contract",
+        providerId: "bachs",
+        displayName: "Bachs Contract",
+        credentials: {
+          secretKey,
+          webhookSecret: "whsec_bachs_contract",
+        },
+      });
+    },
+    async buildSignedWebhook() {
+      const payload = JSON.stringify({
+        id: "evt_contract_1",
+        type: "collection.succeeded",
+        created_at: "2026-04-27T12:00:00.000000+00:00",
+        organization_id: "acct_bachs_org",
+        data: {
+          payment_id: "pay_contract_1",
+          checkout_id: "chk_contract_1",
+          status: "SUCCEEDED",
+          amount: "29.99",
+          currency: "USD",
+          customer: { id: "cust_contract_1", email: "buyer@example.com" },
+          metadata: { plan_id: "plan_local_1" },
+        },
+      });
+      const secret = "whsec_bachs_contract";
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = await signBachs(secret, timestamp, payload);
+      return {
+        payload,
+        tamperedPayload: payload.replace("29.99", "39.99"),
+        signature,
+        secret,
+        headers: {
+          "x-bachs-timestamp": timestamp,
+          "x-bachs-signature": signature,
+        },
+      };
+    },
+    parseCases: [
+      {
+        name: "maps collection.succeeded to charge.success with minor-unit amount",
+        payload: {
+          id: "evt_1",
+          type: "collection.succeeded",
+          data: {
+            payment_id: "pay_1",
+            charge_id: "ch_legacy_1",
+            checkout_id: "chk_1",
+            reference: "owo_ref_1",
+            status: "SUCCEEDED",
+            amount: "75000.00",
+            currency: "NGN",
+            subscription_id: "sub_1",
+            billing_reason: "subscription_create",
+            customer: {
+              id: "cust_1",
+              email: "jane@example.com",
+              name: "Jane Doe",
+            },
+            metadata: { plan_id: "plan_1", organization_id: "org_1" },
+          },
+        },
+        assert(event) {
+          expect(event.provider).toBe("bachs");
+          expect(event.type).toBe("charge.success");
+          expect(event.payment).toEqual({
+            amount: 7500000,
+            currency: "NGN",
+            reference: "pay_1",
+            paidAt: undefined,
+          });
+          expect(event.customer).toEqual({
+            email: "jane@example.com",
+            providerCustomerId: "cust_1",
+          });
+          expect(event.subscription?.providerSubscriptionId).toBe("sub_1");
+          expect(event.metadata).toMatchObject({
+            plan_id: "plan_1",
+            organization_id: "org_1",
+            event_id: "evt_1",
+            billing_reason: "subscription_create",
+          });
+        },
+      },
+      {
+        name: "falls back to charge_id when payment_id is absent",
+        payload: {
+          type: "collection.succeeded",
+          data: {
+            charge_id: "chr_only_1",
+            amount: "10.00",
+            currency: "USD",
+            customer: { customer_id: "cust_2", email: "a@example.com" },
+          },
+        },
+        assert(event) {
+          expect(event.payment?.reference).toBe("chr_only_1");
+          expect(event.payment?.amount).toBe(1000);
+          expect(event.customer.providerCustomerId).toBe("cust_2");
+        },
+      },
+      {
+        name: "maps collection.failed to charge.failed with reason",
+        payload: {
+          type: "collection.failed",
+          data: {
+            payment_id: "pay_failed_1",
+            amount: "10.00",
+            currency: "USD",
+            reason: "Payment authorization failed",
+            customer: { id: "cust_3", email: "c@example.com" },
+            metadata: {},
+          },
+        },
+        assert(event) {
+          expect(event.type).toBe("charge.failed");
+          expect(event.payment?.reference).toBe("pay_failed_1");
+          expect(event.metadata.reason).toBe("Payment authorization failed");
+        },
+      },
+      {
+        name: "maps a free-trial checkout.completed to a zero-amount charge.success",
+        payload: {
+          type: "checkout.completed",
+          data: {
+            checkout_id: "chk_trial_1",
+            status: "completed",
+            mode: "subscription",
+            payment_status: "no_payment_required",
+            amount: "0",
+            currency: "USD",
+            customer: { customer_id: "cust_4", email: "trial@example.com" },
+            subscription: { subscription_id: "sub_trial_1" },
+            metadata: {
+              plan_id: "plan_1",
+              is_trial: "true",
+              native_trial: "true",
+            },
+            completed_at: "2026-07-20T09:15:00.000000+00:00",
+          },
+        },
+        assert(event) {
+          expect(event.type).toBe("charge.success");
+          expect(event.payment).toEqual({
+            amount: 0,
+            currency: "USD",
+            reference: "chk_trial_1",
+            paidAt: "2026-07-20T09:15:00.000000+00:00",
+          });
+          expect(event.subscription?.status).toBe("trialing");
+          expect(event.subscription?.providerSubscriptionId).toBe(
+            "sub_trial_1",
+          );
+          expect(event.metadata.is_trial).toBe("true");
+        },
+      },
+      {
+        name: "maps customer.subscription.created to subscription.created with plan code",
+        payload: {
+          type: "customer.subscription.created",
+          data: {
+            subscription_id: "sub_5",
+            customer: { customer_id: "cust_5", email: "e@example.com" },
+            product_id: "prod_pro",
+            status: "active",
+            currency: "USD",
+            amount: "10.00",
+            current_period_start: "2026-04-01T00:00:00Z",
+            current_period_end: "2026-05-01T00:00:00Z",
+            next_billed_at: "2026-05-01T00:00:00Z",
+            trial_end: null,
+            cancel_at_period_end: false,
+            metadata: { plan_id: "plan_pro" },
+          },
+        },
+        assert(event) {
+          expect(event.type).toBe("subscription.created");
+          expect(event.subscription).toEqual({
+            providerCode: "sub_5",
+            providerSubscriptionId: "sub_5",
+            status: "active",
+            planCode: "prod_pro",
+            startDate: "2026-04-01T00:00:00Z",
+            nextPaymentDate: "2026-05-01T00:00:00Z",
+            trialEndDate: undefined,
+          });
+          expect(event.plan).toEqual({ providerPlanCode: "prod_pro" });
+        },
+      },
+      {
+        name: "maps cancel_at_period_end updates to subscription.not_renew",
+        payload: {
+          type: "customer.subscription.updated",
+          data: {
+            subscription_id: "sub_6",
+            customer: { customer_id: "cust_6", email: "f@example.com" },
+            product_id: "prod_pro",
+            status: "active",
+            cancel_at_period_end: true,
+            current_period_end: "2026-05-01T00:00:00Z",
+          },
+        },
+        assert(event) {
+          expect(event.type).toBe("subscription.not_renew");
+          expect(event.subscription?.status).toBe("pending_cancel");
+        },
+      },
+      {
+        name: "maps past_due updates to subscription.past_due",
+        payload: {
+          type: "customer.subscription.updated",
+          data: {
+            subscription_id: "sub_7",
+            customer: { customer_id: "cust_7", email: "g@example.com" },
+            product_id: "prod_pro",
+            status: "past_due",
+            cancel_at_period_end: false,
+          },
+        },
+        assert(event) {
+          expect(event.type).toBe("subscription.past_due");
+          expect(event.subscription?.status).toBe("past_due");
+        },
+      },
+      {
+        name: "maps trialing updates to subscription.active with trial end",
+        payload: {
+          type: "customer.subscription.updated",
+          data: {
+            subscription_id: "sub_8",
+            customer: { customer_id: "cust_8", email: "h@example.com" },
+            product_id: "prod_pro",
+            status: "trialing",
+            trial_end: "2026-05-15T00:00:00Z",
+          },
+        },
+        assert(event) {
+          expect(event.type).toBe("subscription.active");
+          expect(event.subscription?.status).toBe("trialing");
+          expect(event.subscription?.trialEndDate).toBe("2026-05-15T00:00:00Z");
+        },
+      },
+      {
+        name: "maps customer.subscription.deleted to subscription.canceled",
+        payload: {
+          type: "customer.subscription.deleted",
+          data: {
+            subscription_id: "sub_9",
+            customer: { customer_id: "cust_9", email: "i@example.com" },
+            product_id: "prod_pro",
+            status: "canceled",
+            canceled_at: "2026-04-15T00:00:00Z",
+          },
+        },
+        assert(event) {
+          expect(event.type).toBe("subscription.canceled");
+          expect(event.subscription?.status).toBe("canceled");
+        },
+      },
+      {
+        name: "maps invoice.payment_failed to charge.failed on the subscription",
+        payload: {
+          type: "invoice.payment_failed",
+          data: {
+            invoice_id: "inv_1",
+            subscription: { subscription_id: "sub_10" },
+            customer: { customer_id: "cust_10", email: "j@example.com" },
+            charge: null,
+            status: "open",
+            currency: "USD",
+            total: "10.00",
+            amount_paid: "0.00",
+            amount_remaining: "10.00",
+          },
+        },
+        assert(event) {
+          expect(event.type).toBe("charge.failed");
+          expect(event.payment).toEqual({
+            amount: 1000,
+            currency: "USD",
+            reference: "inv_1",
+          });
+          expect(event.subscription?.providerSubscriptionId).toBe("sub_10");
+          expect(event.subscription?.status).toBe("past_due");
+        },
+      },
+      {
+        name: "maps refund.paid to refund.success keyed by the charge",
+        payload: {
+          type: "refund.paid",
+          data: {
+            refund_id: "ref_1",
+            charge_id: "pay_1",
+            reference: "owo_abc",
+            status: "paid",
+            requested_amount: "10.00",
+            refunded_amount: "10.00",
+            reason: "Customer request",
+          },
+        },
+        assert(event) {
+          expect(event.type).toBe("refund.success");
+          expect(event.refund).toEqual({
+            amount: 1000,
+            currency: "USD",
+            reference: "pay_1",
+            reason: "Customer request",
+          });
+        },
+      },
+      {
+        name: "maps refund.failed to refund.failed",
+        payload: {
+          type: "refund.failed",
+          data: {
+            refund_id: "ref_2",
+            charge_id: "pay_2",
+            reference: "owo_def",
+            status: "failed",
+            requested_amount: "5.50",
+          },
+        },
+        assert(event) {
+          expect(event.type).toBe("refund.failed");
+          expect(event.refund?.amount).toBe(550);
+          expect(event.refund?.reference).toBe("pay_2");
+        },
+      },
+    ],
+    scenarios: {
+      createCustomer: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "POST",
+              origin,
+              path: "/v1/customers",
+              assert(request) {
+                expectJsonRequest(request, secretKey);
+                expect(request.json<Record<string, any>>()).toEqual({
+                  email: "bachs-customer@example.com",
+                  name: "Bachs Customer",
+                  metadata: { source: "contract" },
+                });
+              },
+              respond: jsonResponse({
+                customer_id: "cust_bachs_1",
+                email: "bachs-customer@example.com",
+                name: "Bachs Customer",
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.createCustomer({
+            email: "bachs-customer@example.com",
+            name: "Bachs Customer",
+            metadata: { source: "contract" },
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          expect(expectOk(result as ProviderResult<any>)).toEqual({
+            id: "cust_bachs_1",
+            email: "bachs-customer@example.com",
+            metadata: { source: "contract" },
+          });
+        },
+      },
+      createCustomerSession: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "POST",
+              origin,
+              path: "/v1/customers/cust_bachs_1/portal-sessions",
+              assert(request) {
+                expectJsonRequest(request, secretKey);
+              },
+              respond: jsonResponse({
+                id: "cps_bachs_1",
+                url: "https://portal.bachs.io/s/cps_bachs_1",
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.createCustomerSession?.({
+            customer: {
+              id: "cust_bachs_1",
+              email: "bachs-customer@example.com",
+            },
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          expect(expectOk(result as ProviderResult<any>)).toEqual({
+            url: "https://portal.bachs.io/s/cps_bachs_1",
+            token: "cps_bachs_1",
+          });
+        },
+      },
+      createProduct: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "POST",
+              origin,
+              path: "/v1/products",
+              assert(request) {
+                expectJsonRequest(request, secretKey);
+                expect(request.json<Record<string, any>>()).toEqual({
+                  name: "Bachs Credits",
+                  price: {
+                    currency: "USD",
+                    price_type: "fixed",
+                    amount: "24.00",
+                  },
+                  metadata: {
+                    source: "contract",
+                    description: "One-time credits",
+                  },
+                });
+              },
+              respond: jsonResponse({
+                id: "prod_bachs_credit_1",
+                name: "Bachs Credits",
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.createProduct?.({
+            name: "Bachs Credits",
+            description: "One-time credits",
+            amount: 2400,
+            currency: "USD",
+            metadata: { source: "contract" },
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          expect(expectOk(result as ProviderResult<any>)).toEqual({
+            productId: "prod_bachs_credit_1",
+            priceId: "prod_bachs_credit_1",
+            metadata: {},
+          });
+        },
+      },
+      createPlan: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "POST",
+              origin,
+              path: "/v1/products",
+              assert(request) {
+                expectJsonRequest(request, secretKey);
+                expect(request.json<Record<string, any>>()).toEqual({
+                  name: "Bachs Pro",
+                  price: {
+                    currency: "USD",
+                    price_type: "fixed",
+                    amount: "52.00",
+                  },
+                  billing_cycle: { interval: "month", frequency: 1 },
+                  metadata: { description: "Recurring plan" },
+                });
+              },
+              respond: jsonResponse({
+                id: "prod_bachs_plan_1",
+                name: "Bachs Pro",
+                billing_cycle: { interval: "month", frequency: 1 },
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.createPlan({
+            name: "Bachs Pro",
+            amount: 5200,
+            interval: "monthly",
+            currency: "USD",
+            description: "Recurring plan",
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          expect(expectOk(result as ProviderResult<any>)).toEqual({
+            id: "prod_bachs_plan_1",
+            metadata: {
+              billing_cycle: { interval: "month", frequency: 1 },
+            },
+          });
+        },
+      },
+      updatePlan: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "PATCH",
+              origin,
+              path: "/v1/products/prod_bachs_plan_1",
+              assert(request) {
+                expectJsonRequest(request, secretKey);
+                expect(request.json<Record<string, any>>()).toEqual({
+                  name: "Bachs Pro Plus",
+                  price: { amount: "60.00" },
+                });
+              },
+              respond: jsonResponse({
+                id: "prod_bachs_plan_1",
+                name: "Bachs Pro Plus",
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.updatePlan?.({
+            planId: "prod_bachs_plan_1",
+            name: "Bachs Pro Plus",
+            amount: 6000,
+            currency: "USD",
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          expect(expectOk(result as ProviderResult<any>)).toEqual({
+            updated: true,
+          });
+        },
+      },
+      createCheckoutSession: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "POST",
+              origin,
+              path: "/v1/checkout-sessions",
+              assert(request) {
+                expectJsonRequest(request, secretKey);
+                expect(request.json<Record<string, any>>()).toEqual({
+                  customer: { customer_id: "cust_bachs_1" },
+                  product_cart: [
+                    { product_id: "prod_bachs_plan_1", quantity: 1 },
+                  ],
+                  success_url: "https://example.com/bachs/success",
+                  cancel_url: "https://example.com/bachs/success",
+                  metadata: {
+                    type: "plan_checkout",
+                    plan_id: "plan_local_1",
+                    is_trial: "true",
+                  },
+                  payment_method_types: ["card", "bank_transfer"],
+                });
+              },
+              respond: jsonResponse({
+                checkout_id: "chk_bachs_1",
+                checkout_url: "https://checkout.bachs.io/c/chk_bachs_1",
+                status: "open",
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.createCheckoutSession({
+            customer: {
+              id: "cust_bachs_1",
+              email: "bachs-checkout@example.com",
+            },
+            plan: { id: "prod_bachs_plan_1" },
+            amount: 5200,
+            currency: "USD",
+            callbackUrl: "https://example.com/bachs/success",
+            channels: ["card", "bank"],
+            metadata: {
+              type: "plan_checkout",
+              plan_id: "plan_local_1",
+              is_trial: true,
+              dropped: null,
+            },
+            trialDays: 14,
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          expect(expectOk(result as ProviderResult<any>)).toEqual({
+            url: "https://checkout.bachs.io/c/chk_bachs_1",
+            reference: "chk_bachs_1",
+            accessCode: null,
+          });
+        },
+      },
+      createSubscription: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "POST",
+              origin,
+              path: "/v1/checkout-sessions",
+              assert(request) {
+                expectJsonRequest(request, secretKey);
+                expect(request.json<Record<string, any>>()).toEqual({
+                  product_cart: [
+                    { product_id: "prod_bachs_plan_1", quantity: 1 },
+                  ],
+                  customer: {
+                    email: "bachs-subscription@example.com",
+                    name: "bachs-subscription",
+                  },
+                  metadata: { origin: "contract" },
+                });
+              },
+              respond: jsonResponse({
+                checkout_id: "chk_bachs_subscription_1",
+                checkout_url:
+                  "https://checkout.bachs.io/c/chk_bachs_subscription_1",
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.createSubscription({
+            customer: {
+              id: "local_customer_1",
+              email: "bachs-subscription@example.com",
+            },
+            plan: { id: "prod_bachs_plan_1" },
+            metadata: { origin: "contract" },
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          expect(expectOk(result as ProviderResult<any>)).toEqual({
+            id: "chk_bachs_subscription_1",
+            status: "pending",
+            metadata: {
+              checkout_url:
+                "https://checkout.bachs.io/c/chk_bachs_subscription_1",
+              origin: "contract",
+            },
+          });
+        },
+      },
+      cancelSubscription: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "DELETE",
+              origin,
+              path: "/v1/subscriptions/sub_bachs_1",
+              assert(request) {
+                expectJsonRequest(request, secretKey);
+                expect(request.json<Record<string, any>>()).toEqual({
+                  cancel_at_period_end: false,
+                  reason: "Canceled via Owostack",
+                });
+              },
+              respond: jsonResponse({
+                id: "sub_bachs_1",
+                status: "canceled",
+                canceled_at: "2026-04-15T00:00:00Z",
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.cancelSubscription({
+            subscription: { id: "sub_bachs_1", status: "active" },
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          expect(expectOk(result as ProviderResult<any>)).toEqual({
+            canceled: true,
+          });
+        },
+      },
+      chargeAuthorization: {
+        createTransport() {
+          // Bachs has no off-session charge API: the adapter must refuse
+          // without touching the network.
+          return createTransport([]);
+        },
+        async run(adapter, account) {
+          return adapter.chargeAuthorization({
+            customer: {
+              id: "cust_bachs_1",
+              email: "bachs-customer@example.com",
+            },
+            authorizationCode: "pm_bachs_1",
+            amount: 1500,
+            currency: "USD",
+            reference: "inv_local_1",
+            environment: "test",
+            account,
+          });
+        },
+        assert(result, transport) {
+          expectErrCode(result as ProviderResult<any>, "unsupported");
+          expect(transport.requests).toHaveLength(0);
+        },
+      },
+      changePlan: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "PATCH",
+              origin,
+              path: "/v1/subscriptions/sub_bachs_1",
+              assert(request) {
+                expectJsonRequest(request, secretKey);
+                expect(request.json<Record<string, any>>()).toEqual({
+                  product_id: "prod_bachs_plan_2",
+                  proration_behavior: "invoice_now",
+                });
+              },
+              respond: jsonResponse({
+                id: "sub_bachs_1",
+                status: "active",
+                product: { id: "prod_bachs_plan_2" },
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.changePlan?.({
+            subscriptionId: "sub_bachs_1",
+            newPlanId: "prod_bachs_plan_2",
+            prorationMode: "prorated_immediately",
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          expect(expectOk(result as ProviderResult<any>)).toEqual({
+            changed: true,
+          });
+        },
+      },
+      refundCharge: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "POST",
+              origin,
+              path: "/v1/refunds",
+              assert(request) {
+                expectJsonRequest(request, secretKey);
+                expect(request.headers["idempotency-key"]).toBe(
+                  "refund:pay_bachs_1",
+                );
+                const body = request.json<Record<string, any>>();
+                expect(body.charge_id).toBe("pay_bachs_1");
+                expect(body.amount).toBe("5.00");
+                expect(body.reason).toBe("Trial card verification refund");
+                expect(body.reference).toMatch(/^owo_[a-f0-9]{32}$/);
+              },
+              respond: jsonResponse({
+                refund_id: "rfnd_bachs_1",
+                charge_id: "pay_bachs_1",
+                status: "processing",
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.refundCharge?.({
+            reference: "pay_bachs_1",
+            amount: 500,
+            currency: "USD",
+            reason: "Trial card verification refund",
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          expect(expectOk(result as ProviderResult<any>)).toEqual({
+            refunded: true,
+            reference: "rfnd_bachs_1",
+          });
+        },
+      },
+      fetchSubscription: {
+        createTransport() {
+          return createTransport([
+            {
+              method: "GET",
+              origin,
+              path: "/v1/subscriptions/sub_bachs_1",
+              assert(request) {
+                expect(request.headers.authorization).toBe(
+                  `Bearer ${secretKey}`,
+                );
+              },
+              respond: jsonResponse({
+                id: "sub_bachs_1",
+                status: "active",
+                currency: "USD",
+                amount: "52.00",
+                cancel_at_period_end: true,
+                current_period_start: "2026-04-01T00:00:00Z",
+                current_period_end: "2026-05-01T00:00:00Z",
+                next_billed_at: "2026-05-01T00:00:00Z",
+                trial_end: null,
+                product: { id: "prod_bachs_plan_1" },
+                items: [],
+                customer: {
+                  customer_id: "cust_bachs_1",
+                  email: "bachs-customer@example.com",
+                },
+              }),
+            },
+          ]);
+        },
+        async run(adapter, account) {
+          return adapter.fetchSubscription({
+            subscriptionId: "sub_bachs_1",
+            environment: "test",
+            account,
+          });
+        },
+        assert(result) {
+          const detail = expectOk(result as ProviderResult<any>);
+          expect(detail.id).toBe("sub_bachs_1");
+          expect(detail.status).toBe("pending_cancel");
+          expect(detail.planCode).toBe("prod_bachs_plan_1");
+          expect(detail.startDate).toBe("2026-04-01T00:00:00Z");
+          expect(detail.nextPaymentDate).toBe("2026-05-01T00:00:00Z");
+          expect(detail.metadata).toMatchObject({
+            provider_status: "active",
+            cancel_at_period_end: true,
+            amount: "52.00",
+            currency: "USD",
+          });
+        },
+      },
+    },
+  };
+}
+
 const adapterFixtures: Record<string, AdapterContractFixture> = {
   paystack: createPaystackFixture(),
   dodopayments: createDodoFixture(),
   stripe: createStripeFixture(),
   polar: createPolarFixture(),
+  bachs: createBachsFixture(),
 };
 
 describe("Registered adapter contract", () => {

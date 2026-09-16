@@ -20,6 +20,10 @@ export const PROVIDER_MINIMUMS: Record<string, Record<string, number>> = {
     EUR: 50, // €0.50 (50 cents)
     GBP: 50, // £0.50 (50 pence)
   },
+  bachs: {
+    USD: 100, // $1.00 - https://docs.bachs.io/api-reference/payments/create-checkout-session (pricing.amount minimum)
+    NGN: 100000, // ₦1,000.00 (100,000 kobo) - same source
+  },
 };
 
 /**

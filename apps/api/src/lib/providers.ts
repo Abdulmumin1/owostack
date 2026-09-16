@@ -6,6 +6,7 @@ import {
   dodoAdapter,
   polarAdapter,
   stripeAdapter,
+  bachsAdapter,
 } from "@owostack/adapters";
 import type {
   AttachRequestContext,
@@ -27,6 +28,7 @@ export function getProviderRegistry() {
   registry.register(dodoAdapter);
   registry.register(polarAdapter);
   registry.register(stripeAdapter);
+  registry.register(bachsAdapter);
   return registry;
 }
 

@@ -86,7 +86,7 @@ export type Env = {
   CF_ANALYTICS_READ_TOKEN?: string; // API token with Analytics:Read for SQL queries
   ANALYTICS_DATASET?: string; // Optional override dataset name for SQL reads
   USE_EVENTS_PIPELINE?: string; // Explicit opt-in for Cloudflare Pipelines reads/writes
-  ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack,stripe,dodopayments"
+  ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack,stripe,dodopayments,bachs"
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID?: string;

@@ -29,12 +29,13 @@ The adapter interface is designed so that core billing logic (plan switching, tr
 
 ## Currently Supported providers
 
-| Provider      | ID             | Markets                             | Key differences                                                                                                                  |
-| ------------- | -------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Paystack      | `paystack`     | Nigeria, Ghana, South Africa, Kenya | Card authorization codes for recurring charges; webhook verification via HMAC-SHA512                                             |
-| Stripe        | `stripe`       | Global                              | Industry-standard checkout flows; native subscription management with Stripe Billing; comprehensive webhook events               |
-| Dodo Payments | `dodopayments` | Global (USD, EUR, GBP)              | Product-centric checkout (requires product ID); on-demand subscriptions for card-on-file; Standard Webhooks spec                 |
-| Polar         | `polar`        | Global                              | Product-centric checkout (supports multiple products); native subscription lifecycle webhooks; Standard Webhooks signature model |
+| Provider      | ID             | Markets                             | Key differences                                                                                                                                              |
+| ------------- | -------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Paystack      | `paystack`     | Nigeria, Ghana, South Africa, Kenya | Card authorization codes for recurring charges; webhook verification via HMAC-SHA512                                                                         |
+| Stripe        | `stripe`       | Global                              | Industry-standard checkout flows; native subscription management with Stripe Billing; comprehensive webhook events                                           |
+| Dodo Payments | `dodopayments` | Global (USD, EUR, GBP)              | Product-centric checkout (requires product ID); on-demand subscriptions for card-on-file; Standard Webhooks spec                                             |
+| Polar         | `polar`        | Global                              | Product-centric checkout (supports multiple products); native subscription lifecycle webhooks; Standard Webhooks signature model                             |
+| Bachs         | `bachs`        | Africa-first (NGN, GHS, KES, USD)   | Cards, mobile money, bank transfer and stablecoins in one checkout; native trials and proration; no off-session charge API; subscriptions are USD-only today |
 
 ## Provider accounts
 
@@ -67,6 +68,7 @@ Some billing features work differently depending on the provider:
 - Stripe — native trial support via Stripe Billing subscription schedules
 - Dodo — native trial period, provider defers first charge automatically
 - Polar — native trial support via provider-side subscription lifecycle
+- Bachs — native trial period configured on the recurring product; Bachs saves the card at checkout and bills when the trial ends
 
 **Card on file:**
 
@@ -74,6 +76,7 @@ Some billing features work differently depending on the provider:
 - Stripe — stores customer payment methods; supports off-session payments with SetupIntents
 - Dodo — creates an on-demand subscription that can be charged with arbitrary amounts
 - Polar — stores provider-managed subscription IDs for recurring lifecycle events
+- Bachs — Bachs keeps the card for renewals but exposes no off-session charge API, so Owostack never auto-charges a Bachs customer. Overage and invoice payments fall back to a hosted checkout link (`POST /billing/invoice/{id}/pay` returns `checkoutUrl`)
 
 **Checkout:**
 
@@ -81,6 +84,7 @@ Some billing features work differently depending on the provider:
 - Stripe — flexible checkout with PaymentIntents; supports one-time and subscription payments
 - Dodo — product-centric, requires a synced product ID for every checkout
 - Polar — product-centric checkout with support for single- or multi-product sessions
+- Bachs — product-centric for plans and credit packs; supports product-less raw-amount checkouts for invoices. Amounts are decimal strings on the wire, converted from Owostack minor units by the adapter
 
 **Plan upgrades:**
 
@@ -88,6 +92,7 @@ Some billing features work differently depending on the provider:
 - Stripe — native subscription updates. Owostack applies upgrades with immediate invoicing so proration is billed now instead of being left on a later invoice.
 - Dodo — native `change-plan` flow with provider-managed proration. If Dodo rejects the change, Owostack fails the upgrade instead of falling back to an invalid raw-amount checkout.
 - Polar — native subscription updates. Owostack uses the provider's immediate invoice mode for paid upgrades.
+- Bachs — native subscription updates with `proration_behavior: invoice_now`. Bachs requires the target product to bill at the same interval; if it rejects the change Owostack falls back to its non-native path. A plan interval change on Bachs creates a replacement product (billing cycles are immutable) and archives the old one.
 
 These differences are handled internally. Your application code is the same regardless of provider.
 
