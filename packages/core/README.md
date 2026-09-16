@@ -100,7 +100,7 @@ await owo.customer.setOverageLimit({
 - **Usage Metering**: Record usage and enforce limits automatically.
 - **Checkout Flows**: Generate checkout sessions for new subscriptions or plan upgrades.
 - **Catalog Synchronization**: Define plans and features declaratively in your codebase and sync to the cloud.
-- **Multi-Provider Support**: Built-in support for Paystack and Dodo Payments.
+- **Multi-Provider Support**: Built-in support for Paystack, Stripe, Dodo Payments, Polar and Bachs.
 - **Full TypeScript Support**: Comprehensive type definitions for all methods and responses.
 
 ## Related Packages

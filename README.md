@@ -20,7 +20,7 @@ Owostack supports multiple payment gateways while providing first-class features
 - **Flexible Resets** (minutes, hourly, daily, monthly quotas, yearly, custom)
 - **Credit Systems** (shared balances across features)
 - **Add-on** (purchased against credit systems, or could be plan based addons)
-- **Multi-provider** payment provider is abstracted into an adapter mechanism. (currently implemented - Paystack, Stripe & Dodo Payments)
+- **Multi-provider** payment provider is abstracted into an adapter mechanism. (currently implemented - Paystack, Stripe, Dodo Payments, Polar & Bachs)
 
 ## Quick Start
 

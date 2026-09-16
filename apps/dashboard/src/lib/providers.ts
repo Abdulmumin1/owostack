@@ -131,6 +131,30 @@ export const SUPPORTED_PROVIDERS: ProviderConfig[] = [
     ],
     supportedCurrencies: ["USD"],
   },
+  {
+    id: "bachs",
+    name: "Bachs",
+    description:
+      "Cards, mobile money, bank transfer and stablecoins for African internet businesses (subscriptions are USD-only)",
+    color: "emerald",
+    logoUrl: "/images/bachs.png",
+    docsUrl: "https://docs.bachs.io/authentication",
+    fields: [
+      {
+        key: "secretKey",
+        label: "Secret Key",
+        placeholder: "sk_sandbox_xxxxxxxx or sk_live_xxxxxxxx",
+        secret: true,
+      },
+      {
+        key: "webhookSecret",
+        label: "Webhook Signing Secret",
+        placeholder: "From Developer Portal → Webhooks",
+        secret: true,
+      },
+    ],
+    supportedCurrencies: ["USD", "NGN", "GHS", "KES"],
+  },
 ];
 
 /** Lookup map for quick access by provider ID. */
