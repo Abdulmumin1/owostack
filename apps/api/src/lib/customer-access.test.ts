@@ -3,6 +3,7 @@ import {
   buildCustomerAccessSnapshot,
   composeCustomerAccessEntries,
   filterAccessGrantingSubscriptions,
+  selectAccessGrantingPlanFeature,
 } from "./customer-access";
 import { appendUsageRecord } from "./usage-ledger";
 import { SimulatedUsageLedgerNamespace } from "../../test/runtime/helpers/overage-runtime";
@@ -45,6 +46,82 @@ describe("customer access helpers", () => {
     expect(filtered.map((subscription) => subscription.id)).toEqual([
       "sub_active",
     ]);
+  });
+
+  it("keeps a free plan with a stale period as an access grant when the plan type is on the relation", () => {
+    // /check and /track load subscriptions `with: { plan: true }`; the plan
+    // type lives on `plan.type`, not on a `planType` column. A free plan is
+    // never subject to the paid-period grace eviction.
+    const now = Date.UTC(2026, 2, 27, 12, 0, 0);
+    const staleEnd = now - 30 * 24 * 60 * 60 * 1000;
+
+    const grant = selectAccessGrantingPlanFeature(
+      [
+        {
+          id: "sub_free",
+          status: "active",
+          planId: "plan_free",
+          currentPeriodStart: staleEnd - 30 * 24 * 60 * 60 * 1000,
+          currentPeriodEnd: staleEnd,
+          plan: { type: "free" },
+        },
+      ],
+      [{ id: "pf_free", planId: "plan_free" }],
+      now,
+    );
+
+    expect(grant?.subscription.id).toBe("sub_free");
+
+    const paidGrant = selectAccessGrantingPlanFeature(
+      [
+        {
+          id: "sub_paid_stale",
+          status: "active",
+          planId: "plan_paid",
+          currentPeriodStart: staleEnd - 30 * 24 * 60 * 60 * 1000,
+          currentPeriodEnd: staleEnd,
+          plan: { type: "paid" },
+        },
+      ],
+      [{ id: "pf_paid", planId: "plan_paid" }],
+      now,
+    );
+
+    expect(paidGrant).toBeNull();
+  });
+
+  it("picks the subscription with the latest period end when several grant the feature", () => {
+    const now = Date.UTC(2026, 2, 27, 12, 0, 0);
+
+    const grant = selectAccessGrantingPlanFeature(
+      [
+        {
+          id: "sub_short",
+          status: "active",
+          planId: "plan_short",
+          currentPeriodStart: now - 60_000,
+          currentPeriodEnd: now + 60_000,
+          planType: "paid",
+        },
+        {
+          id: "sub_long",
+          status: "pending_cancel",
+          planId: "plan_long",
+          currentPeriodStart: now - 30_000,
+          currentPeriodEnd: now + 120_000,
+          cancelAt: now + 120_000,
+          planType: "paid",
+        },
+      ],
+      [
+        { id: "pf_short", planId: "plan_short" },
+        { id: "pf_long", planId: "plan_long" },
+      ],
+      now,
+    );
+
+    expect(grant?.subscription.id).toBe("sub_long");
+    expect(grant?.planFeature.id).toBe("pf_long");
   });
 
   it("prefers manual entitlements over plan rows while keeping plan context", () => {
@@ -140,8 +217,7 @@ describe("customer access helpers", () => {
 
     const snapshot = await buildCustomerAccessSnapshot({
       env: {
-        USAGE_LEDGER:
-          usageLedger as unknown as DurableObjectNamespace<any>,
+        USAGE_LEDGER: usageLedger as unknown as DurableObjectNamespace<any>,
       },
       organizationId: "org_1",
       customerId: "cust_1",
@@ -210,8 +286,7 @@ describe("customer access helpers", () => {
 
     const snapshot = await buildCustomerAccessSnapshot({
       env: {
-        USAGE_LEDGER:
-          usageLedger as unknown as DurableObjectNamespace<any>,
+        USAGE_LEDGER: usageLedger as unknown as DurableObjectNamespace<any>,
       },
       organizationId: "org_1",
       customerId: "cust_1",
@@ -280,8 +355,7 @@ describe("customer access helpers", () => {
 
     const snapshot = await buildCustomerAccessSnapshot({
       env: {
-        USAGE_LEDGER:
-          usageLedger as unknown as DurableObjectNamespace<any>,
+        USAGE_LEDGER: usageLedger as unknown as DurableObjectNamespace<any>,
       },
       organizationId: "org_1",
       customerId: "cust_1",
@@ -351,8 +425,7 @@ describe("customer access helpers", () => {
 
     const snapshot = await buildCustomerAccessSnapshot({
       env: {
-        USAGE_LEDGER:
-          usageLedger as unknown as DurableObjectNamespace<any>,
+        USAGE_LEDGER: usageLedger as unknown as DurableObjectNamespace<any>,
       },
       organizationId: "org_1",
       customerId: "cust_1",

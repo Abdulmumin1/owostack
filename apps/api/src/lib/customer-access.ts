@@ -22,6 +22,8 @@ export type CustomerAccessSubscription = {
   canceledAt?: number | null;
 };
 
+export const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000;
+
 export type CustomerAccessPlanFeature = {
   planId: string;
   featureId: string;
@@ -150,7 +152,11 @@ export function filterAccessGrantingSubscriptions(
 
     if (subscription.status === "trialing") {
       const trialEnd = Number(subscription.currentPeriodEnd || 0);
-      if (!Number.isFinite(trialEnd) || trialEnd <= now) {
+      if (
+        !Number.isFinite(trialEnd) ||
+        trialEnd <= now ||
+        trialEnd > now + MAX_TRIAL_DURATION_MS
+      ) {
         return false;
       }
     }
@@ -178,6 +184,77 @@ export function filterAccessGrantingSubscriptions(
 
     return true;
   });
+}
+
+/**
+ * Rows loaded with `with: { plan: true }` carry the plan type on the relation
+ * rather than on a `planType` column. Free plans must be recognised so the
+ * paid-period grace check does not evict them.
+ */
+function resolveSubscriptionPlanType(
+  subscription: CustomerAccessSubscription & {
+    plan?: { type?: unknown } | null;
+  },
+): string | null {
+  if (subscription.planType !== undefined && subscription.planType !== null) {
+    return subscription.planType;
+  }
+  const relationType = subscription.plan?.type;
+  return typeof relationType === "string" ? relationType : null;
+}
+
+export function selectAccessGrantingPlanFeature<
+  Subscription extends CustomerAccessSubscription & {
+    plan?: { type?: unknown } | null;
+  },
+  PlanFeature extends { id?: string; planId: string },
+>(
+  subscriptions: Subscription[],
+  planFeatures: PlanFeature[],
+  now: number = Date.now(),
+): { subscription: Subscription; planFeature: PlanFeature } | null {
+  const planFeatureByPlanId = new Map<string, PlanFeature>();
+  for (const planFeature of [...planFeatures].sort((left, right) => {
+    const planDiff = left.planId.localeCompare(right.planId);
+    return planDiff !== 0
+      ? planDiff
+      : (left.id || "").localeCompare(right.id || "");
+  })) {
+    if (!planFeatureByPlanId.has(planFeature.planId)) {
+      planFeatureByPlanId.set(planFeature.planId, planFeature);
+    }
+  }
+
+  const validSubscriptions = subscriptions.filter(
+    (subscription) =>
+      filterAccessGrantingSubscriptions(
+        [
+          {
+            ...subscription,
+            planType: resolveSubscriptionPlanType(subscription),
+          },
+        ],
+        now,
+      ).length === 1,
+  );
+  validSubscriptions.sort((left, right) => {
+    const endDiff =
+      Number(right.currentPeriodEnd || 0) - Number(left.currentPeriodEnd || 0);
+    if (endDiff !== 0) return endDiff;
+    const startDiff =
+      Number(right.currentPeriodStart || 0) -
+      Number(left.currentPeriodStart || 0);
+    if (startDiff !== 0) return startDiff;
+    return left.id.localeCompare(right.id);
+  });
+
+  for (const subscription of validSubscriptions) {
+    if (!subscription.planId) continue;
+    const planFeature = planFeatureByPlanId.get(subscription.planId);
+    if (planFeature) return { subscription, planFeature };
+  }
+
+  return null;
 }
 
 export function composeCustomerAccessEntries(params: {
@@ -428,7 +505,8 @@ async function resolveMeteredBalance(params: {
             coverageSource: "plan",
             scope: usageLedgerScope,
             legacyPlanScope: legacyUsageLedgerScope,
-            legacyCreatedAtFloor: params.subscription?.currentPeriodStart ?? null,
+            legacyCreatedAtFloor:
+              params.subscription?.currentPeriodStart ?? null,
           },
         );
 
