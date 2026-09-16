@@ -134,4 +134,38 @@ describe("Subscription checkout route tenant boundary", () => {
       });
     }
   });
+  it("activates a free pending subscription that belongs to the API key organization", async () => {
+    await insertCustomer(businessDb.d1, {
+      id: "cust_key_owner",
+      organizationId: "org_key_owner",
+      email: "owner@example.com",
+    });
+    await insertPlan(businessDb.d1, {
+      id: "plan_owner_free",
+      organizationId: "org_key_owner",
+      name: "Owner Free",
+      slug: "owner-free",
+      price: 0,
+      type: "free",
+    });
+    await insertSubscription(businessDb.d1, {
+      id: "sub_owner_free",
+      customerId: "cust_key_owner",
+      planId: "plan_owner_free",
+      status: "pending",
+    });
+
+    const response = await checkout("sub_owner_free");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      activatedDirectly: true,
+    });
+
+    const subscription = await businessDb.db.query.subscriptions.findFirst({
+      where: eq(schema.subscriptions.id, "sub_owner_free"),
+    });
+    expect(subscription?.status).toBe("active");
+  });
 });
