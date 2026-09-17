@@ -101,7 +101,6 @@
       <span class="text-xs text-text-muted">
         © {new Date().getFullYear()} Owostack. Apache-2.0.
       </span>
-      <span class="font-mono text-2xs text-text-dim">Built on Cloudflare Workers.</span>
     </div>
   </div>
 </footer>
