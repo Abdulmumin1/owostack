@@ -15,6 +15,7 @@
   import InspiredLogo from "$lib/components/marketing/InspiredLogo.svelte";
   import Footer from "$lib/components/marketing/Footer.svelte";
   import Header from "$lib/components/marketing/Header.svelte";
+  import SectionCut from "$lib/components/marketing/SectionCut.svelte";
 
   const templates = getPricingTemplates();
 
@@ -90,14 +91,11 @@
   <main class="mx-auto max-w-6xl px-6 py-20 md:py-28">
     <!-- Hero Section -->
     <section class="mb-24">
-      <h1
-        class="max-w-3xl text-3xl font-bold leading-[0.9] tracking-tighter md:text-5xl"
-      >
+      <p class="eyebrow mb-6">Pricing templates</p>
+      <h1 class="font-display text-display-lg max-w-3xl text-balance text-text-primary">
         The same pricing models used by Codex, Notion, and Figma.
       </h1>
-      <p
-        class="mt-8 max-w-2xl text-base leading-relaxed text-text-secondary md:text-lg"
-      >
+      <p class="mt-6 max-w-2xl text-base leading-relaxed text-text-secondary md:text-lg">
         These aren't theoretical. These are the exact patterns powering the AI
         infrastructure you use every day—Cursor, Pinecone, Replicate, Clerk.
         Copy them in one click.
@@ -105,56 +103,49 @@
     </section>
 
     <!-- Templates Grid -->
-    <div class="space-y-32">
-      {#each groupedTemplates as group}
+    <div class="space-y-24">
+      {#each groupedTemplates as group (group.label)}
         <section>
-          <div class="mb-12 flex items-center gap-4">
-            <h2
-              class="text-[11px] font-bold uppercase tracking-[0.24em] text-text-muted"
-            >
+          <div class="mb-10 flex items-center gap-4">
+            <h2 class="font-mono text-2xs uppercase tracking-[0.2em] text-text-muted">
               {group.label}
             </h2>
-            <div class="h-px flex-1 bg-border/40"></div>
+            <div class="dither h-1.5 flex-1" style="--dither-color: var(--color-border); background-color: transparent" aria-hidden="true"></div>
           </div>
 
           <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {#each group.items as template}
+            {#each group.items as template (template.slug)}
               <article
-                class="flex flex-col border border-border/40 bg-bg-card transition-colors hover:border-border"
+                class="group flex flex-col border border-border/40 bg-bg-card transition-colors hover:border-accent/60"
               >
-                <!-- Header -->
-                <div class="border-b border-border/40 p-6 md:p-8">
-                  <h3 class="text-xl md:text-2xl font-normal tracking-tight text-text-primary">
-                    {template.title}
-                  </h3>
-                </div>
-
                 <!-- Body -->
-                <div class="flex flex-1 flex-col border-b border-border/40 p-6 md:p-8">
-                  <div class="mb-6 flex items-start justify-between">
-                    <div class="flex items-center justify-center overflow-hidden rounded-sm text-text-muted">
+                <div class="flex flex-1 flex-col border-b border-border/40 p-6 md:p-7">
+                  <div class="mb-5 flex items-start justify-between gap-3">
+                    <div class="overflow-hidden rounded-md ring-1 ring-border/60">
                       <InspiredLogo
                         logoUrl={template.logoUrl}
                         alt={template.inspiredBy}
-                        size={32}
+                        size={28}
                       />
                     </div>
-                    <div class="rounded-full border border-border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-dim">
+                    <span class="font-mono text-2xs uppercase tracking-[0.08em] text-text-dim">
                       {template.category}
-                    </div>
+                    </span>
                   </div>
 
-                  <p class="mb-8 text-sm leading-relaxed text-text-secondary">
+                  <h3 class="font-display text-title leading-tight text-text-primary">
+                    {template.title}
+                  </h3>
+
+                  <p class="mt-3 text-sm leading-relaxed text-text-secondary">
                     {template.summary}
                   </p>
 
-                  <div class="mt-auto">
-                    <div class="mb-1.5 flex items-center gap-2">
-                      <span class="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                        Used by {template.inspiredBy}
-                      </span>
-                    </div>
-                    <div class="flex items-center gap-1.5 text-[10px] text-text-dim">
+                  <div class="mt-auto pt-6">
+                    <span class="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                      Used by {template.inspiredBy}
+                    </span>
+                    <div class="mt-1 flex items-center gap-1.5 text-[10px] text-text-dim">
                       <CheckCircle size={10} class="text-secondary" weight="fill" />
                       <span>{template.socialProof}</span>
                     </div>
@@ -162,19 +153,19 @@
                 </div>
 
                 <!-- Breakdown -->
-                <div class="flex flex-col">
-                  {#each template.breakdown.slice(0, 3) as item}
-                    <div class="flex items-center justify-between border-b border-border/40 px-6 py-4 last:border-b-0">
-                      <div class="text-sm text-text-secondary">
-                        {item.label}: <span class="text-text-primary font-medium">{item.value}</span>
-                      </div>
-                      <CheckCircle size={14} class="text-text-muted" />
+                <div class="flex flex-col font-mono text-xs">
+                  {#each template.breakdown.slice(0, 3) as item, i (item.label)}
+                    <div
+                      class="flex items-center justify-between border-b border-border/40 px-6 py-3 last:border-b-0"
+                    >
+                      <span class="text-text-muted">{item.label}</span>
+                      <span class="font-medium text-text-primary">{item.value}</span>
                     </div>
                   {/each}
                 </div>
 
                 <!-- Actions -->
-                <div class="flex items-center justify-between border-t border-border/40 bg-bg-secondary/10 px-6 py-4">
+                <div class="flex items-center justify-between border-t border-border/40 px-6 py-4">
                   <button
                     type="button"
                     class="inline-flex items-center gap-2 text-xs font-semibold text-text-muted transition-colors hover:text-text-primary"
@@ -205,25 +196,16 @@
     </div>
 
     <!-- Custom pricing section -->
-    <section class="mt-40 border border-border/40 bg-bg-card p-10 md:p-16">
-      <div class="grid gap-12 lg:grid-cols-2 lg:items-center">
+    <section class="on-ink ink-card mt-32 p-10 md:p-14">
+      <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
         <div>
-          <div
-            class="mb-4 flex h-10 w-10 items-center justify-center rounded-sm border border-border bg-bg-secondary text-accent"
-          >
-            <Info size={20} weight="duotone" />
-          </div>
-          <h2
-            class="text-3xl font-bold tracking-tight text-text-primary md:text-4xl"
-          >
-            Custom pricing?
+          <p class="eyebrow on-ink mb-5 !text-on-ink-faint">Custom pricing</p>
+          <h2 class="font-display text-display-md text-on-ink">
+            Building something truly unique?
           </h2>
-          <p
-            class="mt-4 text-sm leading-relaxed text-text-secondary md:text-base"
-          >
-            These templates cover 90% of SaaS models. If you're building
-            something truly unique, our SDK handles arbitrary metering and
-            complex entitlement logic without breaking a sweat.
+          <p class="mt-4 max-w-md text-sm leading-relaxed text-on-ink-muted md:text-base">
+            These templates cover 90% of SaaS models. Our SDK handles arbitrary
+            metering and complex entitlement logic without breaking a sweat.
           </p>
         </div>
         <div class="flex lg:justify-end">
@@ -236,21 +218,21 @@
   </main>
 
   <!-- CTA Section -->
-  <section class="border-t border-border/40 px-6 py-16">
+  <SectionCut
+    bands={["var(--color-bg-primary)", "var(--color-accent)", "var(--color-ink)"]}
+    height="64px"
+  />
+  <section class="on-ink px-6 py-20">
     <div class="mx-auto max-w-6xl">
-      <div
-        class="flex flex-col items-center justify-center gap-6 rounded-lg p-10 md:p-16 text-center"
-      >
-        <div
-          class="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent"
-        >
+      <div class="flex flex-col items-center justify-center gap-6 text-center">
+        <div class="flex h-12 w-12 items-center justify-center rounded-full border border-ink-line bg-ink-raised text-accent">
           <DiscordLogo size={24} weight="duotone" />
         </div>
         <div>
-          <h3 class="text-xl font-bold text-text-primary">
+          <h3 class="font-display text-title-lg text-on-ink">
             Building something ambitious?
           </h3>
-          <p class="mt-2 max-w-md text-sm text-text-secondary">
+          <p class="mt-2 max-w-md text-sm text-on-ink-muted">
             Join our Discord community for support, or book a 30-min call to
             discuss your specific billing needs.
           </p>
@@ -277,6 +259,10 @@
       </div>
     </div>
   </section>
+  <SectionCut
+    bands={["var(--color-ink)", "var(--color-accent)", "var(--color-bg-primary)"]}
+    height="64px"
+  />
 
   <Footer />
 </div>
