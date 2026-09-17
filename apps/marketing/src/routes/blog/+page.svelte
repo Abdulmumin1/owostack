@@ -1,8 +1,8 @@
 <script lang="ts">
-  import Logo from "$lib/components/ui/Logo.svelte";
   import { ArrowRight } from "phosphor-svelte";
   import Header from "$lib/components/marketing/Header.svelte";
   import Footer from "$lib/components/marketing/Footer.svelte";
+  import SectionCut from "$lib/components/marketing/SectionCut.svelte";
 
   interface BlogPost {
     slug: string;
@@ -77,45 +77,67 @@
 <div class="min-h-screen bg-bg-primary text-text-primary font-sans">
   <Header variant="home" />
 
-  <main class="px-6 py-12 md:py-20 min-h-screen">
-    <div class="max-w-4xl mx-auto">
-      <div class="mb-12">
-        <h1 class="text-3xl md:text-4xl font-bold text-text-primary mb-3">
-          Writings
+  <main class="min-h-screen">
+    <section class="px-6 pb-14 pt-16 md:pb-20 md:pt-24">
+      <div class="mx-auto max-w-4xl">
+        <p class="eyebrow mb-6">Writing</p>
+        <h1 class="font-display text-display-lg text-balance text-text-primary">
+          Notes from building the billing layer.
         </h1>
-        <p class="text-text-secondary max-w-md">
+        <p class="mt-5 max-w-md text-text-secondary">
           Engineering notes and thoughts on building the billing engine for
           modern AI SaaS.
         </p>
       </div>
+    </section>
 
-      {#if posts.length > 0}
-        <div class="flex flex-col gap-6">
-          {#each posts as post (post.slug)}
-            <article
-              class="group border-b border-border/30 pb-6 last:border-b-0"
-            >
-              <a href={`/blog/${post.slug}`} class="block">
-                <h2
-                  class="text-xl md:text-2xl font-bold tracking-tight text-text-primary group-hover:text-accent transition-colors leading-[1.2] mb-2"
+    <SectionCut
+      bands={["var(--color-bg-primary)", "var(--color-accent)", "var(--color-ink)"]}
+      height="64px"
+    />
+
+    <section class="on-ink px-6 py-14 md:py-20">
+      <div class="mx-auto max-w-4xl">
+        {#if posts.length > 0}
+          <div class="flex flex-col">
+            {#each posts as post, i (post.slug)}
+              <article class="border-t border-ink-line last:border-b">
+                <a
+                  href={`/blog/${post.slug}`}
+                  class="group grid grid-cols-[auto_1fr_auto] items-baseline gap-4 py-6 transition-colors md:gap-8 md:py-7"
                 >
-                  {post.title}
-                </h2>
-                <p class="text-text-muted text-sm font-mono tracking-tight">
-                  {post.formattedDate}
-                </p>
-              </a>
-            </article>
-          {/each}
-        </div>
-      {:else}
-        <div class="text-center py-24">
-          <p class="text-text-dim text-sm uppercase tracking-widest font-bold">
-            Journal is empty
-          </p>
-        </div>
-      {/if}
-    </div>
+                  <span class="font-mono text-2xs text-on-ink-faint">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <h2
+                    class="font-display text-title-lg leading-tight text-on-ink transition-colors group-hover:text-accent"
+                  >
+                    {post.title}
+                  </h2>
+                  <div class="flex items-center gap-3 font-mono text-2xs text-on-ink-faint">
+                    <span class="hidden sm:inline">{post.formattedDate}</span>
+                    <ArrowRight
+                      size={13}
+                      weight="bold"
+                      class="transition-transform group-hover:translate-x-0.5 group-hover:text-accent"
+                    />
+                  </div>
+                </a>
+              </article>
+            {/each}
+          </div>
+        {:else}
+          <div class="py-16 text-center">
+            <p class="eyebrow">Journal is empty</p>
+          </div>
+        {/if}
+      </div>
+    </section>
+
+    <SectionCut
+      bands={["var(--color-ink)", "var(--color-accent)", "var(--color-bg-primary)"]}
+      height="64px"
+    />
   </main>
 
   <Footer />

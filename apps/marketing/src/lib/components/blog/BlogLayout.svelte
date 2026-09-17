@@ -9,23 +9,30 @@
   <Header variant="page" showBorder={true} />
 
   <!-- Blog Post Content -->
-  <main class="px-6 py-12">
-    <div class="max-w-3xl mx-auto">
-      <div class="flex gap-5 flex-col mb-9">
-        <h1 class="text-4xl">{title || "Blog"}</h1>
-        <p class="italic text-text-muted">by {author}</p>
+  <main class="px-6 py-16 md:py-24">
+    <div class="mx-auto max-w-3xl">
+      <div class="mb-12">
+        <p class="eyebrow mb-6">Writing</p>
+        <h1 class="font-display text-display-lg text-balance text-text-primary">
+          {title || "Blog"}
+        </h1>
+        {#if author}
+          <p class="mt-5 font-mono text-2xs uppercase tracking-[0.08em] text-text-muted">
+            by {author}
+          </p>
+        {/if}
       </div>
       {#if thumbnail}
-        <div class="mb-5 w-full overflow-hidden bg-bg-secondary">
+        <div class="mb-10 w-full overflow-hidden border border-border/40 bg-bg-secondary">
           <img
             src={thumbnail}
             alt={title || "Blog cover"}
-            class="w-full h-auto object-cover"
+            class="h-auto w-full object-cover"
             loading="lazy"
           />
         </div>
       {/if}
-      <article class="prose prose-lg max-w-none">
+      <article class="prose max-w-none">
         {@render children()}
       </article>
     </div>
@@ -41,29 +48,35 @@
 
   :global(.prose h1) {
     font-family: var(--font-display);
-    font-weight: 700;
+    font-stretch: 88%;
+    font-weight: 600;
     font-size: 2.25rem;
-    line-height: 1.2;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
     margin-bottom: 1rem;
     color: var(--color-text-primary);
   }
 
   :global(.prose h2) {
     font-family: var(--font-display);
+    font-stretch: 88%;
     font-weight: 600;
     font-size: 1.5rem;
-    line-height: 1.3;
-    margin-top: 2rem;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    margin-top: 2.5rem;
     margin-bottom: 1rem;
     color: var(--color-text-primary);
   }
 
   :global(.prose h3) {
     font-family: var(--font-display);
+    font-stretch: 88%;
     font-weight: 600;
     font-size: 1.25rem;
-    line-height: 1.4;
-    margin-top: 1.5rem;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    margin-top: 2rem;
     margin-bottom: 0.75rem;
     color: var(--color-text-primary);
   }
@@ -146,33 +159,36 @@
   :global(.prose code) {
     font-family: var(--font-mono);
     background: var(--color-bg-secondary);
-    padding: 0.2rem 0.4rem;
+    border: 1px solid var(--color-border);
+    padding: 0.1rem 0.35rem;
     border-radius: 4px;
     font-size: 0.875em;
-    color: var(--color-accent-hover);
+    color: var(--color-text-primary);
   }
 
   :global(.prose pre) {
-    background: var(--color-bg-secondary);
-    padding: 1rem;
+    background: var(--color-ink);
+    padding: 1.25rem;
     border-radius: 8px;
     overflow-x: auto;
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
   }
 
   :global(.prose pre code) {
     background: transparent;
+    border: none;
     padding: 0;
-    color: var(--color-text-primary);
+    color: var(--color-on-ink);
+    font-size: 0.8125rem;
+    line-height: 1.7;
   }
 
   :global(.prose blockquote) {
     border-left: 3px solid var(--color-accent);
-    padding-left: 1rem;
+    padding-left: 1.25rem;
     margin-left: 0;
     margin-bottom: 1rem;
-    font-style: italic;
-    color: var(--color-text-muted);
+    color: var(--color-text-primary);
   }
 
   :global(.prose hr) {

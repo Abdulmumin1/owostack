@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    ArrowLeft,
     ArrowUpRight,
     CheckCircle,
     Copy,
@@ -11,6 +10,7 @@
   import InspiredLogo from "$lib/components/marketing/InspiredLogo.svelte";
   import Footer from "$lib/components/marketing/Footer.svelte";
   import Header from "$lib/components/marketing/Header.svelte";
+  import SectionCut from "$lib/components/marketing/SectionCut.svelte";
   import { PRICING_TEMPLATES_LAST_VERIFIED_AT } from "$lib/content/pricing-templates";
   import type { PageData } from "./$types";
 
@@ -110,20 +110,19 @@
 
 <div class="min-h-screen bg-bg-primary text-text-primary">
   <Header variant="page" showBorder={true} />
-  <main class="mx-auto max-w-5xl px-6 py-12">
+  <main class="mx-auto max-w-5xl px-6 py-16 md:py-20">
     <!-- Hero -->
     <div class="mb-16">
       <a
         href="/pricing-templates"
-        class="mb-8 inline-flex items-center gap-2 text-xs text-text-muted hover:text-text-primary"
+        class="eyebrow mb-10 hover:text-text-primary"
       >
-        <ArrowLeft size={12} />
         All patterns
       </a>
 
       <!-- Company attribution -->
       <div class="mb-6 flex items-center gap-3">
-        <div class="flex items-center justify-center rounded-sm">
+        <div class="overflow-hidden rounded-md ring-1 ring-border/60">
           <InspiredLogo
             logoUrl={template.logoUrl}
             alt={template.inspiredBy}
@@ -131,22 +130,20 @@
           />
         </div>
         <div>
-          <div
-            class="text-[11px] font-semibold uppercase tracking-wider text-text-muted"
-          >
+          <div class="font-mono text-2xs uppercase tracking-[0.08em] text-text-muted">
             Snapshot from {template.inspiredBy}
           </div>
-          <div class="mt-0.5 flex items-center gap-1.5 text-xs text-text-dim">
+          <div class="mt-0.5 flex items-center gap-1.5 font-mono text-2xs text-text-dim">
             <CheckCircle size={10} class="text-secondary" weight="fill" />
             <span>Verified on {PRICING_TEMPLATES_LAST_VERIFIED_AT}</span>
           </div>
         </div>
       </div>
 
-      <h1 class="mb-4 text-4xl font-bold tracking-tight md:text-5xl">
+      <h1 class="font-display text-display-lg mb-4 text-balance text-text-primary">
         {template.title}
       </h1>
-      <p class="text-lg text-text-secondary">
+      <p class="max-w-2xl text-lg text-text-secondary">
         {template.headline}
       </p>
       <div class="mt-6">
@@ -154,7 +151,7 @@
           href={template.pricingUrl}
           target="_blank"
           rel="noreferrer"
-          class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted transition-colors hover:text-accent"
+          class="inline-flex items-center gap-2 font-mono text-2xs uppercase tracking-[0.08em] text-text-muted transition-colors hover:text-accent"
         >
           View {template.inspiredBy} pricing
           <ArrowUpRight size={14} weight="bold" />
@@ -177,21 +174,18 @@
 
         <!-- Code -->
         <section>
-          <div class="card overflow-hidden !p-0">
-            <div
-              class="flex items-center justify-between border-b border-border/40 px-4 py-2"
-            >
-              <span
-                class="text-[10px] font-bold uppercase tracking-wider text-text-dim"
-                >Implementation</span
-              >
+          <div class="on-ink overflow-hidden rounded-lg">
+            <div class="flex items-center justify-between border-b border-ink-line px-4 py-2.5">
+              <span class="font-mono text-2xs uppercase tracking-[0.08em] text-on-ink-faint">
+                Implementation
+              </span>
               <button
                 type="button"
-                class="btn btn-ghost btn-sm gap-2"
+                class="inline-flex items-center gap-2 font-mono text-2xs text-on-ink-muted transition-colors hover:text-on-ink"
                 onclick={copySnippet}
               >
                 {#if copied}
-                  <CheckCircle size={14} weight="fill" />
+                  <CheckCircle size={14} weight="fill" class="text-secondary" />
                   Copied
                 {:else}
                   <Copy size={14} />
@@ -199,13 +193,13 @@
                 {/if}
               </button>
             </div>
-            <div class="bg-bg-secondary/50 p-6">
-              <p class="mb-4 text-xs leading-relaxed text-text-dim">
+            <div class="bg-ink-deep p-6">
+              <p class="mb-4 font-mono text-2xs leading-relaxed text-on-ink-faint">
                 This snippet is the closest Owostack implementation of the live
                 pricing shape above. It is not a literal copy of the vendor's
                 internal billing system.
               </p>
-              <pre class="overflow-x-auto text-[13px] leading-relaxed"><code
+              <pre class="overflow-x-auto font-mono text-[13px] leading-relaxed text-on-ink"><code
                   >{template.builderSnippet}</code
                 ></pre>
             </div>
@@ -214,11 +208,7 @@
 
         <!-- Rules -->
         <section>
-          <h3
-            class="mb-4 text-xs font-bold uppercase tracking-wider text-text-dim"
-          >
-            Rules
-          </h3>
+          <h3 class="eyebrow mb-5">Rules</h3>
           <div class="space-y-3">
             {#each template.rules as rule}
               <p class="text-sm leading-relaxed text-text-secondary">{rule}</p>
@@ -232,18 +222,14 @@
         <div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-1">
           <!-- Breakdown -->
           <div>
-            <h4
-              class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim"
-            >
-              Pricing
-            </h4>
-            <div class="rounded border border-border/60 bg-bg-card">
+            <h4 class="eyebrow mb-4">Pricing</h4>
+            <div class="rounded-lg border border-border/60 bg-bg-card font-mono text-xs">
               {#each template.breakdown as item}
                 <div
-                  class="flex justify-between border-b border-border/40 px-4 py-2.5 text-xs last:border-b-0"
+                  class="flex justify-between border-b border-border/40 px-4 py-2.5 last:border-b-0"
                 >
-                  <span class="text-text-dim">{item.label}</span>
-                  <span class="font-semibold text-text-primary"
+                  <span class="text-text-muted">{item.label}</span>
+                  <span class="font-medium text-text-primary"
                     >{item.value}</span
                   >
                 </div>
@@ -252,16 +238,12 @@
           </div>
 
           <div>
-            <h4
-              class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim"
-            >
-              Source
-            </h4>
+            <h4 class="eyebrow mb-4">Source</h4>
             <a
               href={template.pricingUrl}
               target="_blank"
               rel="noreferrer"
-              class="card block !rounded-md px-4 py-3 text-sm text-text-secondary transition-colors hover:text-text-primary"
+              class="block rounded-md border border-border/60 bg-bg-card px-4 py-3 text-sm text-text-secondary transition-colors hover:border-accent/60 hover:text-text-primary"
             >
               <div class="flex items-center justify-between gap-3">
                 <span>{template.inspiredBy} pricing page</span>
@@ -276,11 +258,7 @@
 
           <!-- Highlights -->
           <div>
-            <h4
-              class="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-dim"
-            >
-              Benefits
-            </h4>
+            <h4 class="eyebrow mb-4">Benefits</h4>
             <div class="space-y-2">
               {#each template.highlights as item}
                 <div class="flex gap-2 text-xs text-text-secondary">
@@ -300,23 +278,21 @@
   </main>
 
   <!-- CTA Section -->
-  <section class="border-t border-border/40 px-6 py-16">
+  <SectionCut
+    bands={["var(--color-bg-primary)", "var(--color-accent)", "var(--color-ink)"]}
+    height="64px"
+  />
+  <section class="on-ink px-6 py-20">
     <div class="mx-auto max-w-5xl">
-      <div
-        class="flex flex-col items-center justify-center gap-6 rounded-lg p-10 md:p-14 text-center"
-      >
-        <div
-          class="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent"
-        >
+      <div class="flex flex-col items-center justify-center gap-6 text-center">
+        <div class="flex h-12 w-12 items-center justify-center rounded-full border border-ink-line bg-ink-raised text-accent">
           <DiscordLogo size={24} weight="duotone" />
         </div>
         <div>
-          <h3
-            class="text-xl font-bold tracking-tight text-text-primary md:text-2xl"
-          >
+          <h3 class="font-display text-title-lg text-on-ink">
             Ready to implement this pattern?
           </h3>
-          <p class="mt-2 max-w-md text-sm text-text-secondary">
+          <p class="mt-2 max-w-md text-sm text-on-ink-muted">
             Join our Discord for implementation help, or book a call to discuss
             how {template.inspiredBy}'s pricing model fits your product.
           </p>
@@ -344,6 +320,10 @@
       </div>
     </div>
   </section>
+  <SectionCut
+    bands={["var(--color-ink)", "var(--color-accent)", "var(--color-bg-primary)"]}
+    height="64px"
+  />
 
   <Footer />
 </div>
