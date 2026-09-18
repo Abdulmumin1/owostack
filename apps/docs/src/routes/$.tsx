@@ -11,6 +11,7 @@ import {
 } from "fumadocs-ui/layouts/docs/page";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import { APIPage } from "@/components/api-page";
+import { Card, Cards } from "@/components/docs/card";
 import { baseOptions } from "@/lib/layout.shared";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
 import { Suspense } from "react";
@@ -103,14 +104,20 @@ const clientLoader = browserCollections.docs.createClientLoader({
     },
   ) {
     return (
-      <DocsPage toc={toc} full={frontmatter.full} {...props}>
+      <DocsPage
+        toc={toc}
+        full={frontmatter.full}
+        tableOfContent={{ style: "clerk" }}
+        {...props}
+      >
         <DocsTitle>{frontmatter.title}</DocsTitle>
         <DocsDescription>{frontmatter.description}</DocsDescription>
         <DocsBody>
-          <div className="fixed inset-0 z-1000 pointer-events-none bg-noise"></div>
           <MDX
             components={{
               ...defaultMdxComponents,
+              Card,
+              Cards,
               APIPage,
             }}
           />
