@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
-  MessageCircle,
+  ChatCircle,
   X,
-  Send,
-  MessageSquare,
-  ExternalLink,
-} from "lucide-react";
+  PaperPlaneRight,
+  Chats,
+  ArrowSquareOut,
+} from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -227,7 +227,7 @@ export function AIChatSidebar() {
           onClick={() => setIsOpen(true)}
           className="fixed bottom-6 right-6 p-3 bg-[var(--color-fd-primary)] text-[var(--color-fd-primary-foreground)] rounded-full hover:scale-105 transition-transform z-50 flex items-center justify-center"
         >
-          <MessageCircle className="w-6 h-6" />
+          <ChatCircle className="w-6 h-6" />
         </button>
       )}
 
@@ -284,7 +284,7 @@ export function AIChatSidebar() {
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-[var(--color-fd-muted-foreground)] space-y-3">
-              <MessageSquare className="w-6 h-6 fill-current text-[var(--color-fd-muted-foreground)]" />
+              <Chats className="w-6 h-6 fill-current text-[var(--color-fd-muted-foreground)]" />
               <p className="text-sm">Start a new chat below.</p>
             </div>
           ) : (
@@ -337,7 +337,7 @@ export function AIChatSidebar() {
                                       {source.title || "Reference"}
                                     </span>
                                     {href ? (
-                                      <ExternalLink className="w-3 h-3 text-[var(--color-fd-muted-foreground)] shrink-0" />
+                                      <ArrowSquareOut className="w-3 h-3 text-[var(--color-fd-muted-foreground)] shrink-0" />
                                     ) : null}
                                   </div>
                                   <span className="text-[10px] text-[var(--color-fd-muted-foreground)] line-clamp-1">
@@ -404,7 +404,7 @@ export function AIChatSidebar() {
                 disabled={!input.trim() || isLoading}
                 className="p-1.5 rounded-md text-[var(--color-fd-muted-foreground)] hover:text-[var(--color-fd-foreground)] hover:bg-[var(--color-fd-muted)] disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
               >
-                <Send className="w-4 h-4" />
+                <PaperPlaneRight className="w-4 h-4" />
               </button>
             </div>
           </form>

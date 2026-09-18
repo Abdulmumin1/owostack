@@ -1,0 +1,18 @@
+{
+  "title": "Model Your Pricing",
+  "icon": "Blend",
+  "pages": [
+    "pricing/pricing-models",
+    "pricing/plans",
+    "pricing/features",
+    "pricing/programmatic-plans",
+    "pricing/included-vs-usage-based",
+    "pricing/package-pricing",
+    "pricing/graduated-pricing",
+    "pricing/volume-pricing",
+    "pricing/overage",
+    "pricing/credits",
+    "pricing/seat-pricing",
+    "pricing/pricing-page"
+  ]
+}

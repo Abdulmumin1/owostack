@@ -1,0 +1,11 @@
+{
+  "title": "Run The Lifecycle",
+  "icon": "RefreshCw",
+  "pages": [
+    "subscriptions/checkout",
+    "subscriptions/trials",
+    "subscriptions/plan-switching",
+    "subscriptions/billing",
+    "subscriptions/wallet"
+  ]
+}

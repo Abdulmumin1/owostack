@@ -1,6 +1,11 @@
-import { BookIcon, LayoutIcon, TerminalIcon, GithubIcon } from "lucide-react";
 import type { DocsLayoutProps } from "fumadocs-ui/layouts/docs";
-import * as React from "react";
+import { GithubLogo } from "@phosphor-icons/react";
+import {
+  CustomFolder,
+  CustomItem,
+  CustomSeparator,
+  SearchButton,
+} from "@/components/docs/page-tree";
 
 export function baseOptions(): Omit<DocsLayoutProps, "tree"> {
   return {
@@ -8,8 +13,8 @@ export function baseOptions(): Omit<DocsLayoutProps, "tree"> {
       title: (
         <div className="flex items-center gap-2">
           <svg
-            width="40"
-            height="40"
+            width="28"
+            height="28"
             viewBox="-28 -28 456.00 456.00"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -58,34 +63,35 @@ export function baseOptions(): Omit<DocsLayoutProps, "tree"> {
               ></path>{" "}
             </g>
           </svg>
-          <span className="font-bold text-lg">Owostack</span>
+          <span className="font-display text-[17px] font-semibold tracking-tight">
+            Owostack
+          </span>
         </div>
       ),
       url: "/",
       transparentMode: "top",
     },
+    searchToggle: { enabled: false },
     sidebar: {
-      collapsible: true,
-      tabs: {
-        transform: (option, node) => {
-          const icons: Record<string, React.ReactElement> = {
-            "api-reference": <TerminalIcon className="size-4" />,
-          };
-          return {
-            ...option,
-            icon:
-              (typeof node.name === "string" ? icons[node.name] : undefined) ??
-              <BookIcon className="size-4" />,
-          };
-        },
+      collapsible: false,
+      banner: <SearchButton />,
+      components: {
+        Item: CustomItem,
+        Folder: CustomFolder,
+        Separator: CustomSeparator,
       },
+      tabs: false,
+      footer: (
+        <a
+          href="https://github.com/Abdulmumin1/owostack"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <GithubLogo className="size-4" />
+          GitHub
+        </a>
+      ),
     },
-    links: [
-      {
-        text: "GitHub",
-        url: "https://github.com/Abdulmumin1/owostack",
-        icon: <GithubIcon className="size-4" />,
-      },
-    ],
   };
 }
