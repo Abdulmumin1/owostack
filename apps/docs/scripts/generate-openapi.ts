@@ -7,7 +7,7 @@ import { createOpenApiServer } from "../src/lib/openapi-server";
 const outputPath = resolve(import.meta.dirname, "../openapi.json");
 const apiReferenceDir = resolve(
   import.meta.dirname,
-  "../content/docs/api-reference",
+  "../content/docs/(core)/api-reference",
 );
 
 async function cleanGeneratedReferencePages(dir: string) {
