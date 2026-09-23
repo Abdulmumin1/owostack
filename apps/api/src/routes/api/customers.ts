@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and, or, count, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, or, count, desc, inArray, like, sql } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
 import { resolveOrCreateCustomer } from "../../lib/customers";
@@ -108,10 +108,52 @@ const listEntitiesSchema = z.object({
   feature: z.string().optional(),
 });
 
+const customerIdentifierParamSchema = z.object({
+  id: z.string().openapi({
+    description:
+      "Internal customer ID, your external customer ID (the `customer` value you pass to track/check), or the customer's email.",
+    example: "user_123",
+  }),
+});
+
+const customerListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  search: z.string().trim().min(1).optional().openapi({
+    description:
+      "Case-insensitive substring match on email, name or external ID.",
+  }),
+  email: z.string().trim().min(1).optional().openapi({
+    description: "Exact email match (case-insensitive).",
+  }),
+  externalId: z.string().trim().min(1).optional().openapi({
+    description: "Exact external ID match.",
+  }),
+});
+
+const customerSummarySchema = z.object({
+  id: z.string(),
+  externalId: z.string().nullable(),
+  email: z.string(),
+  name: z.string().nullable(),
+  metadata: metadataSchema.nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+const customerListResponseSchema = z.object({
+  success: z.literal(true),
+  data: z.array(customerSummarySchema),
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+});
+
 const customerResponseSchema = z
   .object({
     success: z.literal(true),
     id: z.string(),
+    externalId: z.string().nullable(),
     email: z.string().email(),
     name: z.string().nullable().optional(),
     metadata: metadataSchema.nullable().optional(),
@@ -253,18 +295,40 @@ const createCustomerRoute = createRoute({
   },
 });
 
+const listCustomersRoute = createRoute({
+  method: "get",
+  path: "/customers",
+  operationId: "listCustomers",
+  tags: ["Customers"],
+  summary: "List customers",
+  description:
+    "Lists customers for the authenticated organization, newest first. Filter by exact email or external ID, or search across email, name and external ID.",
+  security: apiKeySecurity,
+  request: {
+    query: customerListQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Customers returned successfully",
+      ...jsonContent(customerListResponseSchema),
+    },
+    400: badRequestResponse,
+    401: unauthorizedResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
 const getCustomerRoute = createRoute({
   method: "get",
   path: "/customers/{id}",
   operationId: "getCustomer",
   tags: ["Customers"],
   summary: "Get a customer",
-  description: "Retrieves a customer by ID for the authenticated organization.",
+  description:
+    "Retrieves a customer for the authenticated organization. Accepts the same identifiers as track/check: the internal ID, your external customer ID, or the customer's email.",
   security: apiKeySecurity,
   request: {
-    params: z.object({
-      id: z.string(),
-    }),
+    params: customerIdentifierParamSchema,
   },
   responses: {
     200: {
@@ -273,6 +337,7 @@ const getCustomerRoute = createRoute({
     },
     401: unauthorizedResponse,
     404: notFoundResponse,
+    409: conflictResponse,
     500: internalServerErrorResponse,
   },
 });
@@ -284,12 +349,10 @@ const getCustomerUsageHistoryRoute = createRoute({
   tags: ["Customers"],
   summary: "Get customer usage history",
   description:
-    "Returns aggregated usage history for a customer, optionally filtered by feature and grouped for breakdown views.",
+    "Returns aggregated usage history for a customer, optionally filtered by feature and grouped for breakdown views. Accepts the internal ID, your external customer ID, or the customer's email.",
   security: apiKeySecurity,
   request: {
-    params: z.object({
-      id: z.string(),
-    }),
+    params: customerIdentifierParamSchema,
     query: usageHistoryQuerySchema,
   },
   responses: {
@@ -300,6 +363,7 @@ const getCustomerUsageHistoryRoute = createRoute({
     400: badRequestResponse,
     401: unauthorizedResponse,
     404: notFoundResponse,
+    409: conflictResponse,
     500: internalServerErrorResponse,
   },
 });
@@ -577,6 +641,7 @@ async function buildCustomerResponse(
   organizationId: string,
   customer: {
     id: string;
+    externalId?: string | null;
     email: string;
     name?: string | null;
     metadata?: Record<string, unknown> | null;
@@ -593,6 +658,7 @@ async function buildCustomerResponse(
   return {
     success: true as const,
     id: customer.id,
+    externalId: customer.externalId ?? null,
     email: customer.email,
     name: customer.name ?? null,
     metadata: customer.metadata ?? null,
@@ -733,20 +799,109 @@ export function createApiCustomersRoute(
     }
   });
 
-  // GET /v1/customers/:id - Get a customer by ID
+  // GET /v1/customers - List / search customers
+  app.openapi(listCustomersRoute, async (c) => {
+    const db = c.get("db");
+    const organizationId = c.get("organizationId")!;
+
+    try {
+      const parsed = customerListQuerySchema.safeParse({
+        limit: c.req.query("limit"),
+        offset: c.req.query("offset"),
+        search: c.req.query("search"),
+        email: c.req.query("email"),
+        externalId: c.req.query("externalId"),
+      });
+      if (!parsed.success) {
+        return c.json(zodErrorToResponse(parsed.error), 400);
+      }
+
+      const { limit, offset, search, email, externalId } = parsed.data;
+      const conditions = [eq(schema.customers.organizationId, organizationId)];
+      if (email) {
+        conditions.push(
+          eq(sql`lower(${schema.customers.email})`, email.toLowerCase()),
+        );
+      }
+      if (externalId) {
+        conditions.push(eq(schema.customers.externalId, externalId));
+      }
+      if (search) {
+        const pattern = `%${search}%`;
+        conditions.push(
+          or(
+            like(schema.customers.email, pattern),
+            like(schema.customers.name, pattern),
+            like(schema.customers.externalId, pattern),
+          )!,
+        );
+      }
+      const where = and(...conditions);
+
+      const countQuery = db
+        .select({ count: count() })
+        .from(schema.customers)
+        .where(where);
+      const pageQuery = db
+        .select({
+          id: schema.customers.id,
+          externalId: schema.customers.externalId,
+          email: schema.customers.email,
+          name: schema.customers.name,
+          metadata: schema.customers.metadata,
+          createdAt: schema.customers.createdAt,
+          updatedAt: schema.customers.updatedAt,
+        })
+        .from(schema.customers)
+        .where(where)
+        .orderBy(desc(schema.customers.createdAt), desc(schema.customers.id))
+        .limit(limit)
+        .offset(offset);
+      const [countRows, rows]: [
+        Array<{ count: number }>,
+        Array<{
+          id: string;
+          externalId: string | null;
+          email: string;
+          name: string | null;
+          metadata: unknown;
+          createdAt: number;
+          updatedAt: number;
+        }>,
+      ] = await Promise.all([countQuery, pageQuery]);
+
+      return c.json(
+        {
+          success: true as const,
+          data: rows.map((row) => ({
+            ...row,
+            externalId: row.externalId ?? null,
+            name: row.name ?? null,
+            metadata: (row.metadata as Record<string, unknown> | null) ?? null,
+          })),
+          total: Number(countRows[0]?.count ?? 0),
+          limit,
+          offset,
+        },
+        200,
+      );
+    } catch (error) {
+      console.error("[customers] list error:", error);
+      return c.json({ success: false, error: "Failed to list customers" }, 500);
+    }
+  });
+
+  // GET /v1/customers/:id - Get a customer by internal ID, external ID or email
   app.openapi(getCustomerRoute, async (c) => {
     const db = c.get("db");
     const organizationId = c.get("organizationId")!;
 
     try {
-      const customerId = c.req.param("id");
-
-      const customer = await db.query.customers.findFirst({
-        where: and(
-          eq(schema.customers.organizationId, organizationId),
-          eq(schema.customers.id, customerId),
-        ),
-      });
+      const customer = await resolveCustomer(
+        db,
+        organizationId,
+        c.req.param("id"),
+      );
 
       if (!customer) {
         return c.json({ success: false, error: "Customer not found" }, 404);
@@ -757,6 +912,9 @@ export function createApiCustomersRoute(
         200,
       );
     } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
       console.error("[customers] error:", error);
       return c.json({ success: false, error: "Failed to get customer" }, 500);
     }
@@ -782,13 +940,7 @@ export function createApiCustomersRoute(
         return c.json(zodErrorToResponse(query.error), 400);
       }
 
-      const customer = await db.query.customers.findFirst({
-        where: and(
-          eq(schema.customers.organizationId, organizationId),
-          eq(schema.customers.id, customerId),
-        ),
-        columns: { id: true },
-      });
+      const customer = await resolveCustomer(db, organizationId, customerId);
 
       if (!customer) {
         return c.json({ success: false, error: "Customer not found" }, 404);
@@ -806,7 +958,7 @@ export function createApiCustomersRoute(
         db,
         env: c.env,
         organizationId,
-        customerId,
+        customerId: customer.id,
         query: {
           range: query.data.range,
           granularity: query.data.granularity,
@@ -821,6 +973,9 @@ export function createApiCustomersRoute(
 
       return c.json(data, 200);
     } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
       if (
         error instanceof Error &&
         (error.message.includes("Custom range requires from and to") ||
