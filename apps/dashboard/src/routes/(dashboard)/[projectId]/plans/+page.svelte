@@ -155,8 +155,7 @@
       <div class="flex items-center gap-3">
         <div
           class="flex items-center gap-1 bg-bg-secondary rounded border border-border"
-        >
-          <button
+        >          <button
             class="p-1 rounded-sm transition-all {viewMode === 'list'
               ? 'bg-bg-card border border-border-strong text-text-primary'
               : 'text-text-dim hover:text-text-primary border border-transparent'}"
@@ -189,39 +188,126 @@
           Create Plan
         </button>
       </div>
+    {:else if isLoading}
+      <div class="flex items-center gap-3">
+        <Skeleton class="w-14 h-7 rounded-sm" />
+        <Skeleton class="w-28 h-7 rounded-sm" />
+      </div>
     {/if}
   </div>
 
   {#if isLoading}
-    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {#each Array(3) as _}
-        <div
-          class="bg-bg-card border border-border p-6 flex flex-col h-full space-y-6 rounded-lg"
-        >
-          <div class="space-y-3">
-            <Skeleton class="h-6 w-3/4" />
-            <Skeleton class="h-8 w-1/2" />
-            <Skeleton class="h-4 w-full" />
-          </div>
-          <div class="flex gap-2">
-            <Skeleton class="h-5 w-12" />
-            <Skeleton class="h-5 w-16" />
-          </div>
-          <div class="flex-1 space-y-3">
-            <Skeleton class="h-3 w-20" />
-            <div class="space-y-2">
-              <Skeleton class="h-4 w-full" />
-              <Skeleton class="h-4 w-5/6" />
-              <Skeleton class="h-4 w-4/6" />
+    {#if viewMode === "grid"}
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {#each Array(3) as _}
+          <div
+            class="bg-bg-card border border-border p-6 flex flex-col h-full rounded-lg"
+          >
+            <div class="mb-6">
+              <Skeleton class="h-5 w-3/4 mb-1" />
+              <Skeleton class="h-8 w-1/2" />
+              <div class="flex gap-2 mt-3">
+                <Skeleton class="h-4 w-12" />
+                <Skeleton class="h-4 w-16" />
+              </div>
+            </div>
+            <div class="flex-1 mb-8">
+              <Skeleton class="h-3 w-16 mb-3" />
+              <div class="space-y-2">
+                <Skeleton class="h-4 w-full" />
+                <Skeleton class="h-4 w-5/6" />
+                <Skeleton class="h-4 w-4/6" />
+              </div>
+            </div>
+            <div
+              class="pt-4 border-t border-border flex items-center justify-between mt-auto"
+            >
+              <Skeleton class="h-3 w-24" />
+              <Skeleton class="h-5 w-12" />
             </div>
           </div>
-          <div class="pt-4 border-t border-border flex justify-between">
-            <Skeleton class="h-3 w-24" />
-            <Skeleton class="h-5 w-12" />
+        {/each}
+      </div>
+    {:else}
+      <div class="flex flex-col gap-8">
+        <div>
+          <div
+            class="inline-flex text-[11px] font-medium text-text-secondary px-3 py-1 bg-bg-secondary border border-border rounded-full mb-3"
+          >
+            Subscriptions
+          </div>
+          <div class="table-container !overflow-visible">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>ID</th>
+                  <th>Customers</th>
+                  <th>Price</th>
+                  <th class="w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each Array(4) as _}
+                  <tr>
+                    <td class="py-3">
+                      <div class="flex items-center gap-2">
+                        <Skeleton class="w-[18px] h-[18px]" />
+                        <Skeleton class="h-4 w-32" />
+                      </div>
+                    </td>
+                    <td><Skeleton class="h-3 w-24" /></td>
+                    <td><Skeleton class="h-3 w-8" /></td>
+                    <td><Skeleton class="h-4 w-20" /></td>
+                    <td class="text-right">
+                      <Skeleton class="w-4 h-4 ml-auto" />
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </div>
         </div>
-      {/each}
-    </div>
+        <div>
+          <div
+            class="inline-flex text-[11px] font-medium text-text-secondary px-3 py-1 bg-bg-secondary border border-border rounded-full mb-3"
+          >
+            One-off purchases
+          </div>
+          <div class="table-container !overflow-visible">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>ID</th>
+                  <th>Customers</th>
+                  <th>Price</th>
+                  <th class="w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each Array(2) as _}
+                  <tr>
+                    <td class="py-3">
+                      <div class="flex items-center gap-2">
+                        <Skeleton class="w-[18px] h-[18px]" />
+                        <Skeleton class="h-4 w-28" />
+                      </div>
+                    </td>
+                    <td><Skeleton class="h-3 w-24" /></td>
+                    <td><Skeleton class="h-3 w-8" /></td>
+                    <td><Skeleton class="h-4 w-20" /></td>
+                    <td class="text-right">
+                      <Skeleton class="w-4 h-4 ml-auto" />
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    {/if}
   {:else if plans.length === 0}
     <div
       class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center rounded-lg"

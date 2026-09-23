@@ -2,6 +2,7 @@
   import { Envelope, SignOut, User } from "phosphor-svelte";
   import { useSession, authClient } from "$lib/auth-client";
   import { goto } from "$app/navigation";
+  import Skeleton from "$lib/components/ui/Skeleton.svelte";
 
   const session = useSession();
 
@@ -47,7 +48,23 @@
         </div>
       </div>
     {:else}
-      <p class="text-zinc-500 animate-pulse">Loading profile...</p>
+      <div class="space-y-6">
+        <div>
+          <Skeleton class="h-3 w-16 mb-2" />
+          <div class="flex items-center gap-3 bg-bg-secondary p-3 border border-border rounded">
+            <Skeleton class="w-4 h-4 shrink-0" />
+            <Skeleton class="h-4 w-40" />
+          </div>
+        </div>
+
+        <div>
+          <Skeleton class="h-3 w-24 mb-2" />
+          <div class="flex items-center gap-3 bg-bg-secondary p-3 border border-border rounded">
+            <Skeleton class="w-4 h-4 shrink-0" />
+            <Skeleton class="h-4 w-52" />
+          </div>
+        </div>
+      </div>
     {/if}
   </div>
 

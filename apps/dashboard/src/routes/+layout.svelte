@@ -7,11 +7,6 @@
 
 <svelte:head>
   <title>Owostack</title>
-  <!-- Add font for headings -->
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-    rel="stylesheet"
-  />
 </svelte:head>
 
 <div class="fixed inset-0 z-1000 pointer-events-none bg-noise"></div>

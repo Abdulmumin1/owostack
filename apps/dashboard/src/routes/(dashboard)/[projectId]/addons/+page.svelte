@@ -166,13 +166,20 @@
         {#if isLoading}
           {#each Array(3) as _}
             <tr>
-              <td class="px-6 py-4"><Skeleton class="h-4 w-32" /></td>
+              <td class="px-6 py-4">
+                <Skeleton class="h-4 w-32" />
+                <Skeleton class="h-2.5 w-24 mt-1" />
+              </td>
               <td class="px-6 py-4"><Skeleton class="h-3 w-24" /></td>
               <td class="px-6 py-4"><Skeleton class="h-3 w-12" /></td>
               <td class="px-6 py-4"><Skeleton class="h-3 w-16" /></td>
-              <td class="px-6 py-4"><Skeleton class="h-3 w-16" /></td>
-              <td class="px-6 py-4"><Skeleton class="h-3 w-12" /></td>
-              <td class="px-6 py-4"></td>
+              <td class="px-6 py-4"><Skeleton class="h-4 w-16" /></td>
+              <td class="px-6 py-4"><Skeleton class="h-4 w-12" /></td>
+              <td class="px-6 py-4 text-right">
+                <div class="inline-flex p-1">
+                  <Skeleton class="w-4 h-4" />
+                </div>
+              </td>
             </tr>
           {/each}
         {:else if packs.length === 0}

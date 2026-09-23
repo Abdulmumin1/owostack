@@ -299,12 +299,12 @@
             <tr>
               <td class="px-6 py-4">
                 <div class="flex items-center gap-2">
-                  <Skeleton class="w-7 h-7 rounded" />
+                  <Skeleton class="w-7 h-7 rounded-md" />
                   <Skeleton class="h-3 w-16" />
                 </div>
               </td>
               <td class="px-6 py-4">
-                <div class="space-y-2">
+                <div class="flex flex-col">
                   <Skeleton class="h-4 w-32" />
                   <Skeleton class="h-3 w-20" />
                 </div>
@@ -332,25 +332,88 @@
         </tbody>
       </table>
     </div>
-  {:else if filteredTx.length === 0}
-    <div
-      class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center"
-    >
-      <div
-        class="w-12 h-12 bg-bg-tertiary flex items-center justify-center mb-4"
-      >
-        <Receipt weight="duotone" size={24} class="text-text-dim" />
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between px-4 py-4">
+      <Skeleton class="h-3 w-40" />
+      <div class="flex items-center gap-1">
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
       </div>
-      <h3 class="text-lg font-bold text-text-primary mb-2">
-        {searchQuery || filterType !== "all"
-          ? "No matching transactions"
-          : "No transactions yet"}
-      </h3>
-      <p class="text-text-dim max-w-sm text-sm">
-        {searchQuery || filterType !== "all"
-          ? "Try a different search or filter."
-          : "Transactions will appear here when customers subscribe to plans, make purchases, or start trials."}
-      </p>
+    </div>
+  {:else if filteredTx.length === 0}
+    <div class="table-container !overflow-visible">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-bg-tertiary border-b border-border">
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Type</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Customer</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Plan</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Amount</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Provider</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Status</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Date</th
+            >
+            <th class="px-6 py-4"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border/50">
+          <tr>
+            <td colspan="8" class="px-6 py-12">
+              <div
+                class="flex flex-col items-center justify-center text-center min-h-[24rem]"
+              >
+                <div
+                  class="w-12 h-12 bg-bg-tertiary flex items-center justify-center mb-4"
+                >
+                  <Receipt weight="duotone" size={24} class="text-text-dim" />
+                </div>
+                <h3 class="text-lg font-bold text-text-primary mb-2">
+                  {searchQuery || filterType !== "all"
+                    ? "No matching transactions"
+                    : "No transactions yet"}
+                </h3>
+                <p class="text-text-dim max-w-sm text-sm">
+                  {searchQuery || filterType !== "all"
+                    ? "Try a different search or filter."
+                    : "Transactions will appear here when customers subscribe to plans, make purchases, or start trials."}
+                </p>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between px-4 py-4">
+      <Skeleton class="h-3 w-40" />
+      <div class="flex items-center gap-1">
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+      </div>
     </div>
   {:else}
     <!-- Transactions Table -->

@@ -212,7 +212,11 @@
                     <Skeleton class="h-3 w-16" />
                   </div>
                 </td>
-                <td class="px-6 py-4"></td>
+                <td class="px-6 py-4 text-right">
+                  <div class="inline-flex p-1">
+                    <Skeleton class="w-4 h-4" />
+                  </div>
+                </td>
               </tr>
             {/each}
           {:else if features.length === 0}
@@ -379,12 +383,16 @@
                   <Skeleton class="h-3 w-24" />
                 </td>
                 <td class="px-6 py-4">
-                  <div class="flex gap-1">
+                  <div class="flex flex-wrap gap-1">
                     <Skeleton class="h-4 w-12" />
                     <Skeleton class="h-4 w-12" />
                   </div>
                 </td>
-                <td class="px-6 py-4"></td>
+                <td class="px-6 py-4 text-right">
+                  <div class="inline-flex p-1">
+                    <Skeleton class="w-4 h-4" />
+                  </div>
+                </td>
               </tr>
             {/each}
           {:else if creditSystems.length === 0}
