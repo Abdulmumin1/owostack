@@ -29,6 +29,7 @@ import {
   apiKeySecurity,
   badRequestResponse,
   conflictResponse,
+  customerDataSchema,
   internalServerErrorResponse,
   jsonContent,
   metadataSchema,
@@ -69,8 +70,10 @@ const defaultDependencies: CheckoutDependencies = {
 const jsonContentTypePattern = /^application\/([a-z-]+\+)?json\b/i;
 
 const attachSchema = z.object({
-  customer: z.string(), // Email or customer ID
+  customer: z.string(), // Email, external id, or customer ID
   product: z.string(), // Plan slug
+  /** Used to auto-create the customer when `customer` is not an email. */
+  customerData: customerDataSchema.optional(),
   currency: z.string().min(3).optional(),
   channels: z.array(z.string()).optional(),
   metadata: metadataSchema.optional(),
@@ -190,8 +193,15 @@ export function createCheckoutRoute(
           null,
         );
 
-        const { customer, product, currency, channels, metadata, callbackUrl } =
-          c.req.valid("json");
+        const {
+          customer,
+          product,
+          customerData,
+          currency,
+          channels,
+          metadata,
+          callbackUrl,
+        } = c.req.valid("json");
 
         // 1. Resolve Plan (Price)
         const plan = await db.query.plans.findFirst({
@@ -297,15 +307,23 @@ export function createCheckoutRoute(
           };
         }
 
-        // 2. Resolve or create customer
-        const email = customer.toLowerCase();
+        // 2. Resolve or create customer. `customer` may be an email, an
+        //    external id or an Owostack id; the email the provider sees must
+        //    come from the resolved record, never from the identifier.
         let customerRecord;
         try {
           customerRecord = await deps.resolveOrCreateCustomer({
             db,
             organizationId,
             customerId: customer,
-            customerData: { email, metadata },
+            // Only an actual email may seed a new record; an external id
+            // like "user_123" must never be stored (or sent to a provider)
+            // as the customer's email.
+            customerData: customerData
+              ? { ...customerData, metadata: customerData.metadata ?? metadata }
+              : customer.includes("@")
+                ? { email: customer.toLowerCase(), metadata }
+                : undefined,
             providerId: selectedProviderId || undefined,
             waitUntil: (p) => c.executionCtx.waitUntil(p),
           });
@@ -318,10 +336,16 @@ export function createCheckoutRoute(
 
         if (!customerRecord) {
           return c.json(
-            { success: false, error: "Could not resolve or create customer" },
+            {
+              success: false,
+              error:
+                "Could not resolve or create customer. Pass an email as `customer`, or provide `customerData.email`.",
+            },
             400,
           );
         }
+
+        const email = customerRecord.email;
 
         // 4. Handle TRIAL plans (trialDays > 0, no card required) — separate path
         const trialDays = plan.trialDays || 0;

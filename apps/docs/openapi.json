@@ -72,6 +72,25 @@
   ],
   "components": {
     "schemas": {
+      "CustomerData": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
       "PricingDetails": {
         "type": "object",
         "properties": {
@@ -158,25 +177,6 @@
           "units",
           "unitPrice",
           "amount"
-        ]
-      },
-      "CustomerData": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email"
-          },
-          "name": {
-            "type": "string"
-          },
-          "metadata": {
-            "type": "object",
-            "additionalProperties": {}
-          }
-        },
-        "required": [
-          "email"
         ]
       },
       "PaymentMethod": {
@@ -581,6 +581,9 @@
                   },
                   "product": {
                     "type": "string"
+                  },
+                  "customerData": {
+                    "$ref": "#/components/schemas/CustomerData"
                   },
                   "currency": {
                     "type": "string",
