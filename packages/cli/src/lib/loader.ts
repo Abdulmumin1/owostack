@@ -1,6 +1,7 @@
 import { resolve, isAbsolute, extname } from "node:path";
 import { existsSync } from "node:fs";
 import { createJiti } from "jiti";
+import { usageError } from "./errors.js";
 
 const jiti = createJiti(import.meta.url, {
   alias: {
@@ -51,32 +52,18 @@ export async function loadOwostackFromConfig(fullPath: string): Promise<any> {
 
     return null;
   } catch (e: any) {
-    console.error(`\n  ❌ Failed to load config from ${fullPath}`);
-    console.error(`     ${e.message}\n`);
-    console.error(
-      `  Make sure the file exports an Owostack instance as default or named 'owo'.`,
-    );
     const ext = extname(fullPath);
-    const isTs = ext === ".ts" || ext === ".mts" || ext === ".cts";
-
-    if (isTs) {
-      console.error(`  Example owo.config.ts:\n`);
-      console.error(
-        `    import { Owostack, metered, boolean, entity, creditSystem, creditPack, plan } from "owostack";`,
-      );
-      console.error(
-        `    export const owo = new Owostack({ secretKey: "...", catalog: [...] });\n`,
-      );
-    } else {
-      console.error(`  Example owo.config.js:\n`);
-      console.error(
-        `    import { Owostack, metered, boolean, entity, creditSystem, creditPack, plan } from "owostack";`,
-      );
-      console.error(
-        `    export const owo = new Owostack({ secretKey: "...", catalog: [...] });\n`,
-      );
-    }
-    process.exit(1);
+    const example =
+      ext === ".ts" || ext === ".mts" || ext === ".cts"
+        ? "owo.config.ts"
+        : "owo.config.js";
+    throw usageError(
+      "config_invalid",
+      `Failed to load config from ${fullPath}: ${e.message}`,
+      `The file must export an Owostack instance as default or named 'owo'. Example ${example}:\n` +
+        `  import { Owostack, metered, boolean, entity, creditSystem, creditPack, plan } from "owostack";\n` +
+        `  export const owo = new Owostack({ secretKey: "...", catalog: [...] });`,
+    );
   }
 }
 

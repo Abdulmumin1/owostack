@@ -5,59 +5,130 @@ description: Reference for all Owostack CLI commands
 
 # CLI Commands
 
+## Choosing an environment
+
+Every command that talks to the API needs to know which environment to target. The CLI never guesses — it resolves the **mode** from, in order:
+
+1. `--mode sandbox` or `--mode live`
+2. the `OWOSTACK_MODE` environment variable
+3. the API key prefix: `owo_sk_test_…` → sandbox, `owo_sk_live_…` → live
+
+With a legacy (unscoped) key and no `--mode`, the command exits with code `2` and tells you what to pass. If `--mode` contradicts the key's scope the command also refuses to run — before making any request.
+
+`--prod` still works as a deprecated alias for `--mode live`.
+
+## Shared options
+
+| Option            | Description                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| `--mode <mode>`   | `sandbox` or `live`. Also `OWOSTACK_MODE`.                                           |
+| `--key <api-key>` | API secret key. Also `OWOSTACK_SECRET_KEY`, else the key stored by `owosk connect`.  |
+| `--config <path>` | Path to `owo.config.ts` (defaults to the usual names in the current directory).     |
+| `--json`          | Print exactly one JSON document on stdout — no spinners, colours or prompts.         |
+
+`OWOSTACK_API_URL` overrides the host for the selected mode (self-hosted / local API).
+
+## Exit codes
+
+| Code | Meaning                                                                 |
+| ---- | ----------------------------------------------------------------------- |
+| `0`  | Success, including "nothing to do"                                      |
+| `1`  | The operation failed (API error, network error, sync rejected)          |
+| `2`  | Usage or configuration error (missing key or mode, key/mode mismatch, no config file) |
+| `3`  | `diff --exit-code` found differences                                    |
+
+In `--json` mode failures are JSON too: `{ "ok": false, "error": { "code", "message", "hint?" }, "exitCode" }`.
+
 ## `init`
 
-Initialize a new Owostack project in the current directory.
+Scaffold `owo.config.ts` from your **sandbox** catalog. Runs `connect` first if no key is stored.
 
 ```bash
 npx owosk init
 ```
 
-This creates a default `owo.config.ts` file and prompts you for basic setup.
-
 ## `connect`
 
-Connect your local environment to an Owostack organization.
+Link the CLI to your organization through the browser. One approval issues a sandbox key and a live key; commands pick the one matching `--mode`.
 
 ```bash
 npx owosk connect
 ```
 
-This opens a browser for authentication and saves your credentials locally.
-
 ## `sync`
 
-Push your local catalog configuration to the Owostack cloud.
+Push your local catalog to the selected environment. Shows the diff and asks for confirmation unless `--yes` is passed.
 
 ```bash
-npx owosk sync
+npx owosk sync --mode sandbox
+npx owosk sync --mode live --yes
 ```
 
 **Options:**
 
-- `--force`: Skip confirmation and apply changes immediately.
 - `--dry-run`: Show what would change without applying.
+- `--yes`: Apply without the interactive prompt. Required together with `--json`.
+
+**CI example** — preview, then apply:
+
+```bash
+OWOSTACK_SECRET_KEY=$SANDBOX_KEY npx owosk sync --dry-run --json
+OWOSTACK_SECRET_KEY=$SANDBOX_KEY npx owosk sync --yes --json
+```
+
+`--json` output:
+
+```json
+{
+  "ok": true,
+  "command": "sync",
+  "mode": "sandbox",
+  "apiUrl": "https://sandbox.owostack.com/api/v1",
+  "dryRun": true,
+  "hasChanges": true,
+  "applied": false,
+  "changes": {
+    "plans": { "added": ["pro"], "removed": [], "changed": [] },
+    "features": { "added": [], "removed": [], "changed": [] },
+    "creditSystems": { "added": [], "removed": [], "changed": [] },
+    "creditPacks": { "added": [], "removed": [], "changed": [] },
+    "total": 1
+  }
+}
+```
+
+When changes are applied the document also carries `"applied": true` and the server's `result` (`plans`, `features`, `creditSystems`, `creditPacks`, `warnings`).
 
 ## `pull`
 
-Pull the latest configuration from the cloud into your local project.
+Write the remote catalog for the selected environment into your local config.
 
 ```bash
-npx owosk pull
+npx owosk pull --mode sandbox
 ```
+
+**Options:**
+
+- `--force`: Overwrite an existing config file without asking.
+- `--dry-run`: Print the generated config without writing it.
 
 ## `diff`
 
-Show the difference between your local configuration and what's currently in the cloud.
+Compare your local config with the remote catalog.
 
 ```bash
-npx owosk diff
+npx owosk diff --mode live
+npx owosk diff --mode live --exit-code   # exit 3 on drift, for CI
 ```
+
+**Options:**
+
+- `--exit-code`: Exit with code `3` when the catalogs differ.
 
 ## `validate`
 
-Validate your local `owo.config.ts` for errors or missing fields.
+Validate `owo.config.ts` locally and confirm the selected environment is reachable with your key.
 
 ```bash
-npx owosk validate
+npx owosk validate --mode sandbox
 ```

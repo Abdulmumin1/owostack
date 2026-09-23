@@ -3,13 +3,22 @@
  */
 
 export interface OwostackConfig {
-  /** API secret key */
+  /**
+   * API secret key. Environment-scoped keys (`owo_sk_test_…` for sandbox,
+   * `owo_sk_live_…` for live) also determine the environment when `mode` is
+   * omitted.
+   */
   secretKey: string;
 
   /** Optional: Default provider for all plans (e.g., "paystack", "dodo") */
   provider?: string;
 
-  /** Optional: Environment mode (sandbox or live) */
+  /**
+   * Environment to talk to. Required unless `apiUrl` is set or the key is
+   * environment-scoped. Must agree with the key's scope. The SDK never
+   * defaults to live silently: with no mode and a legacy key, the first
+   * request throws `OwostackError` (code `config_error`).
+   */
   mode?: "sandbox" | "live";
 
   /** Optional: Custom API URL for self-hosted deployments (takes precedence over mode) */
@@ -20,6 +29,12 @@ export interface OwostackConfig {
 
   /** Optional: Declarative catalog of plans and features */
   catalog?: CatalogEntry[];
+
+  /**
+   * Optional: per-environment API hosts used by the `owosk` CLI
+   * (e.g. self-hosted deployments). Ignored by the SDK itself.
+   */
+  environments?: { test?: string; live?: string };
 }
 
 /**

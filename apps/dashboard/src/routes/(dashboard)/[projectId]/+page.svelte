@@ -175,8 +175,9 @@
         <div class="bg-[var(--color-bg-code)] border border-border p-4 overflow-x-auto">
           <pre class="font-mono text-sm text-[var(--color-text-code)]"><code>import &#123; Owostack &#125; from 'owostack';
 
-const client = new Owostack(&#123; 
-  secretKey: "owosk_..." 
+// owo_sk_test_… targets sandbox, owo_sk_live_… targets live
+const client = new Owostack(&#123;
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
 &#125;);</code></pre>
         </div>
       </div>

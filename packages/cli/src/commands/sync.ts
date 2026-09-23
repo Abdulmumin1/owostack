@@ -1,50 +1,104 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { getApiKey, getLiveApiUrl, getTestApiUrl } from "../lib/config.js";
-import {
-  loadConfigSettings,
-  loadOwostackFromConfig,
-  resolveConfigPath,
-} from "../lib/loader.js";
+import { loadOwostackFromConfig, resolveConfigPath } from "../lib/loader.js";
 import {
   fetchPlans,
   fetchCreditSystems,
   fetchCreditPacks,
 } from "../lib/api.js";
-import { diffPlans, printDiff, DiffResult } from "../lib/diff.js";
+import { diffPlans, printDiff, type DiffResult } from "../lib/diff.js";
+import {
+  announceMode,
+  resolveCommandContext,
+  type CommonCommandOptions,
+} from "../lib/context.js";
+import { CliError, EXIT_CODES, failure, usageError } from "../lib/errors.js";
+import { stripAnsi, type Reporter } from "../lib/output.js";
 
-interface SyncOptions {
-  config?: string;
+export interface SyncOptions extends CommonCommandOptions {
   dryRun?: boolean;
-  key?: string;
-  prod?: boolean;
   yes?: boolean;
 }
 
-async function runSyncSingle(options: {
-  configPath?: string;
-  dryRun: boolean;
-  autoApprove: boolean;
-  apiKey: string;
-  apiUrl: string;
-  environment: string;
-}) {
-  const { configPath, dryRun, autoApprove, environment } = options;
-  const apiKey = getApiKey(options.apiKey);
-  // Construct full API URL with /api/v1
-  const apiUrl = `${options.apiUrl}/api/v1`;
-  const fullPath = resolveConfigPath(configPath);
+/** Plain (no ANSI) summary of a diff, used for --json and for change lists. */
+export function summarizeDiff(diff: DiffResult) {
+  const section = (s: {
+    onlyLocal: string[];
+    onlyRemote: string[];
+    changed: { slug: string; details: string[] }[];
+  }) => ({
+    added: s.onlyLocal,
+    removed: s.onlyRemote,
+    changed: s.changed.map((item) => ({
+      slug: item.slug,
+      details: item.details.map(stripAnsi),
+    })),
+  });
 
+  const plans = section(diff);
+  const features = section(diff.features);
+  const creditSystems = section(diff.creditSystems);
+  const creditPacks = section(diff.creditPacks);
+  const total = [plans, features, creditSystems, creditPacks].reduce(
+    (n, s) => n + s.added.length + s.removed.length + s.changed.length,
+    0,
+  );
+
+  return { plans, features, creditSystems, creditPacks, total };
+}
+
+function changeLines(diff: DiffResult): string[] {
+  const lines: string[] = [];
+  const push = (s: {
+    onlyLocal: string[];
+    onlyRemote: string[];
+    changed: { slug: string; details: string[] }[];
+  }) => {
+    for (const slug of s.onlyLocal)
+      lines.push(`${pc.green("+")} ${pc.bold(slug)}`);
+    for (const slug of s.onlyRemote)
+      lines.push(`${pc.red("-")} ${pc.bold(slug)}`);
+    for (const item of s.changed) {
+      lines.push(`${pc.cyan("~")} ${pc.bold(item.slug)}`);
+      for (const detail of item.details) lines.push(`  ${detail}`);
+    }
+  };
+  push(diff);
+  push(diff.features);
+  push(diff.creditSystems);
+  push(diff.creditPacks);
+  return lines;
+}
+
+function countsLine(diff: DiffResult): string {
+  const part = (n: number, color: (s: string) => string, label: string) =>
+    n > 0 ? `${color(pc.bold(String(n)))} ${label}` : "";
+  return [
+    part(diff.onlyLocal.length, pc.green, "plans added"),
+    part(diff.onlyRemote.length, pc.red, "plans removed"),
+    part(diff.changed.length, pc.cyan, "plans modified"),
+    part(diff.creditSystems.onlyLocal.length, pc.green, "systems added"),
+    part(diff.creditSystems.onlyRemote.length, pc.red, "systems removed"),
+    part(diff.creditSystems.changed.length, pc.cyan, "systems modified"),
+    part(diff.creditPacks.onlyLocal.length, pc.green, "packs added"),
+    part(diff.creditPacks.onlyRemote.length, pc.red, "packs removed"),
+    part(diff.creditPacks.changed.length, pc.cyan, "packs modified"),
+  ]
+    .filter(Boolean)
+    .join(pc.dim("  ·  "));
+}
+
+async function loadCatalog(configPath: string | undefined, reporter: Reporter) {
+  const fullPath = resolveConfigPath(configPath);
   if (!fullPath) {
-    p.log.error(
-      pc.red(
-        `Configuration file not found.${configPath ? ` looked at ${configPath}` : " searched defaults."}`,
-      ),
+    throw usageError(
+      "config_not_found",
+      `Configuration file not found.${configPath ? ` Looked at ${configPath}.` : " Searched the default locations."}`,
+      "Create one with `owosk init`, or pass --config <path>.",
     );
-    process.exit(1);
   }
 
-  const s = p.spinner();
+  const s = reporter.spinner();
   s.start(`Loading ${pc.cyan(fullPath)}`);
 
   let owo: any;
@@ -52,42 +106,50 @@ async function runSyncSingle(options: {
     owo = await loadOwostackFromConfig(fullPath);
   } catch (e: any) {
     s.stop(pc.red("Failed to load configuration"));
-    p.log.error(pc.red(`Error: ${e.message}`));
-    p.note(
-      `import { Owostack, metered, boolean, plan } from "owostack";\nexport default new Owostack({ secretKey: "...", catalog: [...] });`,
-      "Example owo.config.ts",
+    throw usageError(
+      "config_invalid",
+      `Could not load ${fullPath}: ${e.message}`,
+      "Make sure 'owostack' is installed in your project (npm install owostack) and the file exports an Owostack instance.",
     );
-    p.log.info(
-      pc.dim(
-        "Make sure 'owostack' is installed in your project: 'npm install owostack'",
-      ),
-    );
-    process.exit(1);
   }
 
   if (!owo || typeof owo.sync !== "function") {
     s.stop(pc.red("Invalid configuration"));
-    p.log.error("Config file must export an Owostack instance.");
-    process.exit(1);
+    throw usageError(
+      "config_invalid",
+      "Config file must export an Owostack instance.",
+      'export default new Owostack({ secretKey: "...", catalog: [...] });',
+    );
   }
 
   s.stop("Configuration loaded");
+  return { owo, fullPath };
+}
 
-  // Build payload for diff
+/**
+ * Compute the local-vs-remote diff for a mode. Shared by sync and diff.
+ */
+export async function computeCatalogDiff(params: {
+  owo: any;
+  apiKey: string;
+  apiUrl: string;
+  reporter: Reporter;
+  modeLabel: string;
+}): Promise<DiffResult> {
+  const { owo, apiKey, apiUrl, reporter } = params;
   const { buildSyncPayload } = (await import("owostack").catch(() => ({
     buildSyncPayload: null,
   }))) as any;
   const localPayload = buildSyncPayload?.(owo._config.catalog);
 
-  // Fetch remote state for diff
-  s.start(`Fetching remote catalog from ${pc.dim(environment)}...`);
-  const remotePlans = await fetchPlans({ apiKey, apiUrl: apiUrl });
+  const s = reporter.spinner();
+  s.start(`Fetching remote catalog from ${pc.dim(params.modeLabel)}...`);
+  const remotePlans = await fetchPlans({ apiKey, apiUrl });
   const remoteCreditSystems = await fetchCreditSystems(apiKey, apiUrl);
   const remoteCreditPacks = await fetchCreditPacks(apiKey, apiUrl);
   s.stop("Remote catalog fetched");
 
-  // Show diff
-  const diff = diffPlans({
+  return diffPlans({
     localPlans: localPayload?.plans ?? [],
     remotePlans,
     localFeatures: localPayload?.features ?? [],
@@ -97,231 +159,109 @@ async function runSyncSingle(options: {
     localCreditPacks: localPayload?.creditPacks ?? [],
     remoteCreditPacks,
   });
-  printDiff(diff);
-
-  // Check if there are any changes
-  const hasChanges =
-    diff.onlyLocal.length > 0 ||
-    diff.onlyRemote.length > 0 ||
-    diff.changed.length > 0 ||
-    diff.features.onlyLocal.length > 0 ||
-    diff.features.onlyRemote.length > 0 ||
-    diff.features.changed.length > 0 ||
-    diff.creditSystems.onlyLocal.length > 0 ||
-    diff.creditSystems.onlyRemote.length > 0 ||
-    diff.creditSystems.changed.length > 0 ||
-    diff.creditPacks.onlyLocal.length > 0 ||
-    diff.creditPacks.onlyRemote.length > 0 ||
-    diff.creditPacks.changed.length > 0;
-
-  if (!hasChanges) {
-    p.outro(pc.green("Everything is already in sync! ✨"));
-    return;
-  }
-
-  // If dry run, stop here
-  if (dryRun) {
-    p.log.info(pc.yellow("Dry run - no changes were applied."));
-    return;
-  }
-
-  // Interactive confirmation (unless --yes flag)
-  if (!autoApprove) {
-    const confirm = await p.confirm({
-      message: `Proceed with sync to ${pc.cyan(environment)}?`,
-      initialValue: false,
-    });
-
-    if (p.isCancel(confirm) || !confirm) {
-      p.outro(pc.yellow("Sync cancelled"));
-      process.exit(0);
-    }
-  }
-
-  // Proceed with sync
-  s.start(`Syncing with ${pc.cyan(environment)}...`);
-
-  if (apiKey && typeof owo.setSecretKey === "function") {
-    owo.setSecretKey(apiKey);
-  }
-  if (apiUrl && typeof owo.setApiUrl === "function") {
-    // SDK expects the full base URL including /api/v1
-    owo.setApiUrl(apiUrl);
-  }
-
-  try {
-    const result = await owo.sync();
-    s.stop(pc.green("Sync completed"));
-
-    if (!result.success) {
-      p.log.error(pc.red("Sync failed"));
-      process.exit(1);
-    }
-
-    // Use the diff data to show detailed changes, same format as Plans Diff
-    const lines: string[] = [];
-
-    // Plans changes
-    if (diff.onlyLocal.length > 0) {
-      for (const slug of diff.onlyLocal) {
-        lines.push(`${pc.green("+")} ${pc.bold(slug)}`);
-      }
-    }
-    if (diff.onlyRemote.length > 0) {
-      for (const slug of diff.onlyRemote) {
-        lines.push(`${pc.red("-")} ${pc.bold(slug)}`);
-      }
-    }
-    if (diff.changed.length > 0) {
-      for (const item of diff.changed) {
-        lines.push(`${pc.cyan("~")} ${pc.bold(item.slug)}`);
-        for (const detail of item.details) {
-          lines.push(`  ${detail}`);
-        }
-      }
-    }
-
-    // Feature changes
-    if (diff.features.onlyLocal.length > 0) {
-      for (const slug of diff.features.onlyLocal) {
-        lines.push(`${pc.green("+")} ${pc.bold(slug)}`);
-      }
-    }
-    if (diff.features.onlyRemote.length > 0) {
-      for (const slug of diff.features.onlyRemote) {
-        lines.push(`${pc.red("-")} ${pc.bold(slug)}`);
-      }
-    }
-    if (diff.features.changed.length > 0) {
-      for (const item of diff.features.changed) {
-        lines.push(`${pc.cyan("~")} ${pc.bold(item.slug)}`);
-        for (const detail of item.details) {
-          lines.push(`  ${detail}`);
-        }
-      }
-    }
-
-    // Credit Systems changes
-    if (diff.creditSystems.onlyLocal.length > 0) {
-      for (const slug of diff.creditSystems.onlyLocal) {
-        lines.push(`${pc.green("+")} ${pc.bold(slug)}`);
-      }
-    }
-    if (diff.creditSystems.onlyRemote.length > 0) {
-      for (const slug of diff.creditSystems.onlyRemote) {
-        lines.push(`${pc.red("-")} ${pc.bold(slug)}`);
-      }
-    }
-    if (diff.creditSystems.changed.length > 0) {
-      for (const item of diff.creditSystems.changed) {
-        lines.push(`${pc.cyan("~")} ${pc.bold(item.slug)}`);
-        for (const detail of item.details) {
-          lines.push(`  ${detail}`);
-        }
-      }
-    }
-
-    // Credit Packs changes
-    if (diff.creditPacks.onlyLocal.length > 0) {
-      for (const slug of diff.creditPacks.onlyLocal) {
-        lines.push(`${pc.green("+")} ${pc.bold(slug)}`);
-      }
-    }
-    if (diff.creditPacks.onlyRemote.length > 0) {
-      for (const slug of diff.creditPacks.onlyRemote) {
-        lines.push(`${pc.red("-")} ${pc.bold(slug)}`);
-      }
-    }
-    if (diff.creditPacks.changed.length > 0) {
-      for (const item of diff.creditPacks.changed) {
-        lines.push(`${pc.cyan("~")} ${pc.bold(item.slug)}`);
-        for (const detail of item.details) {
-          lines.push(`  ${detail}`);
-        }
-      }
-    }
-
-    if (lines.length > 0) {
-      p.note(lines.join("\n"), "Changes applied");
-
-      const counts = [
-        diff.onlyLocal.length > 0
-          ? `${pc.green(pc.bold(diff.onlyLocal.length.toString()))} plans added`
-          : "",
-        diff.onlyRemote.length > 0
-          ? `${pc.red(pc.bold(diff.onlyRemote.length.toString()))} plans removed`
-          : "",
-        diff.changed.length > 0
-          ? `${pc.cyan(pc.bold(diff.changed.length.toString()))} plans modified`
-          : "",
-        diff.creditSystems.onlyLocal.length > 0
-          ? `${pc.green(pc.bold(diff.creditSystems.onlyLocal.length.toString()))} systems added`
-          : "",
-        diff.creditSystems.onlyRemote.length > 0
-          ? `${pc.red(pc.bold(diff.creditSystems.onlyRemote.length.toString()))} systems removed`
-          : "",
-        diff.creditSystems.changed.length > 0
-          ? `${pc.cyan(pc.bold(diff.creditSystems.changed.length.toString()))} systems modified`
-          : "",
-        diff.creditPacks.onlyLocal.length > 0
-          ? `${pc.green(pc.bold(diff.creditPacks.onlyLocal.length.toString()))} packs added`
-          : "",
-        diff.creditPacks.onlyRemote.length > 0
-          ? `${pc.red(pc.bold(diff.creditPacks.onlyRemote.length.toString()))} packs removed`
-          : "",
-        diff.creditPacks.changed.length > 0
-          ? `${pc.cyan(pc.bold(diff.creditPacks.changed.length.toString()))} packs modified`
-          : "",
-      ]
-        .filter(Boolean)
-        .join(pc.dim("  ·  "));
-
-      p.log.info(counts);
-    } else {
-      p.log.success(pc.dim("No changes detected. Catalog is up to date."));
-    }
-
-    if (result.warnings && result.warnings.length) {
-      p.log.warn(pc.yellow(`Warnings:\n${result.warnings.join("\n")}`));
-    }
-  } catch (e: any) {
-    s.stop(pc.red("Sync failed"));
-    p.log.error(e.message);
-    throw e;
-  }
 }
 
-export async function runSync(options: SyncOptions) {
-  p.intro(pc.bgYellow(pc.black(" sync ")));
+export async function runSync(options: SyncOptions, reporter: Reporter) {
+  reporter.intro("sync");
 
-  const configSettings = await loadConfigSettings(options.config);
-  const testUrl = getTestApiUrl(configSettings.environments?.test);
-  const liveUrl = getLiveApiUrl(configSettings.environments?.live);
+  const ctx = await resolveCommandContext(options, reporter);
+  announceMode(reporter, ctx, "syncing to");
 
-  // Default to sandbox environment, prod only with --prod flag
-  if (options.prod) {
-    p.log.step(pc.magenta("Production Mode: Syncing to PROD environment"));
+  const { owo } = await loadCatalog(options.config, reporter);
+  const diff = await computeCatalogDiff({
+    owo,
+    apiKey: ctx.apiKey,
+    apiUrl: ctx.apiUrl,
+    reporter,
+    modeLabel: ctx.mode,
+  });
+  const summary = summarizeDiff(diff);
+  const hasChanges = summary.total > 0;
 
-    await runSyncSingle({
-      configPath: options.config,
-      dryRun: !!options.dryRun,
-      autoApprove: !!options.yes,
-      apiKey: options.key || "",
-      apiUrl: liveUrl,
-      environment: "prod",
-    });
-  } else {
-    p.log.step(pc.cyan("Sandbox Mode: Syncing to SANDBOX environment"));
+  if (!reporter.json) printDiff(diff);
 
-    await runSyncSingle({
-      configPath: options.config,
-      dryRun: !!options.dryRun,
-      autoApprove: !!options.yes,
-      apiKey: options.key || "",
-      apiUrl: testUrl,
-      environment: "sandbox",
-    });
+  const base = {
+    ok: true,
+    command: "sync",
+    mode: ctx.mode,
+    apiUrl: ctx.apiUrl,
+    dryRun: !!options.dryRun,
+    hasChanges,
+    changes: summary,
+  };
+
+  if (!hasChanges) {
+    reporter.outro(pc.green("Everything is already in sync! ✨"));
+    reporter.emit({ ...base, applied: false });
+    return;
   }
 
-  p.outro(pc.green("Done! ✨"));
+  if (options.dryRun) {
+    reporter.info(pc.yellow("Dry run - no changes were applied."));
+    reporter.emit({ ...base, applied: false });
+    return;
+  }
+
+  if (!options.yes) {
+    if (reporter.json) {
+      throw usageError(
+        "config_invalid",
+        "Refusing to prompt in --json mode. Pass --yes to apply, or --dry-run to preview.",
+      );
+    }
+    const confirm = await p.confirm({
+      message: `Proceed with sync to ${pc.cyan(ctx.mode)}?`,
+      initialValue: false,
+    });
+    if (p.isCancel(confirm) || !confirm) {
+      reporter.outro(pc.yellow("Sync cancelled"));
+      throw new CliError("cancelled", "Sync cancelled", EXIT_CODES.ok);
+    }
+  }
+
+  const s = reporter.spinner();
+  s.start(`Syncing with ${pc.cyan(ctx.mode)}...`);
+  owo.setSecretKey(ctx.apiKey);
+  owo.setApiUrl(ctx.apiUrl);
+
+  let result: any;
+  try {
+    result = await owo.sync();
+  } catch (e: any) {
+    s.stop(pc.red("Sync failed"));
+    throw failure("sync_failed", e?.message ?? "Sync failed");
+  }
+
+  if (!result?.success) {
+    s.stop(pc.red("Sync failed"));
+    throw failure(
+      "sync_failed",
+      result?.warnings?.length
+        ? `Sync failed: ${result.warnings.join("; ")}`
+        : "Sync failed",
+    );
+  }
+  s.stop(pc.green("Sync completed"));
+
+  const lines = changeLines(diff);
+  if (lines.length > 0) {
+    reporter.note(lines.join("\n"), "Changes applied");
+    reporter.info(countsLine(diff));
+  }
+  if (result.warnings?.length) {
+    reporter.warn(pc.yellow(`Warnings:\n${result.warnings.join("\n")}`));
+  }
+
+  reporter.outro(pc.green("Done! ✨"));
+  reporter.emit({
+    ...base,
+    applied: true,
+    result: {
+      features: result.features,
+      creditSystems: result.creditSystems,
+      creditPacks: result.creditPacks,
+      plans: result.plans,
+      warnings: result.warnings ?? [],
+    },
+  });
 }
