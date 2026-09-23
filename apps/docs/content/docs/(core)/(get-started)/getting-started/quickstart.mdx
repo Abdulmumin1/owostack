@@ -26,11 +26,11 @@ You need:
 
 1. Log in to the dashboard at [app.owostack.com](https://app.owostack.com) and click **Create Organization**.
 2. Name it anything you like (e.g. "My Tutorial App").
-3. Go to **API Keys → Create New Key**. Name it "Tutorial" and copy the key.
+3. Go to **Settings → API Keys → Create New Key**. Name it "Tutorial", choose the **Sandbox** environment, and copy the key. Sandbox keys start with `owo_sk_test_` and only ever talk to `sandbox.owostack.com`, so nothing in this tutorial can touch production (see [Environments](/getting-started/environments)).
 4. Save it in a `.env` file:
 
 ```sh
-OWOSTACK_API_KEY=owo_sk_xxxxxxxxxxxxxxxx
+OWOSTACK_API_KEY=owo_sk_test_xxxxxxxxxxxxxxxx
 ```
 
 ## 2. Connect a provider and set up webhooks
@@ -81,10 +81,10 @@ export const owo = new Owostack({
 Now, push this configuration to your Owostack account:
 
 ```bash
-npx owosk sync --config ./owo.config.mjs
+OWOSTACK_SECRET_KEY=owo_sk_test_… npx owosk sync --config ./owo.config.mjs
 ```
 
-You should see output confirming that your features and plans were created.
+The CLI reads the environment from the key prefix (`owo_sk_test_` → sandbox) and shows it in the first line of output. You should then see the diff and a confirmation that your features and plans were created. In CI, add `--yes --json` for non-interactive, machine-readable output.
 
 ## 4. Write your first script
 

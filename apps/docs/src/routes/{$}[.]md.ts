@@ -1,11 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { decodeMarkdownUrl, renderPageMarkdown } from "@/lib/llms";
 import { source } from "@/lib/source";
+import { resolveRedirect } from "@/lib/redirects";
 
 export const Route = createFileRoute("/{$}.md")({
   server: {
     handlers: {
       GET: async ({ params }) => {
+        const target = resolveRedirect(`/${params._splat ?? ""}.md`);
+        if (target) {
+          return new Response(null, {
+            status: 301,
+            headers: { Location: target },
+          });
+        }
         const slugs = decodeMarkdownUrl(params._splat?.split("/") ?? []);
         const page = source.getPage(slugs);
         if (!page) {
