@@ -306,25 +306,40 @@ export async function handleSubscriptionCreated(
     periodStart + 30 * 24 * 60 * 60 * 1000;
 
   const fallbackCode = providerCode || crypto.randomUUID();
-  await db.insert(schema.subscriptions).values([
-    {
-      id: crypto.randomUUID(),
-      customerId: dbCustomer.id,
-      planId: dbPlan.id,
-      providerId: event.provider,
-      providerSubscriptionId: fallbackCode,
-      providerSubscriptionCode: fallbackCode,
-      paystackSubscriptionId:
-        event.provider === "paystack" ? providerCode : null,
-      paystackSubscriptionCode:
-        event.provider === "paystack" ? providerCode : null,
-      status: "active",
-      currentPeriodStart: periodStart,
-      currentPeriodEnd: periodEnd,
-      providerMetadata: event.raw,
-      metadata: event.raw,
-    },
-  ]);
+  // The partial unique index on (provider_id, provider_subscription_code)
+  // makes this insert the arbiter when payment.succeeded / subscription.active
+  // / a provider retry for the same subscription run concurrently. The loser
+  // sees no row back; the winner has already provisioned entitlements.
+  const inserted = await db
+    .insert(schema.subscriptions)
+    .values([
+      {
+        id: crypto.randomUUID(),
+        customerId: dbCustomer.id,
+        planId: dbPlan.id,
+        providerId: event.provider,
+        providerSubscriptionId: fallbackCode,
+        providerSubscriptionCode: fallbackCode,
+        paystackSubscriptionId:
+          event.provider === "paystack" ? providerCode : null,
+        paystackSubscriptionCode:
+          event.provider === "paystack" ? providerCode : null,
+        status: "active",
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+        providerMetadata: event.raw,
+        metadata: event.raw,
+      },
+    ])
+    .onConflictDoNothing()
+    .returning({ id: schema.subscriptions.id });
+
+  if (inserted.length === 0) {
+    console.log(
+      `[WEBHOOK] subscription.created for code=${fallbackCode} lost the insert race; a concurrent handler already created it`,
+    );
+    return;
+  }
 
   // Provision entitlements for the new subscription
   await subscriptionCreatedDependencies.provisionEntitlements(
