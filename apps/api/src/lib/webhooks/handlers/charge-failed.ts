@@ -1,6 +1,12 @@
 import { schema } from "@owostack/db";
 import { eq, or } from "drizzle-orm";
 import type { WebhookContext } from "../types";
+import {
+  clearFailedPendingPlanChange,
+  eventMatchesPendingReference,
+  isProrationPayment,
+  readPendingPlanChange,
+} from "./pending-plan-change";
 
 export async function handleChargeFailed(ctx: WebhookContext): Promise<void> {
   const { db, organizationId, event, cache } = ctx;
@@ -15,6 +21,19 @@ export async function handleChargeFailed(ctx: WebhookContext): Promise<void> {
     ),
   });
   if (!sub) return;
+
+  // A failed *proration* charge is not a failed renewal: the current period
+  // is paid for. Drop the staged plan change and leave the status alone; if
+  // the provider later marks the subscription past_due it will say so via
+  // its own subscription event.
+  const pending = readPendingPlanChange(sub.metadata);
+  if (
+    pending &&
+    (eventMatchesPendingReference(event, pending) || isProrationPayment(event))
+  ) {
+    await clearFailedPendingPlanChange(ctx, sub, pending);
+    return;
+  }
 
   await db
     .update(schema.subscriptions)
