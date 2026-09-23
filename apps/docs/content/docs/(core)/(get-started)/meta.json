@@ -9,6 +9,7 @@
     "getting-started/data-model",
     "getting-started/providers",
     "getting-started/api-keys",
+    "getting-started/environments",
     "getting-started/webhook-setup"
   ]
 }

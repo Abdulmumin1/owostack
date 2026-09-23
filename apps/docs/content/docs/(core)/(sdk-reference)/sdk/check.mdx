@@ -27,19 +27,19 @@ await owo.check({
 
 ## Parameters
 
-| Parameter      | Type      | Required | Description                     |
-| -------------- | --------- | -------- | ------------------------------- |
-| `customer`     | `string`  | ✅       | Your internal user ID           |
-| `feature`      | `string`  | ✅       | Feature key to check access for |
-| `value`        | `number`  | -        | Units to check against limit    |
-| `entity`       | `string`  | -        | Scope to an entity (must exist) |
-| `sendEvent`    | `boolean` | -        | Atomically track if allowed     |
-| `customerData` | `object`  | -        | Auto-create customer if missing |
+| Parameter      | Type      | Required | Description                                                                                                         |
+| -------------- | --------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `customer`     | `string`  | ✅       | Your identifier for the customer (e.g. your user or workspace ID). Also accepts the customer's email or internal ID. |
+| `feature`      | `string`  | ✅       | Feature slug (or ID) to check access for                                                                            |
+| `value`        | `number`  | -        | Units the caller intends to consume. Default `1`.                                                                   |
+| `entity`       | `string`  | -        | Scope to an entity (seat, workspace…). Must already exist.                                                           |
+| `sendEvent`    | `boolean` | -        | If `true` and access is allowed, record `value` atomically (check + track in one round trip). Default `false`.        |
+| `customerData` | `object`  | -        | Create the customer on first use — same shape and semantics as in [`track()`](/sdk/track#customerdata--create-on-first-use) |
 
 <Callout type="warning">
   When using `entity`, the entity must be created with
   [`addEntity()`](/sdk/entities) first. Checking a non-existent entity
-  returns `entity_not_found` error.
+  returns an `entity_not_found` error.
 </Callout>
 
 ## Response
@@ -47,10 +47,12 @@ await owo.check({
 ```ts
 interface CheckResult {
   allowed: boolean;
-  code: string; // access_granted, limit_exceeded, overage_allowed, etc.
-  usage: number | null;
-  limit: number | null;
-  balance: number | null;
+  code: string;                    // access_granted, overage_allowed, limit_exceeded, …
+  environment: "sandbox" | "live"; // Where the check ran (also X-Owostack-Environment header)
+  unlimited: boolean;              // true when access is granted with no finite cap
+  usage: number | null;            // null for boolean features
+  limit: number | null;            // null = unlimited (see `unlimited`)
+  balance: number | null;          // limit - usage; null = unlimited
   resetsAt: string | null;
   resetInterval: string | null;
   credits:
@@ -58,33 +60,46 @@ interface CheckResult {
         source: "credit_system";
         systemSlug: string;
         costPerUnit: number;
+        bonusBalance: number;
         addonBalance: number;
-        plan: {
-          used: number;
-          limit: number | null;
-          balance: number | null;
-          resetsAt: string;
-        };
+        totalBalance: number | null;
+        plan: { used: number; limit: number | null; balance: number | null; resetsAt: string };
       }
     | {
         source: "prepaid";
+        bonusBalance: number;
         addonBalance: null;
-        plan: {
-          used: number;
-          limit: number | null;
-          balance: number | null;
-          resetsAt: string;
-        };
+        totalBalance: number | null;
+        plan: { used: number; limit: number | null; balance: number | null; resetsAt: string };
       }
     | null;
   details: {
     message: string;
+    plan?: string;                 // Slug of the plan granting access
     planName?: string;
     trial?: boolean;
     trialEndsAt?: string | null;
+    creditSystem?: string;
+    pricing?: { … };               // For chargeable metered features
   };
 }
 ```
+
+`unlimited` is the explicit form of "`limit` is `null` and access was granted". For credit-backed features it reflects `credits.totalBalance === null`. For pay-per-use features it is `true` (there is no cap) — look at `details.pricing` to see what usage will cost.
+
+### Result codes
+
+| `code`                   | `allowed` | Meaning                                                    |
+| ------------------------ | --------- | ---------------------------------------------------------- |
+| `access_granted`         | `true`    | Within limits (or boolean feature enabled)                 |
+| `overage_allowed`        | `true`    | Over the limit, but the plan allows billable overage       |
+| `addon_credits_used`     | `true`    | Plan credits exhausted; add-on credits would cover it      |
+| `limit_exceeded`         | `false`   | Limit reached and overage is blocked                       |
+| `insufficient_credits`   | `false`   | Not enough credits for `value`                             |
+| `customer_not_found`     | `false`   | Unknown `customer` and no `customerData`                   |
+| `feature_not_found`      | `false`   | Unknown feature slug                                       |
+| `no_active_subscription` | `false`   | Customer has no active plan                                |
+| `feature_not_in_plan`    | `false`   | The active plan doesn't include this feature               |
 
 ## Examples
 

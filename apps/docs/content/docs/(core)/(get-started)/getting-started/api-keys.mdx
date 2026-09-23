@@ -6,14 +6,14 @@ icon: Key
 
 # API Keys
 
-API keys authenticate your application with the Owostack API. Each key is scoped to a specific organization.
+API keys authenticate your application with the Owostack API. Each key is scoped to one organization **and one environment** (sandbox or live).
 
 ## Creating an API Key
 
-1. Go to **API Keys** in the sidebar
-2. Click **Create API Key**
-3. Enter a name for the key (e.g., "Production Server")
-4. Copy the key immediately - it's only shown once!
+1. Go to **Settings → API Keys** in the dashboard
+2. Click **Create New Key**
+3. Enter a name (e.g. "Production Server") and pick the environment: **Sandbox** or **Live**
+4. Copy the key immediately — it's only shown once!
 
 <Callout type="warning">
   **Security**: API keys are shown only once at creation. Store them securely.
@@ -22,15 +22,22 @@ API keys authenticate your application with the Owostack API. Each key is scoped
 
 ## Key Format
 
-Owostack API keys follow this format:
-
 ```
-owo_sk_xxxxxxxxxxxxxxxxxxxx
+owo_sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx   # sandbox
+owo_sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx   # live
 ```
 
-- `owo_` - Owostack prefix
-- `sk_` - Secret key indicator
-- `xxxx...` - Unique identifier
+- `owo_sk_` — Owostack secret key
+- `test_` / `live_` — the environment the key is scoped to
+- `xxxx…` — 48 hex characters
+
+The prefix is not just a label. A sandbox key sent to `api.owostack.com` (or a live key sent to `sandbox.owostack.com`) is rejected with `401 environment_mismatch` before anything is written. Because the whole string is hashed for lookup, the prefix cannot be edited to change a key's scope. See [Environments](/getting-started/environments).
+
+<Callout type="info">
+  Keys created before environment scoping look like `owo_sk_xxxx…` and are
+  accepted by both environments. They still work, but cannot stop a request
+  from landing in the wrong place — rotate them to scoped keys.
+</Callout>
 
 ## Using API Keys
 
@@ -39,6 +46,7 @@ owo_sk_xxxxxxxxxxxxxxxxxxxx
 ```ts
 import { Owostack } from "owostack";
 
+// A scoped key also selects the environment (sandbox or live)
 const owo = new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY,
 });
@@ -47,8 +55,18 @@ const owo = new Owostack({
 ### Direct API Calls
 
 ```bash
-curl https://api.owostack.com/v1/check \
-  -H "Authorization: Bearer owo_sk_your_key_here" \
+curl https://sandbox.owostack.com/v1/check \
+  -H "Authorization: Bearer owo_sk_test_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{"customer": "user_123", "feature": "premium"}'
 ```
+
+Every response includes an `X-Owostack-Environment` header (`sandbox` or `live`) and an `X-Owostack-Organization` header so you can confirm where the request landed.
+
+### In the CLI
+
+`owosk connect` issues a sandbox key and a live key in one approval and stores both; commands use the one matching `--mode`. In CI, set `OWOSTACK_SECRET_KEY`. See [CLI authentication](/cli/auth).
+
+## Revoking a key
+
+Delete the key in **Settings → API Keys**. Requests using it fail immediately with `401`.

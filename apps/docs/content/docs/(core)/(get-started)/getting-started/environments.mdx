@@ -1,0 +1,116 @@
+---
+title: Environments
+description: Sandbox vs live — hosts, environment-scoped keys, and how to tell where a request landed
+icon: TreeStructure
+---
+
+# Environments
+
+Owostack runs two completely isolated environments. Nothing is shared between them: customers, plans, subscriptions, usage and provider accounts all live in one or the other.
+
+| Environment | Host                           | Key prefix     | Use it for                                |
+| ----------- | ------------------------------ | -------------- | ----------------------------------------- |
+| **Sandbox** | `https://sandbox.owostack.com` | `owo_sk_test_` | Development, tests, CI — throwaway data   |
+| **Live**    | `https://api.owostack.com`     | `owo_sk_live_` | Production — real customers, real charges |
+
+The dashboard has a sandbox/live toggle in the header; everything you see is scoped to the selected environment.
+
+## Keys are scoped to one environment
+
+An API key belongs to exactly one environment, encoded in its prefix. The API enforces it:
+
+- an `owo_sk_test_…` key sent to `api.owostack.com` is rejected with **401 `environment_mismatch`** before anything is written;
+- an `owo_sk_live_…` key sent to `sandbox.owostack.com` is rejected the same way.
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "environment_mismatch",
+    "message": "This API key is scoped to the sandbox environment but the request was sent to the live API (https://api.owostack.com). Use an owo_sk_live_… key, or send this request to https://sandbox.owostack.com."
+  },
+  "environment": "live",
+  "keyEnvironment": "sandbox"
+}
+```
+
+Create one key per environment in **Settings → API keys**, choosing the environment for each. `owosk connect` issues both at once.
+
+<Callout type="info">
+  **Legacy keys.** Keys created before scoping existed look like `owo_sk_…`
+  (no `test`/`live`) and are still accepted by both hosts. They cannot protect
+  you from writing to the wrong environment — rotate them when you can.
+</Callout>
+
+## Every response tells you where it landed
+
+You never have to infer the environment from a hostname. Every public API response carries:
+
+| Where                  | Field / header               | Values                 |
+| ---------------------- | ---------------------------- | ---------------------- |
+| Response header        | `X-Owostack-Environment`     | `sandbox` \| `live`    |
+| Response header        | `X-Owostack-Organization`    | your organization ID   |
+| `check` / `track` body | `environment`                | `sandbox` \| `live`    |
+
+```ts
+const result = await owo.track({ customer: "workspace_1", feature: "agent_turns" });
+if (result.environment !== "live") {
+  console.warn("usage was recorded in", result.environment);
+}
+```
+
+## Selecting the environment
+
+Neither the SDK nor the CLI defaults to an environment silently.
+
+### SDK
+
+```ts
+// A scoped key is enough — the SDK infers the environment from the prefix
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_SECRET_KEY });
+owo.mode; // "sandbox" | "live"
+
+// A legacy key needs an explicit mode
+const owo = new Owostack({ secretKey: "owo_sk_…", mode: "sandbox" });
+```
+
+With a legacy key and no `mode`, the first request throws `OwostackError` (`code: "config_error"`) rather than hitting live. If `mode` contradicts the key's scope, that is also a `config_error`. See [Configuration](/sdk/configuration).
+
+### CLI
+
+```bash
+owosk sync                     # mode inferred from an owo_sk_test_/owo_sk_live_ key
+owosk sync --mode live --yes   # explicit
+OWOSTACK_MODE=sandbox owosk diff
+```
+
+With a legacy key and no `--mode`, `owosk` exits with code `2` and says what to pass. See [CLI commands](/cli/commands).
+
+## Same code, both environments
+
+Keep one code path and switch only the key:
+
+```sh
+# .env.development
+OWOSTACK_SECRET_KEY=owo_sk_test_…
+
+# .env.production
+OWOSTACK_SECRET_KEY=owo_sk_live_…
+```
+
+Sync your catalog to each environment separately — the catalog is data, and the two environments don't share it:
+
+```bash
+OWOSTACK_SECRET_KEY=$SANDBOX_KEY owosk sync --yes
+OWOSTACK_SECRET_KEY=$LIVE_KEY    owosk sync --yes
+```
+
+## Self-hosted deployments
+
+If you run your own Owostack API, point the SDK at it with `apiUrl` and the CLI with `OWOSTACK_API_URL` (or `environments.test` / `environments.live` in `owo.config.ts`). The key prefix rules still apply, because the same code enforces them.
+
+## Related
+
+- [API Keys](/getting-started/api-keys)
+- [SDK Configuration](/sdk/configuration)
+- [CLI Commands](/cli/commands)
