@@ -1,6 +1,6 @@
 ---
 title: customer()
-description: Create, resolve, and configure a customer
+description: Create, resolve, look up, list, and configure customers
 draft: false
 icon: User
 ---
@@ -13,6 +13,8 @@ For the dedicated guide covering customer-level billing overrides, precedence, a
 
 For customer-facing usage charts and usage dashboards, the same namespace also exposes `usageHistory()`.
 
+Every read on this namespace (`get()`, `usageHistory()`, and the setters) accepts the **same identifier you use in `track()` / `check()`**: your own external customer ID, the customer's email, or the internal Owostack ID.
+
 ## Signature
 
 ```ts
@@ -21,6 +23,16 @@ const customer = await owo.customer({
   email: string,       // Required: Customer email
   name?: string,       // Optional: Display name
   metadata?: Record<string, unknown>, // Optional: Custom data
+});
+
+const customer = await owo.customer.get(customer: string);
+
+const page = await owo.customer.list({
+  limit?: number,      // 1-100, default 50
+  offset?: number,     // default 0
+  search?: string,     // substring match on email, name, externalId
+  email?: string,      // exact (case-insensitive)
+  externalId?: string, // exact
 });
 
 await owo.customer.setFeatureConfig({
@@ -58,6 +70,26 @@ await owo.customer.usageHistory({
 | `email`    | `string` | ✅       | Customer email address    |
 | `name`     | `string` | -        | Customer display name     |
 | `metadata` | `object` | -        | Custom key-value data     |
+
+### `owo.customer.get(customer)`
+
+| Parameter  | Type     | Required | Description                                                                 |
+| ---------- | -------- | -------- | --------------------------------------------------------------------------- |
+| `customer` | `string` | ✅       | External customer ID (what you pass to `track`), email, or internal ID     |
+
+Returns the same `CustomerResult` as `owo.customer()`. Throws `OwostackError` with `Customer not found` when nothing matches within your organization.
+
+### `owo.customer.list(params?)`
+
+| Parameter    | Type     | Required | Description                                                     |
+| ------------ | -------- | -------- | --------------------------------------------------------------- |
+| `limit`      | `number` | -        | Page size, 1–100. Defaults to `50`.                             |
+| `offset`     | `number` | -        | Customers to skip. Defaults to `0`.                             |
+| `search`     | `string` | -        | Case-insensitive substring match on email, name and external ID |
+| `email`      | `string` | -        | Exact email match (case-insensitive)                            |
+| `externalId` | `string` | -        | Exact external ID match                                         |
+
+Results are newest first. `total` is the number of customers matching the filters, so `offset + data.length < total` means there is another page.
 
 ### `owo.customer.setFeatureConfig(params)`
 
@@ -99,14 +131,15 @@ Use [`owo.billing.usage()`](/sdk/billing) when you want uninvoiced overage and e
 
 ## Returns
 
-`owo.customer()`, `setFeatureConfig()`, and `setOverageLimit()` all return the customer plus the current customer billing config.
+`owo.customer()`, `get()`, `setFeatureConfig()`, and `setOverageLimit()` all return the customer plus the current customer billing config.
 
 ```ts
 interface CustomerResult {
-  id: string;
+  id: string;                 // Internal Owostack ID
+  externalId: string | null;  // Your ID (the `customer` value you track with)
   email: string;
-  name?: string;
-  metadata?: Record<string, unknown>;
+  name?: string | null;
+  metadata?: Record<string, unknown> | null;
   billing: {
     overageLimit: {
       maxOverageAmount: number | null;
@@ -128,6 +161,26 @@ interface CustomerResult {
   };
   createdAt: number;
   updatedAt: number;
+}
+```
+
+`owo.customer.list()` returns a page of lightweight customer summaries (no billing config):
+
+```ts
+interface CustomerListResult {
+  success: true;
+  data: Array<{
+    id: string;
+    externalId: string | null;
+    email: string;
+    name: string | null;
+    metadata: Record<string, unknown> | null;
+    createdAt: number;
+    updatedAt: number;
+  }>;
+  total: number;
+  limit: number;
+  offset: number;
 }
 ```
 
@@ -209,6 +262,40 @@ const byId = await owo.customer({
   id: "org_acme",
   email: "billing@acme.com",
 });
+```
+
+### Look Up a Customer by Your Own ID
+
+```ts
+// The id you pass to track()/check() works for reads too
+await owo.track({ customer: "workspace_alpha", feature: "agent_turns" });
+
+const customer = await owo.customer.get("workspace_alpha");
+console.log(customer.id);         // internal UUID
+console.log(customer.externalId); // "workspace_alpha"
+
+// Email works as well
+const byEmail = await owo.customer.get("billing@acme.com");
+```
+
+### List and Search Customers
+
+```ts
+// First page, newest first
+const page = await owo.customer.list({ limit: 25 });
+
+// Search across email, name and external id
+const matches = await owo.customer.list({ search: "acme" });
+
+// Exact lookups
+const { data } = await owo.customer.list({ externalId: "workspace_alpha" });
+
+// Walk every page
+for (let offset = 0; ; offset += 100) {
+  const { data, total } = await owo.customer.list({ limit: 100, offset });
+  for (const customer of data) console.log(customer.externalId ?? customer.email);
+  if (offset + data.length >= total) break;
+}
 ```
 
 ### Set a Per-Feature Overage Policy

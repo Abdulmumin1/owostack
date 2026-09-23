@@ -1273,26 +1273,92 @@ export interface CustomerParams {
 }
 
 export interface CustomerResult {
-  /** Customer ID */
+  /** Internal customer ID */
   id: string;
+
+  /**
+   * Your own identifier for this customer — the `customer` value you pass to
+   * track/check/attach. null when the customer was created by email only.
+   */
+  externalId: string | null;
 
   /** Customer email */
   email: string;
 
   /** Customer display name */
-  name?: string;
+  name?: string | null;
 
   /** Custom metadata */
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 
   /** Customer-specific billing configuration */
   billing: CustomerBillingConfig;
 
-  /** ISO timestamp when created */
-  createdAt: string;
+  /** Unix timestamp (ms) when created */
+  createdAt: number;
 
-  /** ISO timestamp when last updated */
-  updatedAt: string;
+  /** Unix timestamp (ms) when last updated */
+  updatedAt: number;
+}
+
+/**
+ * customer.list() - List / search customers
+ */
+
+export interface CustomerListParams {
+  /** Page size (1-100, default 50) */
+  limit?: number;
+
+  /** Number of customers to skip (default 0) */
+  offset?: number;
+
+  /** Case-insensitive substring match on email, name or external ID */
+  search?: string;
+
+  /** Exact email match (case-insensitive) */
+  email?: string;
+
+  /** Exact external ID match */
+  externalId?: string;
+}
+
+export interface CustomerSummary {
+  /** Internal customer ID */
+  id: string;
+
+  /** Your own identifier for this customer */
+  externalId: string | null;
+
+  /** Customer email */
+  email: string;
+
+  /** Customer display name */
+  name: string | null;
+
+  /** Custom metadata */
+  metadata: Record<string, unknown> | null;
+
+  /** Unix timestamp (ms) when created */
+  createdAt: number;
+
+  /** Unix timestamp (ms) when last updated */
+  updatedAt: number;
+}
+
+export interface CustomerListResult {
+  success: true;
+
+  /** Customers on this page, newest first */
+  data: CustomerSummary[];
+
+  /** Total customers matching the filters */
+  total: number;
+
+  /** Echoed page size */
+  limit: number;
+
+  /** Echoed offset */
+  offset: number;
 }
 
 export interface CustomerFeatureConfigResult {

@@ -25,6 +25,8 @@ import type {
   PublicPlan,
   CustomerParams,
   CustomerResult,
+  CustomerListParams,
+  CustomerListResult,
   SetCustomerFeatureConfigParams,
   SetCustomerOverageLimitParams,
   UsageHistoryParams,
@@ -483,6 +485,13 @@ function buildPlansFn(client: Owostack): PlansFn {
 
 type CustomerFn = {
   (params: CustomerParams): Promise<CustomerResult>;
+  /**
+   * Fetch a customer by internal ID, your external customer ID, or email —
+   * the same identifiers accepted by track/check.
+   */
+  get(customer: string): Promise<CustomerResult>;
+  /** List or search customers in your organization. */
+  list(params?: CustomerListParams): Promise<CustomerListResult>;
   setFeatureConfig(
     params: SetCustomerFeatureConfigParams,
   ): Promise<CustomerResult>;
@@ -495,6 +504,21 @@ type CustomerFn = {
 function buildCustomerFn(client: Owostack): CustomerFn {
   const fn = ((params: CustomerParams) =>
     client.post("/customers", params)) as CustomerFn;
+
+  fn.get = (customer: string) =>
+    client.get(
+      `/customers/${encodeURIComponent(customer)}`,
+    ) as Promise<CustomerResult>;
+
+  fn.list = (params: CustomerListParams = {}) => {
+    const query: Record<string, string> = {};
+    if (params.limit !== undefined) query.limit = String(params.limit);
+    if (params.offset !== undefined) query.offset = String(params.offset);
+    if (params.search) query.search = params.search;
+    if (params.email) query.email = params.email;
+    if (params.externalId) query.externalId = params.externalId;
+    return client.get("/customers", query) as Promise<CustomerListResult>;
+  };
 
   fn.setFeatureConfig = (params: SetCustomerFeatureConfigParams) =>
     client.post("/customers/feature-config", params) as Promise<CustomerResult>;
@@ -733,6 +757,9 @@ export type {
   PublicPlanFeature,
   CustomerParams,
   CustomerResult,
+  CustomerListParams,
+  CustomerListResult,
+  CustomerSummary,
   CustomerBillingConfig,
   CustomerFeatureConfigResult,
   CustomerOverageLimitResult,
