@@ -162,6 +162,22 @@ export interface NormalizedWebhookEvent {
   raw: Record<string, unknown>;
 }
 
+/**
+ * Outcome of a native plan change.
+ *
+ * `changed: true`  — the provider applied the new plan now.
+ * `changed: false, pending: true` — the provider *staged* the change behind a
+ * prorated charge it still has to collect (e.g. Bachs `pending_update`). The
+ * caller must not grant the new plan yet; the provider's subscription webhook
+ * confirms the switch once the charge settles.
+ */
+export interface PlanChangeResult {
+  changed: boolean;
+  pending?: boolean;
+  /** Provider-side invoice/charge the pending change is waiting on. */
+  pendingReference?: string | null;
+}
+
 export interface ProviderAdapter {
   id: ProviderId;
   displayName: string;
@@ -286,7 +302,7 @@ export interface ProviderAdapter {
     metadata?: Record<string, unknown>;
     environment: ProviderEnvironment;
     account: ProviderAccount;
-  }): Promise<ProviderResult<{ changed: boolean }>>;
+  }): Promise<ProviderResult<PlanChangeResult>>;
 
   refundCharge?(params: {
     reference: string;

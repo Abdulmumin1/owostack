@@ -864,4 +864,85 @@ describe("Bachs adapter behaviour", () => {
       }
     });
   });
+
+  describe("plan changes", () => {
+    // Captured from the Bachs sandbox: PATCH with invoice_now returned 200 but
+    // the subscription still carried the old product and a staged
+    // `pending_update` waiting on an open proration invoice.
+    const stagedResponse = {
+      id: "sub_5c79f94258be4d409619",
+      status: "active",
+      amount: "19.00",
+      currency: "USD",
+      product: { id: "prod_pro", name: "Pro (Bachs)" },
+      pending_update: {
+        kind: "plan_change",
+        product_id: "prod_business",
+        amount: "49.00",
+        effective_at: null,
+        proration_invoice_id: "inv_c6d0632c75fa413287ba",
+        staged_at: "2026-09-23T16:28:59.597512Z",
+      },
+    };
+
+    function patchTo(response: Record<string, unknown>) {
+      return new SequencedFetchTransport([
+        {
+          method: "PATCH",
+          origin: "https://sandbox-api.bachs.io",
+          path: "/v1/subscriptions/sub_5c79f94258be4d409619",
+          assert: (request) => {
+            expect(request.json()).toEqual({
+              product_id: "prod_business",
+              proration_behavior: "invoice_now",
+            });
+          },
+          respond: jsonResponse(response),
+        },
+      ]);
+    }
+
+    const change = () =>
+      bachsAdapter.changePlan!({
+        subscriptionId: "sub_5c79f94258be4d409619",
+        newPlanId: "prod_business",
+        environment: "test",
+        account: buildAccount(),
+      });
+
+    it("reports a staged change as pending instead of applied", async () => {
+      const transport = patchTo(stagedResponse);
+      const result = await withFetchTransport(transport, change);
+      transport.assertComplete();
+
+      expect(result.isOk()).toBe(true);
+      expect(result.isOk() && result.value).toEqual({
+        changed: false,
+        pending: true,
+        pendingReference: "inv_c6d0632c75fa413287ba",
+      });
+    });
+
+    it("reports an applied change when the subscription already carries the new product", async () => {
+      const transport = patchTo({
+        ...stagedResponse,
+        amount: "49.00",
+        product: { id: "prod_business", name: "Business (Bachs)" },
+        pending_update: null,
+      });
+      const result = await withFetchTransport(transport, change);
+      transport.assertComplete();
+
+      expect(result.isOk() && result.value).toEqual({ changed: true });
+    });
+
+    it("fails loudly when Bachs returns 200 but neither applied nor staged the requested product", async () => {
+      const transport = patchTo({ ...stagedResponse, pending_update: null });
+      const result = await withFetchTransport(transport, change);
+      transport.assertComplete();
+
+      expect(result.isErr()).toBe(true);
+      expect(result.isErr() && result.error.code).toBe("request_failed");
+    });
+  });
 });

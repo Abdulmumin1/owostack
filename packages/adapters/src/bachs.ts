@@ -3,6 +3,7 @@ import type {
   CheckoutSession,
   NormalizedWebhookEvent,
   ProviderAccount,
+  PlanChangeResult,
   ProviderAdapter,
   ProviderCustomerRef,
   ProviderCustomerSession,
@@ -1110,7 +1111,7 @@ export const bachsAdapter: ProviderAdapter = {
     });
   },
 
-  async changePlan(params): Promise<ProviderResult<{ changed: boolean }>> {
+  async changePlan(params): Promise<ProviderResult<PlanChangeResult>> {
     const clientResult = resolveClient(params.account, params.environment);
     if (clientResult.isErr()) return clientResult;
 
@@ -1123,10 +1124,32 @@ export const bachsAdapter: ProviderAdapter = {
       },
     );
 
-    if (response.isErr())
-      return response as ProviderResult<{ changed: boolean }>;
+    if (response.isErr()) return response as ProviderResult<PlanChangeResult>;
 
-    return Result.ok({ changed: true });
+    // Bachs returns 200 for an upgrade it has only *staged*: the subscription
+    // still carries the old product and a `pending_update` pointing at the new
+    // one, waiting on the prorated invoice to be collected. Only the
+    // `product` field tells us the change is live.
+    const body = response.value as Record<string, unknown>;
+    const currentProductId = asString(asRecord(body.product)?.id);
+    if (currentProductId === params.newPlanId) {
+      return Result.ok({ changed: true });
+    }
+
+    const pendingUpdate = asRecord(body.pending_update);
+    if (asString(pendingUpdate?.product_id) === params.newPlanId) {
+      return Result.ok({
+        changed: false,
+        pending: true,
+        pendingReference: asString(pendingUpdate?.proration_invoice_id) || null,
+      });
+    }
+
+    return Result.err({
+      code: "request_failed",
+      message: `Bachs accepted the plan change but the subscription still reports product ${currentProductId ?? "unknown"}`,
+      providerId: PROVIDER_ID,
+    });
   },
 
   async refundCharge(

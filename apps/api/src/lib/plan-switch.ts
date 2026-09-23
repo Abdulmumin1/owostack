@@ -52,6 +52,12 @@ export interface SwitchResult {
   subscriptionId?: string;
   message: string;
   scheduledAt?: number;
+  /**
+   * The provider accepted the change but is still collecting the prorated
+   * charge; the customer stays on the old plan until the provider's webhook
+   * confirms. Only native-upgrade providers that stage changes (Bachs) set it.
+   */
+  pending?: boolean;
 }
 
 const PAYSTACK_TRANSACTION_MINIMUMS: Record<string, number> = {
@@ -553,6 +559,40 @@ async function handleUpgrade(
       environment: provider.account.environment,
       account: provider.account,
     });
+
+    if (changeResult.isOk() && !changeResult.value.changed) {
+      // Staged, not applied: the provider still has to collect the prorated
+      // charge. Granting the new plan now would give away features the
+      // customer has not paid for and desync us from the provider's amount.
+      // Record the intent; customer.subscription.updated flips the plan once
+      // the provider applies it (see handlers/subscription-status.ts).
+      await db
+        .update(schema.subscriptions)
+        .set({
+          metadata: {
+            ...(typeof existingSub.metadata === "object"
+              ? existingSub.metadata
+              : {}),
+            pending_plan_change: {
+              new_plan_id: newPlan.id,
+              old_plan_id: existingSub.plan.id,
+              provider_reference: changeResult.value.pendingReference ?? null,
+              staged_at: now,
+            },
+          },
+          updatedAt: now,
+        })
+        .where(eq(schema.subscriptions.id, existingSub.id));
+
+      return {
+        success: true,
+        type: "upgrade",
+        requiresCheckout: false,
+        pending: true,
+        subscriptionId: existingSub.id,
+        message: `Upgrade to ${newPlan.name} is pending: the provider is collecting the prorated charge and will confirm the switch`,
+      };
+    }
 
     if (changeResult.isOk()) {
       // Update local DB immediately so /check sees the new plan right away.

@@ -90,6 +90,12 @@ const attachResponseSchema = z
     trial_days: z.number().int().optional(),
     trial_ends_at: z.string().datetime().nullable().optional(),
     type: z.enum(["new", "upgrade", "downgrade", "lateral"]).optional(),
+    pending: z
+      .boolean()
+      .optional()
+      .describe(
+        "True when the provider accepted a native upgrade but is still collecting the prorated charge; the customer stays on the current plan until the provider confirms.",
+      ),
     message: z.string().optional(),
     subscriptionId: z.string().optional(),
     subscription_id: z.string().optional(),
