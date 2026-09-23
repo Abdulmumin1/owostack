@@ -17,7 +17,6 @@
     Globe,
     ChartBar,
     Receipt,
-    SlidersHorizontal,
     Funnel,
     ArrowSquareOutIcon,
     Check
@@ -29,6 +28,7 @@
   import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import Skeleton from "$lib/components/ui/Skeleton.svelte";
   import Avatar from "$lib/components/ui/Avatar.svelte";
+  import UsageChart from "$lib/components/ui/UsageChart.svelte";
   import CustomerAccessSection from "./CustomerAccessSection.svelte";
   import CustomerEntitlementsSection from "./CustomerEntitlementsSection.svelte";
 
@@ -84,15 +84,6 @@
     });
   }
 
-  function formatDateTime(ts: number | string) {
-    return new Date(ts).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-
   function formatRelativeTime(ts: number) {
     const diff = Date.now() - ts;
     if (diff < 60_000) return "Just now";
@@ -105,25 +96,6 @@
     if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
     if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
     return value.toLocaleString();
-  }
-
-  function formatUsageBucketLabel(bucket: string) {
-    if (/^\d{4}-\d{2}$/.test(bucket)) {
-      return new Date(`${bucket}-01T00:00:00.000Z`).toLocaleDateString(
-        "en-US",
-        {
-          month: "short",
-          year: "numeric",
-          timeZone: "UTC",
-        },
-      );
-    }
-
-    return new Date(`${bucket}T00:00:00.000Z`).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      timeZone: "UTC",
-    });
   }
 
   function getHealthMessage(sub: any) {
@@ -302,36 +274,22 @@
         iconColor: item.iconColor,
       }));
   });
-  const usageChartData = $derived.by(() => {
+  const customerUsageChart = $derived.by(() => {
     if (
-      usageHistory &&
-      Array.isArray(usageHistory.series) &&
-      usageHistory.series.length > 0
+      !usageHistory ||
+      !Array.isArray(usageHistory.series) ||
+      usageHistory.series.length === 0
     ) {
-      const maxValue = Math.max(
-        ...usageHistory.series.map((point: any) => Number(point.value || 0)),
-        0,
-      );
-      const chartMax = maxValue > 0 ? Math.ceil(maxValue * 1.25) : 140;
-      const maxTick = Math.max(Math.ceil(chartMax / 4) * 4, 4);
-
-      return {
-        days: usageHistory.series.map((point: any) => ({
-          label: formatUsageBucketLabel(point.bucket),
-          value: Number(point.value || 0),
-        })),
-        max: maxTick,
-        ticks: [
-          maxTick,
-          Math.round(maxTick * 0.75),
-          Math.round(maxTick * 0.5),
-          Math.round(maxTick * 0.25),
-          0,
-        ],
-      };
+      return null;
     }
-
-    return data?.usageChartData || null;
+    return {
+      data: usageHistory.series.map((point: any) => ({
+        date: String(point.bucket),
+        featureId: "total",
+        totalUsage: Number(point.value || 0),
+      })),
+      dates: usageHistory.series.map((point: any) => String(point.bucket)),
+    };
   });
 
   let showExpired = $state(false);
@@ -643,133 +601,24 @@
           </div>
         </div>
 
-        <div
-          class="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-0 rounded-lg border border-border shadow-none overflow-hidden bg-bg-card"
-        >
-          <div class="border-r border-border/50 overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead class="bg-bg-card border-b border-border/50">
-                <tr>
-                  <th
-                    class="bg-transparent border-0 text-text-dim font-medium text-xs py-3 px-4"
-                    >Feature</th
-                  >
-                  <th
-                    class="bg-transparent border-0 text-text-dim font-medium text-xs py-3 px-4"
-                    >Value</th
-                  >
-                  <th
-                    class="bg-transparent border-0 text-text-dim font-medium text-xs py-3 px-4"
-                  >
-                    <div class="flex items-center justify-between">
-                      Timestamp
-                      <SlidersHorizontal size={14} class="text-text-dim" />
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-border/50">
-                {#if recentUsage.length > 0}
-                  {#each recentUsage.slice(0, 6) as usage}
-                    <tr class="hover:bg-bg-secondary/30 transition-colors">
-                      <td
-                        class="py-3 px-4 text-xs font-mono text-text-secondary"
-                        >{usage.featureSlug || usage.featureName}</td
-                      >
-                      <td
-                        class="py-3 px-4 text-xs font-medium text-text-primary"
-                        >{usage.amount}</td
-                      >
-                      <td class="py-3 px-4 text-xs text-text-dim"
-                        >{formatDateTime(usage.createdAt)}</td
-                      >
-                    </tr>
-                  {/each}
-                {:else}
-                  <tr>
-                    <td
-                      colspan="3"
-                      class="text-center py-8 text-sm text-text-dim bg-bg-secondary/10"
-                    >
-                      No usage data found
-                    </td>
-                  </tr>
-                {/if}
-              </tbody>
-            </table>
-          </div>
-          <div
-            class="p-6 bg-bg-card min-h-[250px] flex items-center justify-center border-t lg:border-t-0 border-border/50"
-          >
-            {#if usageChartData}
-              <div
-                class="w-full h-full border-b border-l border-border/50 relative ml-8 mb-4"
-              >
-                <div class="absolute inset-0 flex items-end justify-around px-2">
-                  {#each usageChartData.days as day}
-                    {#if day.value > 0}
-                      <div
-                        class="w-6 sm:w-8 bg-accent rounded-t-sm shadow-sm opacity-90 transition-all"
-                        style="height: {(day.value / usageChartData.max) * 100}%"
-                        title="{day.value} units on {day.label}"
-                      ></div>
-                    {:else}
-                      <div class="w-8 bg-transparent h-[10%]"></div>
-                    {/if}
-                  {/each}
-                </div>
-                <!-- Y Axis labels -->
-                <div
-                  class="absolute -left-10 top-0 text-[10px] text-text-dim w-8 text-right font-mono"
-                >
-                  {usageChartData.ticks[0]}
-                </div>
-                <div
-                  class="absolute -left-10 top-1/4 text-[10px] text-text-dim w-8 text-right font-mono"
-                >
-                  {usageChartData.ticks[1]}
-                </div>
-                <div
-                  class="absolute -left-10 top-2/4 text-[10px] text-text-dim w-8 text-right font-mono"
-                >
-                  {usageChartData.ticks[2]}
-                </div>
-                <div
-                  class="absolute -left-10 top-3/4 text-[10px] text-text-dim w-8 text-right font-mono"
-                >
-                  {usageChartData.ticks[3]}
-                </div>
-                <div
-                  class="absolute -left-10 bottom-0 text-[10px] text-text-dim w-8 text-right font-mono translate-y-1.5"
-                >
-                  {usageChartData.ticks[4]}
-                </div>
-                <!-- Grid lines -->
-                <div
-                  class="absolute top-0 left-0 right-0 border-t border-dashed border-border/40"
-                ></div>
-                <div
-                  class="absolute top-1/4 left-0 right-0 border-t border-dashed border-border/40"
-                ></div>
-                <div
-                  class="absolute top-2/4 left-0 right-0 border-t border-dashed border-border/40"
-                ></div>
-                <div
-                  class="absolute top-3/4 left-0 right-0 border-t border-dashed border-border/40"
-                ></div>
-                <!-- X Axis labels -->
-                <div
-                  class="absolute bottom-0 left-0 right-0 translate-y-full pt-3 flex justify-around text-[10px] text-text-dim font-mono px-2"
-                >
-                  {#each usageChartData.days as day, i}
-                    <span class={i === 6 ? "font-bold text-text-primary" : ""}>{day.label}</span>
-                  {/each}
-                </div>
-              </div>
-            {:else}
-              <div class="text-sm text-text-dim">Usage chart data not available</div>
-            {/if}
-          </div>
+        <div class="bg-bg-card border border-border rounded-lg p-5">
+          {#if customerUsageChart}
+            <UsageChart
+              data={customerUsageChart.data}
+              features={[]}
+              days={customerUsageChart.dates.length}
+              dates={customerUsageChart.dates}
+            />
+          {:else}
+            <div
+              class="h-64 flex flex-col items-center justify-center text-center"
+            >
+              <ChartBar size={22} class="text-text-dim mb-3" weight="duotone" />
+              <p class="text-sm text-text-dim">
+                No usage recorded in the last 7 days
+              </p>
+            </div>
+          {/if}
         </div>
       </section>
 

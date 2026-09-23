@@ -368,6 +368,28 @@
   const hasPendingDowngrade = $derived(
     !!(data?.subscription?.metadata as any)?.scheduled_downgrade,
   );
+  // Native upgrade the provider has staged behind a prorated charge (Bachs).
+  // The customer stays on the current plan until the provider confirms.
+  const pendingPlanChange = $derived(
+    ((data?.subscription?.metadata as any)?.pending_plan_change ?? null) as {
+      new_plan_id: string;
+      old_plan_id?: string;
+      provider_reference?: string | null;
+      staged_at?: number;
+    } | null,
+  );
+  const pendingPlanChangeName = $derived(
+    (data?.availablePlans || []).find(
+      (p: any) => p.id === pendingPlanChange?.new_plan_id,
+    )?.name ?? null,
+  );
+  const failedPlanChange = $derived(
+    ((data?.subscription?.metadata as any)?.failed_plan_change ?? null) as {
+      new_plan_id: string;
+      failed_at?: number;
+      reason?: string;
+    } | null,
+  );
   const isFree = $derived(data?.plan?.type === "free");
   const isOneTime = $derived(
     (data?.subscription?.metadata as any)?.billing_type === "one_time" ||
@@ -530,6 +552,56 @@
               (data.subscription.metadata as any).scheduled_downgrade
                 .effective_at,
             )}
+          </p>
+        </div>
+      </div>
+    {/if}
+    {#if pendingPlanChange}
+      <div
+        class="bg-info-bg border border-info rounded p-3 flex items-start gap-2"
+      >
+        <ArrowUpRight
+          size={14}
+          class="text-info mt-0.5 shrink-0"
+          weight="duotone"
+        />
+        <div class="min-w-0">
+          <p class="text-xs font-semibold text-info">
+            Upgrade pending provider confirmation
+          </p>
+          <p class="text-[10px] text-text-dim mt-0.5">
+            Moving to {pendingPlanChangeName ?? "the new plan"}. The provider is
+            collecting the prorated charge; the customer keeps the current plan
+            until it settles.
+          </p>
+          {#if pendingPlanChange.staged_at}
+            <p class="text-[10px] text-text-dim mt-1">
+              Requested {formatDate(pendingPlanChange.staged_at)}
+            </p>
+          {/if}
+          {#if pendingPlanChange.provider_reference}
+            <p class="text-[10px] text-text-dim mt-1 font-mono break-all">
+              {pendingPlanChange.provider_reference}
+            </p>
+          {/if}
+        </div>
+      </div>
+    {:else if failedPlanChange}
+      <div
+        class="bg-warning-bg border border-warning rounded p-3 flex items-start gap-2"
+      >
+        <Warning size={14} class="text-warning mt-0.5 shrink-0" weight="fill" />
+        <div class="min-w-0">
+          <p class="text-xs font-semibold text-warning">
+            Last upgrade did not complete
+          </p>
+          <p class="text-[10px] text-text-dim mt-0.5">
+            The prorated charge failed{failedPlanChange.reason
+              ? ` (${failedPlanChange.reason})`
+              : ""}; the customer stayed on this plan.
+            {#if failedPlanChange.failed_at}
+              {formatDate(failedPlanChange.failed_at)}
+            {/if}
           </p>
         </div>
       </div>

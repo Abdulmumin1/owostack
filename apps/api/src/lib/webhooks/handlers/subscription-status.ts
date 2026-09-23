@@ -1,4 +1,5 @@
 import { schema } from "@owostack/db";
+import { readPendingPlanChange } from "./pending-plan-change";
 import { eq, and, or } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
 import { upsertPaymentMethod } from "../../payment-methods";
@@ -244,6 +245,24 @@ export function handleSubscriptionStatus(status: string) {
         console.log(
           `[WEBHOOK] Plan changed: sub=${sub.id}, oldPlan=${sub.planId}, newPlan=${newPlan.id}`,
         );
+
+        // A staged native change (Bachs) has now been applied by the provider.
+        const pending = readPendingPlanChange(sub.metadata);
+        if (pending) {
+          const base = (updates.metadata as Record<string, unknown> | undefined) ??
+            (typeof sub.metadata === "object" && sub.metadata
+              ? { ...(sub.metadata as Record<string, unknown>) }
+              : {});
+          delete base.pending_plan_change;
+          updates.metadata = {
+            ...base,
+            switched_from: sub.planId,
+            switch_type: "upgrade",
+            native_plan_change: true,
+            plan_change_applied_at: now,
+            plan_change_applied_by: "subscription_event",
+          };
+        }
 
         // Re-provision entitlements so the customer gets the new plan's features
         await subscriptionStatusDependencies.provisionEntitlements(

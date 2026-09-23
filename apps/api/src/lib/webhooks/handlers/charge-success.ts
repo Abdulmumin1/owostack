@@ -19,6 +19,11 @@ import {
 } from "../../customer-resolution";
 import type { WebhookContext } from "../types";
 import { safeParseDate, intervalToMs } from "../types";
+import {
+  findSubscriptionByProviderCode,
+  handleProrationPayment,
+  isProrationPayment,
+} from "./pending-plan-change";
 
 export type ChargeSuccessDependencies = {
   provisionEntitlements: typeof provisionEntitlements;
@@ -459,6 +464,23 @@ export async function handleChargeSuccess(ctx: WebhookContext): Promise<void> {
   // 4. Handle PLAN UPGRADE (checkout-based upgrade flow)
   if (metadata.type === "plan_upgrade") {
     await handlePlanUpgrade(ctx, dbCustomer);
+    return;
+  }
+
+  // 4a. Prorated charge for a native plan change (Dodo/Bachs). Not a renewal:
+  //     it must not advance the billing period or create a subscription.
+  if (isProrationPayment(event) && event.subscription?.providerCode) {
+    const sub = await findSubscriptionByProviderCode(
+      db,
+      event.subscription.providerCode,
+    );
+    if (sub) {
+      await handleProrationPayment(ctx, sub);
+      return;
+    }
+    console.warn(
+      `[WEBHOOK] Proration payment for unknown subscription code=${event.subscription.providerCode}; ignoring`,
+    );
     return;
   }
 

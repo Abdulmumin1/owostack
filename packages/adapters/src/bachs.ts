@@ -1492,6 +1492,12 @@ export const bachsAdapter: ProviderAdapter = {
         const nestedSub = asRecord(data.subscription);
         const subscriptionId = asString(nestedSub?.subscription_id);
         const charge = asRecord(data.charge);
+        // Let the API correlate this with a staged plan change's proration
+        // invoice and tell renewal failures from proration failures.
+        const invoiceId = asString(data.invoice_id) || asString(data.id);
+        if (invoiceId) metadata.invoice_id = invoiceId;
+        const billingReason = asString(data.billing_reason);
+        if (billingReason) metadata.billing_reason = billingReason;
 
         return Result.ok({
           ...base,

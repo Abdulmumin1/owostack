@@ -5,10 +5,13 @@
     data,
     features,
     days,
+    dates,
   }: {
     data: Array<{ date: string; featureId: string; totalUsage: number }>;
     features: Array<{ id: string; name: string; slug: string }>;
     days: number;
+    /** Explicit x-axis dates (e.g. API-returned buckets). Overrides the computed rolling range. */
+    dates?: string[];
   } = $props();
 
   // Distinct hues. Assigned per feature id (not per position) so a feature
@@ -48,8 +51,12 @@
     );
   }
 
-  // Full, stable date range for the X axis (oldest → newest).
+  // Full, stable date range for the X axis (oldest → newest). When explicit
+  // dates are provided (e.g. API-returned buckets) they are used as-is.
   const dateLabels = $derived.by(() => {
+    if (dates && dates.length > 0) {
+      return [...dates].sort();
+    }
     const out: string[] = [];
     const now = new SvelteDate();
     now.setHours(0, 0, 0, 0);
@@ -60,6 +67,9 @@
     }
     return out;
   });
+
+  const totalDays = $derived(dateLabels.length);
+  const hasExplicitDates = $derived(!!dates && dates.length > 0);
 
   const featureMeta = $derived(new SvelteMap(features.map((f) => [f.id, f])));
 
@@ -165,8 +175,8 @@
     })),
   );
 
-  const gapClass = $derived(days > 31 ? "gap-0.5" : "gap-1");
-  const labelStep = $derived(days <= 10 ? 1 : Math.ceil(days / 10));
+  const gapClass = $derived(totalDays > 31 ? "gap-0.5" : "gap-1");
+  const labelStep = $derived(totalDays <= 10 ? 1 : Math.ceil(totalDays / 10));
   const hasData = $derived(dayData.some((d) => d.total > 0));
 
   function formatNumber(n: number) {
@@ -177,7 +187,7 @@
 
   function dateLabel(date: string, index: number) {
     const d = new Date(date + "T12:00:00Z");
-    if (days <= 7) {
+    if (!hasExplicitDates && days <= 7) {
       return d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
     }
     if (index % labelStep !== 0 && index !== dateLabels.length - 1) return "";
@@ -224,7 +234,7 @@
     <div
       class="relative h-64 flex-1 overflow-x-clip"
       role="img"
-      aria-label="Usage over the last {days} days"
+      aria-label="Usage over the last {totalDays} days"
     >
       <!-- Gridlines -->
       <div class="absolute inset-0">
