@@ -83,7 +83,6 @@
   );
 
   let activeEnvironment = $state<"test" | "live">(initialActiveEnvironment);
-  let testConnected = $state(false);
   let liveConnected = $state(false);
   let isSwitching = $state(false);
 
@@ -93,14 +92,31 @@
   let deploySavingProvider = $state<string | null>(null);
   let deployShowSecrets = $state<Record<string, boolean>>({});
 
-  let testProviderIds = $state<string[]>([]);
+  // Sandbox providers are managed by Owostack, so the org has no sandbox
+  // credentials to mirror. Going live means connecting live credentials for
+  // the providers the sandbox catalog actually uses (plan/credit-pack
+  // providerId), plus any other enabled provider the user wants.
+  let enabledProviderIds = $state<string[]>([]);
+  let usedProviderIds = $state<string[]>([]);
   let liveProviderIds = $state<Set<string>>(new Set());
+  let showAllDeployProviders = $state(false);
 
-  let step1Done = $derived(
-    testProviderIds.length > 0 &&
-      testProviderIds.every((id) => liveProviderIds.has(id)),
+  let deployProviderIds = $derived(
+    showAllDeployProviders || usedProviderIds.length === 0
+      ? [
+          ...usedProviderIds,
+          ...enabledProviderIds.filter((id) => !usedProviderIds.includes(id)),
+        ]
+      : usedProviderIds,
   );
-  let allTestProvidersLive = $derived(step1Done && testProviderIds.length > 0);
+  let hiddenDeployProviderCount = $derived(
+    enabledProviderIds.filter((id) => !usedProviderIds.includes(id)).length,
+  );
+
+  let step1Done = $derived(liveProviderIds.size > 0);
+  let allUsedProvidersLive = $derived(
+    step1Done && usedProviderIds.every((id) => liveProviderIds.has(id)),
+  );
 
   let step2Loading = $state(false);
   let step2Done = $state(false);
@@ -196,32 +212,42 @@
     showDeployModal = true;
     deployError = null;
     try {
-      const [testAccountsRes, liveAccountsRes] = await Promise.all([
-        fetchDashboardForEnv(
-          "test",
-          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-        ),
-        fetchDashboardForEnv(
-          "live",
-          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-        ),
-      ]);
+      const [testPlansRes, testAccountsRes, liveAccountsRes, enabledRes] =
+        await Promise.all([
+          fetchDashboardForEnv(
+            "test",
+            `/api/dashboard/plans?organizationId=${projectId}`,
+          ),
+          fetchDashboardForEnv(
+            "test",
+            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+          ),
+          fetchDashboardForEnv(
+            "live",
+            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+          ),
+          fetchDashboardForEnv("live", "/api/dashboard/providers/enabled"),
+        ]);
 
-      const testAccounts = testAccountsRes.data as any[];
-      const liveAccounts = liveAccountsRes.data as any[];
+      const testPlans = (testPlansRes.data as any[]) || [];
+      const testAccounts = (testAccountsRes.data as any[]) || [];
+      const liveAccounts = (liveAccountsRes.data as any[]) || [];
 
-      testProviderIds = [
-        ...new Set(
-          testAccounts
+      enabledProviderIds = (enabledRes.data as string[]) || [];
+      usedProviderIds = [
+        ...new Set<string>([
+          ...testPlans.map((p) => p.providerId).filter(Boolean),
+          ...testAccounts
             .filter((a) => a.environment === "test")
             .map((a) => a.providerId),
-        ),
+        ]),
       ];
       liveProviderIds = new Set(
         liveAccounts
           .filter((a) => a.environment === "live")
           .map((a) => a.providerId),
       );
+      showAllDeployProviders = false;
     } catch (e) {
       console.error("Failed to load provider accounts", e);
     }
@@ -426,26 +452,16 @@
 
   async function loadEnvironmentStatus() {
     try {
-      const [testAccountsRes, liveAccountsRes, env, currencyRes] =
-        await Promise.all([
-          fetchDashboardForEnv(
-            "test",
-            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-          ),
-          fetchDashboardForEnv(
-            "live",
-            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-          ),
-          loadActiveEnvironment(),
-          apiFetch(
-            `/api/dashboard/config/default-currency?organizationId=${projectId}`,
-          ),
-        ]);
-
-      if (testAccountsRes.data) {
-        const testAccounts = testAccountsRes.data as any[];
-        testConnected = testAccounts.some((a: any) => a.environment === "test");
-      }
+      const [liveAccountsRes, env, currencyRes] = await Promise.all([
+        fetchDashboardForEnv(
+          "live",
+          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+        ),
+        loadActiveEnvironment(),
+        apiFetch(
+          `/api/dashboard/config/default-currency?organizationId=${projectId}`,
+        ),
+      ]);
 
       if (liveAccountsRes.data) {
         const liveAccounts = liveAccountsRes.data as any[];
@@ -464,7 +480,9 @@
 
   async function switchEnvironment(env: "test" | "live") {
     if (env === "live" && !liveConnected) {
-      alert("Live mode not configured. Add a live key in Gear first.");
+      alert(
+        "Live mode not configured. Connect a live provider via Go to Production first.",
+      );
       return;
     }
     if (env === "live" && activeEnvironment === "test") {
@@ -883,13 +901,13 @@
           <!-- Step 1: Connect Providers -->
           <div class="flex items-start gap-4">
             <div
-              class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {allTestProvidersLive
+              class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {allUsedProvidersLive
                 ? 'bg-accent text-accent-contrast'
                 : step1Done
                   ? 'bg-accent/60 text-accent-contrast'
                   : 'bg-bg-secondary text-text-dim border border-border'}"
             >
-              {#if allTestProvidersLive}
+              {#if allUsedProvidersLive}
                 <Check size={14} weight="fill" />
               {:else}
                 1
@@ -900,24 +918,34 @@
                 Connect your provider accounts
               </h3>
               <p class="text-xs text-text-dim mt-0.5">
-                Add live credentials for each payment provider you use.
+                Sandbox ran on Owostack's shared test accounts. Production
+                charges real cards, so add your own live credentials for the
+                providers your catalog uses.
               </p>
 
-              {#if testProviderIds.length === 0}
+              {#if enabledProviderIds.length === 0}
                 <p class="text-xs text-text-dim mt-2 italic">
-                  No test providers configured yet. Add one in Gear first.
+                  Loading providers...
                 </p>
               {/if}
 
               <div class="mt-3 space-y-4">
-                {#each testProviderIds as providerId}
+                {#each deployProviderIds as providerId (providerId)}
                   {@const config = getProviderConfig(providerId)}
                   {@const isLive = liveProviderIds.has(providerId)}
+                  {@const isUsed = usedProviderIds.includes(providerId)}
                   {@const isSaving = deploySavingProvider === providerId}
                   <div class="border border-border bg-bg-card p-3 space-y-2">
                     <div class="flex items-center justify-between">
-                      <span class="text-xs font-bold text-text-primary"
-                        >{config?.name || providerId}</span
+                      <span class="text-xs font-bold text-text-primary flex items-center gap-2"
+                        >{config?.name || providerId}
+                        {#if isUsed}
+                          <span
+                            class="badge badge-default text-[9px]"
+                            title="Plans in your sandbox catalog are on this provider"
+                            >Used in sandbox</span
+                          >
+                        {/if}</span
                       >
                       {#if isLive}
                         <span
@@ -1029,13 +1057,23 @@
                 {/each}
               </div>
 
-              {#if step1Done && !allTestProvidersLive}
+              {#if !showAllDeployProviders && usedProviderIds.length > 0 && hiddenDeployProviderCount > 0}
+                <button
+                  type="button"
+                  class="mt-3 text-[10px] font-bold text-accent hover:text-accent-hover uppercase tracking-widest"
+                  onclick={() => (showAllDeployProviders = true)}
+                >
+                  Connect a different provider ({hiddenDeployProviderCount})
+                </button>
+              {/if}
+
+              {#if step1Done && !allUsedProvidersLive}
                 <p
                   class="text-[10px] text-yellow-600 dark:text-yellow-500 mt-2"
                 >
-                  Some test providers don't have live keys yet. You can still go
-                  live, but features using those providers won't work in
-                  production.
+                  Some providers used by your sandbox plans don't have live keys
+                  yet. You can still go live, but plans on those providers won't
+                  be able to charge in production.
                 </p>
               {/if}
             </div>

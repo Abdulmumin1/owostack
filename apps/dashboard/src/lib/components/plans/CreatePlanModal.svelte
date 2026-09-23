@@ -15,6 +15,10 @@
   } from "phosphor-svelte";
   import { fade, fly } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
+  import {
+    loadManagedSandboxProviderIds,
+    withManagedSandboxAccounts,
+  } from "$lib/managed-sandbox";
   import { Result } from "better-result";
   import { onMount } from "svelte";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
@@ -63,7 +67,11 @@
       }
 
       if (Array.isArray(provRes.data.data)) {
-        connectedProviders = provRes.data.data;
+        connectedProviders = withManagedSandboxAccounts(
+          provRes.data.data,
+          await loadManagedSandboxProviderIds(),
+          organizationId,
+        );
         // Auto-select the first connected provider if none selected
         if (!selectedProviderId && connectedProviders.length > 0) {
           selectedProviderId = connectedProviders[0].providerId;
