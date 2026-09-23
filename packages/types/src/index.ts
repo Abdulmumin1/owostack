@@ -298,6 +298,20 @@ export interface ResponseDetails {
 
   /** Pricing metadata for chargeable metered features */
   pricing?: PricingDetails;
+
+  /**
+   * Present when access is granted during dunning: the last renewal failed
+   * and the payment provider is retrying. Show the customer a
+   * "update your payment method" prompt rather than an upgrade prompt.
+   */
+  paymentStatus?: "past_due";
+
+  /**
+   * Backstop: if the provider never resolves the past_due subscription,
+   * access is revoked at this ISO timestamp. Normally the provider cancels
+   * or reactivates long before.
+   */
+  graceEndsAt?: string;
 }
 
 /** Plan credit breakdown for credit system features */

@@ -594,6 +594,7 @@ async function resolveEntityLimit(
         "active",
         "trialing",
         "pending_cancel",
+        "past_due", // kept only while dunning grace is open (customer-access)
       ]),
     ),
     with: { plan: true },

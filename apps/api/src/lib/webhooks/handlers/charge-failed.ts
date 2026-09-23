@@ -1,6 +1,7 @@
 import { schema } from "@owostack/db";
 import { eq, or } from "drizzle-orm";
 import type { WebhookContext } from "../types";
+import { markPastDueMetadata } from "../../dunning";
 import {
   clearFailedPendingPlanChange,
   eventMatchesPendingReference,
@@ -35,12 +36,15 @@ export async function handleChargeFailed(ctx: WebhookContext): Promise<void> {
     return;
   }
 
+  const now = Date.now();
   await db
     .update(schema.subscriptions)
     .set({
       status: "past_due",
       providerId: event.provider,
-      updatedAt: Date.now(),
+      // Anchors the dunning grace window (see lib/dunning.ts).
+      metadata: markPastDueMetadata(sub, now),
+      updatedAt: now,
     })
     .where(eq(schema.subscriptions.id, sub.id));
 

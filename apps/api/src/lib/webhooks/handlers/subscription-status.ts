@@ -1,5 +1,6 @@
 import { schema } from "@owostack/db";
 import { readPendingPlanChange } from "./pending-plan-change";
+import { markPastDueMetadata } from "../../dunning";
 import { eq, and, or } from "drizzle-orm";
 import { provisionEntitlements } from "../../plan-switch";
 import { upsertPaymentMethod } from "../../payment-methods";
@@ -219,6 +220,11 @@ export function handleSubscriptionStatus(status: string) {
 
     if (status === "canceled") {
       updates.canceledAt = now;
+    }
+
+    // Anchor the dunning grace window on the transition into past_due.
+    if (status === "past_due" && updates.metadata === undefined) {
+      updates.metadata = markPastDueMetadata(sub, now);
     }
 
     // For pending_cancel (not_renew): set cancelAt to period end so /check

@@ -225,6 +225,7 @@ app.get("/:id", async (c) => {
           canceledAt: schema.subscriptions.canceledAt,
           metadata: schema.subscriptions.metadata,
           createdAt: schema.subscriptions.createdAt,
+          updatedAt: schema.subscriptions.updatedAt,
           planId: schema.plans.id,
           planName: schema.plans.name,
           planSlug: schema.plans.slug,
@@ -308,6 +309,8 @@ app.get("/:id", async (c) => {
         currentPeriodEnd: subscription.currentPeriodEnd,
         cancelAt: subscription.cancelAt,
         canceledAt: subscription.canceledAt,
+        metadata: subscription.metadata,
+        updatedAt: subscription.updatedAt,
       })),
     );
     const accessPlanIds = [
