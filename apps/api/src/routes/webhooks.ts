@@ -567,8 +567,32 @@ export function createWebhookRoutes(
       headers: collectHeaders(c),
     });
     if (verifyResult.isErr() || !verifyResult.value) {
+      // Masked context so a wrong/rotated managed secret is diagnosable from
+      // logs alone (Standard-Webhooks providers also need id + timestamp).
+      const reqHeaders = collectHeaders(c);
       console.error(
         `[WEBHOOK-SANDBOX] Signature verification FAILED for provider=${providerId}`,
+        {
+          secretPreview: maskSecretForLog(secret),
+          secretSource:
+            typeof (probe?.credentials as Record<string, unknown>)
+              .webhookSecret === "string"
+              ? "webhookSecret"
+              : "secretKey",
+          signatureHeader: sigHeader,
+          signaturePreview: maskSecretForLog(signature),
+          webhookId: reqHeaders["webhook-id"] || null,
+          webhookTimestamp: reqHeaders["webhook-timestamp"] || null,
+          eventType:
+            (() => {
+              try {
+                const body = JSON.parse(rawBody);
+                return body?.type || body?.event || null;
+              } catch {
+                return null;
+              }
+            })(),
+        },
       );
       return c.json(
         errorToResponse(new WebhookError({ reason: "invalid_signature" })),
