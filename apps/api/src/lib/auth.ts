@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { assertOrganizationSlugAllowed } from "./reserved-slugs";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins";
 import { createDb, schema } from "@owostack/db";
@@ -163,6 +164,16 @@ export function auth(env: Env) {
         organizationLimit: 6,
         creatorRole: "owner",
         membershipLimit: 100,
+        organizationHooks: {
+          // Slugs double as URL segments (/webhooks/{slug}/…, /{slug}/plans);
+          // refuse the ones that would collide with fixed routes.
+          beforeCreateOrganization: async ({ organization }) => {
+            assertOrganizationSlugAllowed(organization.slug);
+          },
+          beforeUpdateOrganization: async ({ organization }) => {
+            assertOrganizationSlugAllowed(organization.slug);
+          },
+        },
         async sendInvitationEmail(data) {
           // Use dashboard URL for the invite link (not API)
           // Fallback to constructing from BETTER_AUTH_URL or localhost
