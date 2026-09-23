@@ -619,10 +619,27 @@ export function createWebhookRoutes(
     }
 
     const normalizedEvent = parseResult.value;
-    const organizationRef = extractOrganizationRef(normalizedEvent.metadata);
+    let organizationRef = extractOrganizationRef(normalizedEvent.metadata);
+    let routedBy = "metadata";
+
+    // Refunds, disputes and some provider-initiated subscription events carry
+    // no checkout metadata. The provider customer id is unique on the shared
+    // account, so it identifies the org as long as exactly one org owns it.
+    if (!organizationRef) {
+      const byCustomer = await resolveOrganizationByProviderCustomer(c, {
+        providerId,
+        providerCustomerId: normalizedEvent.customer?.providerCustomerId,
+        email: normalizedEvent.customer?.email,
+      });
+      if (byCustomer) {
+        organizationRef = byCustomer.organizationId;
+        routedBy = byCustomer.matchedBy;
+      }
+    }
+
     if (!organizationRef) {
       console.warn(
-        `[WEBHOOK-SANDBOX] Dropping ${normalizedEvent.type} from ${providerId}: no organization_id in metadata`,
+        `[WEBHOOK-SANDBOX] Dropping ${normalizedEvent.type} from ${providerId}: no organization_id in metadata and no unique customer match`,
       );
       return c.json({
         success: true,
@@ -646,7 +663,7 @@ export function createWebhookRoutes(
     }
 
     console.log(
-      `[WEBHOOK-SANDBOX] Event: ${normalizedEvent.type}, provider=${providerId}, org=${org.id}, ref=${normalizedEvent.payment?.reference || "n/a"}`,
+      `[WEBHOOK-SANDBOX] Event: ${normalizedEvent.type}, provider=${providerId}, org=${org.id}, routedBy=${routedBy}, ref=${normalizedEvent.payment?.reference || "n/a"}`,
     );
 
     await dispatchEvent(c, {
@@ -657,6 +674,64 @@ export function createWebhookRoutes(
     });
 
     return c.json({ success: true, received: true });
+  }
+
+  /**
+   * Find the single organization whose customer record matches the provider
+   * customer on this event. Ambiguous matches (same email in two orgs on the
+   * shared sandbox account) are refused rather than guessed.
+   */
+  async function resolveOrganizationByProviderCustomer(
+    c: any,
+    params: {
+      providerId: string;
+      providerCustomerId?: string | null;
+      email?: string | null;
+    },
+  ): Promise<{ organizationId: string; matchedBy: string } | null> {
+    const db = c.get("db");
+
+    if (params.providerCustomerId) {
+      const rows = await db.query.customers.findMany({
+        where: and(
+          eq(schema.customers.providerId, params.providerId),
+          eq(schema.customers.providerCustomerId, params.providerCustomerId),
+        ),
+        columns: { organizationId: true },
+      });
+      const orgs = new Set(rows.map((r: any) => r.organizationId));
+      if (orgs.size === 1) {
+        return {
+          organizationId: [...orgs][0] as string,
+          matchedBy: "provider_customer_id",
+        };
+      }
+      if (orgs.size > 1) {
+        console.warn(
+          `[WEBHOOK-SANDBOX] provider customer ${params.providerCustomerId} belongs to ${orgs.size} orgs; refusing to route`,
+        );
+        return null;
+      }
+    }
+
+    const email = params.email?.trim().toLowerCase();
+    if (email) {
+      const rows = await db.query.customers.findMany({
+        where: eq(schema.customers.email, email),
+        columns: { organizationId: true },
+      });
+      const orgs = new Set(rows.map((r: any) => r.organizationId));
+      if (orgs.size === 1) {
+        return { organizationId: [...orgs][0] as string, matchedBy: "email" };
+      }
+      if (orgs.size > 1) {
+        console.warn(
+          `[WEBHOOK-SANDBOX] email ${email} exists in ${orgs.size} orgs; refusing to route`,
+        );
+      }
+    }
+
+    return null;
   }
 
   function extractOrganizationRef(
