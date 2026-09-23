@@ -459,4 +459,88 @@ describe("Stripe adapter behavior", () => {
     expect(parsed.value.authorization?.last4).toBe("4242");
     expect(parsed.value.authorization?.cardType).toBe("visa");
   });
+
+  describe("invoice events on API version 2025-03-31.basil and later", () => {
+    // Shape observed from a 2026-02-25.clover account: `invoice.subscription`
+    // is gone; the link lives under parent.subscription_details and on each
+    // line's parent.subscription_item_details.
+    const cloverInvoice = (overrides: Record<string, unknown> = {}) => ({
+      id: "in_1UIvTrK5fox6jwYtxiJPGvw1",
+      object: "invoice",
+      customer: "cus_VJYblfxuxJDdVs",
+      customer_email: "cardfail@owostack.dev",
+      amount_paid: 1900,
+      amount_due: 1900,
+      currency: "usd",
+      status: "paid",
+      billing_reason: "subscription_create",
+      parent: {
+        quote_details: null,
+        subscription_details: {
+          subscription: "sub_1UIvTrK5fox6jwYtISPyLI9w",
+          metadata: {
+            organization_id: "org_1",
+            plan_id: "plan_pro",
+            customer_id: "cust_1",
+            provider_id: "stripe",
+            type: "new_subscription",
+          },
+        },
+      },
+      lines: {
+        data: [
+          {
+            id: "il_1",
+            amount: 1900,
+            period: { start: 1790183125, end: 1792775125 },
+            parent: {
+              subscription_item_details: {
+                subscription: "sub_1UIvTrK5fox6jwYtISPyLI9w",
+                subscription_item: "si_VJYb8Aylcaer7v",
+                proration: false,
+              },
+            },
+            pricing: { price_details: { price: "price_pro" } },
+          },
+        ],
+      },
+      ...overrides,
+    });
+
+    it("links invoice.paid to its subscription via parent.subscription_details", () => {
+      const parsed = stripeAdapter.parseWebhookEvent({
+        payload: { type: "invoice.paid", data: { object: cloverInvoice() } },
+      });
+      expect(parsed.isOk()).toBe(true);
+      if (!parsed.isOk()) return;
+      expect(parsed.value.type).toBe("charge.success");
+      expect(parsed.value.subscription?.providerCode).toBe(
+        "sub_1UIvTrK5fox6jwYtISPyLI9w",
+      );
+      expect(parsed.value.metadata.organization_id).toBe("org_1");
+    });
+
+    it("links invoice.payment_failed to its subscription so past_due lands on the right row", () => {
+      const parsed = stripeAdapter.parseWebhookEvent({
+        payload: {
+          type: "invoice.payment_failed",
+          data: { object: cloverInvoice({ status: "open", amount_paid: 0 }) },
+        },
+      });
+      expect(parsed.isOk()).toBe(true);
+      if (!parsed.isOk()) return;
+      expect(parsed.value.type).toBe("charge.failed");
+      expect(parsed.value.subscription?.providerCode).toBe(
+        "sub_1UIvTrK5fox6jwYtISPyLI9w",
+      );
+    });
+
+    it("still honours the legacy top-level invoice.subscription field", () => {
+      const legacy = cloverInvoice({ subscription: "sub_legacy", parent: null });
+      const parsed = stripeAdapter.parseWebhookEvent({
+        payload: { type: "invoice.paid", data: { object: legacy } },
+      });
+      expect(parsed.isOk() && parsed.value.subscription?.providerCode).toBe("sub_legacy");
+    });
+  });
 });
