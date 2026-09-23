@@ -116,9 +116,21 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
       ),
       with: { plan: true },
     });
-    targetSub = candidates.find((sub: (typeof candidates)[number]) =>
-      subscriptionPaymentReferences(sub.metadata).has(refundReference),
+    // A provider may identify the same payment several ways (Stripe: charge,
+    // payment_intent, invoice). Any of them landing on the row is a match.
+    const refundCandidates = new Set(
+      [
+        refundReference,
+        event.metadata?.charge_id,
+        event.metadata?.invoice_id,
+        event.metadata?.payment_intent_id,
+      ].filter((v): v is string => typeof v === "string" && v.length > 0),
     );
+    targetSub = candidates.find((sub: (typeof candidates)[number]) => {
+      const known = subscriptionPaymentReferences(sub.metadata);
+      for (const ref of refundCandidates) if (known.has(ref)) return true;
+      return false;
+    });
   }
 
   if (!targetSub) {
@@ -300,11 +312,22 @@ export function subscriptionPaymentReferences(metadata: unknown): Set<string> {
   add(meta.initial_payment_reference);
   add((meta.last_proration_payment as Record<string, unknown> | undefined)?.reference);
 
+  // Raw provider payload the row was created from. Dodo/Bachs/Paystack put
+  // the object under `data`; Stripe under `data.object`.
   const data = (meta.data as Record<string, unknown> | undefined) ?? meta;
-  add(data.payment_id);
-  add(data.reference);
-  add(data.charge_id);
-  const payment = data.payment as Record<string, unknown> | undefined;
-  add(payment?.reference);
+  const object = (data.object as Record<string, unknown> | undefined) ?? data;
+  for (const source of [data, object]) {
+    add(source.payment_id);
+    add(source.reference);
+    add(source.charge_id);
+    add(source.payment_intent);
+    add(source.invoice);
+    add(source.charge);
+    if (typeof source.id === "string" && /^(pi_|ch_|in_|pay_|cs_)/.test(source.id)) {
+      add(source.id);
+    }
+    const payment = source.payment as Record<string, unknown> | undefined;
+    add(payment?.reference);
+  }
   return refs;
 }
