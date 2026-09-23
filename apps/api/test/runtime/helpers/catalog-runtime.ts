@@ -7,6 +7,7 @@ import {
   type ProviderResult,
 } from "@owostack/adapters";
 import { hashApiKey } from "../../../src/lib/api-keys";
+import { parseApiKeyEnvironment } from "../../../src/lib/public-environment";
 import { TEST_ENCRYPTION_KEY, insertProviderAccount } from "./workflow-runtime";
 
 type CreatePlanParams = Parameters<ProviderAdapter["createPlan"]>[0];
@@ -348,24 +349,31 @@ export async function insertApiKey(
     organizationId?: string;
     name?: string;
     apiKey?: string;
+    /** Scope stored on the row; derived from the key prefix when omitted. */
+    environment?: "test" | "live" | null;
   } = {},
 ) {
   const apiKey = params.apiKey || "owo_sk_test";
   const hash = await hashApiKey(apiKey);
+  const environment =
+    params.environment === undefined
+      ? parseApiKeyEnvironment(apiKey)
+      : params.environment;
   const now = Date.now();
 
   await db
     .prepare(
       `INSERT INTO api_keys
-       (id, organization_id, name, prefix, hash, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+       (id, organization_id, name, prefix, hash, environment, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       params.id || "key_123",
       params.organizationId || "org_123",
       params.name || "Test Key",
-      apiKey.slice(0, 10),
+      environment ? `owo_sk_${environment}_` : "owo_sk_",
       hash,
+      environment,
       now,
     )
     .run();

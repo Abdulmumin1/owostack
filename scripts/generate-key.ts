@@ -1,39 +1,58 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 /**
- * Helper to generate a production-ready API key
+ * Generate an environment-scoped Owostack API key for local development.
+ *
+ *   pnpm keygen <test|live> <organizationId> [name]
+ *
+ * Keys are stored hashed in the shared auth DB (`api_keys`); the SQL printed
+ * below inserts the hash so the key is accepted by the matching environment:
+ *   owo_sk_test_… -> sandbox (ENVIRONMENT=test|development)
+ *   owo_sk_live_… -> live    (ENVIRONMENT=live|production)
  */
-function generateApiKey(): string {
-  return `owo_sk_${randomBytes(24).toString("hex")}`;
+type KeyEnvironment = "test" | "live";
+
+function generateApiKey(environment: KeyEnvironment): string {
+  return `owo_sk_${environment}_${randomBytes(24).toString("hex")}`;
 }
 
-async function main() {
-  const apiKey = generateApiKey();
-  const projectId = `proj_${randomUUID().slice(0, 8)}`;
+function hashApiKey(key: string): string {
+  return createHash("sha256").update(key).digest("hex");
+}
 
-  const keyData = {
-    projectId,
-    organizationId: `org_${randomUUID().slice(0, 8)}`,
-    permissions: ["*"],
-    rateLimit: 1000,
-    createdAt: new Date().toISOString(),
-  };
+function main() {
+  const [environmentArg, organizationId, name = "Local dev key"] =
+    process.argv.slice(2);
 
-  console.log("\n🚀 Generated New Owostack API Key:\n");
+  if (
+    (environmentArg !== "test" && environmentArg !== "live") ||
+    !organizationId
+  ) {
+    console.error(
+      "Usage: pnpm keygen <test|live> <organizationId> [name]\n" +
+        "Example: pnpm keygen test org_123 'My sandbox key'",
+    );
+    process.exit(2);
+  }
+
+  const environment: KeyEnvironment = environmentArg;
+  const apiKey = generateApiKey(environment);
+  const hash = hashApiKey(apiKey);
+  const id = randomUUID();
+  const prefix = `owo_sk_${environment}_`;
+
+  console.log("\nGenerated Owostack API key\n");
   console.log("--------------------------------------------------");
-  console.log(`Key:    ${apiKey}`);
-  console.log(`Project: ${projectId}`);
+  console.log(`Key:          ${apiKey}`);
+  console.log(`Environment:  ${environment === "test" ? "sandbox" : "live"}`);
+  console.log(`Organization: ${organizationId}`);
   console.log("--------------------------------------------------\n");
-
-  console.log("To add this to your local development environment, run:");
   console.log(
-    `npx wrangler kv:key put --binding API_KEYS --local "${apiKey}" '${JSON.stringify(keyData)}'\n`,
+    "Store the key now; only its hash is persisted. Insert it into the auth DB with:\n",
   );
-
-  console.log("To add this to production, run:");
   console.log(
-    `npx wrangler kv:key put --binding API_KEYS "${apiKey}" '${JSON.stringify(keyData)}'\n`,
+    `npx wrangler d1 execute owostack-auth --local --command "INSERT INTO api_keys (id, organization_id, name, prefix, hash, environment, created_at) VALUES ('${id}', '${organizationId}', '${name.replace(/'/g, "''")}', '${prefix}', '${hash}', '${environment}', ${Date.now()});"\n`,
   );
 }
 
-main().catch(console.error);
+main();

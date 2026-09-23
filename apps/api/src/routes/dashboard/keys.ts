@@ -3,6 +3,7 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { generateApiKey, hashApiKey } from "../../lib/api-keys";
+import { apiKeyPrefixForEnvironment } from "../../lib/public-environment";
 import type { Env, Variables } from "../../index";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 
@@ -44,6 +45,11 @@ function zodErrorToResponse(zodError: {
 const createKeySchema = z.object({
   organizationId: z.string(),
   name: z.string().min(1),
+  /**
+   * Keys are scoped to one environment: "test" keys only work against the
+   * sandbox API, "live" keys only against the live API.
+   */
+  environment: z.enum(["test", "live"]),
 });
 
 export function createDashboardKeysRoute(
@@ -60,12 +66,12 @@ export function createDashboardKeysRoute(
       return c.json(zodErrorToResponse(parsed.error), 400);
     }
 
-    const { name } = parsed.data;
+    const { name, environment } = parsed.data;
     const organizationId =
       c.get("organizationId") ?? parsed.data.organizationId;
     const db = c.get("authDb");
 
-    const finalKey = deps.generateApiKey();
+    const finalKey = deps.generateApiKey(environment);
     const keyHash = await deps.hashApiKey(finalKey);
 
     try {
@@ -75,8 +81,9 @@ export function createDashboardKeysRoute(
           id: crypto.randomUUID(),
           organizationId,
           name,
-          prefix: "owo_sk_",
+          prefix: apiKeyPrefixForEnvironment(environment),
           hash: keyHash,
+          environment,
         })
         .returning();
 
@@ -110,6 +117,7 @@ export function createDashboardKeysRoute(
         id: true,
         name: true,
         prefix: true,
+        environment: true,
         lastUsedAt: true,
         createdAt: true,
       },

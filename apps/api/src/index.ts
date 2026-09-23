@@ -50,6 +50,11 @@ import { PlanUpgradeWorkflow } from "./lib/workflows/plan-upgrade";
 import { RenewalSetupRetryWorkflow } from "./lib/workflows/renewal-setup-retry";
 import { OverageBillingWorkflow } from "./lib/workflows/overage-billing";
 import { CancelDowngradeWorkflow } from "./lib/workflows/cancel-downgrade";
+import { publicApiEnvelope } from "./lib/public-api-envelope";
+import {
+  ENVIRONMENT_HEADER,
+  ORGANIZATION_HEADER,
+} from "./lib/public-environment";
 export {
   TrialEndWorkflow,
   DowngradeWorkflow,
@@ -142,6 +147,7 @@ app.use(
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowHeaders: ["Content-Type", "Authorization"],
+    exposeHeaders: [ENVIRONMENT_HEADER, ORGANIZATION_HEADER],
   }),
 );
 
@@ -260,6 +266,10 @@ app.route("/api/dashboard", dashboardRoutes);
 const apiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 const v1Routes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Enforce API key environment scope (owo_sk_test_ vs owo_sk_live_) and echo
+// `X-Owostack-Environment` / `X-Owostack-Organization` on every public response.
+v1Routes.use("*", publicApiEnvelope);
 
 // Mount API modules
 // checkout.ts has `post('/attach')`.

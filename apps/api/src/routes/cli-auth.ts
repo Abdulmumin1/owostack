@@ -4,6 +4,7 @@ import { schema } from "@owostack/db";
 import type { Env, Variables } from "../index";
 import { auth } from "../lib/auth";
 import { generateApiKey, hashApiKey } from "../lib/api-keys";
+import { apiKeyPrefixForEnvironment } from "../lib/public-environment";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -24,7 +25,10 @@ interface DeviceCodeRecord {
   userCode: string;
   deviceCode: string;
   organizationId?: string;
+  /** Sandbox-scoped key (owo_sk_test_...). Kept under `apiKey` so older CLIs keep working. */
   apiKey?: string;
+  /** Live-scoped key (owo_sk_live_...). */
+  liveApiKey?: string;
   status: "pending" | "approved" | "denied" | "expired" | "consumed";
   createdAt: number;
   expiresAt: number;
@@ -291,7 +295,12 @@ app.get("/token", async (c) => {
 
     return c.json({
       success: true,
+      // Backward compatible: `apiKey` is the sandbox key. Newer CLIs read `keys`.
       apiKey: record.apiKey,
+      keys: {
+        sandbox: record.apiKey,
+        live: record.liveApiKey ?? null,
+      },
       organizationId: record.organizationId,
     });
   }
@@ -369,22 +378,37 @@ app.post("/approve", async (c) => {
     );
   }
 
-  // Create API key
-  const finalKey = generateApiKey();
-  const keyHash = await hashApiKey(finalKey);
+  // Create one key per environment so the CLI can target sandbox and live
+  // without a single key silently working against both.
+  const issuedAt = new Date().toISOString();
+  const sandboxKey = generateApiKey("test");
+  const liveKey = generateApiKey("live");
   const keyId = crypto.randomUUID();
+  const liveKeyId = crypto.randomUUID();
 
   try {
-    await authDb.insert(schema.apiKeys).values({
-      id: keyId,
-      organizationId,
-      name: `CLI - ${new Date().toISOString()}`,
-      prefix: "owo_sk_",
-      hash: keyHash,
-    });
+    await authDb.insert(schema.apiKeys).values([
+      {
+        id: keyId,
+        organizationId,
+        name: `CLI (sandbox) - ${issuedAt}`,
+        prefix: apiKeyPrefixForEnvironment("test"),
+        hash: await hashApiKey(sandboxKey),
+        environment: "test",
+      },
+      {
+        id: liveKeyId,
+        organizationId,
+        name: `CLI (live) - ${issuedAt}`,
+        prefix: apiKeyPrefixForEnvironment("live"),
+        hash: await hashApiKey(liveKey),
+        environment: "live",
+      },
+    ]);
 
     record.status = "approved";
-    record.apiKey = finalKey;
+    record.apiKey = sandboxKey;
+    record.liveApiKey = liveKey;
     record.organizationId = organizationId;
     record.approvedBy = userId;
     record.approvedAt = Date.now();
@@ -394,7 +418,7 @@ app.post("/approve", async (c) => {
       kv,
       "CODE_APPROVED",
       record,
-      `Approved by user ${userId}, key ${keyId}`,
+      `Approved by user ${userId}, keys ${keyId} (sandbox), ${liveKeyId} (live)`,
       userId,
     );
 

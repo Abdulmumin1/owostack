@@ -596,7 +596,7 @@ export async function insertPlanFeature(
       params.id || "plan_feature_1",
       params.planId || "plan_1",
       params.featureId || "feature_1",
-      params.limitValue ?? 1000,
+      params.limitValue === undefined ? 1000 : params.limitValue,
       params.trialLimitValue ?? null,
       params.resetInterval || "monthly",
       params.resetOnEnable ?? 1,
