@@ -1,5 +1,16 @@
 # owostack
 
+## 0.6.0
+
+### Minor Changes
+
+- [#267](https://github.com/Abdulmumin1/owostack/pull/267) [`586a099`](https://github.com/Abdulmumin1/owostack/commit/586a099e44225f557eb1f0785f019f1db1ecf10c) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - `AttachResult` now matches what `attach()` actually returns. `checkoutUrl`, `reference` and `accessCode` are optional (absent for free plans, lateral moves, native upgrades and scheduled downgrades), and the type gains `success`, `requiresCheckout`, `subscriptionId`, `customer_id`, `type`, `message`, `trial*`, `scheduledAt` and the new `pending` flag. `pending: true` means the provider accepted a native upgrade but is still collecting the prorated charge; the customer stays on the current plan until the provider confirms and `check()` reflects the switch.
+
+### Patch Changes
+
+- Updated dependencies [[`586a099`](https://github.com/Abdulmumin1/owostack/commit/586a099e44225f557eb1f0785f019f1db1ecf10c)]:
+  - @owostack/types@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes
