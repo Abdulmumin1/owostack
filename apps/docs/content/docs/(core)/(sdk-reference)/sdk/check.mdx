@@ -81,6 +81,8 @@ interface CheckResult {
     trialEndsAt?: string | null;
     creditSystem?: string;
     pricing?: { … };               // For chargeable metered features
+    paymentStatus?: "past_due";    // Renewal failed; provider is retrying (see Dunning)
+    graceEndsAt?: string;          // When dunning grace ends and access is revoked
   };
 }
 ```
@@ -100,6 +102,21 @@ interface CheckResult {
 | `feature_not_found`      | `false`   | Unknown feature slug                                       |
 | `no_active_subscription` | `false`   | Customer has no active plan                                |
 | `feature_not_in_plan`    | `false`   | The active plan doesn't include this feature               |
+
+### Dunning
+
+When a renewal charge fails, the provider marks the subscription `past_due` and retries the card over the following days. Owostack keeps granting the plan's entitlements for a **7-day grace window** so a customer with an expired card isn't cut off mid-retry. During that window `check()` and `track()` still return `allowed: true`, and `details` carries:
+
+```ts
+const access = await owo.check({ customer: "user_123", feature: "reports" });
+
+if (access.allowed && access.details.paymentStatus === "past_due") {
+  // Still allowed — show "update your payment method", not "upgrade"
+  showBillingBanner({ deadline: access.details.graceEndsAt });
+}
+```
+
+After `graceEndsAt`, access is revoked (`no_active_subscription`) until a payment succeeds, at which point the subscription returns to `active` and the fields disappear. A subscription that recovers and later fails again starts a fresh window.
 
 ## Examples
 

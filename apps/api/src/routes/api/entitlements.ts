@@ -1,4 +1,9 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import {
+  dunningDetails,
+  getDunningState,
+  type DunningState,
+} from "../../lib/dunning";
 import type { MiddlewareHandler } from "hono";
 import { eq, and, sql, or, inArray } from "drizzle-orm";
 import { schema } from "@owostack/db";
@@ -821,6 +826,21 @@ const entitlementResultSchema = z
           .openapi({ description: "Slug of the plan granting access." }),
         pricing: pricingDetailsSchema.optional(),
         tierBreakdown: z.array(billingTierBreakdownSchema).optional(),
+        paymentStatus: z
+          .literal("past_due")
+          .optional()
+          .openapi({
+            description:
+              "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method.",
+          }),
+        graceEndsAt: z
+          .string()
+          .datetime()
+          .optional()
+          .openapi({
+            description:
+              "When dunning grace ends. After this, access is revoked until a payment succeeds.",
+          }),
       })
       .passthrough()
       .optional(),
@@ -1244,7 +1264,13 @@ async function getManualEntitlementForFeature(
 app.openapi(
   checkRoute,
   async (c) => {
-    const respond = createEntitlementResponder(c);
+    // Set once the access-granting subscription is known; surfaces dunning
+    // (past_due within grace) on granted responses.
+    let grantedDunning: DunningState | null = null;
+    const respond = createEntitlementResponder(c, {
+      grantedDetails: () =>
+        grantedDunning ? dunningDetails(grantedDunning) : null,
+    });
     const deps = getEntitlementsDependencies(c);
     const {
       customer: customerId,
@@ -1417,6 +1443,9 @@ app.openapi(
                   "active",
                   "trialing",
                   "pending_cancel",
+                  // past_due stays in the set; the filter below keeps it only
+                  // while the dunning grace window is open.
+                  "past_due",
                 ]),
               ),
               with: {
@@ -1472,6 +1501,11 @@ app.openapi(
     const expiredCancelIds: string[] = [];
     const stalePaidPeriodIds: string[] = [];
     subscriptions = subscriptions.filter((s: any) => {
+      if (s.status === "past_due") {
+        // Failed renewal under provider recovery: serve entitlements for the
+        // grace window, then fall out of the active set.
+        return getDunningState(s, now)?.inGrace === true;
+      }
       if (s.status === "trialing") {
         const trialEnd = s.currentPeriodEnd;
         const trialEndValid =
@@ -1676,6 +1710,7 @@ app.openapi(
 
     // Use the granting subscription/feature for the rest of the logic
     const subscription = accessGrantingSubscription;
+    grantedDunning = getDunningState(subscription as any, now);
     const customerFeatureOverride = await resolveCustomerFeatureBillingOverride(
       db,
       organizationId,
@@ -2899,7 +2934,13 @@ app.openapi(
 app.openapi(
   trackRoute,
   async (c) => {
-    const respond = createEntitlementResponder(c);
+    // Set once the access-granting subscription is known; surfaces dunning
+    // (past_due within grace) on granted responses.
+    let grantedDunning: DunningState | null = null;
+    const respond = createEntitlementResponder(c, {
+      grantedDetails: () =>
+        grantedDunning ? dunningDetails(grantedDunning) : null,
+    });
     const deps = getEntitlementsDependencies(c);
     const {
       customer: customerId,
@@ -3068,6 +3109,9 @@ app.openapi(
                   "active",
                   "trialing",
                   "pending_cancel",
+                  // past_due stays in the set; the filter below keeps it only
+                  // while the dunning grace window is open.
+                  "past_due",
                 ]),
               ),
               with: {
@@ -3123,6 +3167,11 @@ app.openapi(
     const trackExpiredCancelIds: string[] = [];
     const trackStalePaidPeriodIds: string[] = [];
     subscriptions = subscriptions.filter((s: any) => {
+      if (s.status === "past_due") {
+        // Failed renewal under provider recovery: serve entitlements for the
+        // grace window, then fall out of the active set.
+        return getDunningState(s, now)?.inGrace === true;
+      }
       if (s.status === "trialing") {
         const trialEnd = s.currentPeriodEnd;
         const trialEndValid =
@@ -3305,6 +3354,7 @@ app.openapi(
       : directTrackCreditContext;
 
     const subscription = accessGrantingSubscription;
+    grantedDunning = getDunningState(subscription as any, now);
     const basePlanFeature = accessGrantingPlanFeature;
 
     if (!subscription || !basePlanFeature) {

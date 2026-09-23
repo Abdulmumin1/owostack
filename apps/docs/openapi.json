@@ -1237,6 +1237,18 @@
                           "items": {
                             "$ref": "#/components/schemas/BillingTierBreakdown"
                           }
+                        },
+                        "paymentStatus": {
+                          "type": "string",
+                          "enum": [
+                            "past_due"
+                          ],
+                          "description": "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method."
+                        },
+                        "graceEndsAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When dunning grace ends. After this, access is revoked until a payment succeeds."
                         }
                       },
                       "additionalProperties": {}
@@ -1704,6 +1716,18 @@
                           "items": {
                             "$ref": "#/components/schemas/BillingTierBreakdown"
                           }
+                        },
+                        "paymentStatus": {
+                          "type": "string",
+                          "enum": [
+                            "past_due"
+                          ],
+                          "description": "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method."
+                        },
+                        "graceEndsAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When dunning grace ends. After this, access is revoked until a payment succeeds."
                         }
                       },
                       "additionalProperties": {}
@@ -2045,6 +2069,18 @@
                           "items": {
                             "$ref": "#/components/schemas/BillingTierBreakdown"
                           }
+                        },
+                        "paymentStatus": {
+                          "type": "string",
+                          "enum": [
+                            "past_due"
+                          ],
+                          "description": "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method."
+                        },
+                        "graceEndsAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When dunning grace ends. After this, access is revoked until a payment succeeds."
                         }
                       },
                       "additionalProperties": {}
@@ -2334,6 +2370,18 @@
                               "items": {
                                 "$ref": "#/components/schemas/BillingTierBreakdown"
                               }
+                            },
+                            "paymentStatus": {
+                              "type": "string",
+                              "enum": [
+                                "past_due"
+                              ],
+                              "description": "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method."
+                            },
+                            "graceEndsAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When dunning grace ends. After this, access is revoked until a payment succeeds."
                             }
                           },
                           "additionalProperties": {}
@@ -2706,6 +2754,18 @@
                           "items": {
                             "$ref": "#/components/schemas/BillingTierBreakdown"
                           }
+                        },
+                        "paymentStatus": {
+                          "type": "string",
+                          "enum": [
+                            "past_due"
+                          ],
+                          "description": "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method."
+                        },
+                        "graceEndsAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When dunning grace ends. After this, access is revoked until a payment succeeds."
                         }
                       },
                       "additionalProperties": {}
@@ -2993,6 +3053,18 @@
                           "items": {
                             "$ref": "#/components/schemas/BillingTierBreakdown"
                           }
+                        },
+                        "paymentStatus": {
+                          "type": "string",
+                          "enum": [
+                            "past_due"
+                          ],
+                          "description": "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method."
+                        },
+                        "graceEndsAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When dunning grace ends. After this, access is revoked until a payment succeeds."
                         }
                       },
                       "additionalProperties": {}
@@ -3282,6 +3354,18 @@
                               "items": {
                                 "$ref": "#/components/schemas/BillingTierBreakdown"
                               }
+                            },
+                            "paymentStatus": {
+                              "type": "string",
+                              "enum": [
+                                "past_due"
+                              ],
+                              "description": "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method."
+                            },
+                            "graceEndsAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When dunning grace ends. After this, access is revoked until a payment succeeds."
                             }
                           },
                           "additionalProperties": {}
@@ -3609,6 +3693,18 @@
                           "items": {
                             "$ref": "#/components/schemas/BillingTierBreakdown"
                           }
+                        },
+                        "paymentStatus": {
+                          "type": "string",
+                          "enum": [
+                            "past_due"
+                          ],
+                          "description": "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method."
+                        },
+                        "graceEndsAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When dunning grace ends. After this, access is revoked until a payment succeeds."
                         }
                       },
                       "additionalProperties": {}

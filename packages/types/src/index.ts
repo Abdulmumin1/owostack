@@ -298,6 +298,16 @@ export interface ResponseDetails {
 
   /** Pricing metadata for chargeable metered features */
   pricing?: PricingDetails;
+
+  /**
+   * Present when access is granted during dunning: the last renewal failed
+   * and the payment provider is retrying. Show the customer a
+   * "update your payment method" prompt rather than an upgrade prompt.
+   */
+  paymentStatus?: "past_due";
+
+  /** ISO timestamp when dunning grace ends and access is revoked. */
+  graceEndsAt?: string;
 }
 
 /** Plan credit breakdown for credit system features */

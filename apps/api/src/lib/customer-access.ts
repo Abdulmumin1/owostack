@@ -1,4 +1,5 @@
 import { getResetPeriod } from "./reset-period";
+import { isWithinDunningGrace } from "./dunning";
 import { resolveManualBonusBalanceState } from "./manual-bonus-balances";
 import { normalizeResetInterval } from "./reset-interval";
 import { sumScopedUsageAmount } from "./scoped-usage";
@@ -20,6 +21,9 @@ export type CustomerAccessSubscription = {
   currentPeriodEnd?: number | null;
   cancelAt?: number | null;
   canceledAt?: number | null;
+  /** Needed to evaluate dunning grace on past_due rows. */
+  metadata?: unknown;
+  updatedAt?: number | null;
 };
 
 export const MAX_TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000;
@@ -144,6 +148,12 @@ export function filterAccessGrantingSubscriptions(
   now: number = Date.now(),
 ): CustomerAccessSubscription[] {
   return subscriptions.filter((subscription) => {
+    // Failed renewal under provider recovery: keep granting for the dunning
+    // grace window (lib/dunning.ts), then drop out of the active set.
+    if (subscription.status === "past_due") {
+      return isWithinDunningGrace(subscription, now);
+    }
+
     if (
       !["active", "trialing", "pending_cancel"].includes(subscription.status)
     ) {

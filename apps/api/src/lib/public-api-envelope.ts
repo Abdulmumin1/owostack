@@ -101,13 +101,35 @@ export function createEntitlementResponder<
     env?: EnvelopeBindings;
     json: Context["json"];
   },
->(c: C) {
+>(
+  c: C,
+  options: {
+    /**
+     * Extra `details` merged into granted responses, resolved at respond
+     * time so the handler can decide after it knows which subscription
+     * granted access (e.g. dunning state).
+     */
+    grantedDetails?: () => Record<string, unknown> | null;
+  } = {},
+) {
   const environment = resolvePublicEnvironment(c.env?.ENVIRONMENT);
 
   return function respond<
     T extends Record<string, unknown>,
     S extends ContentfulStatusCode = 200,
   >(body: T, status?: S) {
-    return c.json(decorateEntitlementBody(body, environment), status);
+    const decorated = decorateEntitlementBody(body, environment);
+    const extra = body.allowed === true ? options.grantedDetails?.() : null;
+    if (!extra || Object.keys(extra).length === 0) {
+      return c.json(decorated, status);
+    }
+    const details =
+      decorated.details && typeof decorated.details === "object"
+        ? (decorated.details as Record<string, unknown>)
+        : {};
+    return c.json(
+      { ...decorated, details: { ...details, ...extra } } as typeof decorated,
+      status,
+    );
   };
 }
