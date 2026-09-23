@@ -1709,8 +1709,25 @@ export const stripeAdapter: ProviderAdapter = {
             currency: uppercaseCurrency(data.currency),
             reference: asString(latestRefund?.id) || asString(data.id) || "",
             reason: asString(latestRefund?.reason),
+            // `refunded` is true only when the whole charge has been refunded.
+            isPartial: data.refunded === false,
           },
-          metadata,
+          // The original payment, expressed the same way charge.success did
+          // (payment_intent first) so the API can find the subscription row.
+          payment: {
+            amount: asNumber(data.amount) || 0,
+            currency: uppercaseCurrency(data.currency),
+            reference:
+              asString(data.payment_intent) || asString(data.id) || "",
+          },
+          metadata: {
+            ...metadata,
+            charge_id: asString(data.id),
+            ...(asString(data.invoice) ? { invoice_id: asString(data.invoice) } : {}),
+            ...(asString(data.payment_intent)
+              ? { payment_intent_id: asString(data.payment_intent) }
+              : {}),
+          },
           raw,
         });
       }
