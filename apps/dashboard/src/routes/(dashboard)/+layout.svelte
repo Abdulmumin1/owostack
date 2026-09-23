@@ -100,6 +100,7 @@
   let usedProviderIds = $state<string[]>([]);
   let liveProviderIds = $state<Set<string>>(new Set());
   let showAllDeployProviders = $state(false);
+  let deployProvidersLoading = $state(false);
 
   let deployProviderIds = $derived(
     showAllDeployProviders || usedProviderIds.length === 0
@@ -211,6 +212,7 @@
   async function openDeployModal() {
     showDeployModal = true;
     deployError = null;
+    deployProvidersLoading = true;
     try {
       const [testPlansRes, testAccountsRes, liveAccountsRes, enabledRes] =
         await Promise.all([
@@ -250,6 +252,9 @@
       showAllDeployProviders = false;
     } catch (e) {
       console.error("Failed to load provider accounts", e);
+      deployError = "Couldn't load your providers. Close and try again.";
+    } finally {
+      deployProvidersLoading = false;
     }
   }
 
@@ -923,7 +928,7 @@
                 providers your catalog uses.
               </p>
 
-              {#if enabledProviderIds.length === 0}
+              {#if deployProvidersLoading && deployProviderIds.length === 0}
                 <p class="text-xs text-text-dim mt-2 italic">
                   Loading providers...
                 </p>
