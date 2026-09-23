@@ -1179,7 +1179,11 @@ async function handleSubscriptionPayment(
           status: "active",
           currentPeriodStart: startMs,
           currentPeriodEnd: startMs + periodMs,
-          metadata: event.raw,
+          metadata: {
+            ...event.raw,
+            initial_payment_reference: event.payment?.reference ?? null,
+            last_payment_reference: event.payment?.reference ?? null,
+          },
         },
       ])
       .onConflictDoNothing()
@@ -1218,6 +1222,12 @@ async function handleSubscriptionPayment(
         currentPeriodStart: startMs,
         currentPeriodEnd: startMs + periodMs,
         providerId: (metadata.provider_id as string) || event.provider,
+        metadata: {
+          ...(typeof existingSub.metadata === "object" && existingSub.metadata
+            ? (existingSub.metadata as Record<string, unknown>)
+            : {}),
+          last_payment_reference: event.payment?.reference ?? null,
+        },
         updatedAt: Date.now(),
       })
       .where(eq(schema.subscriptions.id, existingSub.id));

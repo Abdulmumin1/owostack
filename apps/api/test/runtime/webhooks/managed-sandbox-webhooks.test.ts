@@ -11,6 +11,7 @@ import { ok } from "../../helpers/result";
 import { createRuntimeBusinessDb } from "../helpers/business-db";
 import { RUNTIME_ROUTE_ENV } from "../helpers/catalog-runtime";
 import {
+  insertCustomer,
   insertOrganization,
   insertProviderAccount,
 } from "../helpers/workflow-runtime";
@@ -235,6 +236,85 @@ describe("Managed sandbox webhooks", () => {
       );
 
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe("POST /webhooks/sandbox/{provider} without organization metadata", () => {
+    // Refund payloads carry no checkout metadata; only the provider customer.
+    function refundFor(email: string, providerCustomerId: string) {
+      return JSON.stringify({
+        event: "refund.processed",
+        data: {
+          transaction_reference: "ref_paid_1",
+          amount: 250000,
+          currency: "NGN",
+          customer: { email, customer_code: providerCustomerId },
+          metadata: null,
+        },
+      });
+    }
+
+    it("routes by the provider customer id when exactly one org owns it", async () => {
+      await insertCustomer(businessDb.d1, {
+        id: "cust_alpha",
+        organizationId: "org_alpha",
+        email: "buyer@example.com",
+        providerId: "paystack",
+        providerCustomerId: "CUS_alpha",
+      });
+
+      const body = refundFor("buyer@example.com", "CUS_alpha");
+      const response = await post(
+        "/webhooks/sandbox/paystack",
+        body,
+        await paystackSignature(MANAGED_PAYSTACK_KEY, body),
+      );
+
+      expect(response.status).toBe(200);
+      expect(dispatched.map((d) => [d.organizationId, d.eventType])).toEqual([
+        ["org_alpha", "refund.success"],
+      ]);
+    });
+
+    it("falls back to a unique customer email when the provider customer id is unknown", async () => {
+      await insertCustomer(businessDb.d1, {
+        id: "cust_beta",
+        organizationId: "org_beta",
+        email: "only-in-beta@example.com",
+      });
+
+      const body = refundFor("only-in-beta@example.com", "CUS_never_seen");
+      const response = await post(
+        "/webhooks/sandbox/paystack",
+        body,
+        await paystackSignature(MANAGED_PAYSTACK_KEY, body),
+      );
+
+      expect(response.status).toBe(200);
+      expect(dispatched.map((d) => d.organizationId)).toEqual(["org_beta"]);
+    });
+
+    it("refuses to guess when the same customer exists in two organizations", async () => {
+      for (const org of ["org_alpha", "org_beta"]) {
+        await insertCustomer(businessDb.d1, {
+          id: `cust_shared_${org}`,
+          organizationId: org,
+          email: "shared@example.com",
+          providerId: "paystack",
+          providerCustomerId: "CUS_shared",
+        });
+      }
+
+      const body = refundFor("shared@example.com", "CUS_shared");
+      const response = await post(
+        "/webhooks/sandbox/paystack",
+        body,
+        await paystackSignature(MANAGED_PAYSTACK_KEY, body),
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ skipped: true, reason: "unrouted" });
+      expect(dispatched).toEqual([]);
     });
   });
 

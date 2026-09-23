@@ -1201,6 +1201,9 @@ export const dodoAdapter: ProviderAdapter = {
             currency: data.currency || "USD",
             reference: data.refund_id || data.payment_id || "",
             reason: data.reason,
+            ...(typeof data.is_partial === "boolean"
+              ? { isPartial: data.is_partial }
+              : {}),
           },
           payment: {
             amount: data.amount || 0,

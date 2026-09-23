@@ -432,6 +432,31 @@ function extractInvoiceLine(
   return asRecord(lines[0]);
 }
 
+/**
+ * The subscription an invoice belongs to. Stripe API versions up to
+ * 2025-03 expose `invoice.subscription`; from `2025-03-31.basil` onward it
+ * moved to `invoice.parent.subscription_details.subscription` (and per line
+ * to `line.parent.subscription_item_details.subscription`). Without this,
+ * invoice.paid / invoice.payment_failed lose their subscription link and the
+ * API keys the subscription row by the invoice id instead.
+ */
+function extractInvoiceSubscriptionId(
+  invoice: Record<string, any> | undefined,
+): string | null {
+  if (!invoice) return null;
+  const direct = invoice.subscription;
+  if (typeof direct === "string") return direct;
+  if (asRecord(direct)?.id) return asString(asRecord(direct)!.id) || null;
+
+  const parentDetails = asRecord(asRecord(invoice.parent)?.subscription_details);
+  const fromParent = asString(parentDetails?.subscription);
+  if (fromParent) return fromParent;
+
+  const line = extractInvoiceLine(invoice);
+  const lineDetails = asRecord(asRecord(line?.parent)?.subscription_item_details);
+  return asString(lineDetails?.subscription) || null;
+}
+
 function extractInvoicePlanCode(
   invoice: Record<string, any> | undefined,
   metadata: Record<string, unknown>,
@@ -1499,7 +1524,7 @@ export const stripeAdapter: ProviderAdapter = {
         );
         const planCode = extractInvoicePlanCode(data, invoiceMetadata);
         const period = extractInvoicePeriod(data);
-        const subscriptionId = asString(data.subscription);
+        const subscriptionId = extractInvoiceSubscriptionId(data);
 
         return Result.ok({
           type: "charge.success",
@@ -1545,7 +1570,7 @@ export const stripeAdapter: ProviderAdapter = {
           ),
         );
         const planCode = extractInvoicePlanCode(data, invoiceMetadata);
-        const subscriptionId = asString(data.subscription);
+        const subscriptionId = extractInvoiceSubscriptionId(data);
 
         return Result.ok({
           type: "charge.failed",

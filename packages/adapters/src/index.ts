@@ -154,6 +154,12 @@ export interface NormalizedWebhookEvent {
     currency: string;
     reference: string;
     reason?: string;
+    /**
+     * Provider's own full/partial flag. Prefer it over comparing amounts:
+     * providers may report the refund in the customer's currency (Dodo
+     * refunds a USD plan in NGN) so an amount comparison is meaningless.
+     */
+    isPartial?: boolean;
   };
   checkout?: {
     lineItems?: Array<{ priceId?: string; quantity: number }>;

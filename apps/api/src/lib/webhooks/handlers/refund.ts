@@ -17,9 +17,13 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
   }
 
   const refundAmount = event.refund?.amount;
-  const refundReference = event.refund?.reference;
+  // Adapters put the *original payment* on event.payment.reference and the
+  // provider's refund id on event.refund.reference. Only the former can be
+  // correlated with anything we stored.
+  const refundReference =
+    event.payment?.reference || event.refund?.reference || undefined;
   console.log(
-    `[WEBHOOK] Processing refund for org=${organizationId}, customer=${email}, amount=${refundAmount ?? "unknown"}, ref=${refundReference}`,
+    `[WEBHOOK] Processing refund for org=${organizationId}, customer=${email}, amount=${refundAmount ?? "unknown"}, payment=${refundReference}, refund=${event.refund?.reference}`,
   );
 
   if (!refundReference) {
@@ -73,33 +77,53 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
     with: { invoice: true },
   });
 
+  let targetSub:
+    | (typeof schema.subscriptions.$inferSelect & {
+        plan: typeof schema.plans.$inferSelect | null;
+      })
+    | undefined;
+
   if (
-    !paymentAttempt?.invoice ||
-    paymentAttempt.invoice.organizationId !== organizationId ||
-    paymentAttempt.invoice.customerId !== dbCustomer.id ||
-    !paymentAttempt.invoice.subscriptionId
+    paymentAttempt?.invoice &&
+    paymentAttempt.invoice.organizationId === organizationId &&
+    paymentAttempt.invoice.customerId === dbCustomer.id &&
+    paymentAttempt.invoice.subscriptionId
   ) {
-    console.warn(
-      `[WEBHOOK] Refund: payment reference ${refundReference} did not match a subscription invoice for customer ${dbCustomer.id}`,
-    );
-    return;
+    targetSub = await db.query.subscriptions.findFirst({
+      where: and(
+        eq(schema.subscriptions.id, paymentAttempt.invoice.subscriptionId),
+        eq(schema.subscriptions.customerId, dbCustomer.id),
+        or(
+          eq(schema.subscriptions.status, "active"),
+          eq(schema.subscriptions.status, "trialing"),
+        ),
+      ),
+      with: { plan: true },
+    });
   }
 
-  const targetSub = await db.query.subscriptions.findFirst({
-    where: and(
-      eq(schema.subscriptions.id, paymentAttempt.invoice.subscriptionId),
-      eq(schema.subscriptions.customerId, dbCustomer.id),
-      or(
-        eq(schema.subscriptions.status, "active"),
-        eq(schema.subscriptions.status, "trialing"),
+  // 2b. Checkout-originated payments (the first charge of a subscription,
+  //     a proration) have no invoice/payment_attempt. Match the payment
+  //     reference the subscription webhooks recorded on the row instead.
+  if (!targetSub) {
+    const candidates = await db.query.subscriptions.findMany({
+      where: and(
+        eq(schema.subscriptions.customerId, dbCustomer.id),
+        or(
+          eq(schema.subscriptions.status, "active"),
+          eq(schema.subscriptions.status, "trialing"),
+        ),
       ),
-    ),
-    with: { plan: true },
-  });
+      with: { plan: true },
+    });
+    targetSub = candidates.find((sub: (typeof candidates)[number]) =>
+      subscriptionPaymentReferences(sub.metadata).has(refundReference),
+    );
+  }
 
   if (!targetSub) {
     console.warn(
-      `[WEBHOOK] Refund: subscription ${paymentAttempt.invoice.subscriptionId} is not active/trialing for customer ${dbCustomer.id}`,
+      `[WEBHOOK] Refund: payment reference ${refundReference} did not match an active subscription for customer ${dbCustomer.id}`,
     );
     return;
   }
@@ -111,6 +135,11 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
   //    (e.g., 10000 kobo NGN != 10000 cents USD)
   const refundCurrency = event.refund?.currency?.toUpperCase();
   const isFullRefund = (() => {
+    // The provider knows whether it refunded the whole payment; trust that
+    // before comparing amounts that may be in a different currency.
+    if (typeof event.refund?.isPartial === "boolean") {
+      return !event.refund.isPartial;
+    }
     if (!targetSub.plan) return false;
     if (
       refundCurrency &&
@@ -252,4 +281,30 @@ export async function handleRefund(ctx: WebhookContext): Promise<void> {
       );
     }
   }
+}
+
+/**
+ * Every provider payment reference a subscription row is known to carry:
+ * references recorded by charge.success, and the payment id embedded in the
+ * raw provider payload the row was created from.
+ */
+export function subscriptionPaymentReferences(metadata: unknown): Set<string> {
+  const refs = new Set<string>();
+  if (!metadata || typeof metadata !== "object") return refs;
+  const meta = metadata as Record<string, unknown>;
+
+  const add = (v: unknown) => {
+    if (typeof v === "string" && v.length > 0) refs.add(v);
+  };
+  add(meta.last_payment_reference);
+  add(meta.initial_payment_reference);
+  add((meta.last_proration_payment as Record<string, unknown> | undefined)?.reference);
+
+  const data = (meta.data as Record<string, unknown> | undefined) ?? meta;
+  add(data.payment_id);
+  add(data.reference);
+  add(data.charge_id);
+  const payment = data.payment as Record<string, unknown> | undefined;
+  add(payment?.reference);
+  return refs;
 }
