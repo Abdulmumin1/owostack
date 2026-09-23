@@ -31,6 +31,10 @@ const MIGRATION_FILES = [
     import.meta.url,
   ),
   new URL(
+    "../../../../../packages/db/migrations/0007_fearless_morg.sql",
+    import.meta.url,
+  ),
+  new URL(
     "../../../../../packages/db/migrations/0008_noble_pluto.sql",
     import.meta.url,
   ),

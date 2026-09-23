@@ -36,6 +36,10 @@ import apiCreditSystems from "./routes/api/credit-systems";
 import apiCreditPacks from "./routes/api/credit-packs";
 import apiSubscriptions from "./routes/api/subscriptions";
 import webhooksRoute from "./routes/webhooks";
+import {
+  isReservedOrganizationSlug,
+  reservedSlugMessage,
+} from "./lib/reserved-slugs";
 import cliAuth from "./routes/cli-auth";
 
 // Durable Objects
@@ -219,6 +223,9 @@ app.get("/api/organizations/slug-check/:slug", async (c) => {
   const slug = c.req.param("slug");
   if (!slug || slug.length < 3) {
     return c.json({ available: false, error: "Invalid slug" });
+  }
+  if (isReservedOrganizationSlug(slug)) {
+    return c.json({ available: false, error: reservedSlugMessage(slug) });
   }
 
   const authDb = c.get("authDb");
