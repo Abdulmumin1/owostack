@@ -1,5 +1,11 @@
 # @owostack/types
 
+## 0.7.0
+
+### Minor Changes
+
+- [#271](https://github.com/Abdulmumin1/owostack/pull/271) [`15fecce`](https://github.com/Abdulmumin1/owostack/commit/15fecce70995ef106866438bd73d59b96bac3682) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - `check()` and `track()` keep granting a subscription's entitlements while the payment provider is retrying a failed renewal (`past_due`); access is revoked when the provider ends the subscription. During dunning `details.paymentStatus` is `"past_due"` (and `details.graceEndsAt` gives the 45-day backstop), so apps can show an "update your payment method" prompt instead of an upgrade prompt.
+
 ## 0.6.0
 
 ### Minor Changes
