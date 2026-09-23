@@ -19,35 +19,23 @@ You will build everything in a single Node.js script so you can see results imme
 You need:
 
 - A free Owostack account — sign up at [app.owostack.com](https://app.owostack.com)
-- A payment provider account (Paystack or Dodo Payments)
 - Node.js 18+
 
-## 1. Create your organization and generate an API key
+You do **not** need a payment provider account. The sandbox runs on payment providers that Owostack manages for you (see [Environments](/getting-started/environments#sandbox-is-managed)). You connect your own provider only when you go live.
 
-1. Log in to the dashboard at [app.owostack.com](https://app.owostack.com) and click **Create Organization**.
-2. Name it anything you like (e.g. "My Tutorial App").
-3. Go to **Settings → API Keys → Create New Key**. Name it "Tutorial", choose the **Sandbox** environment, and copy the key. Sandbox keys start with `owo_sk_test_` and only ever talk to `sandbox.owostack.com`, so nothing in this tutorial can touch production (see [Environments](/getting-started/environments)).
-4. Save it in a `.env` file:
+## 1. Create your organization and grab your sandbox key
+
+1. Log in to the dashboard at [app.owostack.com](https://app.owostack.com). If this is your first organization, name it anything you like (e.g. "My Tutorial App") and click **Create organization**. Otherwise use **Create Organization** from the organization switcher.
+2. The dashboard shows your **sandbox API key** once — copy it. Sandbox keys start with `owo_sk_test_` and only ever talk to `sandbox.owostack.com`, so nothing in this tutorial can touch production (see [Environments](/getting-started/environments)). You can always mint another one under **Settings → API Keys**.
+3. Save it in a `.env` file:
 
 ```sh
 OWOSTACK_API_KEY=owo_sk_test_xxxxxxxxxxxxxxxx
 ```
 
-## 2. Connect a provider and set up webhooks
+## 2. That's it for setup
 
-1. Go to **Settings → Payment Providers** and add your provider's secret key. You should see a green **Connected** badge.
-2. Copy the webhook URL shown in the dashboard. It looks like this:
-
-```
-https://api.owostack.com/webhooks/<your-org-id>/<provider-id>
-```
-
-Paste it into your provider's webhook settings page. If your provider asks for events, select **all events**.
-
-<Callout type="warning">
-  Without webhooks, Owostack cannot confirm payments. Every step after this
-  depends on webhooks working.
-</Callout>
+There is no provider to connect and no webhook to register. In the sandbox, checkouts run on test accounts that Owostack owns, and their webhooks are already wired to Owostack. When you go live you will add your own provider keys and webhook URL — see [Webhook setup](/getting-started/webhook-setup).
 
 ## 3. Create your catalog
 
@@ -123,7 +111,7 @@ node index.mjs
 
 You should see a checkout URL. Open it in your browser, complete the test payment, and come back.
 
-## 6. Check feature access
+## 5. Check feature access
 
 After payment, add this below the attach block:
 
@@ -149,7 +137,7 @@ console.log("API calls remaining:", apiAccess.balance, "/", apiAccess.limit);
 
 Run it again. You should see `allowed: true` and `balance: 100`.
 
-## 7. Track usage and hit the limit
+## 6. Track usage and hit the limit
 
 Add this to consume some quota:
 
@@ -174,7 +162,7 @@ console.log("After 5 calls — remaining:", afterTracking.balance);
 
 Run it. Notice the remaining count drops by 5 each time you run the script.
 
-## 8. See what happens at the limit
+## 7. See what happens at the limit
 
 Replace the loop with a bulk track to exhaust the quota:
 

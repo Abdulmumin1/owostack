@@ -8,6 +8,12 @@ icon: Webhook
 
 Owostack receives provider webhooks on your behalf. This keeps subscriptions, entitlements, and usage in sync.
 
+<Callout type="info">
+  **Sandbox needs no setup.** Sandbox payments run on provider accounts that
+  Owostack manages, and their webhooks already point at Owostack. The steps
+  below are for **live**, or for a sandbox account you added yourself.
+</Callout>
+
 ## 1. Find your webhook URL
 
 Your webhook URL is:
@@ -24,7 +30,7 @@ https://api.owostack.com/webhooks/org_123/{provider-id}
 
 ## 2. Configure your provider
 
-In your provider dashboard, paste the webhook URL and save. Use the provider's test environment when setting up test data.
+In your provider dashboard, paste the webhook URL and save. If you brought your own sandbox account, configure it on the provider's test environment and use `https://sandbox.owostack.com` as the host instead.
 
 <Callout type="important">
   If your provider supports webhook signing secrets, copy the secret and save it
@@ -49,7 +55,7 @@ Trigger a test payment or subscription in your provider dashboard. You should se
 ### Webhooks not arriving
 
 1. Confirm the URL includes both organization ID and provider ID
-2. Confirm the provider account environment matches your test/live setup
+2. Confirm the provider account environment matches your test/live setup, and that the host matches (`api.owostack.com` for live, `sandbox.owostack.com` for your own sandbox account)
 3. Check the provider dashboard for delivery errors
 
 ### Invalid signature errors
