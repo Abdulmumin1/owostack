@@ -971,6 +971,18 @@
                     "code": {
                       "type": "string"
                     },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
+                    },
                     "usage": {
                       "type": [
                         "number",
@@ -1203,6 +1215,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -1218,7 +1237,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -1418,6 +1438,18 @@
                     "code": {
                       "type": "string"
                     },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
+                    },
                     "usage": {
                       "type": [
                         "number",
@@ -1650,6 +1682,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -1665,7 +1704,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -1739,6 +1779,18 @@
                     "code": {
                       "type": "string"
                     },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
+                    },
                     "usage": {
                       "type": [
                         "number",
@@ -1971,6 +2023,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -1986,7 +2045,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -2007,6 +2067,18 @@
                         },
                         "code": {
                           "type": "string"
+                        },
+                        "environment": {
+                          "type": "string",
+                          "enum": [
+                            "sandbox",
+                            "live"
+                          ],
+                          "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                        },
+                        "unlimited": {
+                          "type": "boolean",
+                          "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
                         },
                         "usage": {
                           "type": [
@@ -2240,6 +2312,13 @@
                             "message": {
                               "type": "string"
                             },
+                            "planName": {
+                              "type": "string"
+                            },
+                            "plan": {
+                              "type": "string",
+                              "description": "Slug of the plan granting access."
+                            },
                             "pricing": {
                               "$ref": "#/components/schemas/PricingDetails"
                             },
@@ -2255,7 +2334,8 @@
                       },
                       "required": [
                         "allowed",
-                        "code"
+                        "code",
+                        "environment"
                       ],
                       "additionalProperties": {}
                     },
@@ -2360,6 +2440,18 @@
                     "code": {
                       "type": "string"
                     },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
+                    },
                     "usage": {
                       "type": [
                         "number",
@@ -2592,6 +2684,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -2607,7 +2706,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -2627,6 +2727,18 @@
                     "code": {
                       "type": "string"
                     },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
+                    },
                     "usage": {
                       "type": [
                         "number",
@@ -2859,6 +2971,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -2874,7 +2993,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -2895,6 +3015,18 @@
                         },
                         "code": {
                           "type": "string"
+                        },
+                        "environment": {
+                          "type": "string",
+                          "enum": [
+                            "sandbox",
+                            "live"
+                          ],
+                          "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                        },
+                        "unlimited": {
+                          "type": "boolean",
+                          "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
                         },
                         "usage": {
                           "type": [
@@ -3128,6 +3260,13 @@
                             "message": {
                               "type": "string"
                             },
+                            "planName": {
+                              "type": "string"
+                            },
+                            "plan": {
+                              "type": "string",
+                              "description": "Slug of the plan granting access."
+                            },
                             "pricing": {
                               "$ref": "#/components/schemas/PricingDetails"
                             },
@@ -3143,7 +3282,8 @@
                       },
                       "required": [
                         "allowed",
-                        "code"
+                        "code",
+                        "environment"
                       ],
                       "additionalProperties": {}
                     },
@@ -3202,6 +3342,18 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
                     },
                     "usage": {
                       "type": [
@@ -3435,6 +3587,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -3450,7 +3609,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }

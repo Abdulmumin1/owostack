@@ -15,8 +15,14 @@ export const apiKeys = sqliteTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    prefix: text("prefix").notNull(), // sk_live_ or sk_test_
+    prefix: text("prefix").notNull(), // owo_sk_test_ | owo_sk_live_ | owo_sk_ (legacy)
     hash: text("hash").notNull(), // SHA-256 hash of the full key
+    /**
+     * Environment the key is scoped to. "test" keys are only accepted by the
+     * sandbox API, "live" keys only by the live API. NULL = legacy key that was
+     * issued before scoping existed and is accepted by both environments.
+     */
+    environment: text("environment", { enum: ["test", "live"] }),
     lastUsedAt: integer("last_used_at"),
     expiresAt: integer("expires_at"),
     createdAt: integer("created_at")

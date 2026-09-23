@@ -226,6 +226,9 @@ export interface ResponseDetails {
   /** Name of the plan granting access */
   planName?: string;
 
+  /** Slug of the plan granting access (as defined in your catalog) */
+  plan?: string;
+
   /** Whether access is via a free trial */
   trial?: boolean;
 
@@ -298,12 +301,28 @@ export type CreditsBalanceDetails =
   | CreditSystemBalanceDetails
   | PrepaidBalanceDetails;
 
+/**
+ * Environment that served a request. Every public API response also carries
+ * this in the `X-Owostack-Environment` header.
+ */
+export type OwostackEnvironment = "sandbox" | "live";
+
 export interface CheckResult {
   /** Whether access is allowed */
   allowed: boolean;
 
   /** Machine-readable code */
   code: CheckCode | string;
+
+  /** Environment that served this request */
+  environment: OwostackEnvironment;
+
+  /**
+   * True when access was granted and no finite cap applies. Equivalent to
+   * `limit === null` (or `credits.totalBalance === null` for credit-backed
+   * features) but explicit.
+   */
+  unlimited: boolean;
 
   /** Current usage this period (null for boolean features) */
   usage: number | null;
@@ -360,6 +379,12 @@ export interface TrackResult {
 
   /** Machine-readable code */
   code: TrackCode | string;
+
+  /** Environment that served this request */
+  environment: OwostackEnvironment;
+
+  /** True when the tracked feature has no finite cap (see CheckResult.unlimited) */
+  unlimited: boolean;
 
   /** Current usage this period after tracking (null for unlimited) */
   usage: number | null;

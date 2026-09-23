@@ -18,6 +18,8 @@ export interface ApiKey {
   id: string;
   name: string;
   prefix: string;
+  /** null for legacy keys issued before environment scoping */
+  environment?: "test" | "live" | null;
   createdAt: string | number;
   lastUsedAt?: string | number | null;
 }

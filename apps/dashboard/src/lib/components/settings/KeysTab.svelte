@@ -2,8 +2,14 @@
   import { CheckCircle, CircleNotch, Copy, Key, Trash, X } from "phosphor-svelte";
   import { fade } from "svelte/transition";
   import { apiFetch } from "$lib/auth-client";
+  import { getActiveEnvironment, type AppEnvironment } from "$lib/env";
   import { toast } from "svelte-sonner";
   import type { ApiKey } from "./types";
+
+  const ENVIRONMENT_LABELS: Record<AppEnvironment, string> = {
+    test: "Sandbox",
+    live: "Live"
+  };
 
   let { 
     projectId,
@@ -15,15 +21,14 @@
     formatDate: (date: string | number) => string;
   } = $props();
 
-  let apiKeys = $state<ApiKey[]>([]);
+  // Writable derived: follows the prop, but can be overwritten after a reload.
+  let apiKeys = $derived<ApiKey[]>(apiKeysProp);
   let showKeyModal = $state(false);
   let newKeyName = $state("");
+  let newKeyEnvironment = $state<AppEnvironment>(getActiveEnvironment());
   let generatedKey = $state("");
+  let generatedKeyEnvironment = $state<AppEnvironment | null>(null);
   let isCreatingKey = $state(false);
-
-  $effect(() => {
-    apiKeys = apiKeysProp;
-  });
 
   async function loadApiKeys() {
     const res = await apiFetch(`/api/dashboard/keys?organizationId=${projectId}`);
@@ -40,12 +45,14 @@
         method: "POST",
         body: JSON.stringify({
           organizationId: projectId,
-          name: newKeyName
+          name: newKeyName,
+          environment: newKeyEnvironment
         })
       });
 
       if (res.data?.success) {
         generatedKey = res.data.data.secretKey;
+        generatedKeyEnvironment = newKeyEnvironment;
         await loadApiKeys();
         newKeyName = "";
         showKeyModal = false;
@@ -111,7 +118,14 @@
       <CheckCircle size={20} class="text-success mt-1" weight="fill" />
       <div class="flex-1">
         <h4 class="text-sm font-bold text-text-primary mb-1">Key Generated Successfully</h4>
-        <p class="text-xs text-text-dim mb-3">Copy your key now. You won't see it again.</p>
+        <p class="text-xs text-text-dim mb-3">
+          Copy your key now. You won't see it again.
+          {#if generatedKeyEnvironment}
+            This key only works against the
+            <strong>{ENVIRONMENT_LABELS[generatedKeyEnvironment]}</strong> API
+            ({generatedKeyEnvironment === "live" ? "api.owostack.com" : "sandbox.owostack.com"}).
+          {/if}
+        </p>
         <div class="flex items-center gap-2 bg-bg-secondary border border-border rounded px-3 py-2">
           <code class="text-sm font-mono text-success flex-1">{generatedKey}</code>
           <button class="text-text-dim hover:text-text-primary" onclick={() => copyUrl(generatedKey)}>
@@ -119,16 +133,23 @@
           </button>
         </div>
       </div>
-      <button class="text-text-dim hover:text-text-primary" onclick={() => generatedKey = ""}><X size={16} weight="fill" /></button>
+      <button class="text-text-dim hover:text-text-primary" onclick={() => { generatedKey = ""; generatedKeyEnvironment = null; }}><X size={16} weight="fill" /></button>
     </div>
   </div>
 {/if}
 
 {#if showKeyModal}
   <div class="mb-8 bg-bg-secondary border border-border rounded-lg p-6">
-    <h3 class="text-sm font-bold text-text-primary mb-4">Create New API Key</h3>
+    <h3 class="text-sm font-bold text-text-primary mb-1">Create New API Key</h3>
+    <p class="text-xs text-text-dim mb-4">
+      Keys are scoped to one environment. A Sandbox key is rejected by the Live API and vice versa.
+    </p>
     <div class="flex gap-4">
       <input type="text" placeholder="Key Name" bind:value={newKeyName} class="flex-1 input" />
+      <select bind:value={newKeyEnvironment} class="input w-40" aria-label="Key environment">
+        <option value="test">Sandbox</option>
+        <option value="live">Live</option>
+      </select>
       <button class="btn btn-secondary" onclick={() => { showKeyModal = false; newKeyName = ""; }}>Cancel</button>
       <button class="btn btn-primary" disabled={!newKeyName || isCreatingKey} onclick={createKey}>
         {#if isCreatingKey} <CircleNotch size={16} class="animate-spin" /> {:else} Create {/if}
@@ -145,7 +166,13 @@
         <div>
           <div class="flex items-center gap-2 mb-1">
             <h3 class="text-sm font-bold text-text-primary">{key.name}</h3>
-           
+            {#if key.environment === "live"}
+              <span class="badge badge-warning">Live</span>
+            {:else if key.environment === "test"}
+              <span class="badge badge-info">Sandbox</span>
+            {:else}
+              <span class="badge badge-default" title="Issued before environment scoping; works on both Sandbox and Live. Rotate to a scoped key.">Legacy</span>
+            {/if}
           </div>
           <div class="text-xs font-mono text-text-dim">
             {key.prefix}•••••••• • Created {formatDate(key.createdAt)}

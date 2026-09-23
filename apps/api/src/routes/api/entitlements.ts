@@ -3,6 +3,7 @@ import type { MiddlewareHandler } from "hono";
 import { eq, and, sql, or, inArray } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
+import { createEntitlementResponder } from "../../lib/public-api-envelope";
 import { EntitlementCache } from "../../lib/cache";
 import { resolveOrCreateCustomer } from "../../lib/customers";
 import type { Env, Variables } from "../../index";
@@ -708,10 +709,11 @@ const requireApiKey: MiddlewareHandler<{
   Variables: Variables;
 }> = async (c, next) => {
   const deps = getEntitlementsDependencies(c);
+  const respond = createEntitlementResponder(c);
   const authHeader = c.req.header("Authorization");
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return c.json({ success: false, error: "Missing API Key" }, 401);
+    return respond({ success: false, error: "Missing API Key" }, 401);
   }
 
   const apiKey = authHeader.split(" ")[1];
@@ -722,7 +724,7 @@ const requireApiKey: MiddlewareHandler<{
     waitUntil: (promise) => c.executionCtx.waitUntil(promise),
   });
   if (!keyRecord) {
-    return c.json({ success: false, error: "Invalid API Key" }, 401);
+    return respond({ success: false, error: "Invalid API Key" }, 401);
   }
 
   c.set("organizationId", keyRecord.organizationId);
@@ -753,6 +755,14 @@ const entitlementResultSchema = z
   .object({
     allowed: z.boolean(),
     code: z.string(),
+    environment: z.enum(["sandbox", "live"]).openapi({
+      description:
+        "Environment that served the request. Also echoed in the X-Owostack-Environment header.",
+    }),
+    unlimited: z.boolean().optional().openapi({
+      description:
+        "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null).",
+    }),
     usage: z.number().nullable().optional(),
     limit: z.number().nullable().optional(),
     balance: z.number().nullable().optional(),
@@ -804,6 +814,11 @@ const entitlementResultSchema = z
     details: z
       .object({
         message: z.string().optional(),
+        planName: z.string().optional(),
+        plan: z
+          .string()
+          .optional()
+          .openapi({ description: "Slug of the plan granting access." }),
         pricing: pricingDetailsSchema.optional(),
         tierBreakdown: z.array(billingTierBreakdownSchema).optional(),
       })
@@ -1229,6 +1244,7 @@ async function getManualEntitlementForFeature(
 app.openapi(
   checkRoute,
   async (c) => {
+    const respond = createEntitlementResponder(c);
     const deps = getEntitlementsDependencies(c);
     const {
       customer: customerId,
@@ -1242,7 +1258,7 @@ app.openapi(
     const organizationId = c.get("organizationId");
 
     if (!organizationId) {
-      return c.json(
+      return respond(
         { success: false, error: "Organization Context Missing" },
         500,
       );
@@ -1304,7 +1320,7 @@ app.openapi(
       ]);
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
-        return c.json(
+        return respond(
           {
             allowed: false,
             code: "customer_ambiguous",
@@ -1325,7 +1341,7 @@ app.openapi(
     }
 
     if (!customer) {
-      return c.json(
+      return respond(
         {
           allowed: false,
           code: "customer_not_found",
@@ -1346,7 +1362,7 @@ app.openapi(
     const feature = featureResult;
 
     if (!feature) {
-      return c.json(
+      return respond(
         {
           allowed: false,
           code: "feature_not_found",
@@ -1431,7 +1447,7 @@ app.openapi(
       ]);
 
     if (entity && !entityValid) {
-      return c.json(
+      return respond(
         {
           allowed: false,
           code: "entity_not_found",
@@ -1530,7 +1546,7 @@ app.openapi(
     }
 
     if ((!subscriptions || subscriptions.length === 0) && !manualEntitlement) {
-      return c.json(
+      return respond(
         {
           allowed: false,
           code: "no_active_subscription",
@@ -1640,7 +1656,7 @@ app.openapi(
       : directCreditContext;
 
     if (!accessGrantingSubscription || !accessGrantingPlanFeature) {
-      return c.json(
+      return respond(
         {
           allowed: false,
           code: "feature_not_in_plan",
@@ -1692,6 +1708,7 @@ app.openapi(
         ? new Date(subscription.currentPeriodEnd).toISOString()
         : null;
     const planName = (subscription as any).plan?.name || "current plan";
+    const planSlug: string | undefined = (subscription as any).plan?.slug;
 
     // Calculate effective limit considering trial status
     const effectiveLimit =
@@ -1709,6 +1726,7 @@ app.openapi(
       return {
         message,
         planName,
+        ...(planSlug ? { plan: planSlug } : {}),
         ...(isTrial ? { trial: true, trialEndsAt } : {}),
         ...(creditContext
           ? {
@@ -1725,7 +1743,7 @@ app.openapi(
     // Boolean features get immediate access UNLESS they're part of a credit system
     // (credit system children must go through the metered path to consume credits)
     if (feature.type === "boolean" && !creditContext) {
-      return c.json(
+      return respond(
         {
           allowed: true,
           code: "access_granted",
@@ -1881,7 +1899,7 @@ app.openapi(
             ledgerUsage === null &&
             hasAuthoritativeUsageLedger(c, organizationId)
           ) {
-            return c.json(
+            return respond(
               {
                 allowed: false,
                 code: "billing_unavailable",
@@ -1929,7 +1947,7 @@ app.openapi(
           );
 
           if (!usageBasedGuard.allowed) {
-            return c.json(
+            return respond(
               {
                 allowed: false,
                 code: "limit_exceeded",
@@ -1977,7 +1995,7 @@ app.openapi(
               );
 
               if (!trackResult.allowed) {
-                return c.json(
+                return respond(
                   {
                     allowed: false,
                     code: "limit_exceeded",
@@ -2010,7 +2028,7 @@ app.openapi(
                 deps,
               );
               if (!deductResult.deducted) {
-                return c.json(
+                return respond(
                   {
                     allowed: false,
                     code: "limit_exceeded",
@@ -2074,7 +2092,7 @@ app.openapi(
               coverage.manualBonusAmount > 0
                 ? "bonus_credits_used"
                 : "addon_credits_used";
-            return c.json(
+            return respond(
               {
                 allowed: true,
                 code: creditCode,
@@ -2145,7 +2163,7 @@ app.openapi(
             );
 
             if (overageGuard.allowed) {
-              return c.json(
+              return respond(
                 {
                   allowed: true,
                   code: "overage_allowed",
@@ -2184,7 +2202,7 @@ app.openapi(
                 deps,
               )
             : undefined;
-          return c.json(
+          return respond(
             {
               allowed: false,
               code: "limit_exceeded",
@@ -2225,7 +2243,7 @@ app.openapi(
             ? await tryDeductPrepaidCredits(db, customer.id, prepaidCost)
             : await hasPrepaidCredits(db, customer.id, prepaidCost);
           if (!affordable) {
-            return c.json(
+            return respond(
               {
                 allowed: false,
                 code: "insufficient_credits",
@@ -2287,7 +2305,7 @@ app.openapi(
                   },
                   "check:track-race-addon",
                 );
-                return c.json(
+                return respond(
                   {
                     allowed: true,
                     code: "addon_credits_used",
@@ -2337,7 +2355,7 @@ app.openapi(
                 );
               }
             }
-            return c.json(
+            return respond(
               {
                 allowed: false,
                 code: "limit_exceeded",
@@ -2391,7 +2409,7 @@ app.openapi(
         }
 
         // Include add-on credit balance in response for credit system features
-        return c.json(
+        return respond(
           {
             allowed: true,
             code: "access_granted",
@@ -2449,7 +2467,7 @@ app.openapi(
         ledgerUsage === null &&
         hasAuthoritativeUsageLedger(c, organizationId)
       ) {
-        return c.json(
+        return respond(
           {
             allowed: false,
             code: "billing_unavailable",
@@ -2489,7 +2507,7 @@ app.openapi(
         );
 
         if (!usageBasedGuard.allowed) {
-          return c.json(
+          return respond(
             {
               allowed: false,
               code: "limit_exceeded",
@@ -2509,7 +2527,7 @@ app.openapi(
           );
         }
 
-        return c.json(
+        return respond(
           {
             allowed: true,
             code: "access_granted",
@@ -2532,7 +2550,7 @@ app.openapi(
       // Check Usage Limit
       // If limitValue is null, it's unlimited
       if (effectiveLimit === null) {
-        return c.json(
+        return respond(
           {
             allowed: true,
             code: "access_granted",
@@ -2577,7 +2595,7 @@ app.openapi(
               deps,
             );
             if (!deductResult.deducted) {
-              return c.json(
+              return respond(
                 {
                   allowed: false,
                   code: "limit_exceeded",
@@ -2636,7 +2654,7 @@ app.openapi(
             );
           }
 
-          return c.json(
+          return respond(
             {
               allowed: true,
               code:
@@ -2712,7 +2730,7 @@ app.openapi(
             },
           );
           if (overageGuard.allowed) {
-            return c.json(
+            return respond(
               {
                 allowed: true,
                 code: "overage_allowed",
@@ -2751,7 +2769,7 @@ app.openapi(
               deps,
             )
           : undefined;
-        return c.json(
+        return respond(
           {
             allowed: false,
             code: "limit_exceeded",
@@ -2786,7 +2804,7 @@ app.openapi(
           ? await tryDeductPrepaidCredits(db, customer.id, prepaidCost)
           : await hasPrepaidCredits(db, customer.id, prepaidCost);
         if (!affordable) {
-          return c.json(
+          return respond(
             {
               allowed: false,
               code: "insufficient_credits",
@@ -2833,7 +2851,7 @@ app.openapi(
         );
       }
 
-      return c.json(
+      return respond(
         {
           allowed: true,
           code: "access_granted",
@@ -2853,7 +2871,7 @@ app.openapi(
       );
     }
 
-    return c.json(
+    return respond(
       {
         allowed: false,
         code: "unknown_feature_type",
@@ -2881,6 +2899,7 @@ app.openapi(
 app.openapi(
   trackRoute,
   async (c) => {
+    const respond = createEntitlementResponder(c);
     const deps = getEntitlementsDependencies(c);
     const {
       customer: customerId,
@@ -2894,7 +2913,7 @@ app.openapi(
     const now = Date.now();
 
     if (!organizationId) {
-      return c.json(
+      return respond(
         { success: false, error: "Organization Context Missing" },
         500,
       );
@@ -2956,7 +2975,7 @@ app.openapi(
       ]);
     } catch (error) {
       if (isCustomerResolutionConflictError(error)) {
-        return c.json(
+        return respond(
           {
             success: false,
             allowed: false,
@@ -2980,7 +2999,7 @@ app.openapi(
     const customer = trackCustomer;
 
     if (!customer) {
-      return c.json(
+      return respond(
         {
           success: false,
           allowed: false,
@@ -3002,7 +3021,7 @@ app.openapi(
     const feature = trackFeatureResult;
 
     if (!feature) {
-      return c.json(
+      return respond(
         {
           success: false,
           allowed: false,
@@ -3078,7 +3097,7 @@ app.openapi(
       ]);
 
     if (entity && !trackEntityValid) {
-      return c.json(
+      return respond(
         {
           success: false,
           allowed: false,
@@ -3177,7 +3196,7 @@ app.openapi(
     }
 
     if (subscriptions.length === 0 && !trackManualEntitlement) {
-      return c.json(
+      return respond(
         {
           success: false,
           allowed: false,
@@ -3289,7 +3308,7 @@ app.openapi(
     const basePlanFeature = accessGrantingPlanFeature;
 
     if (!subscription || !basePlanFeature) {
-      return c.json(
+      return respond(
         {
           success: false,
           allowed: false,
@@ -3338,6 +3357,7 @@ app.openapi(
         : null;
 
     const trackPlanName = (subscription as any).plan?.name || "current plan";
+    const trackPlanSlug: string | undefined = (subscription as any).plan?.slug;
 
     // Calculate effective limit considering trial status
     const effectiveLimit =
@@ -3354,6 +3374,7 @@ app.openapi(
       return {
         message,
         planName: trackPlanName,
+        ...(trackPlanSlug ? { plan: trackPlanSlug } : {}),
         ...(isTrial ? { trial: true, trialEndsAt } : {}),
         ...(trackCreditContext
           ? {
@@ -3457,7 +3478,7 @@ app.openapi(
       prepaidCost > 0 &&
       !(await tryDeductPrepaidCredits(db, customer.id, prepaidCost))
     ) {
-      return c.json(
+      return respond(
         {
           success: false,
           allowed: false,
@@ -3550,7 +3571,7 @@ app.openapi(
 
           if (!usageBasedGuard.allowed) {
             await releasePrepaidReservation();
-            return c.json(
+            return respond(
               {
                 success: false,
                 allowed: false,
@@ -3606,7 +3627,7 @@ app.openapi(
             hasAuthoritativeUsageLedger(c, organizationId)
           ) {
             await releasePrepaidReservation();
-            return c.json(
+            return respond(
               {
                 success: false,
                 allowed: false,
@@ -3660,7 +3681,7 @@ app.openapi(
 
             if (!consumeIncludedResult.allowed) {
               await releasePrepaidReservation();
-              return c.json(
+              return respond(
                 {
                   success: false,
                   allowed: false,
@@ -3701,7 +3722,7 @@ app.openapi(
               );
               if (!deductResult.deducted) {
                 await releasePrepaidReservation();
-                return c.json(
+                return respond(
                   {
                     success: false,
                     allowed: false,
@@ -3787,7 +3808,7 @@ app.openapi(
 
             if (!overageGuard.allowed) {
               await releasePrepaidReservation();
-              return c.json(
+              return respond(
                 {
                   success: false,
                   allowed: false,
@@ -3825,7 +3846,7 @@ app.openapi(
               );
               if (!deductResult.deducted) {
                 await releasePrepaidReservation();
-                return c.json(
+                return respond(
                   {
                     success: false,
                     allowed: false,
@@ -3865,7 +3886,7 @@ app.openapi(
           } else {
             const blockUsage = doResult.usage ?? null;
             await releasePrepaidReservation();
-            return c.json(
+            return respond(
               {
                 success: false,
                 allowed: false,
@@ -3911,7 +3932,7 @@ app.openapi(
 
         if (!usageBasedGuard.allowed) {
           await releasePrepaidReservation();
-          return c.json(
+          return respond(
             {
               success: false,
               allowed: false,
@@ -3995,7 +4016,7 @@ app.openapi(
       const responseCode = trackedAsOverage
         ? "tracked_overage"
         : trackSuccessCode;
-      return c.json(
+      return respond(
         {
           success: true,
           allowed: true,
@@ -4049,7 +4070,7 @@ app.openapi(
     } catch (e: any) {
       await releasePrepaidReservation().catch(() => {});
       console.error("Track failed:", e);
-      return c.json(
+      return respond(
         {
           success: false,
           allowed: false,
