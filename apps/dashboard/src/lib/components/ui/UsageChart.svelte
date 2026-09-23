@@ -222,7 +222,7 @@
 
     <!-- Plot -->
     <div
-      class="relative h-64 flex-1"
+      class="relative h-64 flex-1 overflow-x-clip"
       role="img"
       aria-label="Usage over the last {days} days"
     >
@@ -240,6 +240,12 @@
       <div class="absolute inset-0 flex items-end {gapClass}">
         {#each dayData as day, i (day.date)}
           {@const isLatest = i === dayData.length - 1}
+          {@const tooltipAlign =
+            i < Math.ceil(dayData.length * 0.15)
+              ? "left"
+              : i >= Math.floor(dayData.length * 0.85)
+                ? "right"
+                : "center"}
           <div class="group relative h-full flex-1">
             <!-- Hover hit area -->
             <div
@@ -272,10 +278,15 @@
             <!-- Tooltip -->
             {#if day.total > 0}
               <div
-                class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-max -translate-x-1/2 group-hover:block"
+                class="pointer-events-none absolute bottom-full z-20 mb-2 hidden group-hover:block {tooltipAlign ===
+                'left'
+                  ? 'left-0'
+                  : tooltipAlign === 'right'
+                    ? 'right-0'
+                    : 'left-1/2 -translate-x-1/2'}"
               >
                 <div
-                  class="min-w-[9rem] rounded-md border border-border bg-bg-card px-2.5 py-2 shadow-lg"
+                  class="min-w-[9rem] max-w-[14rem] rounded-md border border-border bg-bg-card px-2.5 py-2 shadow-lg"
                 >
                   <div
                     class="mb-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-text-dim"
