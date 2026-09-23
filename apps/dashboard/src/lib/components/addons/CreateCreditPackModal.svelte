@@ -1,6 +1,10 @@
 <script lang="ts">
   import { Result } from "better-result";
   import { apiFetch } from "$lib/auth-client";
+  import {
+    loadManagedSandboxProviderIds,
+    withManagedSandboxAccounts,
+  } from "$lib/managed-sandbox";
   import SidePanel from "$lib/components/ui/SidePanel.svelte";
   import {
     Check,
@@ -81,7 +85,11 @@
       ]);
       if (credRes.data?.success) creditSystems = credRes.data.data || [];
       if (Array.isArray(provRes.data?.data)) {
-        connectedProviders = provRes.data.data;
+        connectedProviders = withManagedSandboxAccounts(
+          provRes.data.data,
+          await loadManagedSandboxProviderIds(),
+          organizationId,
+        );
         if (!selectedProviderId && connectedProviders.length > 0) {
           selectedProviderId = connectedProviders[0].providerId;
         }

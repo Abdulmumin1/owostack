@@ -365,6 +365,7 @@ export function createWalletRoute(overrides: Partial<WalletDependencies> = {}) {
       db,
       organizationId,
       c.env.ENCRYPTION_KEY,
+      c.env,
     );
 
     let selectedProviderId = provider || dbCustomer.providerId || null;

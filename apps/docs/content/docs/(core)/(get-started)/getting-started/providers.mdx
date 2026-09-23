@@ -45,7 +45,13 @@ A **provider account** stores the credentials for a specific provider within you
 - **Webhook secret** — used to verify incoming webhook payloads
 - **Environment** — test or live
 
-Each organization can configure one or more provider accounts for different environments (test or live).
+Each organization can configure one or more provider accounts per environment.
+
+### Sandbox accounts are managed by Owostack
+
+In the sandbox you don't need any of the above. Owostack keeps a shared test account on each supported provider and your organization uses them automatically — they show up as **Managed by Owostack** in **Settings → Providers**. A sandbox account you add yourself for a provider overrides the managed one for that provider.
+
+Live always uses your own accounts. See [Environments](/getting-started/environments#sandbox-is-managed).
 
 ## How providers are selected
 
@@ -54,7 +60,7 @@ When a customer starts a checkout, Owostack picks a provider using this priority
 1. **Explicit `provider` parameter** — if you pass `provider: "dodopayments"` to `attach()`
 2. **Plan's provider** — the provider selected when the plan was created
 3. **Customer's existing provider** — if they've paid before, use the same provider
-4. **Fallback** — the first configured provider account
+4. **Fallback** — the first configured provider account (in the sandbox this includes the managed accounts)
 
 Owostack routes requests based on the plan's provider, explicit provider parameter, or customer history.
 
@@ -103,6 +109,6 @@ Owostack's adapter interface is designed to be extended. At a high level:
 1. Implement `ProviderAdapter` in `packages/adapters`
 2. Register it in the provider registry
 3. Add credential fields to the dashboard
-4. Configure a provider account
+4. Configure a provider account (and, for the sandbox, add Owostack's test credentials for it to the managed set)
 
 Once registered, all billing flows (checkout, plan switching, webhooks, overage billing) work through the new adapter automatically.

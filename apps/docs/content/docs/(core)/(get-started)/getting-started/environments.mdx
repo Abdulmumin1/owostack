@@ -15,6 +15,19 @@ Owostack runs two completely isolated environments. Nothing is shared between th
 
 The dashboard has a sandbox/live toggle in the header; everything you see is scoped to the selected environment.
 
+## Sandbox is managed
+
+You never configure a payment provider for the sandbox. Owostack owns a test account on every supported provider (Paystack, Stripe, Dodo Payments, Bachs) and every organization transacts through them:
+
+- `attach()`, wallet setup, invoice payment and plan sync all just work on `sandbox.owostack.com` with a fresh organization.
+- Checkout pages are the providers' real test pages — use their test cards.
+- Provider webhooks for those accounts are already pointed at Owostack, so payments confirm without you registering anything.
+- **Settings → Providers** lists these as **Managed by Owostack**. They cannot be edited or deleted.
+
+If you need to see sandbox activity in *your own* provider dashboard, add your own test keys for that provider under **Settings → Providers**. Your account then replaces the managed one for that provider only, and you register the per-organization webhook URL yourself as described in [Webhook setup](/getting-started/webhook-setup).
+
+**Live is yours.** Production always charges through provider accounts you own. The **Go to Production** flow in the dashboard asks for live keys for the providers your sandbox catalog uses before it lets you switch.
+
 ## Keys are scoped to one environment
 
 An API key belongs to exactly one environment, encoded in its prefix. The API enforces it:
