@@ -1,5 +1,23 @@
 # owosk
 
+## 0.5.0
+
+### Minor Changes
+
+- [#247](https://github.com/Abdulmumin1/owostack/pull/247) [`5959740`](https://github.com/Abdulmumin1/owostack/commit/59597405e94da0c20a0ed355bc37e3267279cb4e) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Explicit environment, `--json`, and stable exit codes.
+  - `--mode sandbox|live` (or `OWOSTACK_MODE`) replaces the sandbox-by-default behaviour. With no flag the mode is inferred from an environment-scoped key; a legacy key with no mode exits `2` with instructions. A mode that contradicts the key's scope is refused before any request. `--prod` remains as a deprecated alias for `--mode live`.
+  - `--mode`, `--key`, `--config` and `--json` are now documented on every API-facing subcommand (`sync`, `diff`, `pull`, `validate`) instead of `--prod` living only at the top level.
+  - `--json` prints exactly one JSON document on stdout — no spinner frames, colours or prompts (`sync --json` requires `--yes` or `--dry-run`). Errors are JSON too.
+  - Stable exit codes: `0` ok, `1` failed, `2` usage/config error, `3` drift (`diff --exit-code`).
+  - `owosk connect` stores a sandbox key and a live key (`~/.owostack/config.json` → `keys.sandbox` / `keys.live`); commands pick the one for the selected mode.
+  - `OWOSTACK_API_URL` now overrides the host for whichever mode is selected (previously it only applied to live).
+
+### Patch Changes
+
+- Updated dependencies [[`c638330`](https://github.com/Abdulmumin1/owostack/commit/c6383300c0ef034e248158104ea3fa9e0919b474), [`742f003`](https://github.com/Abdulmumin1/owostack/commit/742f00344621f74c2b01dc96b81838b01b4ae819), [`5959740`](https://github.com/Abdulmumin1/owostack/commit/59597405e94da0c20a0ed355bc37e3267279cb4e)]:
+  - @owostack/types@0.5.0
+  - owostack@0.5.0
+
 ## 0.4.7
 
 ### Patch Changes
