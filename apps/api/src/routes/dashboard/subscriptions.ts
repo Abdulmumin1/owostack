@@ -1,4 +1,7 @@
 import { Hono } from "hono";
+import { claimCancelDowngrade } from "../../lib/cancel-downgrade-claim";
+
+class AlreadyClaimedError extends Error {}
 import { z } from "zod";
 import { eq, and, or, gt, isNull } from "drizzle-orm";
 import { schema } from "@owostack/db";
@@ -742,19 +745,15 @@ app.post("/cancel", async (c) => {
     sub.customer
   ) {
     try {
-      // CRITICAL: Set flag FIRST to prevent race condition with webhook
-      // This ensures any concurrent webhook sees the flag and skips
-      await db
-        .update(schema.subscriptions)
-        .set({
-          metadata: {
-            ...sub.metadata,
-            cancel_downgrade_initiated: true,
-            cancel_downgrade_at: now,
-          },
-          updatedAt: now,
-        })
-        .where(eq(schema.subscriptions.id, subscriptionId));
+      // Atomic claim: the provider webhook for this cancellation may be
+      // running right now; only one of us creates the free subscription.
+      const claimed = await claimCancelDowngrade(db, subscriptionId, now);
+      if (!claimed) {
+        console.log(
+          `[subscriptions/cancel] cancel-downgrade for ${subscriptionId} already claimed elsewhere; skipping free plan creation`,
+        );
+        throw new AlreadyClaimedError();
+      }
 
       // Find organization's free plan
       const freePlan = await db.query.plans.findFirst({
@@ -850,12 +849,14 @@ app.post("/cancel", async (c) => {
           .where(eq(schema.subscriptions.id, subscriptionId));
       }
     } catch (e) {
-      console.warn(
-        "[subscriptions/cancel] Failed to auto-downgrade to free plan:",
-        e,
-      );
-      // Don't fail the cancellation if downgrade fails, but flag was already set
-      // Webhook will see flag and skip, preventing duplicate attempts
+      if (!(e instanceof AlreadyClaimedError)) {
+        console.warn(
+          "[subscriptions/cancel] Failed to auto-downgrade to free plan:",
+          e,
+        );
+      }
+      // Don't fail the cancellation if downgrade fails; the claim stays set so
+      // no other actor retries and creates a duplicate.
     }
   }
 

@@ -4,6 +4,7 @@ import {
   WorkflowEvent,
 } from "cloudflare:workers";
 import { createDb, schema } from "@owostack/db";
+import { claimCancelDowngrade } from "../cancel-downgrade-claim";
 import { eq, and } from "drizzle-orm";
 import { provisionEntitlements } from "../plan-switch";
 import { EntitlementCache } from "../cache";
@@ -109,22 +110,17 @@ export class CancelDowngradeWorkflow extends WorkflowEntrypoint<
       return { success: false, reason: shouldProceed.reason };
     }
 
-    // Step 3: Set initiated flag to prevent race conditions with webhook
-    await step.do("set-initiated-flag", async () => {
-      await db
-        .update(schema.subscriptions)
-        .set({
-          metadata: {
-            cancel_downgrade_initiated: true,
-            cancel_downgrade_at: Date.now(),
-          },
-          updatedAt: Date.now(),
-        })
-        .where(eq(schema.subscriptions.id, subscriptionId));
+    // Step 3: Atomically claim the downgrade. The webhook and dashboard use
+    // the same claim, so exactly one actor creates the free subscription.
+    const claimed = await step.do("claim-cancel-downgrade", async () =>
+      claimCancelDowngrade(db, subscriptionId),
+    );
+    if (!claimed) {
       console.log(
-        `[CANCEL-DOWNGRADE] Set initiated flag for subscription ${subscriptionId}`,
+        `[CANCEL-DOWNGRADE] Subscription ${subscriptionId} already claimed by another actor, aborting`,
       );
-    });
+      return { success: false, reason: "already_processed" };
+    }
 
     // Step 4: Find organization's free plan
     const freePlan = await step.do("find-free-plan", async () => {
