@@ -14,6 +14,7 @@ import { APIPage } from "@/components/api-page";
 import { Card, Cards } from "@/components/docs/card";
 import { baseOptions } from "@/lib/layout.shared";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
+import { getPageMarkdownUrl } from "@/lib/llms-utils";
 import { Suspense } from "react";
 
 export const Route = createFileRoute("/$")({
@@ -62,7 +63,21 @@ export const Route = createFileRoute("/$")({
 
     const ogImage = getOgImage(loaderData?.title, loaderData?.description);
 
+    // Expose the Markdown version of this page so AI agents and tools can
+    // discover it directly from the HTML (in addition to /llms.txt).
+    const links = loaderData?.url
+      ? [
+          {
+            rel: "alternate",
+            type: "text/markdown",
+            href: getPageMarkdownUrl({ url: loaderData.url }),
+            title: `${loaderData.title ?? "Owostack Docs"} (Markdown)`,
+          },
+        ]
+      : [];
+
     return {
+      links,
       meta: [
         { title },
         { name: "description", content: description },
@@ -89,6 +104,7 @@ const serverLoader = createServerFn({
 
     return {
       path: page.path,
+      url: page.url,
       title: page.data.title,
       description: page.data.description,
       pageTree: await source.serializePageTree(source.getPageTree()),
