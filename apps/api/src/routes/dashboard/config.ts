@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { and, eq, or } from "drizzle-orm";
 import { schema } from "@owostack/db";
 import type { Env, Variables } from "../../index";
+import { listManagedSandboxProviderIds } from "../../lib/managed-sandbox";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -45,15 +46,23 @@ app.post("/switch-environment", async (c) => {
   const db = c.get("db");
   const authDb = c.get("authDb");
 
-  // Check if target environment is configured via provider accounts
-  const providerAccount = await db.query.providerAccounts.findFirst({
-    where: and(
-      eq(schema.providerAccounts.organizationId, organizationId),
-      eq(schema.providerAccounts.environment, environment),
-    ),
-  });
+  // Sandbox is Owostack-managed: when this worker carries shared test
+  // credentials every organization can switch to test without connecting a
+  // provider. Live (and sandbox without managed credentials) still requires
+  // the organization's own provider account.
+  const managedSandboxReady =
+    environment === "test" && listManagedSandboxProviderIds(c.env).length > 0;
 
-  if (!providerAccount) {
+  const providerAccount = managedSandboxReady
+    ? null
+    : await db.query.providerAccounts.findFirst({
+        where: and(
+          eq(schema.providerAccounts.organizationId, organizationId),
+          eq(schema.providerAccounts.environment, environment),
+        ),
+      });
+
+  if (!managedSandboxReady && !providerAccount) {
     return c.json(
       {
         success: false,

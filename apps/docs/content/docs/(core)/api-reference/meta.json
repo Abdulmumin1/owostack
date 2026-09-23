@@ -41,7 +41,8 @@
     "listCreditSystems",
     "---Webhooks---",
     "webhook",
-    "webhookPaystack"
+    "webhookPaystack",
+    "webhookSandbox"
   ],
   "icon": "BookOpen"
 }

@@ -34,4 +34,85 @@ describe("resolveProviderAccount runtime integration", () => {
       db.close();
     }
   });
+
+  describe("managed sandbox fallback", () => {
+    const MANAGED_SECRET = JSON.stringify({
+      paystack: { secretKey: "sk_test_owostack_managed" },
+      stripe: { secretKey: "sk_test_owostack_stripe", webhookSecret: "whsec" },
+    });
+
+    it("resolves the managed account on the sandbox worker when the org has no row for that provider", async () => {
+      const db = createSqliteD1Database();
+
+      try {
+        await insertOrganization(db);
+
+        const account = await resolveProviderAccount(
+          buildWorkflowEnv(db, {
+            ENVIRONMENT: "test",
+            MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+          }),
+          "org_1",
+          "stripe",
+        );
+
+        expect(account).not.toBeNull();
+        expect(account?.id).toBe("managed_sandbox_stripe");
+        expect(account?.organizationId).toBe("org_1");
+        expect(account?.environment).toBe("test");
+        expect(account?.credentials.secretKey).toBe("sk_test_owostack_stripe");
+      } finally {
+        db.close();
+      }
+    });
+
+    it("prefers the organization's own test row over the managed account", async () => {
+      const db = createSqliteD1Database();
+
+      try {
+        await insertOrganization(db);
+        await insertProviderAccount({
+          db,
+          organizationId: "org_1",
+          environment: "test",
+          secretKey: "sk_test_own",
+        });
+
+        const account = await resolveProviderAccount(
+          buildWorkflowEnv(db, {
+            ENVIRONMENT: "test",
+            MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+          }),
+          "org_1",
+          "paystack",
+        );
+
+        expect(account?.id).toBe("acct_paystack_test");
+        expect(account?.credentials.secretKey).toBe("sk_test_own");
+      } finally {
+        db.close();
+      }
+    });
+
+    it("never resolves a managed account on the live worker", async () => {
+      const db = createSqliteD1Database();
+
+      try {
+        await insertOrganization(db);
+
+        const account = await resolveProviderAccount(
+          buildWorkflowEnv(db, {
+            ENVIRONMENT: "live",
+            MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+          }),
+          "org_1",
+          "paystack",
+        );
+
+        expect(account).toBeNull();
+      } finally {
+        db.close();
+      }
+    });
+  });
 });

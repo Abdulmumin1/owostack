@@ -59,6 +59,8 @@ export interface CreditPackProviderSyncContext {
   organizationId: string;
   environment: string | undefined;
   encryptionKey?: string;
+  /** Raw MANAGED_SANDBOX_PROVIDERS secret; enables managed sandbox accounts. */
+  managedSandboxProviders?: string;
 }
 
 export interface CreditPackProviderSyncIssue {
@@ -233,6 +235,10 @@ async function resolveCreditPackProvider(params: {
       context.db,
       context.organizationId,
       context.encryptionKey,
+      {
+        ENVIRONMENT: context.environment,
+        MANAGED_SANDBOX_PROVIDERS: context.managedSandboxProviders,
+      },
     );
 
   const requestedProviderId = preferredProviderId ?? pack.providerId ?? null;

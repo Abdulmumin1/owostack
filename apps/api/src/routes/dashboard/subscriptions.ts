@@ -564,6 +564,7 @@ app.post("/switch-plan", async (c) => {
       db,
       organizationId,
       c.env.ENCRYPTION_KEY,
+      c.env,
     );
 
     const dbAccount = providerAccounts.find(
@@ -655,6 +656,7 @@ app.post("/cancel", async (c) => {
           db,
           organizationId,
           c.env.ENCRYPTION_KEY,
+          c.env,
         );
         let account = providerAccounts.find(
           (a) =>

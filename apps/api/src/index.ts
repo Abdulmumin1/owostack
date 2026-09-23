@@ -92,6 +92,7 @@ export type Env = {
   ANALYTICS_DATASET?: string; // Optional override dataset name for SQL reads
   USE_EVENTS_PIPELINE?: string; // Explicit opt-in for Cloudflare Pipelines reads/writes
   ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack,stripe,dodopayments,bachs"
+  MANAGED_SANDBOX_PROVIDERS?: string; // Sandbox-only secret: JSON of Owostack-owned test credentials per provider (see lib/managed-sandbox.ts)
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID?: string;

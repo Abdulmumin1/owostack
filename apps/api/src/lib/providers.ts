@@ -15,6 +15,11 @@ import type {
   ProviderRule,
 } from "@owostack/adapters";
 import { decrypt } from "./encryption";
+import {
+  listManagedSandboxAccounts,
+  mergeManagedSandboxAccounts,
+  type ManagedSandboxEnv,
+} from "./managed-sandbox";
 
 export type DB = ReturnType<typeof createDb>;
 
@@ -32,10 +37,18 @@ export function getProviderRegistry() {
   return registry;
 }
 
+/**
+ * Load every provider account an organization can transact with.
+ *
+ * Pass the worker env as `managedEnv` (usually `c.env`) to include the
+ * Owostack-managed sandbox accounts on non-live workers. User-supplied test
+ * rows override managed accounts for the same provider.
+ */
 export async function loadProviderAccounts(
   db: DB,
   organizationId: string,
   encryptionKey?: string,
+  managedEnv?: ManagedSandboxEnv,
 ): Promise<ProviderAccount[]> {
   const rows = await db.query.providerAccounts.findMany({
     where: eq(schema.providerAccounts.organizationId, organizationId),
@@ -53,8 +66,12 @@ export async function loadProviderAccounts(
     updatedAt: row.updatedAt,
   }));
 
+  const managed = managedEnv
+    ? listManagedSandboxAccounts(managedEnv, organizationId)
+    : [];
+
   if (!encryptionKey) {
-    return accounts;
+    return mergeManagedSandboxAccounts(accounts, managed);
   }
 
   const decrypted = await Promise.all(
@@ -68,7 +85,7 @@ export async function loadProviderAccounts(
     })),
   );
 
-  return decrypted;
+  return mergeManagedSandboxAccounts(decrypted, managed);
 }
 
 export async function loadProviderRules(

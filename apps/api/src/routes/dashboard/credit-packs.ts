@@ -149,6 +149,7 @@ app.post("/", async (c) => {
         organizationId,
         environment: c.env.ENVIRONMENT,
         encryptionKey: c.env.ENCRYPTION_KEY,
+        managedSandboxProviders: c.env.MANAGED_SANDBOX_PROVIDERS,
       },
       pack: {
         id: pack.id,
@@ -294,6 +295,7 @@ app.patch("/:id", async (c) => {
         organizationId: updated.organizationId,
         environment: c.env.ENVIRONMENT,
         encryptionKey: c.env.ENCRYPTION_KEY,
+        managedSandboxProviders: c.env.MANAGED_SANDBOX_PROVIDERS,
       },
       pack: {
         id: updated.id,

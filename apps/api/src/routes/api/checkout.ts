@@ -220,6 +220,7 @@ export function createCheckoutRoute(
           db,
           organizationId,
           c.env.ENCRYPTION_KEY,
+          c.env,
         );
 
         // ---------- Provider Resolution ----------

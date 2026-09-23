@@ -304,6 +304,7 @@ async function handleAddonPurchase(
     db,
     keyRecord.organizationId,
     c.env.ENCRYPTION_KEY,
+    c.env,
   );
 
   // Environment comes directly from ENVIRONMENT variable

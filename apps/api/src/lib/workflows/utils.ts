@@ -4,6 +4,7 @@ import { provisionEntitlements as provisionEntitlementsShared } from "../plan-sw
 import type { ProviderAdapter, ProviderAccount } from "@owostack/adapters";
 import { decrypt } from "../encryption";
 import { getProviderRegistry } from "../providers";
+import { getManagedSandboxAccount } from "../managed-sandbox";
 import { EntitlementCache } from "../cache";
 import type { UsageLedgerDO } from "../usage-ledger-do";
 
@@ -19,6 +20,7 @@ export interface WorkflowEnv {
   RENEWAL_SETUP_WORKFLOW?: Workflow;
   ENCRYPTION_KEY: string;
   ENVIRONMENT?: string; // "test" | "live" | "development" — set per worker deployment
+  MANAGED_SANDBOX_PROVIDERS?: string; // Sandbox-only shared provider credentials
 }
 
 // ---------------------------------------------------------------------------
@@ -60,9 +62,18 @@ export async function resolveProviderAccount(
     (left: any, right: any) =>
       Number(right.updatedAt || 0) - Number(left.updatedAt || 0),
   );
-  const matched =
-    sortedAccounts.find((account: any) => account.environment === workerEnv) ??
-    sortedAccounts[0];
+  const envMatched = sortedAccounts.find(
+    (account: any) => account.environment === workerEnv,
+  );
+
+  // 2. On sandbox workers, fall back to the Owostack-managed shared account
+  //    when the org has not brought its own test credentials.
+  if (!envMatched) {
+    const managed = getManagedSandboxAccount(env, organizationId, providerId);
+    if (managed) return managed;
+  }
+
+  const matched = envMatched ?? sortedAccounts[0];
 
   if (matched) {
     const credentials = { ...((matched as any).credentials || {}) };
