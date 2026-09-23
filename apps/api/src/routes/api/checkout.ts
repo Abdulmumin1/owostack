@@ -11,6 +11,7 @@ import {
   cancelSubscription,
 } from "../../lib/plan-switch";
 import { hasPaymentMethod } from "../../lib/overage-guards";
+import { EntitlementCache } from "../../lib/cache";
 import type { ProviderContext } from "../../lib/plan-switch";
 import { ensurePlanSynced } from "../../lib/plan-sync";
 import { resolveProvider } from "@owostack/adapters";
@@ -103,6 +104,29 @@ export function createCheckoutRoute(
 ) {
   const deps = { ...defaultDependencies, ...overrides };
   const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
+
+  /**
+   * /check and /track serve subscriptions from KV (60s TTL). Any attach that
+   * changes local subscription state must drop that entry, otherwise a native
+   * upgrade reports success while /check keeps answering for the old plan.
+   */
+  function invalidateEntitlementCache(
+    c: { env: Env; executionCtx: ExecutionContext },
+    organizationId: string,
+    customerId: string,
+  ) {
+    if (!c.env.CACHE) return;
+    const cache = new EntitlementCache(c.env.CACHE);
+    c.executionCtx.waitUntil(
+      Promise.all([
+        cache.invalidateSubscriptions(organizationId, customerId),
+        cache.invalidateCustomer(organizationId, customerId),
+      ]).catch((error) =>
+        console.warn("[attach] cache invalidation failed:", error),
+      ),
+    );
+  }
+
   const ensureJsonContentType: MiddlewareHandler<{
     Bindings: Env;
     Variables: Variables;
@@ -501,6 +525,7 @@ export function createCheckoutRoute(
             console.log(
               `[TRIAL] No-card trial activated: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
             );
+            invalidateEntitlementCache(c, organizationId, customerRecord.id);
             return c.json(
               {
                 success: true,
@@ -688,6 +713,7 @@ export function createCheckoutRoute(
                 oldPlanId,
               );
 
+              invalidateEntitlementCache(c, organizationId, customerRecord.id);
               return c.json(
                 {
                   success: true,
@@ -838,6 +864,12 @@ export function createCheckoutRoute(
 
           if (!result.success) {
             return c.json({ success: false, error: result.message }, 400);
+          }
+
+          // Free switches, lateral moves, native upgrades and scheduled
+          // downgrades all mutate the subscription row synchronously.
+          if (!result.requiresCheckout) {
+            invalidateEntitlementCache(c, organizationId, customerRecord.id);
           }
 
           return c.json(
