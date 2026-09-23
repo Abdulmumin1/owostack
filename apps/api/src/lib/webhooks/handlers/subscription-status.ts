@@ -1,4 +1,5 @@
 import { schema } from "@owostack/db";
+import { claimCancelDowngrade } from "../../cancel-downgrade-claim";
 import { readPendingPlanChange } from "./pending-plan-change";
 import { markPastDueMetadata } from "../../dunning";
 import { eq, and, or } from "drizzle-orm";
@@ -297,31 +298,15 @@ export function handleSubscriptionStatus(status: string) {
     // Auto-downgrade to free plan on cancellation (immediate)
     if (status === "canceled") {
       try {
-        // Guard: Check if dashboard or workflow already processing/has processed
-        // We check BOTH initiated and complete flags to handle race conditions
-        const isAlreadyProcessing =
-          sub.metadata?.cancel_downgrade_initiated === true ||
-          sub.metadata?.cancel_downgrade_complete === true;
-        if (isAlreadyProcessing) {
+        // One actor downgrades: the provider may deliver two cancel events in
+        // the same second and the dashboard/workflow may be racing us too.
+        const claimed = await claimCancelDowngrade(db, sub.id, now);
+        if (!claimed) {
           console.log(
-            `[WEBHOOK] Subscription ${sub.id} already has cancel_downgrade flag (initiated=${sub.metadata?.cancel_downgrade_initiated}, complete=${sub.metadata?.cancel_downgrade_complete}), skipping free plan creation`,
+            `[WEBHOOK] Subscription ${sub.id} cancel-downgrade already claimed by another actor, skipping free plan creation`,
           );
           return;
         }
-
-        // CRITICAL: Set initiated flag FIRST to prevent race conditions
-        // This ensures any concurrent dashboard/workflow requests see this flag
-        await db
-          .update(schema.subscriptions)
-          .set({
-            metadata: {
-              ...sub.metadata,
-              cancel_downgrade_initiated: true,
-              cancel_downgrade_at: now,
-            },
-            updatedAt: now,
-          })
-          .where(eq(schema.subscriptions.id, sub.id));
 
         // Fetch the full subscription details with plan and customer
         const canceledSub = await db.query.subscriptions.findFirst({
