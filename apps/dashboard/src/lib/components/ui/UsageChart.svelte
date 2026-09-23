@@ -1,19 +1,5 @@
 <script lang="ts">
-  import { Chart, registerables } from "chart.js";
-  import { onMount } from "svelte";
-
-  Chart.register(...registerables);
-
-  const COLORS = [
-    "#e8a855", // amber (accent)
-    "#2db57d", // teal (secondary)
-    "#5b8bd6", // blue (tertiary)
-    "#ec4899", // pink
-    "#f59e0b", // warm amber
-    "#06b6d4", // cyan
-    "#f43f5e", // rose
-    "#84cc16", // lime
-  ];
+  import { SvelteDate, SvelteMap, SvelteSet } from "svelte/reactivity";
 
   let {
     data,
@@ -25,230 +11,360 @@
     days: number;
   } = $props();
 
-  let canvasEl = $state<HTMLCanvasElement | null>(null);
-  let chart: Chart | null = null;
+  // Distinct hues. Assigned per feature id (not per position) so a feature
+  // keeps the same colour as filters and rankings change.
+  const PALETTE = [
+    "#e8a855", // amber (accent)
+    "#2db57d", // teal
+    "#5b8bd6", // blue
+    "#b072d6", // violet
+    "#e06666", // red
+    "#4bb3c4", // cyan
+    "#d68a5b", // clay
+    "#8aa84b", // olive
+    "#d65b8a", // pink
+    "#6d8bd6", // indigo
+    "#3fa9a0", // sea
+    "#c9992e", // gold
+  ];
 
-  function buildChart() {
-    if (!canvasEl) return;
-    if (chart) chart.destroy();
-
-    const featureMap = new Map(features.map((f) => [f.id, f]));
-
-    // Build full date range for X axis
-    const labels: string[] = [];
-    const now = new Date();
-    // Reset time to start of day for stable iteration
-    now.setHours(0, 0, 0, 0);
-
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      labels.push(
-        d.getFullYear() +
-          "-" +
-          String(d.getMonth() + 1).padStart(2, "0") +
-          "-" +
-          String(d.getDate()).padStart(2, "0"),
-      );
+  // FNV-1a hash → stable palette slot for a given feature id.
+  function colorFor(id: string) {
+    let h = 2166136261;
+    for (let i = 0; i < id.length; i++) {
+      h ^= id.charCodeAt(i);
+      h = Math.imul(h, 16777619);
     }
-
-    // Prepare Y-axis labels (features)
-    let yLabels = features.map((f) => f.name);
-    if (yLabels.length === 0) yLabels = ["Total Usage"];
-
-    // Find the max usage to normalize bubble sizes
-    let maxUsage = 0;
-    for (const row of data) {
-      if (row.totalUsage > maxUsage) maxUsage = row.totalUsage;
-    }
-    if (maxUsage === 0) maxUsage = 1;
-
-    // Group data by feature
-    const byFeature = new Map<string, Map<string, number>>();
-    for (const row of data) {
-      if (!byFeature.has(row.featureId)) {
-        byFeature.set(row.featureId, new Map());
-      }
-      byFeature.get(row.featureId)!.set(row.date.slice(0, 10), row.totalUsage);
-    }
-
-    const datasets = [...byFeature.entries()].map(([featureId, dateMap], i) => {
-      const meta = featureMap.get(featureId);
-      const name = meta?.name || "Total Usage";
-      const color = COLORS[i % COLORS.length];
-
-      const points = [];
-      for (const date of labels) {
-        // some APIs return date Strings with time attached, we just match on the YYYY-MM-DD
-        let matchVal = 0;
-        for (const [key, val] of dateMap.entries()) {
-          if (key.startsWith(date)) matchVal += val;
-        }
-
-        if (matchVal > 0) {
-          // Map to a bubble radius between 3px and 22px
-          const r = Math.max(3, Math.min(22, (matchVal / maxUsage) * 22));
-          points.push({ x: date, y: name, r, rawUsage: matchVal });
-        }
-      }
-
-      return {
-        label: name,
-        data: points,
-        backgroundColor: color + "1A", // 10% opacity
-        borderColor: color + "B3", // 70% opacity
-        borderWidth: 1.5,
-        hoverBackgroundColor: color + "33",
-        hoverBorderColor: color,
-        hoverBorderWidth: 2,
-      };
-    });
-
-    // If no specific features are given, plot "Total Usage" as one combined row
-    if (datasets.length === 0) {
-      const totalMap = new Map<string, number>();
-      for (const row of data) {
-        const d = row.date.slice(0, 10);
-        totalMap.set(d, (totalMap.get(d) || 0) + row.totalUsage);
-      }
-
-      let localMax = 0;
-      for (const v of totalMap.values()) if (v > localMax) localMax = v;
-      if (localMax === 0) localMax = 1;
-
-      const points = [];
-      for (const date of labels) {
-        const val = totalMap.get(date) || 0;
-        if (val > 0) {
-          const r = Math.max(3, Math.min(22, (val / localMax) * 22));
-          points.push({ x: date, y: "Total Usage", r, rawUsage: val });
-        }
-      }
-
-      datasets.push({
-        label: "Total Usage",
-        data: points,
-        backgroundColor: COLORS[0] + "1A",
-        borderColor: COLORS[0] + "B3",
-        borderWidth: 1.5,
-        hoverBackgroundColor: COLORS[0] + "33",
-        hoverBorderColor: COLORS[0],
-        hoverBorderWidth: 2,
-      });
-      yLabels = ["Total Usage"];
-    }
-
-    chart = new Chart(canvasEl, {
-      type: "bubble",
-      data: { labels, datasets: datasets as any },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        layout: {
-          padding: { top: 20, right: 30, bottom: 10, left: 10 },
-        },
-        plugins: {
-          legend: {
-            display: false, // Cleaner without top legend, rely on Y axis
-          },
-          tooltip: {
-            backgroundColor: "#1a1a1a",
-            titleColor: "#f5f5f5",
-            bodyColor: "#a3a3a3",
-            borderColor: "#333",
-            borderWidth: 1,
-            padding: 12,
-            boxPadding: 6,
-            displayColors: true,
-            usePointStyle: true,
-            callbacks: {
-              title: (items: any) => {
-                if (!items.length) return "";
-                const d = new Date(items[0].raw.x);
-                // "Wed, Feb 14"
-                return d.toLocaleDateString("en-US", {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                });
-              },
-              label: (ctx: any) => {
-                return `${ctx.raw.y}: ${ctx.raw.rawUsage.toLocaleString()}`;
-              },
-            },
-          },
-        },
-        scales: {
-          x: {
-            type: "category",
-            labels: labels,
-            grid: {
-              color: "rgba(128, 128, 128, 0.08)",
-              tickLength: 0,
-            },
-            border: { display: false },
-            ticks: {
-              color: "#8b8b8b",
-              font: { size: 10, family: "'IBM Plex Mono', monospace" },
-              maxTicksLimit: days > 14 ? 14 : days,
-              padding: 12,
-              callback: function (val, idx) {
-                const label = labels[idx];
-                if (!label) return "";
-                const d = new Date(label + "T12:00:00Z"); // middle of day for safe local parsing
-                if (days <= 7) {
-                  return d
-                    .toLocaleDateString("en-US", { weekday: "short" })
-                    .toUpperCase();
-                }
-                return d
-                  .toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                  })
-                  .toUpperCase();
-              },
-            },
-          },
-          y: {
-            type: "category",
-            labels: yLabels,
-            grid: {
-              color: "rgba(128, 128, 128, 0.08)",
-              tickLength: 0,
-            },
-            border: { display: false },
-            ticks: {
-              color: "#8b8b8b",
-              font: {
-                size: 11,
-                weight: "bold",
-                family: "system-ui, sans-serif",
-              },
-              padding: 16,
-            },
-          },
-        },
-      },
-    });
+    return PALETTE[(h >>> 0) % PALETTE.length];
   }
 
-  onMount(() => {
-    buildChart();
-    return () => {
-      if (chart) chart.destroy();
-    };
+  function toISODate(d: Date) {
+    return (
+      d.getFullYear() +
+      "-" +
+      String(d.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(d.getDate()).padStart(2, "0")
+    );
+  }
+
+  // Full, stable date range for the X axis (oldest → newest).
+  const dateLabels = $derived.by(() => {
+    const out: string[] = [];
+    const now = new SvelteDate();
+    now.setHours(0, 0, 0, 0);
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new SvelteDate(now);
+      d.setDate(d.getDate() - i);
+      out.push(toISODate(d));
+    }
+    return out;
   });
 
-  $effect(() => {
-    // Re-render when data, features, or days change
-    data;
-    features;
-    days;
-    buildChart();
+  const featureMeta = $derived(new SvelteMap(features.map((f) => [f.id, f])));
+
+  type Series = { id: string; name: string; color: string; total: number };
+
+  // Series ordered by name (stable stacking) with a stable, per-feature colour.
+  // If a hash collision would give two features the same colour, the later one
+  // is nudged to the next free palette slot so every feature stays distinct.
+  const series = $derived.by<Series[]>(() => {
+    const totals = new SvelteMap<string, number>();
+    for (const row of data) {
+      totals.set(
+        row.featureId,
+        (totals.get(row.featureId) || 0) + row.totalUsage,
+      );
+    }
+    const used = new SvelteSet<string>();
+    return [...totals.entries()]
+      .map(([id, total]) => ({
+        id,
+        name: featureMeta.get(id)?.name || "Total Usage",
+        total,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((s) => {
+        let color = colorFor(s.id);
+        if (used.has(color)) {
+          const start = PALETTE.indexOf(color);
+          for (let k = 1; k <= PALETTE.length; k++) {
+            const candidate = PALETTE[(start + k) % PALETTE.length];
+            if (!used.has(candidate)) {
+              color = candidate;
+              break;
+            }
+          }
+        }
+        used.add(color);
+        return { ...s, color };
+      });
   });
+
+  const isSingleSeries = $derived(series.length <= 1);
+
+  type Segment = {
+    id: string;
+    name: string;
+    color: string;
+    value: number;
+    offset: number;
+  };
+  type Day = { date: string; total: number; segments: Segment[] };
+
+  const dayData = $derived.by<Day[]>(() => {
+    const byDay = new SvelteMap<string, SvelteMap<string, number>>();
+    for (const row of data) {
+      const key = row.date.slice(0, 10);
+      let inner = byDay.get(key);
+      if (!inner) {
+        inner = new SvelteMap();
+        byDay.set(key, inner);
+      }
+      inner.set(row.featureId, (inner.get(row.featureId) || 0) + row.totalUsage);
+    }
+
+    return dateLabels.map((date) => {
+      const inner = byDay.get(date);
+      let offset = 0;
+      const segments: Segment[] = series
+        .map((s) => {
+          const value = inner?.get(s.id) || 0;
+          const seg: Segment = {
+            id: s.id,
+            name: s.name,
+            color: s.color,
+            value,
+            offset,
+          };
+          offset += value;
+          return seg;
+        })
+        .filter((s) => s.value > 0);
+      return { date, total: offset, segments };
+    });
+  });
+
+  const maxTotal = $derived(Math.max(1, ...dayData.map((d) => d.total)));
+
+  function niceCeil(v: number) {
+    if (v <= 0) return 1;
+    const base = Math.pow(10, Math.floor(Math.log10(v)));
+    const n = v / base;
+    const nice = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+    return nice * base;
+  }
+
+  const axisMax = $derived(niceCeil(maxTotal));
+
+  // Top (0%) → bottom (100%), with the value drawn on the label.
+  const ticks = $derived(
+    [1, 0.75, 0.5, 0.25, 0].map((f) => ({
+      pct: (1 - f) * 100,
+      value: axisMax * f,
+    })),
+  );
+
+  const gapClass = $derived(days > 31 ? "gap-0.5" : "gap-1");
+  const labelStep = $derived(days <= 10 ? 1 : Math.ceil(days / 10));
+  const hasData = $derived(dayData.some((d) => d.total > 0));
+
+  function formatNumber(n: number) {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+    return Math.round(n).toString();
+  }
+
+  function dateLabel(date: string, index: number) {
+    const d = new Date(date + "T12:00:00Z");
+    if (days <= 7) {
+      return d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
+    }
+    if (index % labelStep !== 0 && index !== dateLabels.length - 1) return "";
+    return d
+      .toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      .toUpperCase();
+  }
+
+  function tooltipDate(date: string) {
+    const d = new Date(date + "T12:00:00Z");
+    return d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  }
 </script>
 
-<div class="h-80 w-full relative">
-  <canvas bind:this={canvasEl}></canvas>
+<div class="w-full">
+  {#if isSingleSeries && series[0]}
+    <div class="mb-4 flex items-center gap-2">
+      <span
+        class="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+        style="background: {series[0].color}"
+      ></span>
+      <span class="text-xs font-medium text-text-secondary"
+        >{series[0].name}</span
+      >
+    </div>
+  {/if}
+
+  <div class="flex gap-3">
+    <!-- Y axis -->
+    <div class="relative h-64 w-10 shrink-0">
+      {#each ticks as t, i (i)}
+        <span
+          class="absolute right-0 -translate-y-1/2 font-mono text-[10px] leading-none text-text-dim"
+          style="top: {t.pct}%">{formatNumber(t.value)}</span
+        >
+      {/each}
+    </div>
+
+    <!-- Plot -->
+    <div
+      class="relative h-64 flex-1"
+      role="img"
+      aria-label="Usage over the last {days} days"
+    >
+      <!-- Gridlines -->
+      <div class="absolute inset-0">
+        {#each ticks as t, i (i)}
+          <div
+            class="absolute inset-x-0 h-px bg-border/50"
+            style="top: {t.pct}%"
+          ></div>
+        {/each}
+      </div>
+
+      <!-- Bars -->
+      <div class="absolute inset-0 flex items-end {gapClass}">
+        {#each dayData as day, i (day.date)}
+          {@const isLatest = i === dayData.length - 1}
+          <div class="group relative h-full flex-1">
+            <!-- Hover hit area -->
+            <div
+              class="pointer-events-none absolute inset-0 rounded-sm transition-colors group-hover:bg-text-primary/[0.03]"
+            ></div>
+
+            {#each day.segments as s, si (s.id)}
+              <div
+                class="absolute inset-x-0 {si === day.segments.length - 1
+                  ? 'rounded-t-[3px]'
+                  : ''}"
+                style="bottom: {(s.offset / axisMax) *
+                  100}%; height: {(s.value / axisMax) *
+                  100}%; background: {s.color}"
+              ></div>
+            {/each}
+            {#if isSingleSeries && day.total > 0}
+              <div
+                class="dither absolute inset-x-0 bottom-0 h-[35%]"
+                style="--dither-color: var(--color-bg-card)"
+              ></div>
+            {/if}
+            {#if isLatest && day.total > 0}
+              <div
+                class="absolute inset-x-0 h-0.5 bg-accent"
+                style="bottom: {(day.total / axisMax) * 100}%"
+              ></div>
+            {/if}
+
+            <!-- Tooltip -->
+            {#if day.total > 0}
+              <div
+                class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-max -translate-x-1/2 group-hover:block"
+              >
+                <div
+                  class="min-w-[9rem] rounded-md border border-border bg-bg-card px-2.5 py-2 shadow-lg"
+                >
+                  <div
+                    class="mb-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-text-dim"
+                  >
+                    {tooltipDate(day.date)}
+                  </div>
+                  {#if isSingleSeries}
+                    <div
+                      class="flex items-center justify-between gap-4 text-[11px]"
+                    >
+                      <span class="text-text-secondary">Total</span>
+                      <span class="font-mono font-medium text-text-primary"
+                        >{formatNumber(day.total)}</span
+                      >
+                    </div>
+                  {:else}
+                    <div class="space-y-1">
+                      {#each day.segments as s (s.id)}
+                        <div
+                          class="flex items-center justify-between gap-4 text-[11px]"
+                        >
+                          <span
+                            class="flex items-center gap-1.5 text-text-secondary"
+                          >
+                            <span
+                              class="h-2 w-2 shrink-0 rounded-[2px]"
+                              style="background: {s.color}"
+                            ></span>
+                            <span class="max-w-[7rem] truncate">{s.name}</span>
+                          </span>
+                          <span class="font-mono text-text-primary"
+                            >{formatNumber(s.value)}</span
+                          >
+                        </div>
+                      {/each}
+                    </div>
+                    <div
+                      class="mt-1.5 flex items-center justify-between gap-4 border-t border-border pt-1.5 text-[11px]"
+                    >
+                      <span class="text-text-dim">Total</span>
+                      <span class="font-mono font-medium text-text-primary"
+                        >{formatNumber(day.total)}</span
+                      >
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </div>
+  </div>
+
+  <!-- X axis labels -->
+  <div class="mt-2 flex gap-3">
+    <div class="w-10 shrink-0"></div>
+    <div class="flex flex-1 {gapClass}">
+      {#each dayData as day, i (day.date)}
+        <div
+          class="flex-1 text-center font-mono text-[10px] uppercase leading-none tracking-[0.06em] {i ===
+          dayData.length - 1
+            ? 'text-accent'
+            : 'text-text-dim'}"
+        >
+          {dateLabel(day.date, i)}
+        </div>
+      {/each}
+    </div>
+  </div>
+
+  <!-- Legend -->
+  {#if !isSingleSeries}
+    <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 pl-[3.25rem]">
+      {#each series as s (s.id)}
+        <span class="flex items-center gap-1.5 text-[11px] text-text-secondary">
+          <span
+            class="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+            style="background: {s.color}"
+          ></span>
+          <span class="max-w-[12rem] truncate">{s.name}</span>
+        </span>
+      {/each}
+    </div>
+  {/if}
+
+  {#if !hasData}
+    <p class="mt-3 text-center text-[10px] text-text-dim">
+      No usage recorded in this range
+    </p>
+  {/if}
 </div>

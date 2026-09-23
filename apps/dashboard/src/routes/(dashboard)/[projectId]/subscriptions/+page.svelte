@@ -268,13 +268,13 @@
           {#each Array(5) as _}
             <tr>
               <td class="px-6 py-4">
-                <div class="space-y-2">
+                <div class="flex flex-col">
                   <Skeleton class="h-4 w-32" />
                   <Skeleton class="h-3 w-20" />
                 </div>
               </td>
               <td class="px-6 py-4">
-                <div class="space-y-2">
+                <div class="flex flex-col">
                   <Skeleton class="h-4 w-24" />
                   <Skeleton class="h-3 w-16" />
                 </div>
@@ -295,6 +295,16 @@
           {/each}
         </tbody>
       </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between px-4 py-4">
+      <Skeleton class="h-3 w-40" />
+      <div class="flex items-center gap-1">
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+      </div>
     </div>
   {:else if filteredSubs.length === 0}
     <div

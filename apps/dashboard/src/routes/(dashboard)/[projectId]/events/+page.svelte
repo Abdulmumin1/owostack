@@ -184,20 +184,36 @@
               <td class="px-6 py-4">
                 <div class="flex items-center gap-3">
                   <Skeleton class="w-8 h-8 rounded" />
-                  <Skeleton class="h-4 w-32" />
+                  <div class="flex flex-col">
+                    <Skeleton class="h-4 w-28" />
+                    <Skeleton class="h-3 w-16" />
+                  </div>
                 </div>
               </td>
               <td class="px-6 py-4">
                 <Skeleton class="h-4 w-48" />
               </td>
               <td class="px-6 py-4">
-                <Skeleton class="h-4 w-24" />
+                <div class="flex flex-col">
+                  <Skeleton class="h-4 w-24" />
+                  <Skeleton class="h-3 w-32" />
+                </div>
               </td>
               <td class="px-6 py-4"></td>
             </tr>
           {/each}
         </tbody>
       </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between px-4 py-4 border-t border-border bg-bg-secondary mt-4">
+      <Skeleton class="h-3 w-40" />
+      <div class="flex items-center gap-1">
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+      </div>
     </div>
   {:else if filteredEvents.length === 0}
     <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center rounded-lg">

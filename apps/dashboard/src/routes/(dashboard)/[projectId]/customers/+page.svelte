@@ -275,10 +275,6 @@
               class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
               >Joined</th
             >
-            <th
-              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
-              >Status</th
-            >
             <th class="px-6 py-4"></th>
           </tr>
         </thead>
@@ -303,14 +299,21 @@
               <td class="px-6 py-4">
                 <Skeleton class="h-4 w-24" />
               </td>
-              <td class="px-6 py-4">
-                <Skeleton class="h-5 w-16" />
-              </td>
               <td class="px-6 py-4"></td>
             </tr>
           {/each}
         </tbody>
       </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center rounded justify-between px-4 py-4">
+      <Skeleton class="h-3 w-40" />
+      <div class="flex items-center gap-1">
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+      </div>
     </div>
   {:else if customers.length === 0}
     <div
