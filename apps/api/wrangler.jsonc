@@ -373,4 +373,12 @@
   // R2_SQL_TOKEN (R2 SQL queries — needed when EVENTS_PIPELINE is enabled)
   // R2_WAREHOUSE (R2 Data Catalog warehouse ID)
   // RESEND_API_KEY
+  // MANAGED_SANDBOX_<PROVIDER_ID> (--env test ONLY) — Owostack-owned test credentials,
+  //   one secret per provider so each rotates independently:
+  //     MANAGED_SANDBOX_PAYSTACK      sk_test_…                (bare key is enough)
+  //     MANAGED_SANDBOX_STRIPE        {"secretKey":"sk_test_…","publishableKey":"pk_test_…","webhookSecret":"whsec_…"}
+  //     MANAGED_SANDBOX_DODOPAYMENTS  {"secretKey":"…","webhookSecret":"…"}
+  //     MANAGED_SANDBOX_BACHS         {"secretKey":"sk_sandbox_…","webhookSecret":"…"}
+  //   See src/lib/managed-sandbox.ts. Register https://sandbox.owostack.com/webhooks/sandbox/<provider>
+  //   as the webhook URL on each of those provider test accounts.
 }

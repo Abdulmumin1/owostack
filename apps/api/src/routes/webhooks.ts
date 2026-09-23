@@ -9,6 +9,12 @@ import { decrypt } from "../lib/encryption";
 import { WebhookError, errorToResponse } from "../lib/errors";
 import { getProviderRegistry } from "../lib/providers";
 import {
+  getManagedSandboxAccount,
+  isManagedSandboxRuntime,
+  listManagedSandboxProviderIds,
+  managedSandboxWebhookSecret,
+} from "../lib/managed-sandbox";
+import {
   badRequestResponse,
   internalServerErrorResponse,
   jsonContent,
@@ -78,6 +84,31 @@ export function createWebhookRoutes(
     })
     .passthrough();
 
+  const sandboxWebhookRoute = createRoute({
+    method: "post",
+    path: "/webhooks/sandbox/{provider}",
+    operationId: "webhookSandbox",
+    tags: ["Webhooks"],
+    summary: "Receive a webhook for the Owostack-managed sandbox account",
+    description:
+      "Shared sandbox webhook endpoint. Owostack registers this URL once per provider on its own test account; events are verified with the managed secret and routed to the organization named in `metadata.organization_id`. Events without organization metadata are acknowledged and dropped. Not available on the live host.",
+    security: [],
+    request: {
+      params: z.object({
+        provider: z.string(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "Webhook processed or acknowledged successfully",
+        ...jsonContent(webhookResponseSchema),
+      },
+      400: badRequestResponse,
+      401: unauthorizedResponse,
+      404: notFoundResponse,
+    },
+  });
+
   const paystackWebhookRoute = createRoute({
     method: "post",
     path: "/webhooks/{organizationId}",
@@ -131,17 +162,84 @@ export function createWebhookRoutes(
     },
   });
 
+  const maskSecretForLog = (value: string | null | undefined) => {
+    if (!value) return "<empty>";
+    if (value.length <= 10) return `${value.slice(0, 2)}***`;
+    return `${value.slice(0, 6)}...${value.slice(-4)} (len=${value.length})`;
+  };
+
+  function collectHeaders(c: any): Record<string, string> {
+    const reqHeaders: Record<string, string> = {};
+    c.req.raw.headers.forEach((value: string, key: string) => {
+      reqHeaders[key.toLowerCase()] = value;
+    });
+    return reqHeaders;
+  }
+
+  /** Resolve an org by id or slug from the auth DB and mirror it into billing. */
+  async function resolveOrganization(c: any, organizationRef: string) {
+    const db = c.get("db");
+    const authDb = c.get("authDb");
+
+    const org = await authDb.query.organizations.findFirst({
+      where: or(
+        eq(schema.organizations.id, organizationRef),
+        eq(schema.organizations.slug, organizationRef),
+      ),
+    });
+    if (!org) return null;
+
+    const existingOrgInBilling = await db.query.organizations.findFirst({
+      where: eq(schema.organizations.id, org.id),
+      columns: { id: true },
+    });
+    if (!existingOrgInBilling) {
+      await db.insert(schema.organizations).values(org).onConflictDoNothing();
+    }
+    return org;
+  }
+
+  async function dispatchEvent(
+    c: any,
+    params: {
+      organizationId: string;
+      adapter: ProviderAdapter;
+      account: ProviderAccount | undefined;
+      event: unknown;
+    },
+  ) {
+    const handler = deps.createWebhookHandler({
+      db: c.get("db"),
+      organizationId: params.organizationId,
+      adapter: params.adapter,
+      account: params.account,
+      trialEndWorkflow: c.env.TRIAL_END_WORKFLOW,
+      planUpgradeWorkflow: c.env.PLAN_UPGRADE_WORKFLOW,
+      renewalSetupWorkflow: c.env.RENEWAL_SETUP_WORKFLOW,
+      cache: c.env.CACHE,
+      analyticsEnv: {
+        ANALYTICS: c.env.ANALYTICS,
+        ENVIRONMENT: c.env.ENVIRONMENT,
+        CF_ACCOUNT_ID: c.env.CF_ACCOUNT_ID,
+        CF_ANALYTICS_READ_TOKEN: c.env.CF_ANALYTICS_READ_TOKEN,
+        ANALYTICS_DATASET: c.env.ANALYTICS_DATASET,
+        EVENTS_PIPELINE: c.env.EVENTS_PIPELINE,
+        R2_SQL_TOKEN: c.env.R2_SQL_TOKEN,
+        R2_WAREHOUSE: c.env.R2_WAREHOUSE,
+      },
+    });
+
+    const handleResult = await handler.handle(params.event);
+    if (handleResult.isErr()) {
+      console.error("Webhook handling error:", handleResult.error);
+    }
+  }
+
   async function handleWebhookRequest(
     c: any,
     organizationId: string,
     providerId: string,
   ) {
-    const maskSecretForLog = (value: string | null | undefined) => {
-      if (!value) return "<empty>";
-      if (value.length <= 10) return `${value.slice(0, 2)}***`;
-      return `${value.slice(0, 6)}...${value.slice(-4)} (len=${value.length})`;
-    };
-
     console.log(
       `[WEBHOOK-ROUTE] Received webhook for org=${organizationId}, provider=${providerId}`,
     );
@@ -169,29 +267,10 @@ export function createWebhookRoutes(
 
     const rawBody = await c.req.text();
     const db = c.get("db");
-    const authDb = c.get("authDb");
 
-    const org = await authDb.query.organizations.findFirst({
-      where: or(
-        eq(schema.organizations.id, organizationId),
-        eq(schema.organizations.slug, organizationId),
-      ),
-    });
-
+    const org = await resolveOrganization(c, organizationId);
     if (!org) {
       return c.json({ error: "Organization not found" }, 404);
-    }
-
-    const existingOrgInBilling = await db.query.organizations.findFirst({
-      where: or(
-        eq(schema.organizations.id, organizationId),
-        eq(schema.organizations.slug, organizationId),
-      ),
-      columns: { id: true },
-    });
-
-    if (!existingOrgInBilling) {
-      await db.insert(schema.organizations).values(org).onConflictDoNothing();
     }
 
     const workerEnv = c.env.ENVIRONMENT === "live" ? "live" : "test";
@@ -312,6 +391,22 @@ export function createWebhookRoutes(
       }
     }
 
+    // Owostack-managed sandbox: an org without its own test credentials that
+    // still registered the per-org URL on the shared provider account.
+    let managedAccount: ProviderAccount | null = null;
+    if (!secret) {
+      managedAccount = getManagedSandboxAccount(c.env, org.id, providerId);
+      secret = managedAccount
+        ? managedSandboxWebhookSecret(managedAccount)
+        : null;
+      if (secret) {
+        secretSource = "managed_sandbox";
+        console.log(
+          `[WEBHOOK-ROUTE] Using managed sandbox secret for org=${organizationId}, provider=${providerId}`,
+        );
+      }
+    }
+
     if (!secret) {
       console.error(
         `[WEBHOOK-ROUTE] No secret available for org=${organizationId}, provider=${providerId}`,
@@ -319,10 +414,7 @@ export function createWebhookRoutes(
       return c.json({ error: "Webhook secret not configured" }, 500);
     }
 
-    const reqHeaders: Record<string, string> = {};
-    c.req.raw.headers.forEach((value: string, key: string) => {
-      reqHeaders[key.toLowerCase()] = value;
-    });
+    const reqHeaders = collectHeaders(c);
 
     const verifyResult = await adapter.verifyWebhook({
       signature,
@@ -382,12 +474,14 @@ export function createWebhookRoutes(
       `[WEBHOOK-ROUTE] Event: ${normalizedEvent.type}, provider=${normalizedEvent.provider}, ref=${normalizedEvent.payment?.reference || "n/a"}`,
     );
 
-    let selectedAccount: any | undefined;
-    const accountToUse = secretAccountId
-      ? scopedProviderAccounts.find((a: any) => a.id === secretAccountId)
-      : scopedProviderAccounts.length > 0
-        ? scopedProviderAccounts[0]
-        : undefined;
+    let selectedAccount: any | undefined = managedAccount ?? undefined;
+    const accountToUse = managedAccount
+      ? undefined
+      : secretAccountId
+        ? scopedProviderAccounts.find((a: any) => a.id === secretAccountId)
+        : scopedProviderAccounts.length > 0
+          ? scopedProviderAccounts[0]
+          : undefined;
 
     if (accountToUse) {
       const pa = accountToUse as any;
@@ -411,34 +505,151 @@ export function createWebhookRoutes(
       };
     }
 
-    const handler = deps.createWebhookHandler({
-      db,
+    await dispatchEvent(c, {
       organizationId: org.id,
       adapter,
       account: selectedAccount,
-      trialEndWorkflow: c.env.TRIAL_END_WORKFLOW,
-      planUpgradeWorkflow: c.env.PLAN_UPGRADE_WORKFLOW,
-      renewalSetupWorkflow: c.env.RENEWAL_SETUP_WORKFLOW,
-      cache: c.env.CACHE,
-      analyticsEnv: {
-        ANALYTICS: c.env.ANALYTICS,
-        ENVIRONMENT: c.env.ENVIRONMENT,
-        CF_ACCOUNT_ID: c.env.CF_ACCOUNT_ID,
-        CF_ANALYTICS_READ_TOKEN: c.env.CF_ANALYTICS_READ_TOKEN,
-        ANALYTICS_DATASET: c.env.ANALYTICS_DATASET,
-        EVENTS_PIPELINE: c.env.EVENTS_PIPELINE,
-        R2_SQL_TOKEN: c.env.R2_SQL_TOKEN,
-        R2_WAREHOUSE: c.env.R2_WAREHOUSE,
-      },
+      event: normalizedEvent,
     });
-
-    const handleResult = await handler.handle(normalizedEvent);
-    if (handleResult.isErr()) {
-      console.error("Webhook handling error:", handleResult.error);
-    }
 
     return c.json({ success: true, received: true });
   }
+
+  /**
+   * Shared sandbox endpoint. One URL per provider is registered on the
+   * Owostack-owned test account; the organization is recovered from the
+   * `organization_id` metadata every checkout stamps on the provider object.
+   */
+  async function handleSandboxWebhookRequest(c: any, providerId: string) {
+    if (!isManagedSandboxRuntime(c.env)) {
+      return c.json({ error: "Not found" }, 404);
+    }
+
+    const registry = deps.getProviderRegistry();
+    const adapter = registry.get(providerId);
+    if (!adapter) {
+      return c.json({ error: `Unsupported provider: ${providerId}` }, 400);
+    }
+
+    if (!listManagedSandboxProviderIds(c.env).includes(providerId)) {
+      return c.json(
+        { error: `Sandbox provider '${providerId}' is not managed` },
+        404,
+      );
+    }
+
+    const sigHeader =
+      adapter.signatureHeaderName || `x-${providerId}-signature`;
+    const signature = c.req.header(sigHeader);
+    if (!signature) {
+      return c.json(
+        errorToResponse(new WebhookError({ reason: "missing_signature" })),
+        401,
+      );
+    }
+
+    // Verify against the managed secret before touching any org data. The
+    // org id is only known once the payload is trusted.
+    const probe = getManagedSandboxAccount(c.env, "sandbox", providerId);
+    const secret = probe ? managedSandboxWebhookSecret(probe) : null;
+    if (!secret) {
+      return c.json(
+        { error: `Sandbox provider '${providerId}' has no webhook secret` },
+        404,
+      );
+    }
+
+    const rawBody = await c.req.text();
+    const verifyResult = await adapter.verifyWebhook({
+      signature,
+      payload: rawBody,
+      secret,
+      headers: collectHeaders(c),
+    });
+    if (verifyResult.isErr() || !verifyResult.value) {
+      console.error(
+        `[WEBHOOK-SANDBOX] Signature verification FAILED for provider=${providerId}`,
+      );
+      return c.json(
+        errorToResponse(new WebhookError({ reason: "invalid_signature" })),
+        401,
+      );
+    }
+
+    let rawPayload: Record<string, unknown>;
+    try {
+      rawPayload = JSON.parse(rawBody);
+    } catch {
+      return c.json(
+        errorToResponse(new WebhookError({ reason: "parse_failed" })),
+        400,
+      );
+    }
+
+    const parseResult = adapter.parseWebhookEvent({ payload: rawPayload });
+    if (parseResult.isErr()) {
+      console.log(
+        `[WEBHOOK-SANDBOX] Unhandled event from ${providerId}: ${parseResult.error.message}`,
+      );
+      return c.json({ success: true, received: true, skipped: true });
+    }
+
+    const normalizedEvent = parseResult.value;
+    const organizationRef = extractOrganizationRef(normalizedEvent.metadata);
+    if (!organizationRef) {
+      console.warn(
+        `[WEBHOOK-SANDBOX] Dropping ${normalizedEvent.type} from ${providerId}: no organization_id in metadata`,
+      );
+      return c.json({
+        success: true,
+        received: true,
+        skipped: true,
+        reason: "unrouted",
+      });
+    }
+
+    const org = await resolveOrganization(c, organizationRef);
+    if (!org) {
+      console.warn(
+        `[WEBHOOK-SANDBOX] Dropping ${normalizedEvent.type} from ${providerId}: organization '${organizationRef}' not found`,
+      );
+      return c.json({
+        success: true,
+        received: true,
+        skipped: true,
+        reason: "organization_not_found",
+      });
+    }
+
+    console.log(
+      `[WEBHOOK-SANDBOX] Event: ${normalizedEvent.type}, provider=${providerId}, org=${org.id}, ref=${normalizedEvent.payment?.reference || "n/a"}`,
+    );
+
+    await dispatchEvent(c, {
+      organizationId: org.id,
+      adapter,
+      account: getManagedSandboxAccount(c.env, org.id, providerId) ?? undefined,
+      event: normalizedEvent,
+    });
+
+    return c.json({ success: true, received: true });
+  }
+
+  function extractOrganizationRef(
+    metadata: Record<string, unknown> | undefined,
+  ): string | null {
+    if (!metadata) return null;
+    const candidate = metadata.organization_id ?? metadata.organizationId;
+    return typeof candidate === "string" && candidate.trim().length > 0
+      ? candidate.trim()
+      : null;
+  }
+
+  // Registered before the org-addressed routes so `sandbox` is never treated
+  // as an organization id or slug.
+  app.openapi(sandboxWebhookRoute, async (c) => {
+    return handleSandboxWebhookRequest(c, c.req.param("provider"));
+  });
 
   app.openapi(paystackWebhookRoute, async (c) => {
     return handleWebhookRequest(c, c.req.param("organizationId"), "paystack");

@@ -1,0 +1,51 @@
+---
+title: Authentication
+description: How the CLI authenticates with Owostack
+---
+
+# CLI Authentication
+
+The Owostack CLI uses a secure, browser-based authentication flow to link your terminal session with your Owostack account.
+
+## How it works
+
+1. **Initiate**: When you run `npx owosk connect`, the CLI generates a unique session token.
+2. **Browser Flow**: A browser window opens automatically, asking you to sign in to your Owostack dashboard.
+3. **Approval**: Once signed in, you'll see a request to authorize the CLI.
+4. **Completion**: After approval, the CLI receives **two** environment-scoped keys — one sandbox (`owo_sk_test_…`) and one live (`owo_sk_live_…`) — and stores them locally. Commands pick the key that matches `--mode`.
+
+## Credentials Storage
+
+The CLI stores credentials in `~/.owostack/config.json`:
+
+```json
+{
+  "keys": {
+    "sandbox": "owo_sk_test_…",
+    "live": "owo_sk_live_…"
+  },
+  "organizationId": "org_…"
+}
+```
+
+You can also create keys in the dashboard under **Settings → API keys**, choosing the environment for each.
+
+## Environment Variables
+
+For CI/CD, where browser-based auth isn't possible, pass the key through the environment. A scoped key selects the mode on its own; set `OWOSTACK_MODE` as well if your key is a legacy `owo_sk_…` key.
+
+```bash
+export OWOSTACK_SECRET_KEY=owo_sk_test_...
+npx owosk sync --yes --json
+
+# legacy key
+export OWOSTACK_SECRET_KEY=owo_sk_...
+export OWOSTACK_MODE=sandbox
+npx owosk sync --yes --json
+```
+
+| Variable               | Purpose                                                               |
+| ---------------------- | --------------------------------------------------------------------- |
+| `OWOSTACK_SECRET_KEY`  | API key (`--key` overrides it)                                        |
+| `OWOSTACK_MODE`        | `sandbox` or `live` (`--mode` overrides it)                           |
+| `OWOSTACK_API_URL`     | Override the API host for the selected mode (self-hosted / local)     |

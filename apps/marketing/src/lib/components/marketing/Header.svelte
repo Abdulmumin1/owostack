@@ -9,10 +9,12 @@
 
   let { variant = "page", showBorder = true }: Props = $props();
 
-  const headerClasses = $derived(`px-6 py-5 `);
+  const headerClasses = $derived(
+    `px-6 py-5 ${showBorder ? "border-b border-border/60" : ""}`,
+  );
 
   const containerClasses = $derived(
-    `mx-auto flex items-center justify-between max-w-4xl`,
+    `mx-auto flex items-center justify-between ${variant === "home" ? "max-w-6xl" : "max-w-4xl"}`,
   );
 </script>
 
@@ -20,7 +22,7 @@
   <div class={containerClasses}>
     <a href="/" class="flex items-center gap-2">
       <Logo size={variant === "home" ? 24 : 20} class="text-accent" />
-      <span class="text-sm font-bold tracking-tight">Owostack</span>
+      <span class="font-display text-base font-semibold tracking-tight">Owostack</span>
     </a>
 
     <nav class="flex items-center gap-6 text-xs text-text-secondary">

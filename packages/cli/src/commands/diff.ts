@@ -1,144 +1,89 @@
-import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { getApiKey, getLiveApiUrl, getTestApiUrl } from "../lib/config.js";
+import { loadOwostackFromConfig, resolveConfigPath } from "../lib/loader.js";
+import { printDiff } from "../lib/diff.js";
 import {
-  loadConfigSettings,
-  loadOwostackFromConfig,
-  resolveConfigPath,
-} from "../lib/loader.js";
-import {
-  fetchPlans,
-  fetchCreditSystems,
-  fetchCreditPacks,
-} from "../lib/api.js";
-import { diffPlans, printDiff } from "../lib/diff.js";
+  announceMode,
+  resolveCommandContext,
+  type CommonCommandOptions,
+} from "../lib/context.js";
+import { CliError, EXIT_CODES, usageError } from "../lib/errors.js";
+import type { Reporter } from "../lib/output.js";
+import { computeCatalogDiff, summarizeDiff } from "./sync.js";
 
-interface DiffOptions {
-  config?: string;
-  key?: string;
-  prod?: boolean;
+export interface DiffOptions extends CommonCommandOptions {
+  /** Exit with code 3 when the local catalog differs from the remote one. */
+  exitCode?: boolean;
 }
 
-export async function runDiff(options: DiffOptions) {
-  p.intro(pc.bgYellow(pc.black(" diff ")));
+export async function runDiff(options: DiffOptions, reporter: Reporter) {
+  reporter.intro("diff");
 
   const fullPath = resolveConfigPath(options.config);
-
   if (!fullPath) {
-    p.log.error(pc.red("No configuration file found."));
-    process.exit(1);
-  }
-
-  const apiKey = getApiKey(options.key);
-  const configSettings = await loadConfigSettings(options.config);
-  const testUrl = getTestApiUrl(configSettings.environments?.test);
-  const liveUrl = getLiveApiUrl(configSettings.environments?.live);
-
-  const s = p.spinner();
-
-  // Default to sandbox environment, prod only with --prod flag
-  if (options.prod) {
-    p.log.step(pc.magenta("Production Mode: Comparing with PROD environment"));
-    const apiUrl = `${liveUrl}/api/v1`;
-
-    s.start("Loading local configuration...");
-    let owo: any;
-    try {
-      owo = await loadOwostackFromConfig(fullPath);
-    } catch (e: any) {
-      s.stop(pc.red("Failed to load configuration"));
-      p.log.error(pc.red(`Error: ${e.message}`));
-      p.log.info(
-        pc.dim(
-          "Make sure 'owostack' is installed in your project: 'npm install owostack'",
-        ),
-      );
-      process.exit(1);
-    }
-    if (!owo || !owo._config) {
-      s.stop(pc.red("Invalid configuration"));
-      p.log.error("Config file must export an Owostack instance.");
-      process.exit(1);
-    }
-
-    s.stop("Configuration loaded");
-
-    const { buildSyncPayload } = (await import("owostack").catch(() => ({
-      buildSyncPayload: null,
-    }))) as any;
-    const localPayload = buildSyncPayload(owo._config.catalog);
-
-    s.start(`Fetching remote catalog from ${pc.dim("prod")}...`);
-    const livePlans = await fetchPlans({ apiKey, apiUrl: apiUrl });
-    const liveCreditSystems = await fetchCreditSystems(apiKey, apiUrl);
-    const liveCreditPacks = await fetchCreditPacks(apiKey, apiUrl);
-    s.stop("Remote catalog fetched");
-
-    printDiff(
-      diffPlans({
-        localPlans: localPayload?.plans ?? [],
-        remotePlans: livePlans,
-        localFeatures: localPayload?.features ?? [],
-        remoteFeatures: [],
-        localCreditSystems: localPayload?.creditSystems ?? [],
-        remoteCreditSystems: liveCreditSystems,
-        localCreditPacks: localPayload?.creditPacks ?? [],
-        remoteCreditPacks: liveCreditPacks,
-      }),
-    );
-  } else {
-    p.log.step(pc.cyan("Sandbox Mode: Comparing with SANDBOX environment"));
-    const apiUrl = `${testUrl}/api/v1`;
-
-    s.start("Loading local configuration...");
-    let owo: any;
-    try {
-      owo = await loadOwostackFromConfig(fullPath);
-    } catch (e: any) {
-      s.stop(pc.red("Failed to load configuration"));
-      p.log.error(pc.red(`Error: ${e.message}`));
-      p.log.info(
-        pc.dim(
-          "Make sure 'owostack' is installed in your project: 'npm install owostack'",
-        ),
-      );
-      process.exit(1);
-    }
-    if (!owo || !owo._config) {
-      s.stop(pc.red("Invalid configuration"));
-      p.log.error("Config file must export an Owostack instance.");
-      process.exit(1);
-    }
-
-    s.stop("Configuration loaded");
-
-    const { buildSyncPayload } = (await import("owostack").catch(() => ({
-      buildSyncPayload: null,
-    }))) as any;
-    const localPayload = buildSyncPayload(owo._config.catalog);
-
-    s.start(`Fetching remote catalog from ${pc.dim("sandbox")}...`);
-    const remotePlans = await fetchPlans({
-      apiKey,
-      apiUrl: apiUrl,
-    });
-    const remoteCreditSystems = await fetchCreditSystems(apiKey, apiUrl);
-    const remoteCreditPacks = await fetchCreditPacks(apiKey, apiUrl);
-    s.stop("Remote catalog fetched");
-
-    printDiff(
-      diffPlans({
-        localPlans: localPayload?.plans ?? [],
-        remotePlans,
-        localFeatures: localPayload?.features ?? [],
-        remoteFeatures: [],
-        localCreditSystems: localPayload?.creditSystems ?? [],
-        remoteCreditSystems,
-        localCreditPacks: localPayload?.creditPacks ?? [],
-        remoteCreditPacks,
-      }),
+    throw usageError(
+      "config_not_found",
+      "No configuration file found.",
+      "Create one with `owosk init`, or pass --config <path>.",
     );
   }
 
-  p.outro(pc.green("Diff complete ✨"));
+  const ctx = await resolveCommandContext(options, reporter);
+  announceMode(reporter, ctx, "comparing with");
+
+  const s = reporter.spinner();
+  s.start("Loading local configuration...");
+  let owo: any;
+  try {
+    owo = await loadOwostackFromConfig(fullPath);
+  } catch (e: any) {
+    s.stop(pc.red("Failed to load configuration"));
+    throw usageError(
+      "config_invalid",
+      `Could not load ${fullPath}: ${e.message}`,
+      "Make sure 'owostack' is installed in your project: npm install owostack",
+    );
+  }
+  if (!owo || !owo._config) {
+    s.stop(pc.red("Invalid configuration"));
+    throw usageError(
+      "config_invalid",
+      "Config file must export an Owostack instance.",
+    );
+  }
+  s.stop("Configuration loaded");
+
+  const diff = await computeCatalogDiff({
+    owo,
+    apiKey: ctx.apiKey,
+    apiUrl: ctx.apiUrl,
+    reporter,
+    modeLabel: ctx.mode,
+  });
+  const summary = summarizeDiff(diff);
+  const hasChanges = summary.total > 0;
+
+  if (!reporter.json) printDiff(diff);
+
+  reporter.emit({
+    ok: true,
+    command: "diff",
+    mode: ctx.mode,
+    apiUrl: ctx.apiUrl,
+    hasChanges,
+    changes: summary,
+  });
+
+  if (hasChanges && options.exitCode) {
+    throw new CliError(
+      "cancelled",
+      "Local catalog differs from remote (--exit-code).",
+      EXIT_CODES.drift,
+    );
+  }
+
+  reporter.outro(
+    hasChanges
+      ? pc.yellow("Catalog differs from remote")
+      : pc.green("In sync ✨"),
+  );
 }

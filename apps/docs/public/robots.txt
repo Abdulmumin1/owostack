@@ -1,4 +1,7 @@
 User-agent: *
 Allow: /
 
+# AI/LLM agents: a Markdown index of these docs is available at
+# https://docs.owostack.com/llms.txt (full export: /llms-full.txt,
+# raw API specification: /openapi.json).
 Sitemap: https://docs.owostack.com/sitemap.xml

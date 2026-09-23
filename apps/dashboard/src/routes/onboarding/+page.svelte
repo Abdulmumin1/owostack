@@ -5,25 +5,18 @@
     ArrowRight,
     CheckCircle,
     CircleNotch,
-    Cpu,
-    Lock,
-    Eye,
-    EyeSlash,
-    Plus,
-    CaretLeft,
-    Rocket,
     Copy,
+    Check,
+    Key,
+    Flask,
   } from "phosphor-svelte";
   import { organization, apiFetch } from "$lib/auth-client";
-  import { getActiveEnvironment, getApiUrl } from "$lib/env";
-  import { SUPPORTED_PROVIDERS } from "$lib/providers";
   import { goto } from "$app/navigation";
-  import ProviderBadge from "$lib/components/ui/ProviderBadge.svelte";
   import { fade, fly, slide } from "svelte/transition";
   import Logo from "$lib/components/ui/Logo.svelte";
 
   // State
-  let currentStep = $state(1); // 1: Welcome/Details, 2: Provider, 3: Credentials
+  let currentStep = $state(1); // 1: Organization, 2: Sandbox key
   let isCreating = $state(false);
   let error = $state<string | null>(null);
 
@@ -32,10 +25,10 @@
   let orgSlug = $state("");
   let isCheckingSlug = $state(false);
   let slugAvailable = $state<boolean | null>(null);
-  let selectedProviderId = $state("paystack");
-  let providerCredentials = $state<Record<string, string>>({});
-  let showSecretFields = $state<Record<string, boolean>>({});
-  let enabledProviderIds = $state<string[]>([]);
+
+  // Result
+  let sandboxKey = $state<string | null>(null);
+  let keyCopied = $state(false);
 
   // Update slug automatically from name
   $effect(() => {
@@ -49,7 +42,7 @@
   });
 
   // Check slug availability when it changes (debounced)
-  let slugTimeout: any;
+  let slugTimeout: ReturnType<typeof setTimeout>;
   $effect(() => {
     if (orgSlug.length >= 3) {
       clearTimeout(slugTimeout);
@@ -60,7 +53,7 @@
             `/api/organizations/slug-check/${orgSlug}`,
           );
           slugAvailable = res.data?.available;
-        } catch (e) {
+        } catch {
           slugAvailable = null;
         } finally {
           isCheckingSlug = false;
@@ -72,94 +65,27 @@
     }
   });
 
-  // Derived
-  let availableProviders = $derived(
-    SUPPORTED_PROVIDERS.filter((p) => enabledProviderIds.includes(p.id)),
-  );
-
-  let selectedProviderConfig = $derived(
-    SUPPORTED_PROVIDERS.find((p) => p.id === selectedProviderId),
-  );
-
-  let hasRequiredCredentials = $derived(() => {
-    if (!selectedProviderConfig) return false;
-    return selectedProviderConfig.fields.some(
-      (f) => !f.optional && providerCredentials[f.key]?.trim(),
-    );
-  });
-
-  // Steps Configuration
   const steps = [
     { id: 1, title: "Organization", desc: "Workspace details" },
-    { id: 2, title: "Provider", desc: "Choose gateway" },
-    { id: 3, title: "Connect", desc: "Link account" },
-    { id: 4, title: "Done", desc: "Get started" },
+    { id: 2, title: "Sandbox key", desc: "Start building" },
   ];
 
-  $effect(() => {
-    loadEnabledProviders();
-  });
+  let canContinue = $derived(
+    !!orgName && orgSlug.length >= 3 && slugAvailable === true,
+  );
 
-  async function loadEnabledProviders() {
-    try {
-      const res = await apiFetch(`/api/dashboard/providers/enabled`);
-      if (res.data?.data) {
-        enabledProviderIds = res.data.data;
-        if (enabledProviderIds.length > 0) {
-          selectedProviderId = enabledProviderIds[0];
-        }
-      }
-    } catch (e) {
-      enabledProviderIds = ["paystack"];
-    }
-  }
-
-  function nextStep() {
-    if (currentStep === 1 && (!orgName || !orgSlug)) return;
-    if (currentStep < 3) currentStep++;
-  }
-
-  function prevStep() {
-    if (currentStep > 1) currentStep--;
-  }
-
-  // API base URL derived from environment
-  let apiBase = $derived(getApiUrl());
-
+  /**
+   * Sandbox is fully managed by Owostack: no provider credentials are needed
+   * to start. We create the organization, mint a sandbox API key and drop the
+   * user straight into the dashboard.
+   */
   async function finishOnboarding() {
-    if (!orgName || !orgSlug) return;
+    if (!canContinue) return;
 
     isCreating = true;
     error = null;
 
     try {
-      // 1. Validate provider credentials before creating the organization
-      const credentials: Record<string, unknown> = {};
-      if (selectedProviderConfig) {
-        for (const field of selectedProviderConfig.fields) {
-          const val = providerCredentials[field.key];
-          if (val?.trim()) credentials[field.key] = val.trim();
-        }
-      }
-
-      const validationRes = await apiFetch(
-        "/api/dashboard/providers/validate",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            providerId: selectedProviderId,
-            environment: getActiveEnvironment(),
-            credentials,
-          }),
-        },
-      );
-      if (validationRes.error) {
-        throw new Error(
-          validationRes.error.message || "Failed to validate provider",
-        );
-      }
-
-      // 2. Create Organization
       const { data: orgData, error: orgError } = await organization.create({
         name: orgName,
         slug: orgSlug,
@@ -168,45 +94,40 @@
       if (orgError) throw new Error(orgError.message);
       if (!orgData?.id) throw new Error("Failed to create organization");
 
-      // 3. Connect Provider
-      const providerRes = await apiFetch("/api/dashboard/providers/accounts", {
+      const keyRes = await apiFetch("/api/dashboard/keys", {
         method: "POST",
         body: JSON.stringify({
           organizationId: orgData.id,
-          providerId: selectedProviderId,
-          environment: getActiveEnvironment(),
-          credentials,
+          name: "Sandbox key",
+          environment: "test",
         }),
       });
-      if (providerRes.error) {
-        throw new Error(
-          providerRes.error.message || "Failed to connect provider",
-        );
+
+      if (keyRes.data?.success && keyRes.data.data?.secretKey) {
+        sandboxKey = keyRes.data.data.secretKey;
+      } else {
+        // The org exists; the key can still be created from Settings.
+        sandboxKey = null;
+        console.error("Failed to create sandbox key", keyRes.data?.error);
       }
 
-      // Success - Transition to step 4
-      isCreating = false;
-      currentStep = 4;
-    } catch (err: any) {
-      error = err?.message || "Something went wrong. Please try again.";
+      currentStep = 2;
+    } catch (err: unknown) {
+      error =
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.";
+    } finally {
       isCreating = false;
     }
   }
 
-  function copyUrl(url: string) {
-    navigator.clipboard.writeText(url);
+  async function copyKey() {
+    if (!sandboxKey) return;
+    await navigator.clipboard.writeText(sandboxKey);
+    keyCopied = true;
+    setTimeout(() => (keyCopied = false), 2000);
   }
-
-  // Update slug automatically from name
-  $effect(() => {
-    if (currentStep === 1 && orgName && !orgSlug) {
-      orgSlug = orgName
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "");
-    }
-  });
 </script>
 
 <svelte:head>
@@ -218,7 +139,6 @@
   <div
     class="hidden lg:flex w-1/3 bg-bg-secondary border-r border-border p-12 flex-col justify-between relative overflow-hidden"
   >
-    <!-- Abstract Background -->
     <div
       class="absolute inset-0 opacity-10 pointer-events-none grayscale brightness-50 contrast-125"
     >
@@ -239,8 +159,9 @@
           Welcome to the billing layer
         </h2>
         <p class="text-text-secondary text-sm leading-relaxed max-w-xs">
-          Let's get your first organization set up. We'll connect your payment
-          provider and prepare your workspace in just a few steps.
+          Name your organization and you're in. The sandbox comes with payment
+          providers already wired up, so there's nothing to connect until
+          you're ready to go live.
         </p>
       </div>
     </div>
@@ -248,7 +169,7 @@
     <div class="relative z-10">
       <div class="p-6 bg-bg-card border border-border rounded-sm space-y-4">
         <div class="space-y-3">
-          {#each steps as step}
+          {#each steps as step (step.id)}
             <div class="flex items-center gap-3">
               <div
                 class="w-5 h-5 flex items-center justify-center rounded-full border {currentStep >=
@@ -278,7 +199,7 @@
     >
       <Logo />
       <div class="flex items-center gap-1">
-        {#each steps as step}
+        {#each steps as step (step.id)}
           <div
             class="w-8 h-1 rounded-full {currentStep >= step.id
               ? 'bg-accent'
@@ -302,7 +223,6 @@
       <div
         class="bg-bg-card border border-border rounded-sm overflow-hidden flex flex-col min-h-[480px]"
       >
-        <!-- content steps -->
         <div class="flex-1 p-8">
           {#if currentStep === 1}
             <div in:fly={{ x: 20, duration: 400 }}>
@@ -395,190 +315,24 @@
                     </p>
                   {/if}
                 </div>
-              </div>
-            </div>
-          {:else if currentStep === 2}
-            <div in:fly={{ x: 20, duration: 400 }}>
-              <div class="mb-8 text-center lg:text-left">
-                <h2 class="text-xl font-bold text-text-primary mb-1">
-                  Payment Gateway
-                </h2>
-                <p class="text-text-dim text-xs">
-                  Select your primary payment processor.
-                </p>
-              </div>
 
-              <div
-                class="space-y-3 max-h-100 overflow-y-auto pr-2 custom-scrollbar"
-              >
-                {#each availableProviders as provider}
-                  <button
-                    class="w-full p-4 border rounded-sm text-left flex items-center justify-between group transition-all {selectedProviderId ===
-                    provider.id
-                      ? 'border-accent bg-accent/5'
-                      : 'border-border bg-bg-secondary hover:border-border-strong'}"
-                    onclick={() => (selectedProviderId = provider.id)}
-                  >
-                    <div class="flex items-center gap-4">
-                      <div
-                        class="w-12 h-12 flex items-center justify-center bg-bg-card border border-border rounded-sm group-hover:scale-105 transition-transform overflow-hidden p-1.5"
-                      >
-                        <img
-                          src={provider.logoUrl}
-                          alt={provider.name}
-                          class="w-full h-full object-contain"
-                          onerror={(e) => {
-                            const target = e.currentTarget as HTMLImageElement;
-                            target.style.display = "none";
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <p
-                          class="text-xs font-bold text-text-primary uppercase tracking-tight"
-                        >
-                          {provider.name}
-                        </p>
-                        <p class="text-[10px] text-text-dim leading-tight">
-                          {provider.description}
-                        </p>
-                      </div>
-                    </div>
-                    {#if selectedProviderId === provider.id}
-                      <CheckCircle
-                        size={20}
-                        weight="fill"
-                        class="text-accent"
-                      />
-                    {/if}
-                  </button>
-                {/each}
-              </div>
-            </div>
-          {:else if currentStep === 3}
-            <div in:fly={{ x: 20, duration: 400 }}>
-              <div class="mb-8 flex items-end justify-between">
-                <div>
-                  <h2 class="text-xl font-bold text-text-primary mb-1">
-                    Connect {selectedProviderConfig?.name}
-                  </h2>
-                  <p class="text-text-dim text-xs">
-                    {#if selectedProviderId === "polar"}
-                      Keys are under Organization settings → Access Tokens.
-                    {:else if selectedProviderId === "dodopayments"}
-                      Find your keys in the Developer → API Keys section.
-                    {:else if selectedProviderId === "paystack"}
-                      Keys are in Settings → API Keys & Webhooks.
-                    {:else}
-                      Add your API keys to sync plans and customers.
-                    {/if}
-                  </p>
-                </div>
-                {#if selectedProviderConfig?.docsUrl}
-                  <a
-                    href={selectedProviderConfig.docsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="text-[10px] font-bold text-accent hover:text-accent-hover uppercase tracking-widest flex items-center gap-1.5 transition-colors pb-1 group"
-                  >
-                    Get keys
-                    <ArrowRight
-                      size={10}
-                      weight="bold"
-                      class="group-hover:translate-x-0.5 transition-transform"
-                    />
-                  </a>
-                {/if}
-              </div>
-
-              <div class="space-y-6">
-                {#if selectedProviderConfig}
-                  {#each selectedProviderConfig.fields as field}
-                    {@const isWebhookSecret = field.key === "webhookSecret"}
-                    <div>
-                      <label
-                        for={field.key}
-                        class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2"
-                      >
-                        {field.label}
-                        {#if !field.optional}<span class="text-error ml-1"
-                            >*</span
-                          >{/if}
-                      </label>
-                      <div class="relative">
-                        <Lock
-                          size={16}
-                          class="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim"
-                          weight="duotone"
-                        />
-                        <input
-                          type={field.secret && !showSecretFields[field.key]
-                            ? "password"
-                            : "text"}
-                          id={field.key}
-                          bind:value={providerCredentials[field.key]}
-                          placeholder={field.placeholder}
-                          class="w-full bg-bg-secondary border border-border rounded-sm py-2.5 pl-10 pr-12 text-xs font-mono focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
-                        />
-                        {#if field.secret}
-                          <button
-                            type="button"
-                            class="absolute right-3 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary transition-colors"
-                            onclick={() =>
-                              (showSecretFields[field.key] =
-                                !showSecretFields[field.key])}
-                          >
-                            {#if showSecretFields[field.key]}
-                              <EyeSlash size={16} weight="duotone" />
-                            {:else}
-                              <Eye size={16} weight="duotone" />
-                            {/if}
-                          </button>
-                        {/if}
-                      </div>
-                      {#if isWebhookSecret}
-                        {@const webhookUrl = `${apiBase}/webhooks/${orgSlug || "your-org"}/${selectedProviderId}`}
-                        <div
-                          class="mt-2 bg-info-bg/50 border border-info/30 p-2.5 flex items-start gap-2"
-                        >
-                          <div class="flex-1 min-w-0">
-                            <p
-                              class="text-[10px] font-bold text-info uppercase tracking-widest mb-1"
-                            >
-                              Webhook URL
-                            </p>
-                            <code
-                              class="font-mono text-[10px] text-info break-all"
-                              >{webhookUrl}</code
-                            >
-                          </div>
-                          <button
-                            type="button"
-                            class="text-info hover:text-info/80 transition-colors shrink-0 mt-0.5"
-                            onclick={() => copyUrl(webhookUrl)}
-                            title="Copy webhook URL"
-                          >
-                            <Copy size={12} weight="fill" />
-                          </button>
-                        </div>
-                      {/if}
-                    </div>
-                  {/each}
-                {/if}
-
-                <div class="p-4 bg-accent/5 border border-accent/20 rounded-sm">
+                <div
+                  class="p-4 bg-accent/5 border border-accent/20 rounded-sm flex items-start gap-3"
+                >
+                  <Flask size={16} weight="duotone" class="text-accent mt-0.5 shrink-0" />
                   <p
                     class="text-[10px] text-text-primary leading-relaxed uppercase tracking-tight opacity-70"
                   >
-                    Keys are encrypted at rest and never stored in plain text.
-                    You can change these later in settings.
+                    You start in the sandbox. Payments run on Owostack's shared
+                    test accounts, so no provider keys are needed. Connect your
+                    own provider only when you go live.
                   </p>
                 </div>
               </div>
             </div>
-          {:else if currentStep === 4}
+          {:else}
             <div in:fly={{ y: 20, duration: 600 }}>
-              <div class="text-center mb-10">
+              <div class="text-center mb-8">
                 <div
                   class="w-16 h-16 bg-success/10 text-success rounded-full flex items-center justify-center mx-auto mb-6"
                 >
@@ -590,42 +344,58 @@
                   You're all set!
                 </h2>
                 <p class="text-text-dim text-sm">
-                  Your organization is ready. Here's how to start.
+                  Here's your sandbox API key. Copy it now, it won't be shown
+                  again.
                 </p>
               </div>
 
               <div class="space-y-6">
                 <div>
-                  <label
+                  <span
                     class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3"
-                    >Use CLI</label
+                    >Sandbox API key</span
                   >
-                  <div
-                    class="bg-bg-secondary border border-border overflow-hidden"
-                  >
+                  {#if sandboxKey}
                     <div
-                      class="bg-bg-tertiary px-3 py-1.5 flex items-center justify-between border-b border-border"
+                      class="bg-bg-secondary border border-border p-3 flex items-center gap-3"
                     >
-                      <span
-                        class="text-[9px] font-bold text-text-dim uppercase tracking-wider"
-                        >Terminal</span
+                      <Key size={14} weight="duotone" class="text-text-dim shrink-0" />
+                      <code
+                        class="flex-1 min-w-0 text-[11px] font-mono text-text-primary break-all"
+                        >{sandboxKey}</code
                       >
+                      <button
+                        type="button"
+                        class="shrink-0 text-text-dim hover:text-text-primary transition-colors"
+                        onclick={copyKey}
+                        title="Copy API key"
+                        aria-label="Copy API key"
+                      >
+                        {#if keyCopied}
+                          <Check size={14} weight="bold" class="text-success" />
+                        {:else}
+                          <Copy size={14} weight="fill" />
+                        {/if}
+                      </button>
                     </div>
-                    <pre
-                      class="p-4 text-[11px] font-mono text-text-secondary leading-relaxed overflow-x-auto"><code
-                        >npx owosk init</code
-                      ></pre>
-                  </div>
-                  <p class="mt-2 text-[11px] text-text-dim leading-relaxed">
-                    Initialize `owo.config.ts` directly from your dashboard
-                    setup.
-                  </p>
+                    <p class="mt-2 text-[11px] text-text-dim leading-relaxed">
+                      Works against the sandbox API only. Create a live key from
+                      Settings when you're ready to charge real cards.
+                    </p>
+                  {:else}
+                    <div
+                      class="bg-bg-secondary border border-border p-3 text-[11px] text-text-dim"
+                    >
+                      We couldn't mint a key just now. You can create one under
+                      Settings → API Keys.
+                    </div>
+                  {/if}
                 </div>
 
                 <div>
-                  <label
+                  <span
                     class="block text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3"
-                    >Install SDK</label
+                    >Install SDK</span
                   >
                   <div
                     class="bg-bg-secondary border border-border p-3 flex items-center justify-between group"
@@ -646,49 +416,24 @@
 
         <!-- Sticky Footer -->
         <div
-          class="p-6 border-t border-border bg-bg-secondary/50 flex items-center justify-between"
+          class="p-6 border-t border-border bg-bg-secondary/50 flex items-center justify-end"
         >
-          {#if currentStep > 1 && currentStep < 4}
-            <button
-              class="flex items-center gap-2 text-xs font-bold text-text-dim hover:text-text-primary transition-colors uppercase tracking-widest"
-              onclick={prevStep}
-              disabled={isCreating}
-            >
-              <CaretLeft size={16} weight="bold" />
-              Back
-            </button>
-          {:else}
-            <div></div>
-            <!-- Spacer -->
-          {/if}
-
-          {#if currentStep < 3}
-            <button
-              class="btn btn-primary px-8 py-3 text-xs shadow-none hover:shadow-none flex items-center gap-2 group"
-              onclick={nextStep}
-              disabled={(currentStep === 1 &&
-                (orgSlug.length < 3 || slugAvailable !== true)) ||
-                (currentStep === 1 && !orgName)}
-            >
-              <span>Continue</span>
-              <ArrowRight
-                size={14}
-                weight="bold"
-                class="group-hover:translate-x-1 transition-transform"
-              />
-            </button>
-          {:else if currentStep === 3}
+          {#if currentStep === 1}
             <button
               class="btn btn-primary px-8 py-3 text-xs shadow-none hover:shadow-none flex items-center gap-2 group"
               onclick={finishOnboarding}
-              disabled={isCreating || !hasRequiredCredentials()}
+              disabled={isCreating || !canContinue}
             >
               {#if isCreating}
                 <CircleNotch size={14} class="animate-spin" />
                 <span>Creating...</span>
               {:else}
-                <CheckCircle size={14} weight="fill" />
-                <span>Complete Setup</span>
+                <span>Create organization</span>
+                <ArrowRight
+                  size={14}
+                  weight="bold"
+                  class="group-hover:translate-x-1 transition-transform"
+                />
               {/if}
             </button>
           {:else}
@@ -717,15 +462,3 @@
     </div>
   </div>
 </main>
-
-<style>
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    /* @apply bg-border rounded-full; */
-  }
-</style>

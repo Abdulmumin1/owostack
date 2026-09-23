@@ -296,6 +296,7 @@ app.openapi(syncCatalogRoute, async (c) => {
         organizationId,
         environment: c.env.ENVIRONMENT,
         encryptionKey: c.env.ENCRYPTION_KEY,
+        managedSandbox: c.env,
       },
       plan: {
         slug: planDef.slug,
@@ -564,6 +565,7 @@ app.openapi(syncCatalogRoute, async (c) => {
               organizationId,
               environment: c.env.ENVIRONMENT,
               encryptionKey: c.env.ENCRYPTION_KEY,
+              managedSandbox: c.env,
             },
             pack: {
               id: existing.id,
@@ -616,6 +618,7 @@ app.openapi(syncCatalogRoute, async (c) => {
                 organizationId,
                 environment: c.env.ENVIRONMENT,
                 encryptionKey: c.env.ENCRYPTION_KEY,
+                managedSandbox: c.env,
               },
               pack: {
                 id: existing.id,
@@ -677,6 +680,7 @@ app.openapi(syncCatalogRoute, async (c) => {
             organizationId,
             environment: c.env.ENVIRONMENT,
             encryptionKey: c.env.ENCRYPTION_KEY,
+            managedSandbox: c.env,
           },
           pack: {
             id: packId,

@@ -1,0 +1,5 @@
+{
+  "title": "CLI",
+  "icon": "Terminal",
+  "pages": ["cli/index", "cli/commands", "cli/auth"]
+}

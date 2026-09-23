@@ -1,5 +1,28 @@
 # @owostack/types
 
+## 0.5.0
+
+### Minor Changes
+
+- [#246](https://github.com/Abdulmumin1/owostack/pull/246) [`c638330`](https://github.com/Abdulmumin1/owostack/commit/c6383300c0ef034e248158104ea3fa9e0919b474) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Customer reads accept the same identifier you write with.
+  - `GET /customers/{id}` and `GET /customers/{id}/usage/history` now resolve your external customer ID (the `customer` value passed to `track`/`check`) and the customer's email, not only the internal UUID. Ambiguous matches return `409`.
+  - New `GET /customers` list/search endpoint with `limit`, `offset`, `search`, `email` and `externalId` filters, exposed as `owo.customer.list()`.
+  - New `owo.customer.get(customer)`.
+  - `CustomerResult` now includes `externalId`, and `createdAt`/`updatedAt` are typed as the Unix millisecond numbers the API actually returns (they were typed as ISO strings).
+  - New types: `CustomerListParams`, `CustomerListResult`, `CustomerSummary`.
+
+- [#245](https://github.com/Abdulmumin1/owostack/pull/245) [`742f003`](https://github.com/Abdulmumin1/owostack/commit/742f00344621f74c2b01dc96b81838b01b4ae819) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Environment-aware check/track responses.
+  - `CheckResult` and `TrackResult` now include `environment: "sandbox" | "live"` (the environment that served the request, also echoed in the `X-Owostack-Environment` response header) and an explicit `unlimited: boolean` alongside `limit: null`.
+  - `ResponseDetails.plan` carries the slug of the plan granting access, next to `planName`.
+  - New `OwostackEnvironment` type export.
+
+- [#247](https://github.com/Abdulmumin1/owostack/pull/247) [`5959740`](https://github.com/Abdulmumin1/owostack/commit/59597405e94da0c20a0ed355bc37e3267279cb4e) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - No more silent production default.
+  - `new Owostack({ secretKey })` resolves its environment from `apiUrl`, then `mode`, then the key prefix (`owo_sk_test_…` → sandbox, `owo_sk_live_…` → live). When none of those determine it — a legacy `owo_sk_…` key with no `mode` — the client still constructs, but the first request throws `OwostackError` with code `config_error` instead of talking to `api.owostack.com`. A `mode` that contradicts a scoped key is also a `config_error`.
+  - New `owo.mode` and `owo.apiUrl` getters, plus exported helpers `inferModeFromSecretKey`, `resolveEnvironment`, `apiUrlForMode`, `OWOSTACK_HOSTS`.
+  - `OwostackConfig.environments` is now declared (per-environment hosts used by the CLI).
+
+  **Migration:** if you use a legacy key without `mode`, add `mode: "sandbox"` or `mode: "live"` — or rotate to an environment-scoped key from the dashboard.
+
 ## 0.4.6
 
 ### Patch Changes

@@ -3,13 +3,22 @@
  */
 
 export interface OwostackConfig {
-  /** API secret key */
+  /**
+   * API secret key. Environment-scoped keys (`owo_sk_test_…` for sandbox,
+   * `owo_sk_live_…` for live) also determine the environment when `mode` is
+   * omitted.
+   */
   secretKey: string;
 
   /** Optional: Default provider for all plans (e.g., "paystack", "dodo") */
   provider?: string;
 
-  /** Optional: Environment mode (sandbox or live) */
+  /**
+   * Environment to talk to. Required unless `apiUrl` is set or the key is
+   * environment-scoped. Must agree with the key's scope. The SDK never
+   * defaults to live silently: with no mode and a legacy key, the first
+   * request throws `OwostackError` (code `config_error`).
+   */
   mode?: "sandbox" | "live";
 
   /** Optional: Custom API URL for self-hosted deployments (takes precedence over mode) */
@@ -20,6 +29,12 @@ export interface OwostackConfig {
 
   /** Optional: Declarative catalog of plans and features */
   catalog?: CatalogEntry[];
+
+  /**
+   * Optional: per-environment API hosts used by the `owosk` CLI
+   * (e.g. self-hosted deployments). Ignored by the SDK itself.
+   */
+  environments?: { test?: string; live?: string };
 }
 
 /**
@@ -226,6 +241,9 @@ export interface ResponseDetails {
   /** Name of the plan granting access */
   planName?: string;
 
+  /** Slug of the plan granting access (as defined in your catalog) */
+  plan?: string;
+
   /** Whether access is via a free trial */
   trial?: boolean;
 
@@ -298,12 +316,28 @@ export type CreditsBalanceDetails =
   | CreditSystemBalanceDetails
   | PrepaidBalanceDetails;
 
+/**
+ * Environment that served a request. Every public API response also carries
+ * this in the `X-Owostack-Environment` header.
+ */
+export type OwostackEnvironment = "sandbox" | "live";
+
 export interface CheckResult {
   /** Whether access is allowed */
   allowed: boolean;
 
   /** Machine-readable code */
   code: CheckCode | string;
+
+  /** Environment that served this request */
+  environment: OwostackEnvironment;
+
+  /**
+   * True when access was granted and no finite cap applies. Equivalent to
+   * `limit === null` (or `credits.totalBalance === null` for credit-backed
+   * features) but explicit.
+   */
+  unlimited: boolean;
 
   /** Current usage this period (null for boolean features) */
   usage: number | null;
@@ -360,6 +394,12 @@ export interface TrackResult {
 
   /** Machine-readable code */
   code: TrackCode | string;
+
+  /** Environment that served this request */
+  environment: OwostackEnvironment;
+
+  /** True when the tracked feature has no finite cap (see CheckResult.unlimited) */
+  unlimited: boolean;
 
   /** Current usage this period after tracking (null for unlimited) */
   usage: number | null;
@@ -1248,26 +1288,92 @@ export interface CustomerParams {
 }
 
 export interface CustomerResult {
-  /** Customer ID */
+  /** Internal customer ID */
   id: string;
+
+  /**
+   * Your own identifier for this customer — the `customer` value you pass to
+   * track/check/attach. null when the customer was created by email only.
+   */
+  externalId: string | null;
 
   /** Customer email */
   email: string;
 
   /** Customer display name */
-  name?: string;
+  name?: string | null;
 
   /** Custom metadata */
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 
   /** Customer-specific billing configuration */
   billing: CustomerBillingConfig;
 
-  /** ISO timestamp when created */
-  createdAt: string;
+  /** Unix timestamp (ms) when created */
+  createdAt: number;
 
-  /** ISO timestamp when last updated */
-  updatedAt: string;
+  /** Unix timestamp (ms) when last updated */
+  updatedAt: number;
+}
+
+/**
+ * customer.list() - List / search customers
+ */
+
+export interface CustomerListParams {
+  /** Page size (1-100, default 50) */
+  limit?: number;
+
+  /** Number of customers to skip (default 0) */
+  offset?: number;
+
+  /** Case-insensitive substring match on email, name or external ID */
+  search?: string;
+
+  /** Exact email match (case-insensitive) */
+  email?: string;
+
+  /** Exact external ID match */
+  externalId?: string;
+}
+
+export interface CustomerSummary {
+  /** Internal customer ID */
+  id: string;
+
+  /** Your own identifier for this customer */
+  externalId: string | null;
+
+  /** Customer email */
+  email: string;
+
+  /** Customer display name */
+  name: string | null;
+
+  /** Custom metadata */
+  metadata: Record<string, unknown> | null;
+
+  /** Unix timestamp (ms) when created */
+  createdAt: number;
+
+  /** Unix timestamp (ms) when last updated */
+  updatedAt: number;
+}
+
+export interface CustomerListResult {
+  success: true;
+
+  /** Customers on this page, newest first */
+  data: CustomerSummary[];
+
+  /** Total customers matching the filters */
+  total: number;
+
+  /** Echoed page size */
+  limit: number;
+
+  /** Echoed offset */
+  offset: number;
 }
 
 export interface CustomerFeatureConfigResult {

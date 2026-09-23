@@ -37,18 +37,22 @@
   </header>
 
   {#if isLoading}
-    <div class="space-y-2">
-      {#each Array(4) as _}
-        <div
-          class="h-16 border border-border bg-bg-card p-4 flex items-center gap-4"
-        >
-          <Skeleton class="w-8 h-8 rounded" />
-          <div class="space-y-2 flex-1">
-            <Skeleton class="h-3 w-32 rounded" />
-            <Skeleton class="h-2 w-20 rounded" />
+    <div class="space-y-[1px] bg-border border border-border rounded-sm overflow-hidden">
+      {#each Array(3) as _}
+        <div class="flex items-center justify-between p-5 bg-bg-card gap-5">
+          <div class="flex items-center gap-5">
+            <Skeleton class="w-10 h-10" />
+            <div>
+              <Skeleton class="h-3.5 w-40" />
+              <Skeleton class="h-2.5 w-24 mt-1.5" />
+            </div>
           </div>
+          <Skeleton class="h-3 w-16" />
         </div>
       {/each}
+      <div class="w-full p-4 bg-bg-card border-t border-border flex items-center justify-center gap-2">
+        <Skeleton class="h-3.5 w-44" />
+      </div>
     </div>
   {:else if orgs.length > 0}
     <!-- Flat Linear List -->

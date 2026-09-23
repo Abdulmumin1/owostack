@@ -7,7 +7,6 @@ import {
 import * as React from "react";
 import appCss from "@/styles/app.css?url";
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
-import { FloatingNav } from "@/components/FloatingNav";
 import { AIChatSidebar } from "@/components/AIChatSidebar";
 
 export const Route = createRootRoute({
@@ -74,7 +73,7 @@ export const Route = createRootRoute({
       },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..700&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap",
       },
     ],
   }),
@@ -91,12 +90,12 @@ function RootComponent() {
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html suppressHydrationWarning className="dark">
+    <html suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body className="flex flex-col min-h-screen relative">
-        <RootProvider>{children}</RootProvider>
+        <RootProvider theme={{ defaultTheme: "light" }}>{children}</RootProvider>
         <AIChatSidebar />
         <Scripts />
       </body>

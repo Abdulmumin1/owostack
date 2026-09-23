@@ -370,6 +370,8 @@ export function generateConfig(
     ``,
     jsDoc,
     `${owoDecl} new Owostack({`,
+    `  // owo_sk_test_… targets sandbox, owo_sk_live_… targets live.`,
+    `  // Add mode: "sandbox" | "live" if you use a legacy (unscoped) key.`,
     `  secretKey: ${secretKey},`,
     providerLine,
     `  catalog: [`,

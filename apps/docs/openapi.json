@@ -971,6 +971,18 @@
                     "code": {
                       "type": "string"
                     },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
+                    },
                     "usage": {
                       "type": [
                         "number",
@@ -1203,6 +1215,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -1218,7 +1237,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -1418,6 +1438,18 @@
                     "code": {
                       "type": "string"
                     },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
+                    },
                     "usage": {
                       "type": [
                         "number",
@@ -1650,6 +1682,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -1665,7 +1704,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -1739,6 +1779,18 @@
                     "code": {
                       "type": "string"
                     },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
+                    },
                     "usage": {
                       "type": [
                         "number",
@@ -1971,6 +2023,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -1986,7 +2045,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -2007,6 +2067,18 @@
                         },
                         "code": {
                           "type": "string"
+                        },
+                        "environment": {
+                          "type": "string",
+                          "enum": [
+                            "sandbox",
+                            "live"
+                          ],
+                          "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                        },
+                        "unlimited": {
+                          "type": "boolean",
+                          "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
                         },
                         "usage": {
                           "type": [
@@ -2240,6 +2312,13 @@
                             "message": {
                               "type": "string"
                             },
+                            "planName": {
+                              "type": "string"
+                            },
+                            "plan": {
+                              "type": "string",
+                              "description": "Slug of the plan granting access."
+                            },
                             "pricing": {
                               "$ref": "#/components/schemas/PricingDetails"
                             },
@@ -2255,7 +2334,8 @@
                       },
                       "required": [
                         "allowed",
-                        "code"
+                        "code",
+                        "environment"
                       ],
                       "additionalProperties": {}
                     },
@@ -2360,6 +2440,18 @@
                     "code": {
                       "type": "string"
                     },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
+                    },
                     "usage": {
                       "type": [
                         "number",
@@ -2592,6 +2684,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -2607,7 +2706,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -2627,6 +2727,18 @@
                     "code": {
                       "type": "string"
                     },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
+                    },
                     "usage": {
                       "type": [
                         "number",
@@ -2859,6 +2971,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -2874,7 +2993,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -2895,6 +3015,18 @@
                         },
                         "code": {
                           "type": "string"
+                        },
+                        "environment": {
+                          "type": "string",
+                          "enum": [
+                            "sandbox",
+                            "live"
+                          ],
+                          "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                        },
+                        "unlimited": {
+                          "type": "boolean",
+                          "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
                         },
                         "usage": {
                           "type": [
@@ -3128,6 +3260,13 @@
                             "message": {
                               "type": "string"
                             },
+                            "planName": {
+                              "type": "string"
+                            },
+                            "plan": {
+                              "type": "string",
+                              "description": "Slug of the plan granting access."
+                            },
                             "pricing": {
                               "$ref": "#/components/schemas/PricingDetails"
                             },
@@ -3143,7 +3282,8 @@
                       },
                       "required": [
                         "allowed",
-                        "code"
+                        "code",
+                        "environment"
                       ],
                       "additionalProperties": {}
                     },
@@ -3202,6 +3342,18 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ],
+                      "description": "Environment that served the request. Also echoed in the X-Owostack-Environment header."
+                    },
+                    "unlimited": {
+                      "type": "boolean",
+                      "description": "True when access was granted and no finite cap applies (limit is null and, for credit-backed features, credits.totalBalance is null)."
                     },
                     "usage": {
                       "type": [
@@ -3435,6 +3587,13 @@
                         "message": {
                           "type": "string"
                         },
+                        "planName": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Slug of the plan granting access."
+                        },
                         "pricing": {
                           "$ref": "#/components/schemas/PricingDetails"
                         },
@@ -3450,7 +3609,8 @@
                   },
                   "required": [
                     "allowed",
-                    "code"
+                    "code",
+                    "environment"
                   ],
                   "additionalProperties": {}
                 }
@@ -6987,6 +7147,12 @@
                     "id": {
                       "type": "string"
                     },
+                    "externalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "email": {
                       "type": "string",
                       "format": "email"
@@ -7116,6 +7282,7 @@
                   "required": [
                     "success",
                     "id",
+                    "externalId",
                     "email",
                     "billing",
                     "createdAt",
@@ -7307,6 +7474,297 @@
             }
           }
         }
+      },
+      "get": {
+        "operationId": "listCustomers",
+        "tags": [
+          "Customers"
+        ],
+        "summary": "List customers",
+        "description": "Lists customers for the authenticated organization, newest first. Filter by exact email or external ID, or search across email, name and external ID.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Case-insensitive substring match on email, name or external ID."
+            },
+            "required": false,
+            "description": "Case-insensitive substring match on email, name or external ID.",
+            "name": "search",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Exact email match (case-insensitive)."
+            },
+            "required": false,
+            "description": "Exact email match (case-insensitive).",
+            "name": "email",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Exact external ID match."
+            },
+            "required": false,
+            "description": "Exact external ID match.",
+            "name": "externalId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Customers returned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "externalId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "email": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "metadata": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "additionalProperties": {}
+                          },
+                          "createdAt": {
+                            "type": "number"
+                          },
+                          "updatedAt": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "externalId",
+                          "email",
+                          "name",
+                          "metadata",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "limit": {
+                      "type": "number"
+                    },
+                    "offset": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data",
+                    "total",
+                    "limit",
+                    "offset"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/customers/{id}": {
@@ -7316,7 +7774,7 @@
           "Customers"
         ],
         "summary": "Get a customer",
-        "description": "Retrieves a customer by ID for the authenticated organization.",
+        "description": "Retrieves a customer for the authenticated organization. Accepts the same identifiers as track/check: the internal ID, your external customer ID, or the customer's email.",
         "security": [
           {
             "bearerAuth": []
@@ -7325,9 +7783,12 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "Internal customer ID, your external customer ID (the `customer` value you pass to track/check), or the customer's email.",
+              "example": "user_123"
             },
             "required": true,
+            "description": "Internal customer ID, your external customer ID (the `customer` value you pass to track/check), or the customer's email.",
             "name": "id",
             "in": "path"
           }
@@ -7348,6 +7809,12 @@
                     },
                     "id": {
                       "type": "string"
+                    },
+                    "externalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "email": {
                       "type": "string",
@@ -7478,6 +7945,7 @@
                   "required": [
                     "success",
                     "id",
+                    "externalId",
                     "email",
                     "billing",
                     "createdAt",
@@ -7578,6 +8046,51 @@
               }
             }
           },
+          "409": {
+            "description": "Request conflicts with existing data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
           "500": {
             "description": "Internal server error",
             "content": {
@@ -7633,7 +8146,7 @@
           "Customers"
         ],
         "summary": "Get customer usage history",
-        "description": "Returns aggregated usage history for a customer, optionally filtered by feature and grouped for breakdown views.",
+        "description": "Returns aggregated usage history for a customer, optionally filtered by feature and grouped for breakdown views. Accepts the internal ID, your external customer ID, or the customer's email.",
         "security": [
           {
             "bearerAuth": []
@@ -7642,9 +8155,12 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "Internal customer ID, your external customer ID (the `customer` value you pass to track/check), or the customer's email.",
+              "example": "user_123"
             },
             "required": true,
+            "description": "Internal customer ID, your external customer ID (the `customer` value you pass to track/check), or the customer's email.",
             "name": "id",
             "in": "path"
           },
@@ -8051,6 +8567,51 @@
               }
             }
           },
+          "409": {
+            "description": "Request conflicts with existing data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
           "500": {
             "description": "Internal server error",
             "content": {
@@ -8168,6 +8729,12 @@
                     },
                     "id": {
                       "type": "string"
+                    },
+                    "externalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "email": {
                       "type": "string",
@@ -8298,6 +8865,7 @@
                   "required": [
                     "success",
                     "id",
+                    "externalId",
                     "email",
                     "billing",
                     "createdAt",
@@ -8600,6 +9168,12 @@
                     "id": {
                       "type": "string"
                     },
+                    "externalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "email": {
                       "type": "string",
                       "format": "email"
@@ -8729,6 +9303,7 @@
                   "required": [
                     "success",
                     "id",
+                    "externalId",
                     "email",
                     "billing",
                     "createdAt",
@@ -10263,6 +10838,189 @@
           },
           "500": {
             "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/sandbox/{provider}": {
+      "post": {
+        "operationId": "webhookSandbox",
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Receive a webhook for the Owostack-managed sandbox account",
+        "description": "Shared sandbox webhook endpoint. Owostack registers this URL once per provider on its own test account; events are verified with the managed secret and routed to the organization named in `metadata.organization_id`. Events without organization metadata are acknowledged and dropped. Not available on the live host.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook processed or acknowledged successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "received": {
+                      "type": "boolean"
+                    },
+                    "skipped": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
             "content": {
               "application/json": {
                 "schema": {

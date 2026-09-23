@@ -58,24 +58,25 @@
 
   <main class="flex-grow">
     <section class="px-6 py-16 md:py-24">
-      <div class=" mx-auto">
-        <div class="text-center mb-10">
-          <h1 class="text-2xl md:text-3xl font-bold text-text-primary mb-3">
-            Let's talk billing
+      <div class="mx-auto max-w-3xl">
+        <div class="mb-12 text-center">
+          <p class="eyebrow mb-6 justify-center">Talk to us</p>
+          <h1 class="font-display text-display-lg text-balance text-text-primary">
+            Let's talk billing.
           </h1>
-          <p class="text-text-secondary text-sm md:text-base max-w-md mx-auto">
+          <p class="mx-auto mt-5 max-w-md text-sm text-text-secondary md:text-base">
             Book a 30-minute call with our founder to discuss your billing
             architecture, pricing model, or any questions.
           </p>
         </div>
 
-        <div
-          class="bg-bg-secondary rounded-xl border border-border overflow-hidden min-h-[700px] w-full"
-        >
+        <div class="overflow-hidden rounded-xl border border-border bg-bg-card shadow-[0_1px_0_var(--color-border-strong)]">
+          <div class="dither h-2 w-full" style="--dither-color: var(--color-accent); background-color: var(--color-bg-secondary)" aria-hidden="true"></div>
           <iframe
-            src="{calLink}?embed=true&embedType=Inline&hideLandingPageDetails=1&hideEventTypeDetails=1&primaryColor=3b82f6"
+            src="{calLink}?embed=true&embedType=Inline&hideLandingPageDetails=1&hideEventTypeDetails=1&primaryColor=e8a855"
             title="Book a call with Owostack founder"
-            class="w-full min-h-[700px] border-none block"
+            class="block w-full border-none"
+            style="min-height: 700px"
             scrolling="yes"
             allowfullscreen
           ></iframe>

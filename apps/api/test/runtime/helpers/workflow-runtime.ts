@@ -340,16 +340,18 @@ export async function insertCustomer(
     providerAuthorizationCode?: string | null;
     paystackCustomerId?: string | null;
     paystackAuthorizationCode?: string | null;
+    externalId?: string | null;
     email?: string;
     name?: string;
+    createdAt?: number;
   } = {},
 ) {
-  const now = Date.now();
+  const now = params.createdAt ?? Date.now();
   await db
     .prepare(
       `INSERT INTO customers
-       (id, organization_id, provider_id, provider_customer_id, provider_authorization_code, paystack_customer_id, paystack_authorization_code, email, name, metadata, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, organization_id, provider_id, provider_customer_id, provider_authorization_code, paystack_customer_id, paystack_authorization_code, external_id, email, name, metadata, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       params.id || "cust_1",
@@ -359,6 +361,7 @@ export async function insertCustomer(
       params.providerAuthorizationCode ?? "AUTH_123",
       params.paystackCustomerId ?? "cus_remote_1",
       params.paystackAuthorizationCode ?? "AUTH_123",
+      params.externalId ?? null,
       params.email || "customer@example.com",
       params.name || "Customer One",
       JSON.stringify({ seeded_for: "workflow_runtime_tests" }),

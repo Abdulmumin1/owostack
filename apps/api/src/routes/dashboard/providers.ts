@@ -7,6 +7,7 @@ import { encrypt, decrypt } from "../../lib/encryption";
 import { errorToResponse, ValidationError } from "../../lib/errors";
 import { syncPlansToProvider } from "../../lib/plan-sync";
 import { getProviderRegistry } from "../../lib/providers";
+import { listManagedSandboxProviderIds } from "../../lib/managed-sandbox";
 import {
   buildProviderValidationMetadata,
   hydratePlaintextProviderCredentials,
@@ -108,6 +109,24 @@ function getEnabledProviders(env: any): string[] {
     .map((s: string) => s.trim().toLowerCase())
     .filter(Boolean);
 }
+
+/**
+ * Providers whose sandbox credentials Owostack manages on this worker. Empty
+ * on the live worker. The dashboard uses this to render sandbox providers as
+ * "ready" without any user setup and to exclude them from live-readiness
+ * checks.
+ */
+app.get("/managed-sandbox", async (c) => {
+  const enabled = new Set(getEnabledProviders(c.env));
+  return c.json({
+    success: true,
+    data: {
+      providers: listManagedSandboxProviderIds(c.env).filter((id) =>
+        enabled.has(id),
+      ),
+    },
+  });
+});
 
 // List enabled providers (so the dashboard knows what to show)
 app.get("/enabled", async (c) => {

@@ -3,23 +3,26 @@ import pc from "picocolors";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { resolve, isAbsolute } from "node:path";
-import { getApiKey, getLiveApiUrl, getTestApiUrl } from "../lib/config.js";
-import { loadConfigSettings, resolveConfigPath } from "../lib/loader.js";
+import { resolveConfigPath } from "../lib/loader.js";
 import {
   buildRemoteCatalogSnapshot,
   determineConfigFormat,
 } from "../lib/catalog-import.js";
+import {
+  announceMode,
+  resolveCommandContext,
+  type CommonCommandOptions,
+} from "../lib/context.js";
+import { CliError, EXIT_CODES, usageError } from "../lib/errors.js";
+import type { Reporter } from "../lib/output.js";
 
-interface PullOptions {
-  config?: string;
-  key?: string;
+export interface PullOptions extends CommonCommandOptions {
   force?: boolean;
-  prod?: boolean;
   dryRun?: boolean;
 }
 
-export async function runPull(options: PullOptions) {
-  p.intro(pc.bgYellow(pc.black(" pull ")));
+export async function runPull(options: PullOptions, reporter: Reporter) {
+  reporter.intro("pull");
 
   let fullPath: string;
 
@@ -30,42 +33,32 @@ export async function runPull(options: PullOptions) {
   } else {
     const resolved = resolveConfigPath();
     if (!resolved) {
-      p.log.error(
-        pc.red("No configuration file found. Run 'owostack init' first."),
+      throw usageError(
+        "config_not_found",
+        "No configuration file found. Run 'owosk init' first, or pass --config <path>.",
       );
-      process.exit(1);
     }
     fullPath = resolved;
   }
 
-  const apiKey = getApiKey(options.key);
-  const configSettings = await loadConfigSettings(options.config);
-  const testUrl = getTestApiUrl(configSettings.environments?.test);
-  const liveUrl = getLiveApiUrl(configSettings.environments?.live);
-  const filters = configSettings.filters || {};
+  const ctx = await resolveCommandContext(options, reporter);
+  const filters = ctx.settings.filters || {};
+  const modeLabel = ctx.mode;
 
   let format;
   try {
     format = determineConfigFormat(fullPath);
   } catch (e: any) {
-    p.log.error(pc.red(e.message));
-    process.exit(1);
+    throw usageError("config_invalid", e.message);
   }
 
+  announceMode(reporter, ctx, "pulling from");
+
   const s = p.spinner();
-
-  const modeLabel = options.prod ? "prod" : "sandbox";
-  const modeMessage = options.prod
-    ? pc.magenta("Production Mode: Pulling from PROD environment")
-    : pc.cyan("Sandbox Mode: Pulling from SANDBOX environment");
-  const apiUrl = `${options.prod ? liveUrl : testUrl}/api/v1`;
-
-  p.log.step(modeMessage);
-
   s.start(`Fetching remote catalog from ${pc.dim(modeLabel)}...`);
   const snapshot = await buildRemoteCatalogSnapshot({
-    apiKey,
-    apiUrl,
+    apiKey: ctx.apiKey,
+    apiUrl: ctx.apiUrl,
     format,
     filters,
   });
@@ -86,13 +79,13 @@ export async function runPull(options: PullOptions) {
 
   if (existsSync(fullPath) && !options.force) {
     const confirm = await p.confirm({
-      message: `Config file already exists${options.prod ? ` at ${fullPath}` : ""}. Overwrite?`,
+      message: `Config file already exists at ${fullPath}. Overwrite?`,
       initialValue: false,
     });
 
     if (p.isCancel(confirm) || !confirm) {
       p.outro(pc.yellow("Operation cancelled"));
-      process.exit(0);
+      throw new CliError("cancelled", "Operation cancelled", EXIT_CODES.ok);
     }
   }
 

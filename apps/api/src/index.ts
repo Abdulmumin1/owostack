@@ -50,6 +50,11 @@ import { PlanUpgradeWorkflow } from "./lib/workflows/plan-upgrade";
 import { RenewalSetupRetryWorkflow } from "./lib/workflows/renewal-setup-retry";
 import { OverageBillingWorkflow } from "./lib/workflows/overage-billing";
 import { CancelDowngradeWorkflow } from "./lib/workflows/cancel-downgrade";
+import { publicApiEnvelope } from "./lib/public-api-envelope";
+import {
+  ENVIRONMENT_HEADER,
+  ORGANIZATION_HEADER,
+} from "./lib/public-environment";
 export {
   TrialEndWorkflow,
   DowngradeWorkflow,
@@ -87,6 +92,14 @@ export type Env = {
   ANALYTICS_DATASET?: string; // Optional override dataset name for SQL reads
   USE_EVENTS_PIPELINE?: string; // Explicit opt-in for Cloudflare Pipelines reads/writes
   ENABLED_PROVIDERS?: string; // Comma-separated list of enabled provider IDs, e.g. "paystack,stripe,dodopayments,bachs"
+  // Sandbox-only secrets (--env test): Owostack-owned test credentials, one per
+  // provider, named MANAGED_SANDBOX_<PROVIDER_ID>. Value is a bare secret key or
+  // a JSON object with at least `secretKey`. See lib/managed-sandbox.ts.
+  MANAGED_SANDBOX_PAYSTACK?: string;
+  MANAGED_SANDBOX_STRIPE?: string;
+  MANAGED_SANDBOX_DODOPAYMENTS?: string;
+  MANAGED_SANDBOX_BACHS?: string;
+  MANAGED_SANDBOX_POLAR?: string;
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID?: string;
@@ -142,6 +155,7 @@ app.use(
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowHeaders: ["Content-Type", "Authorization"],
+    exposeHeaders: [ENVIRONMENT_HEADER, ORGANIZATION_HEADER],
   }),
 );
 
@@ -178,10 +192,15 @@ app.use("*", async (c, next) => {
       organizationId = null;
     }
 
+    // The shared sandbox webhook URL has no org in its path; the org is only
+    // known after the payload is verified, so don't mislabel it as "sandbox".
+    const webhookOrgSegment =
+      webhookMatch && webhookMatch[1] !== "sandbox" ? webhookMatch[1] : null;
+
     organizationId =
       organizationId ||
       c.req.query("organizationId") ||
-      webhookMatch?.[1] ||
+      webhookOrgSegment ||
       null;
     const providerId = webhookMatch ? webhookMatch[2] || "paystack" : null;
 
@@ -260,6 +279,10 @@ app.route("/api/dashboard", dashboardRoutes);
 const apiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 const v1Routes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Enforce API key environment scope (owo_sk_test_ vs owo_sk_live_) and echo
+// `X-Owostack-Environment` / `X-Owostack-Organization` on every public response.
+v1Routes.use("*", publicApiEnvelope);
 
 // Mount API modules
 // checkout.ts has `post('/attach')`.

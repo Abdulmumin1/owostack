@@ -54,6 +54,10 @@ const MIGRATION_FILES = [
     "../../../../../packages/db/migrations/0012_credit_purchase_application_status.sql",
     import.meta.url,
   ),
+  new URL(
+    "../../../../../packages/db/migrations/0013_api_key_environment.sql",
+    import.meta.url,
+  ),
 ];
 
 type SqliteRunResult = {

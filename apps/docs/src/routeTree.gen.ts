@@ -9,14 +9,38 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as Char123Char125DotmdRouteImport } from './routes/{$}[.]md'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as OpenapiDotjsonRouteImport } from './routes/openapi[.]json'
+import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
+import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ApiAssistantStreamRouteImport } from './routes/api/assistant/stream'
 
+const Char123Char125DotmdRoute = Char123Char125DotmdRouteImport.update({
+  id: '/{$}.md',
+  path: '/{$}.md',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OpenapiDotjsonRoute = OpenapiDotjsonRouteImport.update({
+  id: '/openapi.json',
+  path: '/openapi.json',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
+  id: '/llms.txt',
+  path: '/llms.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LlmsFullDottxtRoute = LlmsFullDottxtRouteImport.update({
+  id: '/llms-full.txt',
+  path: '/llms-full.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SplatRoute = SplatRouteImport.update({
@@ -37,50 +61,114 @@ const ApiAssistantStreamRoute = ApiAssistantStreamRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/$': typeof SplatRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
+  '/llms.txt': typeof LlmsDottxtRoute
+  '/openapi.json': typeof OpenapiDotjsonRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/{$}.md': typeof Char123Char125DotmdRoute
   '/api/search': typeof ApiSearchRoute
   '/api/assistant/stream': typeof ApiAssistantStreamRoute
 }
 export interface FileRoutesByTo {
   '/$': typeof SplatRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
+  '/llms.txt': typeof LlmsDottxtRoute
+  '/openapi.json': typeof OpenapiDotjsonRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/{$}.md': typeof Char123Char125DotmdRoute
   '/api/search': typeof ApiSearchRoute
   '/api/assistant/stream': typeof ApiAssistantStreamRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/$': typeof SplatRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
+  '/llms.txt': typeof LlmsDottxtRoute
+  '/openapi.json': typeof OpenapiDotjsonRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/{$}.md': typeof Char123Char125DotmdRoute
   '/api/search': typeof ApiSearchRoute
   '/api/assistant/stream': typeof ApiAssistantStreamRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/$' | '/sitemap.xml' | '/api/search' | '/api/assistant/stream'
+  fullPaths:
+    | '/$'
+    | '/llms-full.txt'
+    | '/llms.txt'
+    | '/openapi.json'
+    | '/sitemap.xml'
+    | '/{$}.md'
+    | '/api/search'
+    | '/api/assistant/stream'
   fileRoutesByTo: FileRoutesByTo
-  to: '/$' | '/sitemap.xml' | '/api/search' | '/api/assistant/stream'
+  to:
+    | '/$'
+    | '/llms-full.txt'
+    | '/llms.txt'
+    | '/openapi.json'
+    | '/sitemap.xml'
+    | '/{$}.md'
+    | '/api/search'
+    | '/api/assistant/stream'
   id:
     | '__root__'
     | '/$'
+    | '/llms-full.txt'
+    | '/llms.txt'
+    | '/openapi.json'
     | '/sitemap.xml'
+    | '/{$}.md'
     | '/api/search'
     | '/api/assistant/stream'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   SplatRoute: typeof SplatRoute
+  LlmsFullDottxtRoute: typeof LlmsFullDottxtRoute
+  LlmsDottxtRoute: typeof LlmsDottxtRoute
+  OpenapiDotjsonRoute: typeof OpenapiDotjsonRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  Char123Char125DotmdRoute: typeof Char123Char125DotmdRoute
   ApiSearchRoute: typeof ApiSearchRoute
   ApiAssistantStreamRoute: typeof ApiAssistantStreamRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/{$}.md': {
+      id: '/{$}.md'
+      path: '/{$}.md'
+      fullPath: '/{$}.md'
+      preLoaderRoute: typeof Char123Char125DotmdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/openapi.json': {
+      id: '/openapi.json'
+      path: '/openapi.json'
+      fullPath: '/openapi.json'
+      preLoaderRoute: typeof OpenapiDotjsonRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/llms.txt': {
+      id: '/llms.txt'
+      path: '/llms.txt'
+      fullPath: '/llms.txt'
+      preLoaderRoute: typeof LlmsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/llms-full.txt': {
+      id: '/llms-full.txt'
+      path: '/llms-full.txt'
+      fullPath: '/llms-full.txt'
+      preLoaderRoute: typeof LlmsFullDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$': {
@@ -109,7 +197,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   SplatRoute: SplatRoute,
+  LlmsFullDottxtRoute: LlmsFullDottxtRoute,
+  LlmsDottxtRoute: LlmsDottxtRoute,
+  OpenapiDotjsonRoute: OpenapiDotjsonRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  Char123Char125DotmdRoute: Char123Char125DotmdRoute,
   ApiSearchRoute: ApiSearchRoute,
   ApiAssistantStreamRoute: ApiAssistantStreamRoute,
 }

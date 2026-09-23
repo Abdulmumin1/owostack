@@ -70,31 +70,25 @@
   {#if isLoading}
     <div class="grid md:grid-cols-4 gap-4 mb-12">
       {#each Array(4) as _}
-        <div class="bg-bg-card border border-border p-5 flex flex-col space-y-6 rounded-lg">
-          <div class="flex items-start justify-between">
+        <div class="bg-bg-card border border-border p-5 flex flex-col rounded-lg">
+          <div class="flex items-start justify-between mb-4">
             <Skeleton class="w-7 h-7" />
             <Skeleton class="w-5 h-5 rounded-full" />
           </div>
-          <div class="space-y-2">
-            <Skeleton class="h-4 w-3/4" />
-            <Skeleton class="h-3 w-full" />
-          </div>
+          <Skeleton class="h-4 w-3/4 mb-1" />
+          <Skeleton class="h-3 w-full mb-1" />
+          <Skeleton class="h-3 w-2/3 mb-6" />
           <Skeleton class="h-3 w-20" />
         </div>
       {/each}
     </div>
-    <div class="bg-bg-card border border-border p-8 rounded-lg">
-      <Skeleton class="h-6 w-32 mb-6" />
-      <div class="space-y-8">
-        <div class="space-y-3">
-          <Skeleton class="h-4 w-48" />
-          <Skeleton class="h-12 w-full" />
-        </div>
-        <div class="space-y-3">
-          <Skeleton class="h-4 w-48" />
-          <Skeleton class="h-24 w-full" />
-        </div>
-      </div>
+    <div
+      class="bg-accent-light border border-accent p-8 mb-12 flex flex-col items-center text-center rounded-lg"
+    >
+      <Skeleton class="w-10 h-10 rounded-full mb-4" />
+      <Skeleton class="h-6 w-64 mb-2" />
+      <Skeleton class="h-3 w-full max-w-md mb-6" />
+      <Skeleton class="h-8 w-40 rounded-sm" />
     </div>
   {:else}
     <!-- Workflow Steps -->
@@ -175,8 +169,9 @@
         <div class="bg-[var(--color-bg-code)] border border-border p-4 overflow-x-auto">
           <pre class="font-mono text-sm text-[var(--color-text-code)]"><code>import &#123; Owostack &#125; from 'owostack';
 
-const client = new Owostack(&#123; 
-  secretKey: "owosk_..." 
+// owo_sk_test_… targets sandbox, owo_sk_live_… targets live
+const client = new Owostack(&#123;
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
 &#125;);</code></pre>
         </div>
       </div>

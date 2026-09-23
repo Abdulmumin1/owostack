@@ -580,6 +580,7 @@ app.openapi(payInvoiceRoute, async (c) => {
     db,
     organizationId,
     c.env.ENCRYPTION_KEY,
+    c.env,
   );
 
   let selectedProviderId = customer.providerId || subscription?.providerId;

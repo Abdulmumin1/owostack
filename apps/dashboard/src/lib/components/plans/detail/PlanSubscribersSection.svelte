@@ -114,17 +114,16 @@
 
   <div class="bg-bg-card border border-border divide-y divide-border/40 rounded-xl overflow-hidden">
     {#if isLoading}
-      <div class="px-3 py-4 space-y-3">
-        {#each Array(3) as _}
-          <div class="flex items-center gap-3">
-            <Skeleton class="w-7 h-7 rounded-full" />
-            <div class="space-y-1.5 flex-1">
-              <Skeleton class="h-3 w-1/4" />
-              <Skeleton class="h-2 w-1/3" />
-            </div>
+      {#each Array(3) as _}
+        <div class="px-3 py-2 flex items-center gap-3">
+          <Skeleton class="w-7 h-7 rounded-full" />
+          <div class="space-y-1.5 flex-1">
+            <Skeleton class="h-3 w-1/4" />
+            <Skeleton class="h-2 w-1/3" />
           </div>
-        {/each}
-      </div>
+          <Skeleton class="w-4 h-4" />
+        </div>
+      {/each}
     {:else if subscribers.length > 0}
       {#each subscribers as subscriber}
         <div

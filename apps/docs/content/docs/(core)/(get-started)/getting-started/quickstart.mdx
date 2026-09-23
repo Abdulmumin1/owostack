@@ -1,0 +1,203 @@
+---
+title: "Your first billing flow"
+description: Build a working subscription with feature gating in 10 minutes
+icon: Zap
+---
+
+# Your first billing flow
+
+In this tutorial you will wire up a complete subscription flow from scratch. By the end you will have:
+
+- A plan with a metered feature and a boolean feature
+- A customer subscribed to that plan via a real checkout
+- Working access control that blocks requests when the quota runs out
+
+You will build everything in a single Node.js script so you can see results immediately.
+
+## Before you start
+
+You need:
+
+- A free Owostack account — sign up at [app.owostack.com](https://app.owostack.com)
+- Node.js 18+
+
+You do **not** need a payment provider account. The sandbox runs on payment providers that Owostack manages for you (see [Environments](/getting-started/environments#sandbox-is-managed)). You connect your own provider only when you go live.
+
+## 1. Create your organization and grab your sandbox key
+
+1. Log in to the dashboard at [app.owostack.com](https://app.owostack.com). If this is your first organization, name it anything you like (e.g. "My Tutorial App") and click **Create organization**. Otherwise use **Create Organization** from the organization switcher.
+2. The dashboard shows your **sandbox API key** once — copy it. Sandbox keys start with `owo_sk_test_` and only ever talk to `sandbox.owostack.com`, so nothing in this tutorial can touch production (see [Environments](/getting-started/environments)). You can always mint another one under **Settings → API Keys**.
+3. Save it in a `.env` file:
+
+```sh
+OWOSTACK_API_KEY=owo_sk_test_xxxxxxxxxxxxxxxx
+```
+
+## 2. That's it for setup
+
+There is no provider to connect and no webhook to register. In the sandbox, checkouts run on test accounts that Owostack owns, and their webhooks are already wired to Owostack. When you go live you will add your own provider keys and webhook URL — see [Webhook setup](/getting-started/webhook-setup).
+
+## 3. Create your catalog
+
+Instead of clicking around a dashboard, Owostack lets you define your features and plans in code.
+
+Create `owo.config.mjs`:
+
+```js
+import { Owostack, metered, boolean, plan } from "owostack";
+
+// 1. Define features
+export const apiCalls = metered("api-calls", { name: "API Calls" });
+export const analytics = boolean("analytics", { name: "Analytics Dashboard" });
+
+// 2. Define the client and catalog
+export const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_API_KEY,
+  catalog: [
+    plan("starter", {
+      name: "Starter",
+      price: 500, // minor units
+      currency: "NGN",
+      interval: "monthly",
+      planGroup: "main",
+      features: [apiCalls.limit(100, { reset: "monthly" }), analytics.on()],
+    }),
+  ],
+});
+```
+
+Now, push this configuration to your Owostack account:
+
+```bash
+OWOSTACK_SECRET_KEY=owo_sk_test_… npx owosk sync --config ./owo.config.mjs
+```
+
+The CLI reads the environment from the key prefix (`owo_sk_test_` → sandbox) and shows it in the first line of output. You should then see the diff and a confirmation that your features and plans were created. In CI, add `--yes --json` for non-interactive, machine-readable output.
+
+## 4. Write your first script
+
+```bash
+mkdir owostack-tutorial && cd owostack-tutorial
+npm init -y
+npm install owostack dotenv
+```
+
+Create `index.mjs`:
+
+```js
+import "dotenv/config";
+import { owo } from "./owo.config.mjs";
+
+// --- Step A: Subscribe a customer ---
+const attach = await owo.attach({
+  customer: "tutorial_user",
+  product: "starter",
+});
+
+console.log("Attach result:", attach);
+
+if (attach.checkoutUrl) {
+  console.log("\n→ Open this URL to complete payment:\n", attach.checkoutUrl);
+  console.log("\nAfter paying, re-run this script.");
+  process.exit(0);
+}
+```
+
+Run it:
+
+```bash
+node index.mjs
+```
+
+You should see a checkout URL. Open it in your browser, complete the test payment, and come back.
+
+## 5. Check feature access
+
+After payment, add this below the attach block:
+
+```js
+// --- Step B: Check boolean feature ---
+const analyticsAccess = await owo.check({
+  customer: "tutorial_user",
+  feature: "analytics",
+});
+
+console.log("Analytics allowed?", analyticsAccess.allowed);
+// → true
+
+// --- Step C: Check metered feature ---
+const apiAccess = await owo.check({
+  customer: "tutorial_user",
+  feature: "api-calls",
+});
+
+console.log("API calls remaining:", apiAccess.balance, "/", apiAccess.limit);
+// → 100 / 100
+```
+
+Run it again. You should see `allowed: true` and `balance: 100`.
+
+## 6. Track usage and hit the limit
+
+Add this to consume some quota:
+
+```js
+// --- Step D: Track usage ---
+for (let i = 0; i < 5; i++) {
+  await owo.track({
+    customer: "tutorial_user",
+    feature: "api-calls",
+    value: 1,
+  });
+}
+
+const afterTracking = await owo.check({
+  customer: "tutorial_user",
+  feature: "api-calls",
+});
+
+console.log("After 5 calls — remaining:", afterTracking.balance);
+// → 95
+```
+
+Run it. Notice the remaining count drops by 5 each time you run the script.
+
+## 7. See what happens at the limit
+
+Replace the loop with a bulk track to exhaust the quota:
+
+```js
+// --- Step E: Exhaust quota ---
+const exhaust = await owo.track({
+  customer: "tutorial_user",
+  feature: "api-calls",
+  value: 200, // more than the 100 limit
+});
+
+console.log("Track result:", exhaust.code);
+// → "limit_exceeded"
+console.log("Allowed?", exhaust.allowed);
+// → false
+```
+
+Run it. The SDK returns `allowed: false` and `code: "limit_exceeded"`. This is the signal you would use in a real app to block the request or show an upgrade prompt.
+
+## What you built
+
+You now have a working billing flow:
+
+1. **Define** your plans and features in code, syncing them with `npx owosk sync`.
+2. **attach()** creates a checkout or returns an existing subscription.
+3. **check()** tells you whether a customer can use a feature right now.
+4. **track()** records usage and enforces limits.
+
+Everything else — webhook processing, entitlement provisioning, period resets — happens automatically.
+
+## Next steps
+
+<Cards>
+  <Card title="How to set up checkout" href="/subscriptions/checkout" />
+  <Card title="How to switch plans" href="/subscriptions/plan-switching" />
+  <Card title="How it works" href="/getting-started/how-it-works" />
+  <Card title="SDK Reference" href="/sdk/attach" />
+</Cards>

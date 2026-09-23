@@ -52,6 +52,7 @@ export async function createCheckoutSessionForSubscription(
     db,
     organizationId,
     c.env.ENCRYPTION_KEY,
+    c.env,
   );
 
   // Use subscription's providerId if set, else plan's, else organization's default

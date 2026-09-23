@@ -1,4 +1,4 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import { createServerFn } from "@tanstack/react-start";
 import { source } from "@/lib/source";
@@ -11,13 +11,20 @@ import {
 } from "fumadocs-ui/layouts/docs/page";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import { APIPage } from "@/components/api-page";
+import { Card, Cards } from "@/components/docs/card";
 import { baseOptions } from "@/lib/layout.shared";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
+import { getPageMarkdownUrl } from "@/lib/llms-utils";
+import { resolveRedirect } from "@/lib/redirects";
 import { Suspense } from "react";
 
 export const Route = createFileRoute("/$")({
   component: Page,
   loader: async ({ params }) => {
+    const target = resolveRedirect(`/${params._splat ?? ""}`);
+    if (target) {
+      throw redirect({ href: target, statusCode: 301 });
+    }
     const slugs = params._splat?.split("/") ?? [];
     const data = await serverLoader({ data: slugs });
     await clientLoader.preload(data.path);
@@ -61,7 +68,21 @@ export const Route = createFileRoute("/$")({
 
     const ogImage = getOgImage(loaderData?.title, loaderData?.description);
 
+    // Expose the Markdown version of this page so AI agents and tools can
+    // discover it directly from the HTML (in addition to /llms.txt).
+    const links = loaderData?.url
+      ? [
+          {
+            rel: "alternate",
+            type: "text/markdown",
+            href: getPageMarkdownUrl({ url: loaderData.url }),
+            title: `${loaderData.title ?? "Owostack Docs"} (Markdown)`,
+          },
+        ]
+      : [];
+
     return {
+      links,
       meta: [
         { title },
         { name: "description", content: description },
@@ -88,6 +109,7 @@ const serverLoader = createServerFn({
 
     return {
       path: page.path,
+      url: page.url,
       title: page.data.title,
       description: page.data.description,
       pageTree: await source.serializePageTree(source.getPageTree()),
@@ -103,14 +125,20 @@ const clientLoader = browserCollections.docs.createClientLoader({
     },
   ) {
     return (
-      <DocsPage toc={toc} full={frontmatter.full} {...props}>
+      <DocsPage
+        toc={toc}
+        full={frontmatter.full}
+        tableOfContent={{ style: "clerk" }}
+        {...props}
+      >
         <DocsTitle>{frontmatter.title}</DocsTitle>
         <DocsDescription>{frontmatter.description}</DocsDescription>
         <DocsBody>
-          <div className="fixed inset-0 z-1000 pointer-events-none bg-noise"></div>
           <MDX
             components={{
               ...defaultMdxComponents,
+              Card,
+              Cards,
               APIPage,
             }}
           />

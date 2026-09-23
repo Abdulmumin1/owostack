@@ -1,0 +1,184 @@
+---
+title: check()
+description: Check customer entitlements and feature access
+icon: Shield
+---
+
+# check()
+
+Check if a customer has access to a specific feature or entitlement. Use this for access control and gating.
+
+## Signature
+
+```ts
+await owo.check({
+  customer: string,    // Your internal user ID
+  feature: string,     // Feature key to check
+  value?: number,      // Units to check against limit (default: 1)
+  entity?: string,     // Optional entity scope (seat, workspace, org)
+  sendEvent?: boolean, // Atomically track if allowed
+  customerData?: {     // Optional: auto-create customer
+    email: string,
+    name?: string,
+    metadata?: Record<string, unknown>,
+  },
+}): Promise<CheckResult>
+```
+
+## Parameters
+
+| Parameter      | Type      | Required | Description                                                                                                         |
+| -------------- | --------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `customer`     | `string`  | ✅       | Your identifier for the customer (e.g. your user or workspace ID). Also accepts the customer's email or internal ID. |
+| `feature`      | `string`  | ✅       | Feature slug (or ID) to check access for                                                                            |
+| `value`        | `number`  | -        | Units the caller intends to consume. Default `1`.                                                                   |
+| `entity`       | `string`  | -        | Scope to an entity (seat, workspace…). Must already exist.                                                           |
+| `sendEvent`    | `boolean` | -        | If `true` and access is allowed, record `value` atomically (check + track in one round trip). Default `false`.        |
+| `customerData` | `object`  | -        | Create the customer on first use — same shape and semantics as in [`track()`](/sdk/track#customerdata--create-on-first-use) |
+
+<Callout type="warning">
+  When using `entity`, the entity must be created with
+  [`addEntity()`](/sdk/entities) first. Checking a non-existent entity
+  returns an `entity_not_found` error.
+</Callout>
+
+## Response
+
+```ts
+interface CheckResult {
+  allowed: boolean;
+  code: string;                    // access_granted, overage_allowed, limit_exceeded, …
+  environment: "sandbox" | "live"; // Where the check ran (also X-Owostack-Environment header)
+  unlimited: boolean;              // true when access is granted with no finite cap
+  usage: number | null;            // null for boolean features
+  limit: number | null;            // null = unlimited (see `unlimited`)
+  balance: number | null;          // limit - usage; null = unlimited
+  resetsAt: string | null;
+  resetInterval: string | null;
+  credits:
+    | {
+        source: "credit_system";
+        systemSlug: string;
+        costPerUnit: number;
+        bonusBalance: number;
+        addonBalance: number;
+        totalBalance: number | null;
+        plan: { used: number; limit: number | null; balance: number | null; resetsAt: string };
+      }
+    | {
+        source: "prepaid";
+        bonusBalance: number;
+        addonBalance: null;
+        totalBalance: number | null;
+        plan: { used: number; limit: number | null; balance: number | null; resetsAt: string };
+      }
+    | null;
+  details: {
+    message: string;
+    plan?: string;                 // Slug of the plan granting access
+    planName?: string;
+    trial?: boolean;
+    trialEndsAt?: string | null;
+    creditSystem?: string;
+    pricing?: { … };               // For chargeable metered features
+  };
+}
+```
+
+`unlimited` is the explicit form of "`limit` is `null` and access was granted". For credit-backed features it reflects `credits.totalBalance === null`. For pay-per-use features it is `true` (there is no cap) — look at `details.pricing` to see what usage will cost.
+
+### Result codes
+
+| `code`                   | `allowed` | Meaning                                                    |
+| ------------------------ | --------- | ---------------------------------------------------------- |
+| `access_granted`         | `true`    | Within limits (or boolean feature enabled)                 |
+| `overage_allowed`        | `true`    | Over the limit, but the plan allows billable overage       |
+| `addon_credits_used`     | `true`    | Plan credits exhausted; add-on credits would cover it      |
+| `limit_exceeded`         | `false`   | Limit reached and overage is blocked                       |
+| `insufficient_credits`   | `false`   | Not enough credits for `value`                             |
+| `customer_not_found`     | `false`   | Unknown `customer` and no `customerData`                   |
+| `feature_not_found`      | `false`   | Unknown feature slug                                       |
+| `no_active_subscription` | `false`   | Customer has no active plan                                |
+| `feature_not_in_plan`    | `false`   | The active plan doesn't include this feature               |
+
+## Examples
+
+### Basic Access Check
+
+```ts
+import { Owostack } from "owostack";
+
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+
+// Check if user can access premium features
+const result = await owo.check({
+  customer: "user_123",
+  feature: "premium_features",
+});
+
+if (result.allowed) {
+  // Grant access
+  showPremiumContent();
+} else {
+  // Prompt upgrade
+  showUpgradeModal();
+}
+```
+
+### Metered Features
+
+```ts
+// Check API call quota
+const result = await owo.check({
+  customer: "user_123",
+  feature: "api_calls",
+});
+
+if (!result.allowed) {
+  console.log("Quota exceeded", result.balance, result.resetsAt);
+}
+
+// Process the request...
+```
+
+### Credit-backed Features
+
+```ts
+const result = await owo.check({
+  customer: "user_123",
+  feature: "ai_tokens",
+});
+
+if (result.credits?.source === "credit_system") {
+  console.log("Plan credits left:", result.credits.plan.balance);
+  console.log("Add-on credits left:", result.credits.addonBalance);
+}
+```
+
+For credit-backed features, `credits` is the canonical balance object. The
+top-level `balance` remains the generic remaining balance for the checked
+feature.
+
+### Multiple Feature Checks
+
+```ts
+// Check multiple features in parallel
+const [canExport, canAnalyze, canShare] = await Promise.all([
+  owo.check({ customer: "user_123", feature: "export" }),
+  owo.check({ customer: "user_123", feature: "analytics" }),
+  owo.check({ customer: "user_123", feature: "team_sharing" }),
+]);
+
+console.log({
+  export: canExport.allowed,
+  analytics: canAnalyze.allowed,
+  sharing: canShare.allowed,
+});
+```
+
+## Best Practices
+
+1. **Cache results** - For high-traffic endpoints, cache check results for a few seconds
+2. **Fail open or closed** - Decide your failure mode if the API is unreachable
+3. **Check early** - Validate access at the start of expensive operations
+4. **Use middleware** - Create reusable middleware for common access patterns

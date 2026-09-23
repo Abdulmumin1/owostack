@@ -1,0 +1,280 @@
+---
+title: track()
+description: Record usage for metered billing
+icon: Activity
+---
+
+# track()
+
+Record usage events for metered billing. Use this to track API calls, storage, messages, or any countable resource.
+
+## Signature
+
+```ts
+await owo.track({
+  customer: string,    // Your internal user ID
+  feature: string,     // Feature key being used
+  value?: number,      // Amount to track (default: 1)
+  entity?: string,     // Optional entity scope (seat, workspace, org)
+  customerData?: {     // Optional: auto-create customer
+    email: string,
+    name?: string,
+    metadata?: Record<string, unknown>,
+  },
+  metadata?: object,   // Optional event metadata
+}): Promise<TrackResult>
+```
+
+## Parameters
+
+| Parameter      | Type     | Required | Description                                                                                                         |
+| -------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `customer`     | `string` | ✅       | Your identifier for the customer (e.g. your user or workspace ID). Also accepts the customer's email or internal ID. |
+| `feature`      | `string` | ✅       | Feature slug (or ID) to record usage against                                                                        |
+| `value`        | `number` | -        | Amount to add. Default `1`. Must be `>= 0`.                                                                         |
+| `entity`       | `string` | -        | Scope usage to an entity (seat, workspace…). The entity must already exist.                                          |
+| `customerData` | `object` | -        | Creates the customer on first use if it doesn't exist. See below.                                                   |
+| `metadata`     | `object` | -        | Free-form event metadata stored with the usage record (auditing, debugging)                                         |
+
+### `customerData` — create on first use
+
+Customers don't need to be created up front. Pass `customerData` and Owostack will create the customer the first time it sees the `customer` id. On later calls `customerData` only backfills what is missing (a `name` if the customer has none) — it never overwrites existing values; use [`owo.customer()`](/sdk/customer) to update a customer.
+
+```ts
+await owo.track({
+  customer: "workspace_alpha",          // becomes the customer's externalId
+  feature: "agent_turns",
+  customerData: {
+    email: "owner@acme.com",            // required — used for receipts/checkout
+    name: "Acme (Alpha workspace)",     // optional
+    metadata: { plan_hint: "team" },    // optional, free-form
+  },
+});
+```
+
+| Field      | Type     | Required | Notes                                                                       |
+| ---------- | -------- | -------- | --------------------------------------------------------------------------- |
+| `email`    | `string` | ✅       | Currently required for every customer; if your billing entity is a workspace, pass the owner's or a billing address |
+| `name`     | `string` | -        | Display name                                                                |
+| `metadata` | `object` | -        | Stored on the customer                                                      |
+
+Without `customerData`, tracking an unknown `customer` returns `code: "customer_not_found"` (HTTP 404) and records nothing — unless the `customer` value itself is an email address, in which case the customer is created from it. If a newly created customer matches a plan with `autoEnable: true`, that plan is attached immediately so the very first `track` can succeed.
+
+The same `customer` id then works for reads: [`owo.customer.get("workspace_alpha")`](/sdk/customer), `usageHistory`, and `GET /customers/{id}`.
+
+<Callout type="warning">
+  When using `entity`, the entity must be created with
+  [`addEntity()`](/sdk/entities) first. Tracking a non-existent entity
+  returns an `entity_not_found` error.
+</Callout>
+
+## Response
+
+A successful `track` returns the full post-increment entitlement state, so you rarely need a follow-up `check`:
+
+```ts
+interface TrackResult {
+  success: boolean;
+  allowed: boolean;               // Whether the usage was accepted
+  code: string;                   // tracked, tracked_overage, addon_credits_used, limit_exceeded, …
+  environment: "sandbox" | "live"; // Where this was recorded (also X-Owostack-Environment header)
+  unlimited: boolean;             // true when no finite cap applies (limit === null)
+  usage: number | null;           // Usage this period, after this call
+  limit: number | null;           // Plan limit; null = unlimited
+  balance: number | null;         // limit - usage; null = unlimited
+  resetsAt: string | null;        // ISO timestamp of the next reset
+  resetInterval: string | null;   // "monthly", "daily", …
+  credits:
+    | {
+        source: "credit_system";
+        systemSlug: string;
+        costPerUnit: number;
+        bonusBalance: number;
+        addonBalance: number;
+        totalBalance: number | null;
+        plan: { used: number; limit: number | null; balance: number | null; resetsAt: string };
+      }
+    | {
+        source: "prepaid";
+        bonusBalance: number;
+        addonBalance: null;
+        totalBalance: number | null;
+        plan: { used: number; limit: number | null; balance: number | null; resetsAt: string };
+      }
+    | null;
+  details: {
+    message: string;              // Human-readable explanation
+    plan?: string;                // Slug of the plan granting access (as in your catalog)
+    planName?: string;
+    trial?: boolean;
+    trialEndsAt?: string | null;
+    creditSystem?: string;
+    overage?: { … };              // Present when this usage went into billable overage
+    pricing?: { … };              // Present for chargeable metered features
+  };
+}
+```
+
+```json
+{
+  "success": true,
+  "allowed": true,
+  "code": "tracked",
+  "environment": "sandbox",
+  "unlimited": false,
+  "usage": 3,
+  "limit": 100,
+  "balance": 97,
+  "resetsAt": "2026-10-01T00:00:00.000Z",
+  "resetInterval": "monthly",
+  "credits": null,
+  "details": { "message": "Tracked 3 agent_turns on Pro.", "plan": "pro", "planName": "Pro" }
+}
+```
+
+### Result codes
+
+| `code`                   | `allowed` | Meaning                                                                        |
+| ------------------------ | --------- | ------------------------------------------------------------------------------ |
+| `tracked`                | `true`    | Recorded within the plan limit                                                 |
+| `tracked_overage`        | `true`    | Recorded beyond the limit; billed as overage                                   |
+| `addon_credits_used`     | `true`    | Plan credits exhausted; add-on credits covered it                              |
+| `bonus_credits_used`     | `true`    | Covered by a manual bonus balance                                              |
+| `limit_exceeded`         | `false`   | Limit reached and overage is blocked — nothing recorded                        |
+| `insufficient_credits`   | `false`   | Not enough credits — nothing recorded                                          |
+| `customer_not_found`     | `false`   | Unknown `customer` and no `customerData` (HTTP 404)                            |
+| `feature_not_found`      | `false`   | Unknown feature slug                                                           |
+| `no_active_subscription` | `false`   | Customer has no active plan                                                    |
+| `feature_not_in_plan`    | `false`   | The active plan doesn't include this feature                                   |
+| `entity_not_found`       | `false`   | `entity` given but not created via `addEntity()`                               |
+
+Errors that are not entitlement results (invalid body, bad key, wrong environment) come back as `{ success: false, error: { code, message }, environment }` with HTTP 400/401.
+
+## Examples
+
+### Basic Usage Tracking
+
+```ts
+import { Owostack } from "owostack";
+
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+
+// Track a single API call
+await owo.track({
+  customer: "user_123",
+  feature: "api_calls",
+});
+```
+
+### Track Custom Amounts
+
+```ts
+// Track storage usage (e.g., 1.5 MB uploaded)
+await owo.track({
+  customer: "user_123",
+  feature: "storage_mb",
+  value: 1.5,
+});
+
+// Track multiple items at once
+await owo.track({
+  customer: "user_123",
+  feature: "messages_sent",
+  value: 10,
+});
+```
+
+### With Metadata
+
+```ts
+await owo.track({
+  customer: "user_123",
+  feature: "api_calls",
+  value: 1,
+  metadata: {
+    endpoint: "/api/generate",
+    responseTime: 234,
+    model: "gpt-4",
+  },
+});
+```
+
+### Check Then Track Pattern
+
+```ts
+// Common pattern: check quota, then track usage
+async function processRequest(userId: string) {
+  // 1. Check if customer has remaining quota
+  const check = await owo.check({
+    customer: userId,
+    feature: "api_calls",
+  });
+
+  if (!check.allowed) {
+    throw new Error(`Quota exceeded. Resets at ${check.resetsAt}`);
+  }
+
+  // 2. Process the request
+  const result = await expensiveOperation();
+
+  // 3. Track usage after successful completion
+  await owo.track({
+    customer: userId,
+    feature: "api_calls",
+  });
+
+  return result;
+}
+```
+
+## Billing Models
+
+### Pay-per-use
+
+Track every unit and invoice at the end of the billing period:
+
+```ts
+// Track each AI token generated
+await owo.track({
+  customer: "user_123",
+  feature: "ai_tokens",
+  value: response.usage.total_tokens,
+});
+```
+
+### Monthly Quotas
+
+Track against a fixed monthly limit:
+
+```ts
+const result = await owo.track({
+  customer: "user_123",
+  feature: "exports",
+});
+
+console.log(`${result.balance} exports remaining this month`);
+```
+
+### Credit-based
+
+Consume from a credit-backed feature:
+
+```ts
+const result = await owo.track({
+  customer: "user_123",
+  feature: "gpt-4",
+  value: 1,
+});
+
+if (result.credits?.source === "credit_system") {
+  console.log("Plan credits left:", result.credits.plan.balance);
+  console.log("Add-on credits left:", result.credits.addonBalance);
+}
+```
+
+## Best Practices
+
+1. **Track after success** - Only track after the operation completes successfully
+2. **Non-blocking** - Use fire-and-forget for non-critical tracking
+3. **Batch if needed** - For high-volume, batch multiple events together
+4. **Include context** - Add metadata for debugging and analytics

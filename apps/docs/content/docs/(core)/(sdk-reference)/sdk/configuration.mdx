@@ -1,0 +1,192 @@
+---
+title: Configuration
+description: SDK initialization and configuration options
+icon: Settings
+---
+
+# Configuration
+
+Configure the Owostack SDK with your API keys and environment settings.
+
+## Initialization
+
+```ts
+import { Owostack } from "owostack";
+
+const owo = new Owostack({
+  // owo_sk_test_… selects sandbox, owo_sk_live_… selects live
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
+});
+```
+
+## Configuration Options
+
+| Option      | Type                  | Required | Description                                                                                      |
+| ----------- | --------------------- | -------- | ------------------------------------------------------------------------------------------------ |
+| `secretKey` | `string`              | ✅       | Your API secret key. Scoped keys (`owo_sk_test_…` / `owo_sk_live_…`) also select the environment |
+| `mode`      | `"sandbox" \| "live"` | -        | Environment. Required for legacy (unscoped) keys; must agree with a scoped key                   |
+| `apiUrl`    | `string`              | -        | Custom API URL for self-hosted deployments (stands in for `mode`)                                |
+| `debug`     | `boolean`             | -        | Enable debug logging                                                                             |
+| `catalog`   | `CatalogEntry[]`      | -        | Declarative plan/feature definitions                                                             |
+
+## Environments
+
+Owostack has two fully isolated environments, each on its own host:
+
+| Environment | Host                           | Key prefix     |
+| ----------- | ------------------------------ | -------------- |
+| **sandbox** | `https://sandbox.owostack.com` | `owo_sk_test_` |
+| **live**    | `https://api.owostack.com`     | `owo_sk_live_` |
+
+A key only works against its own environment — a sandbox key sent to the live API is rejected with `401 environment_mismatch` before anything is written. Every response also echoes where it landed: the `X-Owostack-Environment` header (`sandbox` or `live`) plus `X-Owostack-Organization`, and `check()`/`track()` results include `environment` in the body.
+
+### The SDK never defaults to live
+
+The environment is resolved from, in order:
+
+1. `apiUrl` — explicit host (self-hosted / local)
+2. `mode` — explicit `"sandbox"` or `"live"`
+3. the key prefix — `owo_sk_test_…` → sandbox, `owo_sk_live_…` → live
+
+If none of these determine it (a legacy `owo_sk_…` key with no `mode`), the client still constructs, but the **first request throws** an `OwostackError` with code `config_error` instead of silently talking to production. If `mode` contradicts the key's scope, that is also a `config_error`.
+
+```ts
+// Scoped key: nothing else needed
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_SECRET_KEY });
+owo.mode; // "sandbox" | "live", inferred from the key
+owo.apiUrl; // "https://sandbox.owostack.com/v1"
+
+// Legacy key: say which environment you mean
+const legacy = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY, // owo_sk_…
+  mode: "sandbox",
+});
+```
+
+Use the [dashboard](https://app.owostack.com) to create one key per environment; legacy keys keep working on both hosts but should be rotated.
+
+## Custom API URL
+
+For self-hosted deployments or custom endpoints, use `apiUrl`. This takes precedence over `mode`:
+
+```ts
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
+  apiUrl: "https://billing.mycompany.com",
+  // mode is ignored when apiUrl is provided
+});
+```
+
+## URL Resolution Priority
+
+The SDK resolves the API URL in this order:
+
+1. **Explicit `apiUrl`** (highest priority)
+2. **`mode`** → `https://sandbox.owostack.com/v1` or `https://api.owostack.com/v1`
+3. **Key prefix** → same hosts, inferred from `owo_sk_test_` / `owo_sk_live_`
+4. Otherwise: **unresolved** — requests throw `config_error` (there is no default host)
+
+## Debug Mode
+
+Enable debug mode for verbose logging:
+
+```ts
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
+  mode: "sandbox",
+  debug: true,
+});
+```
+
+## With Catalog
+
+Pass a declarative catalog for plan/feature management:
+
+```ts
+import { metered, boolean, plan } from "owostack";
+
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
+  mode: "live",
+  catalog: [
+    plan("pro", {
+      name: "Pro",
+      price: 2900,
+      currency: "USD",
+      interval: "monthly",
+      features: [
+        metered("api-calls").limit(10000),
+        boolean("premium-support").enabled(),
+      ],
+    }),
+  ],
+});
+
+// Sync catalog to server
+await owo.sync();
+```
+
+## Runtime Configuration
+
+Override configuration at runtime (useful for CLI tooling):
+
+```ts
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
+});
+
+// Point at sandbox (both calls re-resolve owo.mode / owo.apiUrl)
+owo.setSecretKey(process.env.OWOSTACK_SANDBOX_SECRET_KEY);
+owo.setApiUrl("https://sandbox.owostack.com/v1");
+```
+
+## Best Practices
+
+1. **Use environment variables** - Never hardcode API keys
+2. **One scoped key per environment** - `owo_sk_test_…` for sandbox, `owo_sk_live_…` for live; the API refuses the wrong host
+3. **Check the echo** - `X-Owostack-Environment` / `result.environment` tell you where a request actually landed
+4. **Custom URL stands in for mode** - With `apiUrl`, `mode` is optional but must still agree with a scoped key
+
+## Examples
+
+### Development Setup
+
+```ts
+// config.ts
+export const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SANDBOX_SECRET_KEY!,
+  mode: "sandbox",
+  debug: process.env.NODE_ENV === "development",
+});
+```
+
+### Production Setup
+
+```ts
+// config.ts
+export const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_LIVE_SECRET_KEY!,
+  mode: "live",
+});
+```
+
+### Dynamic Mode
+
+```ts
+// config.ts
+const mode = process.env.OWOSTACK_MODE as "sandbox" | "live" | undefined;
+const secretKey =
+  mode === "sandbox"
+    ? process.env.OWOSTACK_SANDBOX_SECRET_KEY
+    : process.env.OWOSTACK_LIVE_SECRET_KEY;
+
+export const owo = new Owostack({
+  secretKey: secretKey!,
+  mode, // undefined is fine with scoped keys; a legacy key needs it set
+});
+```
+
+## Related
+
+- [Catalog Sync](/sdk/catalog) - Define plans and features declaratively
+- [Quickstart](/getting-started/quickstart) - Get started with Owostack

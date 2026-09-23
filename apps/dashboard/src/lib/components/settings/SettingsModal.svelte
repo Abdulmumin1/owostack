@@ -20,6 +20,11 @@
   import KeysTab from "./KeysTab.svelte";
   import TeamTab from "./TeamTab.svelte";
   import ProvidersTab from "./ProvidersTab.svelte";
+  import {
+    isManagedSandboxAccount,
+    loadManagedSandboxProviderIds,
+    withManagedSandboxAccounts,
+  } from "$lib/managed-sandbox";
   import WebhooksTab from "./WebhooksTab.svelte";
   import OverageTab from "./OverageTab.svelte";
   import ProviderForm from "./ProviderForm.svelte";
@@ -127,12 +132,19 @@
   // Derived
   let apiBase = $derived(getApiUrl());
 
+  // Managed sandbox accounts receive webhooks on Owostack's shared endpoint,
+  // so only the organization's own accounts need a webhook URL.
+  let ownProviderAccounts = $derived(
+    providerAccounts.filter((a) => !isManagedSandboxAccount(a)),
+  );
   let webhookUrls = $derived(
-    providerAccounts.length > 0
-      ? [...new Set(providerAccounts.map((a) => a.providerId))].map((pid) => ({
-          providerId: pid,
-          url: `${apiBase}/webhooks/${projectId}/${pid}`,
-        }))
+    ownProviderAccounts.length > 0
+      ? [...new Set(ownProviderAccounts.map((a) => a.providerId))].map(
+          (pid) => ({
+            providerId: pid,
+            url: `${apiBase}/webhooks/${projectId}/${pid}`,
+          }),
+        )
       : [{ providerId: "default", url: `${apiBase}/webhooks/${projectId}` }],
   );
 
@@ -224,11 +236,16 @@
   }
 
   async function loadProviderAccounts() {
-    const res = await apiFetch(
-      `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-    );
+    const [res, managedIds] = await Promise.all([
+      apiFetch(`/api/dashboard/providers/accounts?organizationId=${projectId}`),
+      loadManagedSandboxProviderIds(),
+    ]);
     if (res.data?.data) {
-      providerAccounts = res.data.data;
+      providerAccounts = withManagedSandboxAccounts(
+        res.data.data,
+        managedIds,
+        projectId,
+      );
     }
   }
 

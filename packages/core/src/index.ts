@@ -25,6 +25,8 @@ import type {
   PublicPlan,
   CustomerParams,
   CustomerResult,
+  CustomerListParams,
+  CustomerListResult,
   SetCustomerFeatureConfigParams,
   SetCustomerOverageLimitParams,
   UsageHistoryParams,
@@ -38,6 +40,11 @@ import type {
 } from "@owostack/types";
 
 import { bindFeatureHandles, buildSyncPayload } from "./catalog.js";
+import {
+  resolveEnvironment,
+  type OwostackMode,
+  type ResolvedEnvironment,
+} from "./environment.js";
 
 /**
  * Owostack - Billing infrastructure for modern SaaS
@@ -52,7 +59,7 @@ import { bindFeatureHandles, buildSyncPayload } from "./catalog.js";
 export class Owostack {
   /** @internal — exposed for CLI tooling */
   readonly _config: OwostackConfig;
-  private apiUrl: string;
+  private environment: ResolvedEnvironment;
 
   /** Billing: unbilled usage, invoices, and invoice generation */
   readonly billing: BillingNamespace;
@@ -65,7 +72,7 @@ export class Owostack {
 
   constructor(config: OwostackConfig) {
     this._config = config;
-    this.apiUrl = this.resolveApiUrl(config);
+    this.environment = resolveEnvironment(config);
     this.billing = new BillingNamespace(this);
     this.wallet = buildWalletFn(this);
     this.customer = buildCustomerFn(this);
@@ -77,23 +84,19 @@ export class Owostack {
     }
   }
 
-  private resolveApiUrl(config: OwostackConfig): string {
-    // Explicit apiUrl takes highest precedence
-    if (config.apiUrl) {
-      return config.apiUrl;
-    }
+  /**
+   * Environment this client talks to: "sandbox" or "live".
+   * null when it could not be determined (see `apiUrl` / `mode` / key prefix);
+   * in that case every request throws an `OwostackError` with code
+   * `config_error` instead of silently hitting production.
+   */
+  get mode(): OwostackMode | null {
+    return this.environment.mode;
+  }
 
-    // Mode-based URLs
-    if (config.mode === "sandbox") {
-      return "https://sandbox.owostack.com/v1";
-    }
-
-    if (config.mode === "live") {
-      return "https://api.owostack.com/v1";
-    }
-
-    // Default fallback
-    return "https://api.owostack.com/v1";
+  /** Fully-qualified API base URL this client sends requests to (null if unresolved). */
+  get apiUrl(): string | null {
+    return this.environment.apiUrl;
   }
 
   /**
@@ -102,6 +105,7 @@ export class Owostack {
    */
   setSecretKey(key: string) {
     this._config.secretKey = key;
+    this.environment = resolveEnvironment(this._config);
   }
 
   /**
@@ -110,7 +114,15 @@ export class Owostack {
    */
   setApiUrl(url: string) {
     this._config.apiUrl = url;
-    this.apiUrl = url;
+    this.environment = resolveEnvironment(this._config);
+  }
+
+  private requireApiUrl(): string {
+    if (this.environment.apiUrl) return this.environment.apiUrl;
+    throw new OwostackError(
+      "config_error",
+      this.environment.error ?? "Owostack: API URL is not configured.",
+    );
   }
 
   /**
@@ -333,7 +345,7 @@ export class Owostack {
    * @internal
    */
   async post(endpoint: string, body: unknown): Promise<unknown> {
-    const response = await fetch(`${this.apiUrl}${endpoint}`, {
+    const response = await fetch(`${this.requireApiUrl()}${endpoint}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -358,7 +370,7 @@ export class Owostack {
     endpoint: string,
     query?: Record<string, string>,
   ): Promise<unknown> {
-    const url = new URL(`${this.apiUrl}${endpoint}`);
+    const url = new URL(`${this.requireApiUrl()}${endpoint}`);
     if (query) {
       for (const [key, value] of Object.entries(query)) {
         if (value !== undefined && value !== "")
@@ -483,6 +495,13 @@ function buildPlansFn(client: Owostack): PlansFn {
 
 type CustomerFn = {
   (params: CustomerParams): Promise<CustomerResult>;
+  /**
+   * Fetch a customer by internal ID, your external customer ID, or email —
+   * the same identifiers accepted by track/check.
+   */
+  get(customer: string): Promise<CustomerResult>;
+  /** List or search customers in your organization. */
+  list(params?: CustomerListParams): Promise<CustomerListResult>;
   setFeatureConfig(
     params: SetCustomerFeatureConfigParams,
   ): Promise<CustomerResult>;
@@ -495,6 +514,21 @@ type CustomerFn = {
 function buildCustomerFn(client: Owostack): CustomerFn {
   const fn = ((params: CustomerParams) =>
     client.post("/customers", params)) as CustomerFn;
+
+  fn.get = (customer: string) =>
+    client.get(
+      `/customers/${encodeURIComponent(customer)}`,
+    ) as Promise<CustomerResult>;
+
+  fn.list = (params: CustomerListParams = {}) => {
+    const query: Record<string, string> = {};
+    if (params.limit !== undefined) query.limit = String(params.limit);
+    if (params.offset !== undefined) query.offset = String(params.offset);
+    if (params.search) query.search = params.search;
+    if (params.email) query.email = params.email;
+    if (params.externalId) query.externalId = params.externalId;
+    return client.get("/customers", query) as Promise<CustomerListResult>;
+  };
 
   fn.setFeatureConfig = (params: SetCustomerFeatureConfigParams) =>
     client.post("/customers/feature-config", params) as Promise<CustomerResult>;
@@ -661,6 +695,16 @@ export class OwostackError extends Error {
   }
 }
 
+// Environment helpers
+export {
+  inferModeFromSecretKey,
+  resolveEnvironment,
+  apiUrlForMode,
+  OWOSTACK_HOSTS,
+  type OwostackMode,
+  type ResolvedEnvironment,
+} from "./environment.js";
+
 // Re-export catalog builder functions
 export {
   metered,
@@ -733,6 +777,9 @@ export type {
   PublicPlanFeature,
   CustomerParams,
   CustomerResult,
+  CustomerListParams,
+  CustomerListResult,
+  CustomerSummary,
   CustomerBillingConfig,
   CustomerFeatureConfigResult,
   CustomerOverageLimitResult,

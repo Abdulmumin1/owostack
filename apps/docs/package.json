@@ -9,13 +9,15 @@
     "build": "vite build",
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
+    "test": "vitest --run",
     "types:check": "fumadocs-mdx && tsc --noEmit",
     "generate:api": "NODE_OPTIONS=--conditions=development tsx scripts/generate-openapi.ts",
-    "generate:api:check": "NODE_OPTIONS=--conditions=development tsx scripts/generate-openapi.ts && git diff --exit-code -- openapi.json content/docs/api-reference",
+    "generate:api:check": "NODE_OPTIONS=--conditions=development tsx scripts/generate-openapi.ts && git diff --exit-code -- openapi.json \"content/docs/(core)/api-reference\"",
     "postinstall": "NODE_OPTIONS=--conditions=development tsx scripts/generate-openapi.ts && fumadocs-mdx"
   },
   "dependencies": {
     "@cloudflare/ai-search-snippet": "^0.0.30",
+    "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-router": "1.157.16",
     "@tanstack/react-router-devtools": "1.157.16",
     "@tanstack/react-start": "1.157.16",
@@ -46,6 +48,7 @@
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "vite-tsconfig-paths": "^6.0.5",
+    "vitest": "^3.0.5",
     "wrangler": "^4.63.0"
   }
 }

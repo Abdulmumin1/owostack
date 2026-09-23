@@ -184,14 +184,20 @@
               <td class="px-6 py-4">
                 <div class="flex items-center gap-3">
                   <Skeleton class="w-8 h-8 rounded" />
-                  <Skeleton class="h-4 w-32" />
+                  <div class="flex flex-col">
+                    <Skeleton class="h-4 w-28" />
+                    <Skeleton class="h-3 w-16" />
+                  </div>
                 </div>
               </td>
               <td class="px-6 py-4">
                 <Skeleton class="h-4 w-48" />
               </td>
               <td class="px-6 py-4">
-                <Skeleton class="h-4 w-24" />
+                <div class="flex flex-col">
+                  <Skeleton class="h-4 w-24" />
+                  <Skeleton class="h-3 w-32" />
+                </div>
               </td>
               <td class="px-6 py-4"></td>
             </tr>
@@ -199,17 +205,57 @@
         </tbody>
       </table>
     </div>
-  {:else if filteredEvents.length === 0}
-    <div class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center rounded-lg">
-      <div class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4">
-        <Globe   size={24} class="text-text-dim"  weight="duotone" />
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between px-4 py-4 border-t border-border bg-bg-secondary mt-4">
+      <Skeleton class="h-3 w-40" />
+      <div class="flex items-center gap-1">
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
       </div>
-      <h3 class="text-lg font-bold text-text-primary mb-2">
-        {searchQuery ? "No matching events" : "No events found"}
-      </h3>
-      <p class="text-text-dim max-w-sm text-sm">
-        {searchQuery ? "Try a different filter." : "Events will appear here when your integration starts processing requests."}
-      </p>
+    </div>
+  {:else if filteredEvents.length === 0}
+    <div class="table-container !overflow-visible">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-bg-secondary border-b border-border">
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Type</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Customer</th>
+            <th class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest">Date</th>
+            <th class="px-6 py-4"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border/50">
+          <tr>
+            <td colspan="4" class="px-6 py-12">
+              <div class="flex flex-col items-center justify-center text-center min-h-[24rem]">
+                <div class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4">
+                  <Globe   size={24} class="text-text-dim"  weight="duotone" />
+                </div>
+                <h3 class="text-lg font-bold text-text-primary mb-2">
+                  {searchQuery ? "No matching events" : "No events found"}
+                </h3>
+                <p class="text-text-dim max-w-sm text-sm">
+                  {searchQuery
+                    ? "Try a different filter."
+                    : "Events will appear here when your integration starts processing requests."}
+                </p>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between px-4 py-4 border-t border-border bg-bg-secondary mt-4">
+      <Skeleton class="h-3 w-40" />
+      <div class="flex items-center gap-1">
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+      </div>
     </div>
   {:else}
     <!-- Events Table -->

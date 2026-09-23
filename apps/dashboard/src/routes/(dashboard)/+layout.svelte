@@ -83,7 +83,6 @@
   );
 
   let activeEnvironment = $state<"test" | "live">(initialActiveEnvironment);
-  let testConnected = $state(false);
   let liveConnected = $state(false);
   let isSwitching = $state(false);
 
@@ -93,14 +92,32 @@
   let deploySavingProvider = $state<string | null>(null);
   let deployShowSecrets = $state<Record<string, boolean>>({});
 
-  let testProviderIds = $state<string[]>([]);
+  // Sandbox providers are managed by Owostack, so the org has no sandbox
+  // credentials to mirror. Going live means connecting live credentials for
+  // the providers the sandbox catalog actually uses (plan/credit-pack
+  // providerId), plus any other enabled provider the user wants.
+  let enabledProviderIds = $state<string[]>([]);
+  let usedProviderIds = $state<string[]>([]);
   let liveProviderIds = $state<Set<string>>(new Set());
+  let showAllDeployProviders = $state(false);
+  let deployProvidersLoading = $state(false);
 
-  let step1Done = $derived(
-    testProviderIds.length > 0 &&
-      testProviderIds.every((id) => liveProviderIds.has(id)),
+  let deployProviderIds = $derived(
+    showAllDeployProviders || usedProviderIds.length === 0
+      ? [
+          ...usedProviderIds,
+          ...enabledProviderIds.filter((id) => !usedProviderIds.includes(id)),
+        ]
+      : usedProviderIds,
   );
-  let allTestProvidersLive = $derived(step1Done && testProviderIds.length > 0);
+  let hiddenDeployProviderCount = $derived(
+    enabledProviderIds.filter((id) => !usedProviderIds.includes(id)).length,
+  );
+
+  let step1Done = $derived(liveProviderIds.size > 0);
+  let allUsedProvidersLive = $derived(
+    step1Done && usedProviderIds.every((id) => liveProviderIds.has(id)),
+  );
 
   let step2Loading = $state(false);
   let step2Done = $state(false);
@@ -195,35 +212,49 @@
   async function openDeployModal() {
     showDeployModal = true;
     deployError = null;
+    deployProvidersLoading = true;
     try {
-      const [testAccountsRes, liveAccountsRes] = await Promise.all([
-        fetchDashboardForEnv(
-          "test",
-          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-        ),
-        fetchDashboardForEnv(
-          "live",
-          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-        ),
-      ]);
+      const [testPlansRes, testAccountsRes, liveAccountsRes, enabledRes] =
+        await Promise.all([
+          fetchDashboardForEnv(
+            "test",
+            `/api/dashboard/plans?organizationId=${projectId}`,
+          ),
+          fetchDashboardForEnv(
+            "test",
+            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+          ),
+          fetchDashboardForEnv(
+            "live",
+            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+          ),
+          fetchDashboardForEnv("live", "/api/dashboard/providers/enabled"),
+        ]);
 
-      const testAccounts = testAccountsRes.data as any[];
-      const liveAccounts = liveAccountsRes.data as any[];
+      const testPlans = (testPlansRes.data as any[]) || [];
+      const testAccounts = (testAccountsRes.data as any[]) || [];
+      const liveAccounts = (liveAccountsRes.data as any[]) || [];
 
-      testProviderIds = [
-        ...new Set(
-          testAccounts
+      enabledProviderIds = (enabledRes.data as string[]) || [];
+      usedProviderIds = [
+        ...new Set<string>([
+          ...testPlans.map((p) => p.providerId).filter(Boolean),
+          ...testAccounts
             .filter((a) => a.environment === "test")
             .map((a) => a.providerId),
-        ),
+        ]),
       ];
       liveProviderIds = new Set(
         liveAccounts
           .filter((a) => a.environment === "live")
           .map((a) => a.providerId),
       );
+      showAllDeployProviders = false;
     } catch (e) {
       console.error("Failed to load provider accounts", e);
+      deployError = "Couldn't load your providers. Close and try again.";
+    } finally {
+      deployProvidersLoading = false;
     }
   }
 
@@ -426,26 +457,16 @@
 
   async function loadEnvironmentStatus() {
     try {
-      const [testAccountsRes, liveAccountsRes, env, currencyRes] =
-        await Promise.all([
-          fetchDashboardForEnv(
-            "test",
-            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-          ),
-          fetchDashboardForEnv(
-            "live",
-            `/api/dashboard/providers/accounts?organizationId=${projectId}`,
-          ),
-          loadActiveEnvironment(),
-          apiFetch(
-            `/api/dashboard/config/default-currency?organizationId=${projectId}`,
-          ),
-        ]);
-
-      if (testAccountsRes.data) {
-        const testAccounts = testAccountsRes.data as any[];
-        testConnected = testAccounts.some((a: any) => a.environment === "test");
-      }
+      const [liveAccountsRes, env, currencyRes] = await Promise.all([
+        fetchDashboardForEnv(
+          "live",
+          `/api/dashboard/providers/accounts?organizationId=${projectId}`,
+        ),
+        loadActiveEnvironment(),
+        apiFetch(
+          `/api/dashboard/config/default-currency?organizationId=${projectId}`,
+        ),
+      ]);
 
       if (liveAccountsRes.data) {
         const liveAccounts = liveAccountsRes.data as any[];
@@ -464,7 +485,9 @@
 
   async function switchEnvironment(env: "test" | "live") {
     if (env === "live" && !liveConnected) {
-      alert("Live mode not configured. Add a live key in Gear first.");
+      alert(
+        "Live mode not configured. Connect a live provider via Go to Production first.",
+      );
       return;
     }
     if (env === "live" && activeEnvironment === "test") {
@@ -495,25 +518,21 @@
           href: "/plans",
           icon: ListIcon,
           label: "Plans",
-          color: "text-info",
         },
         {
           href: "/features",
           icon: Cube,
           label: "Features",
-          color: "text-tertiary",
         },
         {
           href: "/addons",
           icon: Coins,
           label: "Add-ons",
-          color: "text-warning",
         },
         {
           href: "/subscriptions",
           icon: CreditCard,
           label: "Subscriptions",
-          color: "text-success",
         },
       ],
     },
@@ -524,15 +543,13 @@
           href: "/customers",
           icon: UsersIcon,
           label: "Customers",
-          color: "text-tertiary",
         },
         {
           href: "/transactions",
           icon: Receipt,
           label: "Transactions",
-          color: "text-error",
         },
-        { href: "/usage", icon: ChartBar, label: "Usage", color: "text-info" },
+        { href: "/usage", icon: ChartBar, label: "Usage" },
       ],
     },
     // {
@@ -566,20 +583,20 @@
 <div class="min-h-screen flex bg-bg-primary text-sm">
   <!-- Sidebar - Minimalist, text-focused -->
   <aside
-    class="w-64 fixed h-screen flex flex-col pt-8 pb-4 pl-6 pr-6 bg-bg-secondary border-r border-border"
+    class="w-64 fixed h-screen flex flex-col bg-bg-primary border-r border-border text-[14px]"
   >
     <!-- Logo -->
 
     <!-- Domain/Project Selector -->
     {#if projectId}
-      <div class="mb-3">
+      <div class="shrink-0 px-4 pt-6 pb-4">
         <div class="relative project-dropdown-container">
           <button
-            class="w-full flex items-center justify-between p-1 px-2 border rounded border-border text-left hover:border-text-dim transition-colors"
+            class="w-full flex items-center gap-2 rounded-md border border-border bg-bg-card px-3 py-2 text-left transition-colors hover:border-text-dim"
             onclick={() => (showProjectDropdown = !showProjectDropdown)}
           >
-            <BuildingsIcon />
-            <span class="font-medium truncate text-text-primary"
+            <BuildingsIcon class="shrink-0 text-text-muted" />
+            <span class="flex-1 truncate font-medium text-text-primary"
               >{currentProject.name}</span
             >
             <CaretDown size={14} class="text-text-dim shrink-0" />
@@ -616,27 +633,29 @@
         </div>
       </div>
 
-      <!-- Grouped Navigation like Autumn -->
-      {#each navGroups as group}
+      <div class="flex-1 overflow-y-auto py-2">
+      <!-- Grouped Navigation -->
+      {#each navGroups as group (group.label ?? group.items[0]?.href)}
         {#if group.label}
           {#if group.collapsible}
             <button
-              class="w-full flex items-center justify-between text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2 pl-2 pr-2 mt-6 first:mt-0 hover:text-text-secondary transition-colors cursor-pointer group"
+              class="w-full flex items-center gap-2 border-t border-border px-4 py-2.5 text-[14px] font-medium text-text-primary transition-colors hover:bg-bg-secondary cursor-pointer"
               onclick={() => toggleGroup(group.label!)}
             >
-              <span>{group.label}</span>
+              <span class="flex-1 text-left">{group.label}</span>
               <CaretDown
                 size={12}
-                class="transition-transform duration-200 {collapsedGroups[
+                weight="bold"
+                class="shrink-0 text-text-muted transition-transform duration-200 {collapsedGroups[
                   group.label
                 ]
                   ? '-rotate-90'
-                  : ''} text-text-dim group-hover:text-text-secondary"
+                  : ''}"
               />
             </button>
           {:else}
             <div
-              class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2 pl-2 mt-6 first:mt-0"
+              class="mt-6 mb-1 px-4 font-mono text-[11px] uppercase tracking-[0.1em] text-text-muted"
             >
               {group.label}
             </div>
@@ -644,97 +663,95 @@
         {/if}
 
         {#if !group.label || !collapsedGroups[group.label!]}
-          <nav
-            class="space-y-0.5 mb-2"
-            transition:slide|local={{ duration: 200 }}
-          >
-            {#each group.items as item}
+          <nav class="flex flex-col" transition:slide|local={{ duration: 200 }}>
+            {#each group.items as item (item.href)}
               {@const href = `/${projectId}${item.href}`}
               {@const active = isActive(href)}
               <a
                 {href}
-                class="flex items-center gap-3 px-3 transition-all duration-200 rounded-lg {active
-                  ? 'bg-bg-card text-text-primary font-base text-sm'
-                  : 'text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary'} py-1 text-sm"
+                class="flex items-center gap-2.5 px-4 py-[7px] text-[14px] leading-snug transition-colors {active
+                  ? 'bg-bg-tertiary font-medium text-text-primary'
+                  : 'text-text-secondary hover:bg-bg-secondary hover:text-text-primary'}"
               >
                 <item.icon
                   weight={active ? "fill" : "duotone"}
                   size={15}
-                  class={item.color}
+                  class="shrink-0"
                 />
-                <span>{item.label}</span>
+                <span class="truncate">{item.label}</span>
               </a>
             {/each}
           </nav>
         {/if}
       {/each}
+      </div>
     {:else}
+      <div class="flex-1 overflow-y-auto py-2">
       <!-- Dashboard Navigation -->
       <div
-        class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3 pl-2"
+        class="px-4 pb-1 pt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-text-muted"
       >
         Dashboard
       </div>
-      <nav class="space-y-1 mb-8">
+      <nav class="flex flex-col">
         <a
           href="/"
-          class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 {page
+          class="flex items-center gap-2.5 px-4 py-[7px] text-[14px] leading-snug transition-colors {page
             .url.pathname === '/'
-            ? 'bg-bg-card text-text-primary shadow-sm ring-1 ring-black/5 dark:ring-white/10 font-medium'
-            : 'text-text-secondary hover:bg-black/5 dark:hover:bg-white/5'}"
+            ? 'bg-bg-tertiary font-medium text-text-primary'
+            : 'text-text-secondary hover:bg-bg-secondary hover:text-text-primary'}"
         >
           <SquaresFour
-            size={18}
-            class="text-blue-500"
-            weight={page.url.pathname === "/" ? "fill" : "regular"}
+            size={15}
+            class="shrink-0"
+            weight={page.url.pathname === "/" ? "fill" : "duotone"}
           />
           <span>Overview</span>
         </a>
         <button
-          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 {showSettingsModal
-            ? 'bg-bg-card text-text-primary shadow-sm ring-1 ring-black/5 dark:ring-white/10 font-medium'
-            : 'text-text-secondary hover:bg-black/5 dark:hover:bg-white/5'}"
+          class="flex w-full items-center gap-2.5 px-4 py-[7px] text-[14px] leading-snug transition-colors {showSettingsModal
+            ? 'bg-bg-tertiary font-medium text-text-primary'
+            : 'text-text-secondary hover:bg-bg-secondary hover:text-text-primary'}"
           onclick={() => (showSettingsModal = true)}
         >
           <Gear
-            size={18}
-            class="text-zinc-500"
-            weight={showSettingsModal ? "fill" : "regular"}
+            size={15}
+            class="shrink-0"
+            weight={showSettingsModal ? "fill" : "duotone"}
           />
           <span>Settings</span>
         </button>
       </nav>
+      </div>
     {/if}
 
     <!-- Footer/User Identity -->
-    <div class="mt-auto pt-4 relative user-dropdown-container">
-      <!-- Settings Button -->
-
+    <div class="mt-auto border-t border-border p-3 relative user-dropdown-container">
       <a
         href="https://owostack.com/talk-to-founder"
         target="_blank"
-        class="w-full flex items-center gap-3 px-3 mb-3 rounded-lg transition-all duration-200 text-text-secondary"
+        class="flex items-center gap-2.5 px-2 py-[7px] text-[14px] text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary"
       >
-        <Calendar size={16} class="text-zinc-500" weight="duotone" />
+        <Calendar size={16} class="shrink-0" weight="duotone" />
         <span>Book a call</span>
       </a>
       <a
         href="https://docs.owostack.com"
         target="_blank"
-        class="w-full flex items-center gap-3 px-3 mb-3 rounded-lg transition-all duration-200 text-text-secondary"
+        class="flex items-center gap-2.5 px-2 py-[7px] text-[14px] text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary"
       >
-        <Books size={16} class="text-zinc-500" weight="duotone" />
+        <Books size={16} class="shrink-0" weight="duotone" />
         <span>Docs</span>
       </a>
       <button
-        class="w-full flex items-center gap-3 px-3 py-1 mb-3 rounded-lg transition-all duration-200 {showSettingsModal
-          ? 'bg-bg-card text-text-primary shadow-sm border border-border/50 font-medium'
-          : 'text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary'}"
+        class="flex w-full items-center gap-2.5 px-2 py-[7px] text-[14px] transition-colors {showSettingsModal
+          ? 'bg-bg-tertiary font-medium text-text-primary'
+          : 'text-text-secondary hover:bg-bg-secondary hover:text-text-primary'}"
         onclick={() => (showSettingsModal = true)}
       >
         <Gear
           size={16}
-          class="text-zinc-500"
+          class="shrink-0"
           weight={showSettingsModal ? "fill" : "duotone"}
         />
         <span>Settings</span>
@@ -742,7 +759,7 @@
 
       {#if $session.data}
         <button
-          class="w-full flex items-center gap-3 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors p-1 rounded group"
+          class="mt-1 flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-bg-secondary"
           onclick={toggleUserDropdown}
         >
           <!-- Sharp Identity Square -->
@@ -758,7 +775,7 @@
           </div>
           <CaretDown
             size={14}
-            class="text-text-dim group-hover:text-text-secondary transition-transform {showUserDropdown
+            class="shrink-0 text-text-dim transition-transform {showUserDropdown
               ? 'rotate-180'
               : ''}"
             weight="fill"
@@ -767,12 +784,12 @@
 
         {#if showUserDropdown}
           <div
-            class="absolute bottom-full left-4 right-4 mb-2 bg-bg-card border border-border shadow-2xl py-1 z-50 overflow-hidden"
+            class="absolute bottom-full left-3 right-3 mb-1 bg-bg-card border border-border shadow-2xl py-1 z-50 overflow-hidden"
             transition:slide={{ duration: 150 }}
             onclick={(e) => e.stopPropagation()}
           >
             <button
-              class="w-full flex items-center justify-between px-4 py-2.5 text-[10px] font-bold text-text-secondary hover:text-text-primary hover:bg-black/5 dark:hover:bg-white/5 transition-colors uppercase tracking-widest border-b border-border/50"
+              class="w-full flex items-center justify-between px-4 py-2.5 text-[10px] font-bold text-text-secondary hover:text-text-primary hover:bg-bg-secondary transition-colors uppercase tracking-widest border-b border-border/50"
               onclick={toggleTheme}
             >
               <span>Theme: {theme}</span>
@@ -889,13 +906,13 @@
           <!-- Step 1: Connect Providers -->
           <div class="flex items-start gap-4">
             <div
-              class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {allTestProvidersLive
+              class="shrink-0 w-7 h-7 flex items-center justify-center text-xs font-bold {allUsedProvidersLive
                 ? 'bg-accent text-accent-contrast'
                 : step1Done
                   ? 'bg-accent/60 text-accent-contrast'
                   : 'bg-bg-secondary text-text-dim border border-border'}"
             >
-              {#if allTestProvidersLive}
+              {#if allUsedProvidersLive}
                 <Check size={14} weight="fill" />
               {:else}
                 1
@@ -906,24 +923,34 @@
                 Connect your provider accounts
               </h3>
               <p class="text-xs text-text-dim mt-0.5">
-                Add live credentials for each payment provider you use.
+                Sandbox ran on Owostack's shared test accounts. Production
+                charges real cards, so add your own live credentials for the
+                providers your catalog uses.
               </p>
 
-              {#if testProviderIds.length === 0}
+              {#if deployProvidersLoading && deployProviderIds.length === 0}
                 <p class="text-xs text-text-dim mt-2 italic">
-                  No test providers configured yet. Add one in Gear first.
+                  Loading providers...
                 </p>
               {/if}
 
               <div class="mt-3 space-y-4">
-                {#each testProviderIds as providerId}
+                {#each deployProviderIds as providerId (providerId)}
                   {@const config = getProviderConfig(providerId)}
                   {@const isLive = liveProviderIds.has(providerId)}
+                  {@const isUsed = usedProviderIds.includes(providerId)}
                   {@const isSaving = deploySavingProvider === providerId}
                   <div class="border border-border bg-bg-card p-3 space-y-2">
                     <div class="flex items-center justify-between">
-                      <span class="text-xs font-bold text-text-primary"
-                        >{config?.name || providerId}</span
+                      <span class="text-xs font-bold text-text-primary flex items-center gap-2"
+                        >{config?.name || providerId}
+                        {#if isUsed}
+                          <span
+                            class="badge badge-default text-[9px]"
+                            title="Plans in your sandbox catalog are on this provider"
+                            >Used in sandbox</span
+                          >
+                        {/if}</span
                       >
                       {#if isLive}
                         <span
@@ -1035,13 +1062,23 @@
                 {/each}
               </div>
 
-              {#if step1Done && !allTestProvidersLive}
+              {#if !showAllDeployProviders && usedProviderIds.length > 0 && hiddenDeployProviderCount > 0}
+                <button
+                  type="button"
+                  class="mt-3 text-[10px] font-bold text-accent hover:text-accent-hover uppercase tracking-widest"
+                  onclick={() => (showAllDeployProviders = true)}
+                >
+                  Connect a different provider ({hiddenDeployProviderCount})
+                </button>
+              {/if}
+
+              {#if step1Done && !allUsedProvidersLive}
                 <p
                   class="text-[10px] text-yellow-600 dark:text-yellow-500 mt-2"
                 >
-                  Some test providers don't have live keys yet. You can still go
-                  live, but features using those providers won't work in
-                  production.
+                  Some providers used by your sandbox plans don't have live keys
+                  yet. You can still go live, but plans on those providers won't
+                  be able to charge in production.
                 </p>
               {/if}
             </div>

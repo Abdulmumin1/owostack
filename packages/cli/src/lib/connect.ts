@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { saveGlobalConfig } from "./config.js";
+import { loadGlobalConfig, saveGlobalConfig } from "./config.js";
 
 export interface ConnectOptions {
   apiUrl: string;
@@ -17,7 +17,9 @@ export interface DeviceCode {
 
 export interface TokenResult {
   success: boolean;
+  /** Sandbox-scoped key (also returned as `apiKey` by the API for older CLIs). */
   apiKey?: string;
+  keys?: { sandbox?: string | null; live?: string | null };
   organizationId?: string;
 }
 
@@ -72,6 +74,7 @@ export async function pollForToken(
         return {
           success: true,
           apiKey: data.apiKey,
+          keys: data.keys ?? { sandbox: data.apiKey, live: null },
           organizationId: data.organizationId,
         };
       }
@@ -136,8 +139,15 @@ export async function executeConnectFlow(
     s.stop(pc.green("Authorization granted"));
 
     if (result.success && result.apiKey) {
+      const existing = loadGlobalConfig();
       await saveGlobalConfig({
+        // Keep the legacy single-key field for older CLIs sharing the file.
         apiKey: result.apiKey,
+        keys: {
+          ...existing.keys,
+          sandbox: result.keys?.sandbox ?? result.apiKey,
+          ...(result.keys?.live ? { live: result.keys.live } : {}),
+        },
         organizationId: result.organizationId,
       });
       return result.apiKey;
