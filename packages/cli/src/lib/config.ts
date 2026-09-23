@@ -2,36 +2,21 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
+import type { OwostackMode } from "./environment.js";
+import { usageError } from "./errors.js";
 
 export const GLOBAL_CONFIG_DIR = join(homedir(), ".owostack");
 export const GLOBAL_CONFIG_PATH = join(GLOBAL_CONFIG_DIR, "config.json");
 
 export interface GlobalConfig {
+  /**
+   * @deprecated single key from before environment scoping. Still honoured as
+   * a fallback for either mode; `owosk connect` now writes `keys` instead.
+   */
   apiKey?: string;
+  /** Environment-scoped keys written by `owosk connect`. */
+  keys?: Partial<Record<OwostackMode, string>>;
   organizationId?: string;
-}
-
-export function getApiUrl(configUrl?: string): string {
-  return (
-    process.env.OWOSTACK_API_URL || configUrl || "https://sandbox.owostack.com"
-  );
-}
-
-export function getLiveApiUrl(configUrl?: string): string {
-  return (
-    process.env.OWOSTACK_API_LIVE_URL ||
-    process.env.OWOSTACK_API_URL ||
-    configUrl ||
-    "https://api.owostack.com"
-  );
-}
-
-export function getTestApiUrl(configUrl?: string): string {
-  return (
-    process.env.OWOSTACK_API_TEST_URL ||
-    configUrl ||
-    "https://sandbox.owostack.com"
-  );
 }
 
 export function getDashboardUrl(configUrl?: string): string {
@@ -58,9 +43,29 @@ export function loadGlobalConfig(): GlobalConfig {
   return {};
 }
 
-export function getApiKey(cliKey?: string): string {
+/**
+ * Pick the API key for a command, in order:
+ *   --key  >  OWOSTACK_SECRET_KEY  >  OWOSTACK_API_KEY  >  ~/.owostack/config.json
+ *
+ * The stored config may hold one key per mode (from `owosk connect`); when the
+ * mode is known the matching one is used, otherwise the legacy single key.
+ * Returns "" when nothing is configured so callers can decide how to fail.
+ */
+export function getApiKey(cliKey?: string, mode?: OwostackMode): string {
   if (cliKey) return cliKey;
   if (process.env.OWOSTACK_SECRET_KEY) return process.env.OWOSTACK_SECRET_KEY;
   if (process.env.OWOSTACK_API_KEY) return process.env.OWOSTACK_API_KEY;
-  return loadGlobalConfig().apiKey || "";
+
+  const stored = loadGlobalConfig();
+  if (mode && stored.keys?.[mode]) return stored.keys[mode]!;
+  return stored.apiKey || "";
+}
+
+export function requireApiKey(cliKey?: string, mode?: OwostackMode): string {
+  const apiKey = getApiKey(cliKey, mode);
+  if (apiKey) return apiKey;
+  throw usageError(
+    "missing_api_key",
+    `Missing API key${mode ? ` for ${mode}` : ""}. Pass --key, set OWOSTACK_SECRET_KEY, or run \`owosk connect\`.`,
+  );
 }

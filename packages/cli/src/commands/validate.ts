@@ -1,26 +1,27 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import {
-  loadConfigSettings,
-  loadOwostackFromConfig,
-  resolveConfigPath,
-} from "../lib/loader.js";
+import { loadOwostackFromConfig, resolveConfigPath } from "../lib/loader.js";
 import { fetchPlans } from "../lib/api.js";
-import { getApiKey, getLiveApiUrl, getTestApiUrl } from "../lib/config.js";
+import {
+  announceMode,
+  resolveCommandContext,
+  type CommonCommandOptions,
+} from "../lib/context.js";
+import { failure, usageError } from "../lib/errors.js";
+import type { Reporter } from "../lib/output.js";
 
-interface ValidateOptions {
-  config?: string;
-  prod?: boolean;
-}
+export type ValidateOptions = CommonCommandOptions;
 
-export async function runValidate(options: ValidateOptions) {
-  p.intro(pc.bgYellow(pc.black(" validate ")));
+export async function runValidate(
+  options: ValidateOptions,
+  reporter: Reporter,
+) {
+  reporter.intro("validate");
 
   const fullPath = resolveConfigPath(options.config);
 
   if (!fullPath) {
-    p.log.error(pc.red("No configuration file found."));
-    process.exit(1);
+    throw usageError("config_not_found", "No configuration file found.");
   }
 
   const s = p.spinner();
@@ -31,25 +32,24 @@ export async function runValidate(options: ValidateOptions) {
     owo = await loadOwostackFromConfig(fullPath);
   } catch (e: any) {
     s.stop(pc.red("Failed to load configuration"));
-    p.log.error(pc.red(`Error: ${e.message}`));
-    p.log.info(
-      pc.dim(
-        "Make sure 'owostack' is installed in your project: 'npm install owostack'",
-      ),
+    throw usageError(
+      "config_invalid",
+      `Could not load ${fullPath}: ${e.message}`,
+      "Make sure 'owostack' is installed in your project: npm install owostack",
     );
-    process.exit(1);
   }
 
   if (!owo || typeof owo.sync !== "function") {
     s.stop(pc.red("Invalid configuration"));
-    p.log.error("Config file must export an Owostack instance.");
-    process.exit(1);
+    throw usageError(
+      "config_invalid",
+      "Config file must export an Owostack instance.",
+    );
   }
 
   if (!owo._config?.catalog || owo._config.catalog.length === 0) {
     s.stop(pc.red("No catalog found"));
-    p.log.error("Config has no catalog to validate.");
-    process.exit(1);
+    throw usageError("config_invalid", "Config has no catalog to validate.");
   }
 
   s.stop(
@@ -61,8 +61,10 @@ export async function runValidate(options: ValidateOptions) {
   }))) as any;
 
   if (!buildSyncPayload) {
-    p.log.error("buildSyncPayload unavailable from owostack.");
-    process.exit(1);
+    throw usageError(
+      "config_invalid",
+      "buildSyncPayload unavailable from owostack. Upgrade the owostack package.",
+    );
   }
 
   try {
@@ -89,45 +91,28 @@ export async function runValidate(options: ValidateOptions) {
       );
     }
 
-    // Default to test environment, prod only with --prod flag
-    const configSettings = await loadConfigSettings(options.config);
-    const testUrl = getTestApiUrl(configSettings.environments?.test);
-    const liveUrl = getLiveApiUrl(configSettings.environments?.live);
-    const apiKey = getApiKey();
-
-    if (options.prod) {
-      p.log.step(pc.magenta("Production Mode: Checking PROD environment"));
-      const apiUrl = `${liveUrl}/api/v1`;
-      try {
-        const livePlans = await fetchPlans({
-          apiKey,
-          apiUrl: apiUrl,
-        });
-        p.log.success(
-          `PROD environment accessible (${livePlans.length} remote plans)`,
-        );
-      } catch (e: any) {
-        p.log.error(`PROD environment check failed: ${e.message}`);
-      }
-    } else {
-      p.log.step(pc.cyan("Sandbox Mode: Checking SANDBOX environment"));
-      const apiUrl = `${testUrl}/api/v1`;
-      try {
-        const testPlans = await fetchPlans({
-          apiKey,
-          apiUrl: apiUrl,
-        });
-        p.log.success(
-          `SANDBOX environment accessible (${testPlans.length} remote plans)`,
-        );
-      } catch (e: any) {
-        p.log.error(`SANDBOX environment check failed: ${e.message}`);
-      }
+    // Connectivity check against the selected environment. Missing key/mode
+    // is a usage error; an unreachable/denied API is a validation failure.
+    const ctx = await resolveCommandContext(options, reporter);
+    announceMode(reporter, ctx, "checking");
+    try {
+      const remotePlans = await fetchPlans({
+        apiKey: ctx.apiKey,
+        apiUrl: ctx.apiUrl,
+      });
+      p.log.success(
+        `${ctx.mode} environment accessible (${remotePlans.length} remote plans)`,
+      );
+    } catch (e: any) {
+      throw failure(
+        "api_error",
+        `${ctx.mode} environment check failed: ${e.message}`,
+      );
     }
 
     p.outro(pc.green("Validation passed! ✨"));
   } catch (e: any) {
-    p.log.error(`Validation failed: ${e.message}`);
-    process.exit(1);
+    if (e?.name === "CliError") throw e;
+    throw failure("api_error", `Validation failed: ${e.message}`);
   }
 }
