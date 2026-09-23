@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import type { ManagedSandboxEnv } from "./managed-sandbox";
 import { resolveProvider } from "@owostack/adapters";
 import type { ProviderAccount, ProviderAdapter } from "@owostack/adapters";
 import { schema } from "@owostack/db";
@@ -59,8 +60,8 @@ export interface CreditPackProviderSyncContext {
   organizationId: string;
   environment: string | undefined;
   encryptionKey?: string;
-  /** Raw MANAGED_SANDBOX_PROVIDERS secret; enables managed sandbox accounts. */
-  managedSandboxProviders?: string;
+  /** Worker env (`c.env`); enables Owostack-managed sandbox accounts. */
+  managedSandbox?: ManagedSandboxEnv;
 }
 
 export interface CreditPackProviderSyncIssue {
@@ -235,10 +236,7 @@ async function resolveCreditPackProvider(params: {
       context.db,
       context.organizationId,
       context.encryptionKey,
-      {
-        ENVIRONMENT: context.environment,
-        MANAGED_SANDBOX_PROVIDERS: context.managedSandboxProviders,
-      },
+      context.managedSandbox ?? { ENVIRONMENT: context.environment },
     );
 
   const requestedProviderId = preferredProviderId ?? pack.providerId ?? null;

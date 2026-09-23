@@ -22,9 +22,8 @@ import {
  */
 
 const MANAGED_PAYSTACK_KEY = "sk_test_owostack_managed_paystack";
-const MANAGED_SECRET = JSON.stringify({
-  paystack: { secretKey: MANAGED_PAYSTACK_KEY },
-});
+// Paystack signs with the secret key, so the bare key is the whole secret.
+const MANAGED_SECRETS = { MANAGED_SANDBOX_PAYSTACK: MANAGED_PAYSTACK_KEY };
 
 async function paystackSignature(secret: string, body: string) {
   const encoder = new TextEncoder();
@@ -116,7 +115,7 @@ describe("Managed sandbox webhooks", () => {
     env: Record<string, unknown> = {
       ...RUNTIME_ROUTE_ENV,
       ENVIRONMENT: "test",
-      MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+      ...MANAGED_SECRETS,
     },
   ) {
     return app.request(
@@ -219,7 +218,7 @@ describe("Managed sandbox webhooks", () => {
         {
           ...RUNTIME_ROUTE_ENV,
           ENVIRONMENT: "live",
-          MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+          ...MANAGED_SECRETS,
         },
       );
 

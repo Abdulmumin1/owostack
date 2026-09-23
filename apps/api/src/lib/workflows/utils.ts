@@ -20,7 +20,8 @@ export interface WorkflowEnv {
   RENEWAL_SETUP_WORKFLOW?: Workflow;
   ENCRYPTION_KEY: string;
   ENVIRONMENT?: string; // "test" | "live" | "development" — set per worker deployment
-  MANAGED_SANDBOX_PROVIDERS?: string; // Sandbox-only shared provider credentials
+  /** MANAGED_SANDBOX_<PROVIDER> secrets and any other worker bindings. */
+  [binding: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------

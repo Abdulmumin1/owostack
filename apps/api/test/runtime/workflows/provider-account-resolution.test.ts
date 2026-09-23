@@ -36,10 +36,13 @@ describe("resolveProviderAccount runtime integration", () => {
   });
 
   describe("managed sandbox fallback", () => {
-    const MANAGED_SECRET = JSON.stringify({
-      paystack: { secretKey: "sk_test_owostack_managed" },
-      stripe: { secretKey: "sk_test_owostack_stripe", webhookSecret: "whsec" },
-    });
+    const MANAGED_SECRETS = {
+      MANAGED_SANDBOX_PAYSTACK: "sk_test_owostack_managed",
+      MANAGED_SANDBOX_STRIPE: JSON.stringify({
+        secretKey: "sk_test_owostack_stripe",
+        webhookSecret: "whsec",
+      }),
+    };
 
     it("resolves the managed account on the sandbox worker when the org has no row for that provider", async () => {
       const db = createSqliteD1Database();
@@ -50,7 +53,7 @@ describe("resolveProviderAccount runtime integration", () => {
         const account = await resolveProviderAccount(
           buildWorkflowEnv(db, {
             ENVIRONMENT: "test",
-            MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+            ...MANAGED_SECRETS,
           }),
           "org_1",
           "stripe",
@@ -81,7 +84,7 @@ describe("resolveProviderAccount runtime integration", () => {
         const account = await resolveProviderAccount(
           buildWorkflowEnv(db, {
             ENVIRONMENT: "test",
-            MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+            ...MANAGED_SECRETS,
           }),
           "org_1",
           "paystack",
@@ -103,7 +106,7 @@ describe("resolveProviderAccount runtime integration", () => {
         const account = await resolveProviderAccount(
           buildWorkflowEnv(db, {
             ENVIRONMENT: "live",
-            MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+            ...MANAGED_SECRETS,
           }),
           "org_1",
           "paystack",
