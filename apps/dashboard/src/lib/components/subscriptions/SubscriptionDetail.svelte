@@ -399,7 +399,7 @@
 </script>
 
 {#if isLoading}
-  <div class="p-5 space-y-6">
+  <div class="p-5 space-y-5">
     <div class="flex items-start gap-3">
       <Skeleton class="w-10 h-10 rounded-full shrink-0" />
       <div class="flex-1 space-y-2">
@@ -410,19 +410,26 @@
     </div>
     <div class="grid grid-cols-3 gap-3">
       {#each Array(3) as _}
-        <Skeleton class="h-16 w-full rounded" />
+        <div class="bg-bg-secondary rounded p-3 text-center">
+          <Skeleton class="h-2.5 w-14 mx-auto mb-1.5" />
+          <Skeleton class="h-4 w-10 mx-auto" />
+        </div>
       {/each}
     </div>
     <div class="space-y-3">
       <Skeleton class="h-3 w-20" />
       {#each Array(2) as _}
-        <Skeleton class="h-12 w-full rounded" />
+        <div class="bg-bg-secondary rounded p-3">
+          <Skeleton class="h-3 w-full" />
+        </div>
       {/each}
     </div>
     <div class="space-y-3">
       <Skeleton class="h-3 w-20" />
       {#each Array(3) as _}
-        <Skeleton class="h-10 w-full rounded" />
+        <div class="bg-bg-secondary rounded p-3">
+          <Skeleton class="h-3 w-full" />
+        </div>
       {/each}
     </div>
   </div>

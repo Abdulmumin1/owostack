@@ -316,31 +316,72 @@
       </div>
     </div>
   {:else if customers.length === 0}
-    <div
-      class="bg-bg-card border border-border p-12 flex flex-col items-center justify-center text-center"
-    >
-      <div
-        class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4"
-      >
-        <Users size={24} class="text-text-dim" weight="duotone" />
+    <div class="table-container !overflow-visible">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-bg-secondary border-b border-border">
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Customer</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >External ID</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Provider</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Joined</th
+            >
+            <th class="px-6 py-4"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border/50">
+          <tr>
+            <td colspan="5" class="px-6 py-12">
+              <div
+                class="flex flex-col items-center justify-center text-center min-h-[24rem]"
+              >
+                <div
+                  class="w-12 h-12 bg-bg-secondary flex items-center justify-center mb-4"
+                >
+                  <Users size={24} class="text-text-dim" weight="duotone" />
+                </div>
+                <h3 class="text-lg font-bold text-text-primary mb-2">
+                  {searchQuery ? "No matching customers" : "No customers yet"}
+                </h3>
+                <p class="text-text-dim max-w-sm mb-6 text-sm">
+                  {searchQuery
+                    ? "Try a different search term or clear the filter."
+                    : "Customers will appear here once they subscribe to a plan or are added manually."}
+                </p>
+                {#if !searchQuery}
+                  <button
+                    class="btn btn-primary gap-2"
+                    onclick={() => (showCreateCustomerModal = true)}
+                  >
+                    <Plus size={14} weight="fill" />
+                    Create First Customer
+                  </button>
+                {/if}
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center rounded justify-between px-4 py-4">
+      <Skeleton class="h-3 w-40" />
+      <div class="flex items-center gap-1">
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
+        <Skeleton class="w-8 h-7 rounded-sm" />
       </div>
-      <h3 class="text-lg font-bold text-text-primary mb-2">
-        {searchQuery ? "No matching customers" : "No customers yet"}
-      </h3>
-      <p class="text-text-dim max-w-sm mb-6 text-sm">
-        {searchQuery
-          ? "Try a different search term or clear the filter."
-          : "Customers will appear here once they subscribe to a plan or are added manually."}
-      </p>
-      {#if !searchQuery}
-        <button
-          class="btn btn-primary gap-2"
-          onclick={() => (showCreateCustomerModal = true)}
-        >
-          <Plus size={14} weight="fill" />
-          Create First Customer
-        </button>
-      {/if}
     </div>
   {:else}
     <!-- Table -->

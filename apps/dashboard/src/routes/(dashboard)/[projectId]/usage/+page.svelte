@@ -363,31 +363,39 @@
     <div class="mb-6">
       <div class="flex items-center justify-between mb-4">
         <Skeleton class="h-3 w-32" />
+        <Skeleton class="h-3 w-24" />
       </div>
       <div class="grid gap-3">
         {#each Array(5) as _}
           <div
-            class="border border-border rounded-lg px-4 py-3 flex items-center justify-between bg-bg-card"
+            class="relative overflow-hidden rounded-lg border border-border bg-bg-card"
           >
-            <div class="space-y-1.5 flex-1 pr-4">
-              <Skeleton class="h-3.5 w-32" />
-              <Skeleton class="h-2.5 w-48 max-w-full" />
-            </div>
-            <div class="flex items-center gap-5 sm:gap-6 shrink-0">
-              <div class="space-y-1.5 flex flex-col items-end w-20 sm:w-24 shrink-0">
-                <Skeleton class="h-3.5 w-12" />
-                <Skeleton class="h-2 w-16" />
+            <div
+              class="relative z-10 flex flex-wrap sm:flex-nowrap items-center justify-between px-4 py-3 gap-4"
+            >
+              <div class="flex flex-col truncate min-w-0 pr-4 flex-1">
+                <Skeleton class="h-3.5 w-32" />
+                <Skeleton class="h-2 w-20 mt-1" />
               </div>
-              <div class="w-px h-6 bg-border/60 hidden sm:block"></div>
-              <div class="flex items-center justify-end gap-2.5 w-24 sm:w-32 shrink-0">
-                <div class="hidden sm:flex -space-x-1.5 mr-1 shrink-0">
-                  <Skeleton class="h-6 w-6 rounded-full border-2 border-bg-card" />
-                  <Skeleton class="h-6 w-6 rounded-full border-2 border-bg-card" />
-                  <Skeleton class="h-6 w-6 rounded-full border-2 border-bg-card" />
+
+              <div class="flex items-center gap-5 sm:gap-6 shrink-0">
+                <div class="flex flex-col items-end w-20 sm:w-24 shrink-0">
+                  <Skeleton class="h-3.5 w-12" />
+                  <Skeleton class="h-2 w-16 mt-1" />
                 </div>
-                <div class="space-y-1.5 flex flex-col items-end min-w-[3rem]">
-                  <Skeleton class="h-3.5 w-8" />
-                  <Skeleton class="h-2 w-12" />
+
+                <div class="w-px h-6 bg-border/60 hidden sm:block"></div>
+
+                <div class="flex items-center justify-end gap-2.5 w-24 sm:w-32 shrink-0">
+                  <div class="hidden sm:flex -space-x-1.5 mr-1 shrink-0">
+                    <Skeleton class="h-6 w-6 rounded-full border-2 border-bg-card" />
+                    <Skeleton class="h-6 w-6 rounded-full border-2 border-bg-card" />
+                    <Skeleton class="h-6 w-6 rounded-full border-2 border-bg-card" />
+                  </div>
+                  <div class="flex flex-col items-end min-w-[3rem]">
+                    <Skeleton class="h-3.5 w-8" />
+                    <Skeleton class="h-2 w-12 mt-1" />
+                  </div>
                 </div>
               </div>
             </div>

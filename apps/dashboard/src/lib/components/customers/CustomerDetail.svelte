@@ -351,45 +351,73 @@
 
 {#if isLoading}
   {#if isPageVariant}
-    <div class="space-y-10 px-4 py-6">
+    <div class="space-y-10 px-4 py-2 max-w-[1200px] mx-auto pb-16">
       <div class="space-y-4">
         <Skeleton class="h-4 w-48" />
         <Skeleton class="h-8 w-64" />
       </div>
       <div class="space-y-4">
         <Skeleton class="h-6 w-32" />
-        <Skeleton class="h-32 w-full rounded-md" />
+        <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+          <div class="px-3 py-2.5 flex items-center gap-3">
+            <Skeleton class="w-7 h-7 rounded-md shrink-0" />
+            <div class="space-y-1.5">
+              <Skeleton class="h-3 w-40" />
+              <Skeleton class="h-2.5 w-24" />
+            </div>
+          </div>
+          <div class="px-3 py-2.5 flex items-center gap-3">
+            <Skeleton class="w-7 h-7 rounded-md shrink-0" />
+            <div class="space-y-1.5">
+              <Skeleton class="h-3 w-32" />
+              <Skeleton class="h-2.5 w-20" />
+            </div>
+          </div>
+        </div>
       </div>
       <div class="space-y-4">
         <Skeleton class="h-6 w-32" />
-        <Skeleton class="h-24 w-full rounded-md" />
+        <div class="grid grid-cols-2 gap-4 rounded-lg">
+          <Skeleton class="h-24 w-full rounded-lg" />
+          <Skeleton class="h-24 w-full rounded-lg" />
+        </div>
       </div>
     </div>
   {:else}
-    <div class="p-5 space-y-6">
-      <div class="flex items-start gap-3">
-        <Skeleton class="w-10 h-10 rounded-full shrink-0" />
-        <div class="flex-1 space-y-2">
-          <Skeleton class="h-4 w-32" />
-          <Skeleton class="h-3 w-48" />
-          <Skeleton class="h-3 w-24" />
+    <div class="p-5 space-y-5">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-start gap-3">
+          <Skeleton class="w-10 h-10 rounded-full shrink-0" />
+          <div class="flex-1 space-y-2">
+            <Skeleton class="h-4 w-32" />
+            <Skeleton class="h-3 w-48" />
+            <Skeleton class="h-3 w-24" />
+          </div>
         </div>
+        <Skeleton class="h-6 w-20 rounded-full" />
       </div>
       <div class="grid grid-cols-3 gap-3">
         {#each Array(3) as _}
-          <Skeleton class="h-16 w-full" />
+          <div class="bg-bg-secondary rounded p-3 text-center">
+            <Skeleton class="h-2.5 w-14 mx-auto mb-1.5" />
+            <Skeleton class="h-4 w-10 mx-auto" />
+          </div>
         {/each}
       </div>
       <div class="space-y-3">
         <Skeleton class="h-3 w-20" />
         {#each Array(2) as _}
-          <Skeleton class="h-12 w-full" />
+          <div class="bg-bg-secondary rounded p-3">
+            <Skeleton class="h-3 w-full" />
+          </div>
         {/each}
       </div>
       <div class="space-y-3">
         <Skeleton class="h-3 w-20" />
         {#each Array(3) as _}
-          <Skeleton class="h-8 w-full" />
+          <div class="bg-bg-secondary rounded p-3">
+            <Skeleton class="h-3 w-full" />
+          </div>
         {/each}
       </div>
     </div>
