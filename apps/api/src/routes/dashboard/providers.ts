@@ -117,9 +117,14 @@ function getEnabledProviders(env: any): string[] {
  * checks.
  */
 app.get("/managed-sandbox", async (c) => {
+  const enabled = new Set(getEnabledProviders(c.env));
   return c.json({
     success: true,
-    data: { providers: listManagedSandboxProviderIds(c.env) },
+    data: {
+      providers: listManagedSandboxProviderIds(c.env).filter((id) =>
+        enabled.has(id),
+      ),
+    },
   });
 });
 

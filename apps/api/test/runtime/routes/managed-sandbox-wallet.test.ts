@@ -24,9 +24,13 @@ import {
  */
 
 const MANAGED_PAYSTACK_KEY = "sk_test_owostack_managed_paystack";
-const MANAGED_SECRET = JSON.stringify({
-  paystack: { secretKey: MANAGED_PAYSTACK_KEY, publicKey: "pk_test_managed" },
-});
+// Exactly what `wrangler secret put MANAGED_SANDBOX_PAYSTACK --env test` yields.
+const MANAGED_SECRETS = {
+  MANAGED_SANDBOX_PAYSTACK: JSON.stringify({
+    secretKey: MANAGED_PAYSTACK_KEY,
+    publicKey: "pk_test_managed",
+  }),
+};
 const API_KEY = "owo_sk_test_0123456789abcdef0123456789abcdef01234567";
 
 describe("Managed sandbox provider accounts (wallet setup runtime)", () => {
@@ -116,7 +120,7 @@ describe("Managed sandbox provider accounts (wallet setup runtime)", () => {
       setupWallet({
         ...RUNTIME_ROUTE_ENV,
         ENVIRONMENT: "test",
-        MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+        ...MANAGED_SECRETS,
       }),
     );
 
@@ -143,7 +147,7 @@ describe("Managed sandbox provider accounts (wallet setup runtime)", () => {
       setupWallet({
         ...RUNTIME_ROUTE_ENV,
         ENVIRONMENT: "test",
-        MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+        ...MANAGED_SECRETS,
       }),
     );
 
@@ -171,7 +175,7 @@ describe("Managed sandbox provider accounts (wallet setup runtime)", () => {
       setupWallet({
         ...RUNTIME_ROUTE_ENV,
         ENVIRONMENT: "live",
-        MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+        ...MANAGED_SECRETS,
       }),
     );
 

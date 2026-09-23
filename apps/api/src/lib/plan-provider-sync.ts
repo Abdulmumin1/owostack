@@ -1,4 +1,5 @@
 import { resolveProvider } from "@owostack/adapters";
+import type { ManagedSandboxEnv } from "./managed-sandbox";
 import type { ProviderAccount, ProviderAdapter } from "@owostack/adapters";
 import {
   getProviderRegistry,
@@ -59,8 +60,8 @@ export interface PlanProviderSyncContext {
   organizationId: string;
   environment: string | undefined;
   encryptionKey?: string;
-  /** Raw MANAGED_SANDBOX_PROVIDERS secret; enables managed sandbox accounts. */
-  managedSandboxProviders?: string;
+  /** Worker env (`c.env`); enables Owostack-managed sandbox accounts. */
+  managedSandbox?: ManagedSandboxEnv;
 }
 
 export interface ProviderPlanSyncIssue {
@@ -265,10 +266,7 @@ async function resolveProviderTarget(params: {
       context.db,
       context.organizationId,
       context.encryptionKey,
-      {
-        ENVIRONMENT: context.environment,
-        MANAGED_SANDBOX_PROVIDERS: context.managedSandboxProviders,
-      },
+      context.managedSandbox ?? { ENVIRONMENT: context.environment },
     );
   const requestedProviderId = preferredProviderId ?? plan.providerId ?? null;
 

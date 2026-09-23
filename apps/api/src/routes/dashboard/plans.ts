@@ -241,7 +241,7 @@ app.post("/", async (c) => {
         organizationId,
         environment: c.env.ENVIRONMENT,
         encryptionKey: c.env.ENCRYPTION_KEY,
-        managedSandboxProviders: c.env.MANAGED_SANDBOX_PROVIDERS,
+        managedSandbox: c.env,
       },
       plan: {
         slug,
@@ -510,7 +510,7 @@ app.patch("/:id", async (c) => {
             organizationId: updated.organizationId,
             environment: c.env.ENVIRONMENT,
             encryptionKey: c.env.ENCRYPTION_KEY,
-            managedSandboxProviders: c.env.MANAGED_SANDBOX_PROVIDERS,
+            managedSandbox: c.env,
           },
           plan: {
             slug: updated.slug ?? existingPlan.slug,

@@ -3,21 +3,28 @@
  *
  * In sandbox (any non-live worker) users do not connect their own provider
  * test accounts. Instead the sandbox worker carries one shared test account
- * per provider in the `MANAGED_SANDBOX_PROVIDERS` secret, and every
- * organization transparently transacts through it.
+ * per provider, and every organization transparently transacts through it.
  *
- * Secret format (JSON, set with `wrangler secret put MANAGED_SANDBOX_PROVIDERS --env test`):
+ * One secret per provider, so each can be set and rotated independently:
  *
- *   {
- *     "paystack":     { "secretKey": "sk_test_…", "publicKey": "pk_test_…" },
- *     "stripe":       { "secretKey": "sk_test_…", "publishableKey": "pk_test_…", "webhookSecret": "whsec_…" },
- *     "dodopayments": { "secretKey": "…", "webhookSecret": "…" },
- *     "bachs":        { "secretKey": "sk_sandbox_…", "webhookSecret": "…" }
- *   }
+ *   MANAGED_SANDBOX_<PROVIDER_ID in upper case>
  *
- * Only `secretKey` is required per provider. Values are plaintext — the
- * secret is never persisted to D1, so the ENCRYPTION_KEY round-trip used for
- * user-supplied accounts does not apply.
+ *   wrangler secret put MANAGED_SANDBOX_PAYSTACK     --env test
+ *   wrangler secret put MANAGED_SANDBOX_STRIPE       --env test
+ *   wrangler secret put MANAGED_SANDBOX_DODOPAYMENTS --env test
+ *   wrangler secret put MANAGED_SANDBOX_BACHS        --env test
+ *
+ * The value is either the bare secret key:
+ *
+ *   sk_test_…
+ *
+ * or, when the provider needs more than one credential, a JSON object:
+ *
+ *   {"secretKey":"sk_test_…","publishableKey":"pk_test_…","webhookSecret":"whsec_…"}
+ *
+ * Only `secretKey` is required. Values are plaintext — they are never
+ * persisted to D1, so the ENCRYPTION_KEY round-trip used for user-supplied
+ * accounts does not apply.
  *
  * A user-created `provider_accounts` row with `environment = "test"` for the
  * same provider always takes precedence over the managed account, so teams
@@ -26,12 +33,15 @@
 
 import type { ProviderAccount } from "@owostack/adapters";
 
+export const MANAGED_SANDBOX_SECRET_PREFIX = "MANAGED_SANDBOX_";
 export const MANAGED_SANDBOX_ACCOUNT_ID_PREFIX = "managed_sandbox_";
 
-/** The subset of worker bindings this module reads. Pass `c.env` directly. */
+/**
+ * Any worker env. Only `ENVIRONMENT` and the `MANAGED_SANDBOX_*` bindings are
+ * read; pass `c.env` (or a workflow env) directly.
+ */
 export interface ManagedSandboxEnv {
   ENVIRONMENT?: string;
-  MANAGED_SANDBOX_PROVIDERS?: string;
 }
 
 export type ManagedSandboxCredentials = Record<string, unknown> & {
@@ -43,59 +53,79 @@ export function isManagedSandboxRuntime(env: ManagedSandboxEnv): boolean {
   return env.ENVIRONMENT !== "live" && env.ENVIRONMENT !== "production";
 }
 
+/** `paystack` → `MANAGED_SANDBOX_PAYSTACK` */
+export function managedSandboxSecretName(providerId: string): string {
+  return `${MANAGED_SANDBOX_SECRET_PREFIX}${providerId.toUpperCase()}`;
+}
+
+/** `MANAGED_SANDBOX_PAYSTACK` → `paystack`; null for any other binding name. */
+export function providerIdFromSecretName(name: string): string | null {
+  if (!name.startsWith(MANAGED_SANDBOX_SECRET_PREFIX)) return null;
+  const id = name.slice(MANAGED_SANDBOX_SECRET_PREFIX.length).toLowerCase();
+  return id.length > 0 ? id : null;
+}
+
 /**
- * Parse the secret into a provider → credentials map. Malformed entries are
- * dropped (and logged) rather than thrown so one bad provider entry cannot
- * take the whole sandbox down.
+ * Parse one provider's secret value. Accepts a bare secret key or a JSON
+ * object with at least `secretKey`. Returns null (and logs) for anything else
+ * so one bad secret cannot take the rest of the sandbox down.
  */
-export function parseManagedSandboxProviders(
-  raw: string | undefined | null,
-): Map<string, ManagedSandboxCredentials> {
-  const out = new Map<string, ManagedSandboxCredentials>();
-  if (!raw || raw.trim().length === 0) return out;
+export function parseManagedSandboxSecret(
+  name: string,
+  raw: unknown,
+): ManagedSandboxCredentials | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (value.length === 0) return null;
+
+  if (!value.startsWith("{")) {
+    return { secretKey: value };
+  }
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(value);
   } catch (error) {
-    console.error(
-      "[managed-sandbox] MANAGED_SANDBOX_PROVIDERS is not valid JSON",
-      error,
-    );
-    return out;
+    console.error(`[managed-sandbox] ${name} is not valid JSON`, error);
+    return null;
   }
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     console.error(
-      "[managed-sandbox] MANAGED_SANDBOX_PROVIDERS must be a JSON object keyed by provider id",
+      `[managed-sandbox] ${name} must be a bare secret key or a JSON object`,
     );
-    return out;
+    return null;
   }
 
-  for (const [providerId, value] of Object.entries(
-    parsed as Record<string, unknown>,
+  const credentials = parsed as Record<string, unknown>;
+  if (
+    typeof credentials.secretKey !== "string" ||
+    credentials.secretKey.trim().length === 0
+  ) {
+    console.error(`[managed-sandbox] ${name} is missing secretKey`);
+    return null;
+  }
+
+  return { ...credentials, secretKey: credentials.secretKey.trim() };
+}
+
+/**
+ * Collect every `MANAGED_SANDBOX_*` binding on this worker into a
+ * provider → credentials map. Empty on the live worker.
+ */
+export function parseManagedSandboxProviders(
+  env: ManagedSandboxEnv,
+): Map<string, ManagedSandboxCredentials> {
+  const out = new Map<string, ManagedSandboxCredentials>();
+  if (!isManagedSandboxRuntime(env)) return out;
+
+  for (const [name, raw] of Object.entries(
+    env as unknown as Record<string, unknown>,
   )) {
-    const id = providerId.trim().toLowerCase();
-    if (!id || !value || typeof value !== "object" || Array.isArray(value)) {
-      console.error(
-        `[managed-sandbox] Ignoring provider '${providerId}': entry must be an object`,
-      );
-      continue;
-    }
-    const credentials = value as Record<string, unknown>;
-    if (
-      typeof credentials.secretKey !== "string" ||
-      credentials.secretKey.trim().length === 0
-    ) {
-      console.error(
-        `[managed-sandbox] Ignoring provider '${providerId}': missing secretKey`,
-      );
-      continue;
-    }
-    out.set(id, {
-      ...credentials,
-      secretKey: credentials.secretKey.trim(),
-    });
+    const providerId = providerIdFromSecretName(name);
+    if (!providerId) continue;
+    const credentials = parseManagedSandboxSecret(name, raw);
+    if (credentials) out.set(providerId, credentials);
   }
 
   return out;
@@ -113,8 +143,7 @@ export function isManagedSandboxAccount(
 
 /** Provider ids that have a managed sandbox account on this worker. */
 export function listManagedSandboxProviderIds(env: ManagedSandboxEnv): string[] {
-  if (!isManagedSandboxRuntime(env)) return [];
-  return [...parseManagedSandboxProviders(env.MANAGED_SANDBOX_PROVIDERS).keys()];
+  return [...parseManagedSandboxProviders(env).keys()].sort();
 }
 
 /**
@@ -126,26 +155,18 @@ export function listManagedSandboxAccounts(
   env: ManagedSandboxEnv,
   organizationId: string,
 ): ProviderAccount[] {
-  if (!isManagedSandboxRuntime(env)) return [];
-
-  const now = 0;
-  const accounts: ProviderAccount[] = [];
-  for (const [providerId, credentials] of parseManagedSandboxProviders(
-    env.MANAGED_SANDBOX_PROVIDERS,
-  )) {
-    accounts.push({
-      id: managedSandboxAccountId(providerId),
-      organizationId,
-      providerId: providerId as ProviderAccount["providerId"],
-      environment: "test",
-      displayName: "Owostack sandbox",
-      credentials,
-      metadata: { managed: true },
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-  return accounts;
+  const providers = parseManagedSandboxProviders(env);
+  return [...providers.keys()].sort().map((providerId) => ({
+    id: managedSandboxAccountId(providerId),
+    organizationId,
+    providerId: providerId as ProviderAccount["providerId"],
+    environment: "test",
+    displayName: "Owostack sandbox",
+    credentials: providers.get(providerId)!,
+    metadata: { managed: true },
+    createdAt: 0,
+    updatedAt: 0,
+  }));
 }
 
 /** Managed account for one provider, or null when not managed on this worker. */

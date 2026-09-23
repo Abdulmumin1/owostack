@@ -16,9 +16,7 @@ import {
  * here is the target worker's environment.
  */
 
-const MANAGED_SECRET = JSON.stringify({
-  paystack: { secretKey: "sk_test_owostack_managed" },
-});
+const MANAGED_SECRETS = { MANAGED_SANDBOX_PAYSTACK: "sk_test_owostack_managed" };
 
 describe("POST /switch-environment with managed sandbox", () => {
   let businessDb: ReturnType<typeof createRuntimeBusinessDb>;
@@ -64,7 +62,7 @@ describe("POST /switch-environment with managed sandbox", () => {
     const response = await switchTo("test", {
       ...RUNTIME_ROUTE_ENV,
       ENVIRONMENT: "test",
-      MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+      ...MANAGED_SECRETS,
     });
 
     expect(response.status).toBe(200);
@@ -94,7 +92,7 @@ describe("POST /switch-environment with managed sandbox", () => {
       ...RUNTIME_ROUTE_ENV,
       ENVIRONMENT: "live",
       // Even if someone mistakenly set the secret on the live worker.
-      MANAGED_SANDBOX_PROVIDERS: MANAGED_SECRET,
+      ...MANAGED_SECRETS,
     });
     expect(blocked.status).toBe(400);
     expect(await blocked.json()).toEqual({
