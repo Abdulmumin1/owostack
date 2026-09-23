@@ -652,6 +652,10 @@
                         "lateral"
                       ]
                     },
+                    "pending": {
+                      "type": "boolean",
+                      "description": "True when the provider accepted a native upgrade but is still collecting the prorated charge; the customer stays on the current plan until the provider confirms."
+                    },
                     "message": {
                       "type": "string"
                     },
