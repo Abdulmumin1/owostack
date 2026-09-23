@@ -11,6 +11,7 @@ import {
   cancelSubscription,
 } from "../../lib/plan-switch";
 import { hasPaymentMethod } from "../../lib/overage-guards";
+import { EntitlementCache } from "../../lib/cache";
 import type { ProviderContext } from "../../lib/plan-switch";
 import { ensurePlanSynced } from "../../lib/plan-sync";
 import { resolveProvider } from "@owostack/adapters";
@@ -29,6 +30,7 @@ import {
   apiKeySecurity,
   badRequestResponse,
   conflictResponse,
+  customerDataSchema,
   internalServerErrorResponse,
   jsonContent,
   metadataSchema,
@@ -69,8 +71,10 @@ const defaultDependencies: CheckoutDependencies = {
 const jsonContentTypePattern = /^application\/([a-z-]+\+)?json\b/i;
 
 const attachSchema = z.object({
-  customer: z.string(), // Email or customer ID
+  customer: z.string(), // Email, external id, or customer ID
   product: z.string(), // Plan slug
+  /** Used to auto-create the customer when `customer` is not an email. */
+  customerData: customerDataSchema.optional(),
   currency: z.string().min(3).optional(),
   channels: z.array(z.string()).optional(),
   metadata: metadataSchema.optional(),
@@ -100,6 +104,29 @@ export function createCheckoutRoute(
 ) {
   const deps = { ...defaultDependencies, ...overrides };
   const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
+
+  /**
+   * /check and /track serve subscriptions from KV (60s TTL). Any attach that
+   * changes local subscription state must drop that entry, otherwise a native
+   * upgrade reports success while /check keeps answering for the old plan.
+   */
+  function invalidateEntitlementCache(
+    c: { env: Env; executionCtx: ExecutionContext },
+    organizationId: string,
+    customerId: string,
+  ) {
+    if (!c.env.CACHE) return;
+    const cache = new EntitlementCache(c.env.CACHE);
+    c.executionCtx.waitUntil(
+      Promise.all([
+        cache.invalidateSubscriptions(organizationId, customerId),
+        cache.invalidateCustomer(organizationId, customerId),
+      ]).catch((error) =>
+        console.warn("[attach] cache invalidation failed:", error),
+      ),
+    );
+  }
+
   const ensureJsonContentType: MiddlewareHandler<{
     Bindings: Env;
     Variables: Variables;
@@ -190,8 +217,15 @@ export function createCheckoutRoute(
           null,
         );
 
-        const { customer, product, currency, channels, metadata, callbackUrl } =
-          c.req.valid("json");
+        const {
+          customer,
+          product,
+          customerData,
+          currency,
+          channels,
+          metadata,
+          callbackUrl,
+        } = c.req.valid("json");
 
         // 1. Resolve Plan (Price)
         const plan = await db.query.plans.findFirst({
@@ -297,15 +331,23 @@ export function createCheckoutRoute(
           };
         }
 
-        // 2. Resolve or create customer
-        const email = customer.toLowerCase();
+        // 2. Resolve or create customer. `customer` may be an email, an
+        //    external id or an Owostack id; the email the provider sees must
+        //    come from the resolved record, never from the identifier.
         let customerRecord;
         try {
           customerRecord = await deps.resolveOrCreateCustomer({
             db,
             organizationId,
             customerId: customer,
-            customerData: { email, metadata },
+            // Only an actual email may seed a new record; an external id
+            // like "user_123" must never be stored (or sent to a provider)
+            // as the customer's email.
+            customerData: customerData
+              ? { ...customerData, metadata: customerData.metadata ?? metadata }
+              : customer.includes("@")
+                ? { email: customer.toLowerCase(), metadata }
+                : undefined,
             providerId: selectedProviderId || undefined,
             waitUntil: (p) => c.executionCtx.waitUntil(p),
           });
@@ -318,10 +360,16 @@ export function createCheckoutRoute(
 
         if (!customerRecord) {
           return c.json(
-            { success: false, error: "Could not resolve or create customer" },
+            {
+              success: false,
+              error:
+                "Could not resolve or create customer. Pass an email as `customer`, or provide `customerData.email`.",
+            },
             400,
           );
         }
+
+        const email = customerRecord.email;
 
         // 4. Handle TRIAL plans (trialDays > 0, no card required) — separate path
         const trialDays = plan.trialDays || 0;
@@ -477,6 +525,7 @@ export function createCheckoutRoute(
             console.log(
               `[TRIAL] No-card trial activated: subscription=${subscriptionId}, trialEnds=${new Date(trialEndMs).toISOString()}`,
             );
+            invalidateEntitlementCache(c, organizationId, customerRecord.id);
             return c.json(
               {
                 success: true,
@@ -664,6 +713,7 @@ export function createCheckoutRoute(
                 oldPlanId,
               );
 
+              invalidateEntitlementCache(c, organizationId, customerRecord.id);
               return c.json(
                 {
                   success: true,
@@ -814,6 +864,12 @@ export function createCheckoutRoute(
 
           if (!result.success) {
             return c.json({ success: false, error: result.message }, 400);
+          }
+
+          // Free switches, lateral moves, native upgrades and scheduled
+          // downgrades all mutate the subscription row synchronously.
+          if (!result.requiresCheckout) {
+            invalidateEntitlementCache(c, organizationId, customerRecord.id);
           }
 
           return c.json(

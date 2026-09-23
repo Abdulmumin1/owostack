@@ -1134,24 +1134,59 @@ async function handleSubscriptionPayment(
   const startMs = safeParseDate(event.payment?.paidAt) || Date.now();
 
   if (!existingSub) {
-    await db.insert(schema.subscriptions).values([
-      {
-        id: crypto.randomUUID(),
-        customerId: dbCustomer.id,
-        planId: planId,
-        providerId: (metadata.provider_id as string) || event.provider,
-        providerSubscriptionId: event.payment?.reference || "charge",
-        providerSubscriptionCode: event.payment?.reference || "charge",
-        paystackSubscriptionCode:
-          event.provider === "paystack"
-            ? event.payment?.reference || "charge"
-            : null,
-        status: "active",
-        currentPeriodStart: startMs,
-        currentPeriodEnd: startMs + periodMs,
-        metadata: event.raw,
-      },
-    ]);
+    // Key the row by the provider's subscription id when the payment event
+    // carries one (Stripe, Dodo, Bachs) so it shares an identity with the
+    // subscription.* events for the same subscription. Only fall back to the
+    // payment reference for providers that create the subscription after
+    // the first charge (Paystack).
+    const subscriptionCode =
+      event.subscription?.providerCode || event.payment?.reference || "charge";
+    const inserted = await db
+      .insert(schema.subscriptions)
+      .values([
+        {
+          id: crypto.randomUUID(),
+          customerId: dbCustomer.id,
+          planId: planId,
+          providerId: (metadata.provider_id as string) || event.provider,
+          providerSubscriptionId:
+            event.subscription?.providerSubscriptionId || subscriptionCode,
+          providerSubscriptionCode: subscriptionCode,
+          paystackSubscriptionCode:
+            event.provider === "paystack" ? subscriptionCode : null,
+          status: "active",
+          currentPeriodStart: startMs,
+          currentPeriodEnd: startMs + periodMs,
+          metadata: event.raw,
+        },
+      ])
+      .onConflictDoNothing()
+      .returning({ id: schema.subscriptions.id });
+
+    if (inserted.length === 0) {
+      // A concurrent subscription.active / retry won the insert. Treat this
+      // payment as the renewal it is for that row.
+      console.log(
+        `[WEBHOOK] charge.success for code=${subscriptionCode} lost the insert race; updating the existing row`,
+      );
+      const winner = await db.query.subscriptions.findFirst({
+        where: and(
+          eq(schema.subscriptions.customerId, dbCustomer.id),
+          eq(schema.subscriptions.providerSubscriptionCode, subscriptionCode),
+        ),
+      });
+      if (winner) {
+        await db
+          .update(schema.subscriptions)
+          .set({
+            status: "active",
+            currentPeriodStart: startMs,
+            currentPeriodEnd: startMs + periodMs,
+            updatedAt: Date.now(),
+          })
+          .where(eq(schema.subscriptions.id, winner.id));
+      }
+    }
   } else {
     // Renewal: advance billing period so usage pools (credit systems, metered features) reset correctly
     await db
