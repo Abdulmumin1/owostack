@@ -80,20 +80,51 @@ export interface AttachParams {
 }
 
 export interface AttachResult {
-  /** Checkout URL to redirect user */
-  checkoutUrl: string;
+  /** False when the switch could not be performed; see `message`. */
+  success: boolean;
 
-  /** Payment reference for tracking */
-  reference: string;
+  /**
+   * True when the customer must complete a hosted checkout (`checkoutUrl`)
+   * before the subscription changes. False for free plans, lateral moves,
+   * native upgrades and scheduled downgrades, which take effect server-side.
+   */
+  requiresCheckout?: boolean;
 
-  /** Access code for inline checkout */
-  accessCode: string;
+  /** Checkout URL to redirect the user to when `requiresCheckout` is true */
+  checkoutUrl?: string;
+
+  /** Payment reference for tracking (checkout flows) */
+  reference?: string;
+
+  /** Access code for inline checkout (Paystack) */
+  accessCode?: string | null;
 
   /** Resolved internal customer ID */
-  customerId: string;
+  customer_id?: string;
+
+  /** Subscription that was created or changed, when no checkout is needed */
+  subscriptionId?: string;
 
   /** Switch type if customer already had a subscription */
-  type: "new" | "upgrade" | "downgrade" | "lateral";
+  type?: "new" | "upgrade" | "downgrade" | "lateral";
+
+  /**
+   * True when the provider accepted a native upgrade but is still collecting
+   * the prorated charge (e.g. Bachs). The customer stays on the current plan
+   * until the provider confirms; `check()` reflects the switch once it lands.
+   */
+  pending?: boolean;
+
+  /** Trial started without payment */
+  trial?: boolean;
+  trial_days?: number;
+  trial_ends_at?: string | null;
+
+  /** For scheduled downgrades: when the new plan takes effect (epoch ms) */
+  scheduledAt?: number;
+
+  /** Human-readable outcome */
+  message?: string;
 }
 
 /**
