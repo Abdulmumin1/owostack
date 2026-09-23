@@ -172,10 +172,10 @@ describe("dunning grace on past_due subscriptions", () => {
     expect((sub?.metadata as any).past_due_since).toBe(T0);
   });
 
-  it("keeps granting access during grace and tells the app why", async () => {
+  it("keeps granting access for as long as the provider is still retrying, and tells the app why", async () => {
     await failRenewalViaWebhook();
 
-    vi.setSystemTime(new Date(T0 + 3 * 24 * 3600 * 1000)); // day 3 of dunning
+    vi.setSystemTime(new Date(T0 + 21 * 24 * 3600 * 1000)); // three weeks in, provider still retrying
     const check = await post("/check", { customer: "cardfail@owostack.dev", feature: "api-calls" });
     expect(check).toMatchObject({
       allowed: true,
@@ -196,7 +196,7 @@ describe("dunning grace on past_due subscriptions", () => {
     });
   });
 
-  it("revokes access once the grace window closes", async () => {
+  it("stops granting after the backstop if the provider never sends a terminal event", async () => {
     await failRenewalViaWebhook();
 
     vi.setSystemTime(new Date(T0 + DUNNING_GRACE_MS + 60_000));

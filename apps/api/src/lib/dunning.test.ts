@@ -28,7 +28,7 @@ describe("dunning grace", () => {
   it("falls back to updatedAt for rows that went past_due before the stamp existed", () => {
     const sub = { status: "past_due", metadata: {}, updatedAt: T0 - 2 * DAY };
     expect(isWithinDunningGrace(sub, T0)).toBe(true);
-    expect(isWithinDunningGrace(sub, T0 + 6 * DAY)).toBe(false);
+    expect(isWithinDunningGrace(sub, T0 + 50 * DAY)).toBe(false);
   });
 
   it("never grants open-ended access when it cannot tell when dunning started", () => {

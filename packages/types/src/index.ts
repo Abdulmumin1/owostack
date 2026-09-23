@@ -306,7 +306,11 @@ export interface ResponseDetails {
    */
   paymentStatus?: "past_due";
 
-  /** ISO timestamp when dunning grace ends and access is revoked. */
+  /**
+   * Backstop: if the provider never resolves the past_due subscription,
+   * access is revoked at this ISO timestamp. Normally the provider cancels
+   * or reactivates long before.
+   */
   graceEndsAt?: string;
 }
 

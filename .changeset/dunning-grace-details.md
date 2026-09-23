@@ -4,4 +4,4 @@
 "owosk": minor
 ---
 
-`check()` and `track()` keep granting a subscription's entitlements for a 7-day dunning grace window after a renewal fails (`past_due`), while the payment provider retries the card. During the window `details.paymentStatus` is `"past_due"` and `details.graceEndsAt` says when access will be revoked, so apps can show an "update your payment method" prompt instead of an upgrade prompt.
+`check()` and `track()` keep granting a subscription's entitlements while the payment provider is retrying a failed renewal (`past_due`); access is revoked when the provider ends the subscription. During dunning `details.paymentStatus` is `"past_due"` (and `details.graceEndsAt` gives the 45-day backstop), so apps can show an "update your payment method" prompt instead of an upgrade prompt.

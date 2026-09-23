@@ -1,18 +1,20 @@
 /**
- * Dunning grace: keep serving a subscription's entitlements for a window
- * after the provider reports a failed renewal (`past_due`), while the
- * provider retries the card and emails the customer.
+ * Dunning: a subscription in `past_due` keeps its entitlements while the
+ * payment provider retries the card. The provider owns that schedule and
+ * tells us when it gives up — `customer.subscription.deleted`, `unpaid`,
+ * `canceled` — and those events revoke access through the normal status
+ * handlers. We do not run a second clock of our own.
  *
- * Providers run recovery for days (Stripe smart retries ≈ 1–4 weeks, Bachs
- * and Dodo have their own schedules). Revoking access on the first decline
- * punishes customers for an expired card; the grace window lets the app show
- * "update your payment method" instead of "upgrade".
+ * `DUNNING_GRACE_MS` is only a backstop for a missed terminal webhook or a
+ * row our own staleness check pushed into past_due: after this long with no
+ * word from the provider, stop granting. It is deliberately longer than any
+ * provider's recovery window (Stripe smart retries max out at ~4 weeks).
  *
  * The window is anchored on `metadata.past_due_since`, stamped when the
  * status transitions to past_due, falling back to `updatedAt`.
  */
 
-export const DUNNING_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+export const DUNNING_GRACE_MS = 45 * 24 * 60 * 60 * 1000;
 
 export interface DunningState {
   pastDueSince: number;
@@ -61,7 +63,11 @@ export function isWithinDunningGrace(
   return getDunningState(sub, now, graceMs)?.inGrace ?? false;
 }
 
-/** Fields merged into `details` when access is granted during dunning. */
+/**
+ * Fields merged into `details` when access is granted during dunning.
+ * `graceEndsAt` is the backstop date, not a promise: the provider will
+ * usually end or recover the subscription well before it.
+ */
 export function dunningDetails(state: DunningState): {
   paymentStatus: "past_due";
   graceEndsAt: string;
