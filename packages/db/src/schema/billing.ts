@@ -220,6 +220,15 @@ export const subscriptions = sqliteTable(
   (table) => [
     index("subscriptions_customer_idx").on(table.customerId),
     index("subscriptions_status_idx").on(table.status),
+    // One live row per provider subscription. Webhook handlers for the same
+    // subscription (payment.succeeded + subscription.active, or provider
+    // retries) run concurrently; check-then-insert alone races. Sentinel codes
+    // ("one-time", "charge") and NULL (free plans) are legitimately repeated.
+    uniqueIndex("subscriptions_live_provider_code_uniq")
+      .on(table.providerId, table.providerSubscriptionCode)
+      .where(
+        sql`${table.providerSubscriptionCode} IS NOT NULL AND ${table.providerSubscriptionCode} NOT IN ('one-time', 'charge') AND ${table.status} IN ('active', 'trialing', 'pending', 'past_due', 'pending_cancel')`,
+      ),
   ],
 );
 
