@@ -110,6 +110,11 @@ export function createEntitlementResponder<
      * granted access (e.g. dunning state).
      */
     grantedDetails?: () => Record<string, unknown> | null;
+    /** Observe the exact decorated body/status before it is serialized. */
+    onResponse?: (
+      body: Record<string, unknown>,
+      status: ContentfulStatusCode,
+    ) => void;
   } = {},
 ) {
   const environment = resolvePublicEnvironment(c.env?.ENVIRONMENT);
@@ -121,15 +126,18 @@ export function createEntitlementResponder<
     const decorated = decorateEntitlementBody(body, environment);
     const extra = body.allowed === true ? options.grantedDetails?.() : null;
     if (!extra || Object.keys(extra).length === 0) {
+      options.onResponse?.(decorated, status ?? 200);
       return c.json(decorated, status);
     }
     const details =
       decorated.details && typeof decorated.details === "object"
         ? (decorated.details as Record<string, unknown>)
         : {};
-    return c.json(
-      { ...decorated, details: { ...details, ...extra } } as typeof decorated,
-      status,
-    );
+    const responseBody = {
+      ...decorated,
+      details: { ...details, ...extra },
+    } as typeof decorated;
+    options.onResponse?.(responseBody, status ?? 200);
+    return c.json(responseBody, status);
   };
 }

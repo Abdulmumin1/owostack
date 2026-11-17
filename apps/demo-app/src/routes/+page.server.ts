@@ -77,6 +77,7 @@ export const load: PageServerLoad = async ({ parent, url }) => {
             .customer({
               id: user.id,
               email: user.email,
+              matchBy: "externalId",
               name: user.name,
             })
             .catch(() => null)
@@ -87,9 +88,7 @@ export const load: PageServerLoad = async ({ parent, url }) => {
         methods: [],
       })),
       owo.billing.usage({ customer: user.id }).catch(() => null),
-      owo.customer
-        .usageHistory(usageHistoryParams)
-        .catch(() => null),
+      owo.customer.usageHistory(usageHistoryParams).catch(() => null),
     ]);
 
     return {
@@ -103,7 +102,9 @@ export const load: PageServerLoad = async ({ parent, url }) => {
       usageHistory: usageHistoryRes,
       usageFilters: {
         range:
-          usageHistoryParams.range === "custom" ? "custom" : usageHistoryParams.range,
+          usageHistoryParams.range === "custom"
+            ? "custom"
+            : usageHistoryParams.range,
         granularity: usageHistoryParams.granularity,
         from: usageHistoryParams.range === "custom" ? usageFrom : "",
         to: usageHistoryParams.range === "custom" ? usageTo : "",
@@ -128,7 +129,9 @@ export const load: PageServerLoad = async ({ parent, url }) => {
       usageHistory: null,
       usageFilters: {
         range:
-          usageHistoryParams.range === "custom" ? "custom" : usageHistoryParams.range,
+          usageHistoryParams.range === "custom"
+            ? "custom"
+            : usageHistoryParams.range,
         granularity: usageHistoryParams.granularity,
         from: usageHistoryParams.range === "custom" ? usageFrom : "",
         to: usageHistoryParams.range === "custom" ? usageTo : "",

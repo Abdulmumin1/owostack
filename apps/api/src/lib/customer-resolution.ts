@@ -7,6 +7,7 @@ type Customer = typeof schema.customers.$inferSelect;
 
 export type CustomerMatchField =
   | "id"
+  | "alias"
   | "externalId"
   | "email"
   | "providerCustomerId";
@@ -41,6 +42,7 @@ type ResolveByProviderOptions = {
 
 const CUSTOMER_FIELD_LABELS: Record<CustomerMatchField, string> = {
   id: "customer ID",
+  alias: "customer alias",
   externalId: "external ID",
   email: "email",
   providerCustomerId: "provider customer ID",
@@ -253,6 +255,31 @@ export async function resolveCustomerByExternalId(
   return { customer, matchedBy: "externalId" };
 }
 
+export async function resolveCustomerByAlias(
+  opts: ResolveByIdentifierOptions,
+): Promise<ResolvedCustomer | null> {
+  const aliasQuery = opts.db.query.customerAliases;
+  if (!aliasQuery?.findFirst) return null;
+
+  const alias = await aliasQuery.findFirst({
+    where: and(
+      eq(schema.customerAliases.organizationId, opts.organizationId),
+      eq(schema.customerAliases.alias, opts.customerId),
+    ),
+  });
+  if (!alias) return null;
+
+  const customer = await opts.db.query.customers.findFirst({
+    where: and(
+      eq(schema.customers.organizationId, opts.organizationId),
+      eq(schema.customers.id, alias.customerId),
+    ),
+  });
+  if (!customer) return null;
+
+  return { customer, matchedBy: "alias" };
+}
+
 export async function resolveCustomerByEmail(
   opts: ResolveByEmailOptions,
 ): Promise<ResolvedCustomer | null> {
@@ -331,6 +358,12 @@ export async function resolveCustomerByIdentifier(
   if (byId) {
     await cacheResolvedCustomer(opts.organizationId, byId.customer, opts);
     return byId;
+  }
+
+  const byAlias = await resolveCustomerByAlias(dbLookupOpts);
+  if (byAlias) {
+    await cacheResolvedCustomer(opts.organizationId, byAlias.customer, opts);
+    return byAlias;
   }
 
   const byExternalId = await resolveCustomerByExternalId(dbLookupOpts);

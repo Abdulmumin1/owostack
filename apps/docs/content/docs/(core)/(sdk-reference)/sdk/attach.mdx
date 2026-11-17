@@ -54,7 +54,7 @@ interface AttachResult {
 ```ts
 import { Owostack } from "owostack";
 
-const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_SECRET_KEY });
 
 // Subscribe a customer to the "pro" plan
 const result = await owo.attach({

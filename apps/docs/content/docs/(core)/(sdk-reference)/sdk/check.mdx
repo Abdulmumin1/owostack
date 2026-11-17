@@ -17,6 +17,7 @@ await owo.check({
   value?: number,      // Units to check against limit (default: 1)
   entity?: string,     // Optional entity scope (seat, workspace, org)
   sendEvent?: boolean, // Atomically track if allowed
+  idempotencyKey?: string, // Retry protection when sendEvent is true
   customerData?: {     // Optional: auto-create customer
     email: string,
     name?: string,
@@ -27,19 +28,20 @@ await owo.check({
 
 ## Parameters
 
-| Parameter      | Type      | Required | Description                                                                                                         |
-| -------------- | --------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
-| `customer`     | `string`  | ✅       | Your identifier for the customer (e.g. your user or workspace ID). Also accepts the customer's email or internal ID. |
-| `feature`      | `string`  | ✅       | Feature slug (or ID) to check access for                                                                            |
-| `value`        | `number`  | -        | Units the caller intends to consume. Default `1`.                                                                   |
-| `entity`       | `string`  | -        | Scope to an entity (seat, workspace…). Must already exist.                                                           |
-| `sendEvent`    | `boolean` | -        | If `true` and access is allowed, record `value` atomically (check + track in one round trip). Default `false`.        |
-| `customerData` | `object`  | -        | Create the customer on first use — same shape and semantics as in [`track()`](/sdk/track#customerdata--create-on-first-use) |
+| Parameter        | Type      | Required | Description                                                                                                                 |
+| ---------------- | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `customer`       | `string`  | ✅       | Your identifier for the customer (e.g. your user or workspace ID). Also accepts the customer's email or internal ID.        |
+| `feature`        | `string`  | ✅       | Feature slug (or ID) to check access for                                                                                    |
+| `value`          | `number`  | -        | Units the caller intends to consume. Default `1`.                                                                           |
+| `entity`         | `string`  | -        | Scope to an entity (seat, workspace…). Must already exist.                                                                  |
+| `sendEvent`      | `boolean` | -        | If `true` and access is allowed, record `value` atomically (check + track in one round trip). Default `false`.              |
+| `idempotencyKey` | `string`  | -        | Stable user-action ID. Reusing it returns the original consumption result instead of spending twice.                        |
+| `customerData`   | `object`  | -        | Create the customer on first use — same shape and semantics as in [`track()`](/sdk/track#customerdata--create-on-first-use) |
 
 <Callout type="warning">
   When using `entity`, the entity must be created with
-  [`addEntity()`](/sdk/entities) first. Checking a non-existent entity
-  returns an `entity_not_found` error.
+  [`addEntity()`](/sdk/entities) first. Checking a non-existent entity returns
+  an `entity_not_found` error.
 </Callout>
 
 ## Response
@@ -91,17 +93,17 @@ interface CheckResult {
 
 ### Result codes
 
-| `code`                   | `allowed` | Meaning                                                    |
-| ------------------------ | --------- | ---------------------------------------------------------- |
-| `access_granted`         | `true`    | Within limits (or boolean feature enabled)                 |
-| `overage_allowed`        | `true`    | Over the limit, but the plan allows billable overage       |
-| `addon_credits_used`     | `true`    | Plan credits exhausted; add-on credits would cover it      |
-| `limit_exceeded`         | `false`   | Limit reached and overage is blocked                       |
-| `insufficient_credits`   | `false`   | Not enough credits for `value`                             |
-| `customer_not_found`     | `false`   | Unknown `customer` and no `customerData`                   |
-| `feature_not_found`      | `false`   | Unknown feature slug                                       |
-| `no_active_subscription` | `false`   | Customer has no active plan                                |
-| `feature_not_in_plan`    | `false`   | The active plan doesn't include this feature               |
+| `code`                   | `allowed` | Meaning                                                                            |
+| ------------------------ | --------- | ---------------------------------------------------------------------------------- |
+| `access_granted`         | `true`    | Within limits (or boolean feature enabled)                                         |
+| `overage_allowed`        | `true`    | Over the limit, but the plan allows billable overage                               |
+| `addon_credits_used`     | `true`    | Plan credits exhausted; add-on credits would cover it                              |
+| `limit_exceeded`         | `false`   | Limit reached and overage is blocked                                               |
+| `insufficient_credits`   | `false`   | Not enough credits for `value`                                                     |
+| `customer_not_found`     | `false`   | Unknown `customer` and no `customerData`                                           |
+| `feature_not_found`      | `false`   | Unknown feature slug                                                               |
+| `no_active_subscription` | `false`   | Customer has neither an active plan nor a pack-backed balance for this feature     |
+| `feature_not_in_plan`    | `false`   | The active plan doesn't include this feature and no mapped credit system grants it |
 
 ### Dunning
 
@@ -125,7 +127,7 @@ if (access.allowed && access.details.paymentStatus === "past_due") {
 ```ts
 import { Owostack } from "owostack";
 
-const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_SECRET_KEY });
 
 // Check if user can access premium features
 const result = await owo.check({
@@ -199,3 +201,14 @@ console.log({
 2. **Fail open or closed** - Decide your failure mode if the API is unreachable
 3. **Check early** - Validate access at the start of expensive operations
 4. **Use middleware** - Create reusable middleware for common access patterns
+
+For actions that spend usage, prefer the dedicated helper. It requires an
+idempotency key:
+
+```ts
+const result = await owo.consume({
+  customer: "user_123",
+  feature: "api_calls",
+  idempotencyKey: `request:${requestId}`,
+});
+```

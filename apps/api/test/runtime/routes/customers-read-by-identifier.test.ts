@@ -36,6 +36,34 @@ describe("Customer reads by external identifier", () => {
       env(),
     );
 
+  const post = (body: Record<string, unknown>) =>
+    app.request(
+      "/customers",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+      env(),
+    );
+
+  const addAlias = (body: Record<string, unknown>) =>
+    app.request(
+      "/customers/alias",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+      env(),
+    );
+
   beforeEach(async () => {
     businessDb = createRuntimeBusinessDb();
     usageLedger = new SimulatedUsageLedgerNamespace();
@@ -113,6 +141,27 @@ describe("Customer reads by external identifier", () => {
 
     const missing = await get("/customers/workspace_nope");
     expect(missing.status).toBe(404);
+  });
+
+  it("aliases an app ID to the customer that owns legacy grants", async () => {
+    const aliasResponse = await addAlias({
+      customer: "workspace_alpha",
+      alias: "workspace_beta",
+    });
+    expect(aliasResponse.status).toBe(200);
+    expect(await aliasResponse.json()).toMatchObject({
+      id: "11111111-1111-4111-8111-111111111111",
+      externalId: "workspace_alpha",
+      aliases: ["workspace_beta"],
+    });
+
+    const resolved = await get("/customers/workspace_beta");
+    expect(resolved.status).toBe(200);
+    expect(await resolved.json()).toMatchObject({
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "alpha-owner@example.com",
+      aliases: ["workspace_beta"],
+    });
   });
 
   it("GET /customers/{id}/usage/history resolves the external id to the same ledger rows", async () => {
@@ -211,5 +260,71 @@ describe("Customer reads by external identifier", () => {
 
     const none = await get("/customers?externalId=workspace_gamma");
     expect(await none.json()).toMatchObject({ total: 0, data: [] });
+  });
+
+  it("requires an explicit customer match strategy", async () => {
+    const response = await post({
+      id: "workspace_gamma",
+      email: "gamma-owner@example.com",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ success: false });
+  });
+
+  it("refuses to fall back to another customer's email for a new external id", async () => {
+    const response = await post({
+      id: "workspace_intruder",
+      email: "alpha-owner@example.com",
+      matchBy: "externalId",
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Refusing to match it to external ID"),
+    });
+
+    const customers = await businessDb.db.query.customers.findMany();
+    expect(
+      customers.find(
+        (customer) => customer.externalId === "workspace_intruder",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("reports an authenticated email match and the resolved customer id", async () => {
+    const response = await post({
+      id: "ignored_external_id",
+      email: "ALPHA-OWNER@example.com",
+      matchBy: "email",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      id: "11111111-1111-4111-8111-111111111111",
+      externalId: "workspace_alpha",
+      created: false,
+      matchedBy: "email",
+      matchedByEmail: true,
+    });
+  });
+
+  it("creates a distinct external-id customer and reports creation", async () => {
+    const response = await post({
+      id: "workspace_gamma",
+      email: "gamma-owner@example.com",
+      matchBy: "externalId",
+      name: "Gamma Workspace",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      externalId: "workspace_gamma",
+      email: "gamma-owner@example.com",
+      created: true,
+      matchedBy: "externalId",
+      matchedByEmail: false,
+    });
   });
 });

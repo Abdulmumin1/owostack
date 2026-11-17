@@ -51,6 +51,11 @@ import {
   resolveCustomerFeatureBillingOverride,
 } from "../../lib/customer-billing-config";
 import {
+  buildPrepaidCreditGrant,
+  resolvePrepaidCreditAccess,
+  type PrepaidCreditAccess,
+} from "../../lib/prepaid-credit-access";
+import {
   apiKeySecurity,
   badRequestResponse,
   billingTierBreakdownSchema,
@@ -745,6 +750,7 @@ const checkSchema = z.object({
   customerData: customerDataSchema.optional(),
   sendEvent: z.boolean().default(false),
   entity: z.string().optional(),
+  idempotencyKey: z.string().trim().min(1).max(200).optional(),
 });
 
 const trackSchema = z.object({
@@ -826,21 +832,14 @@ const entitlementResultSchema = z
           .openapi({ description: "Slug of the plan granting access." }),
         pricing: pricingDetailsSchema.optional(),
         tierBreakdown: z.array(billingTierBreakdownSchema).optional(),
-        paymentStatus: z
-          .literal("past_due")
-          .optional()
-          .openapi({
-            description:
-              "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method.",
-          }),
-        graceEndsAt: z
-          .string()
-          .datetime()
-          .optional()
-          .openapi({
-            description:
-              "When dunning grace ends. After this, access is revoked until a payment succeeds.",
-          }),
+        paymentStatus: z.literal("past_due").optional().openapi({
+          description:
+            "Present when access is granted during dunning: the last renewal failed and the provider is retrying. Prompt the customer to update their payment method.",
+        }),
+        graceEndsAt: z.string().datetime().optional().openapi({
+          description:
+            "When dunning grace ends. After this, access is revoked until a payment succeeds.",
+        }),
       })
       .passthrough()
       .optional(),
@@ -1051,8 +1050,9 @@ async function hasPrepaidCredits(
 // ---------------------------------------------------------------------------
 
 interface CreditSystemMapping {
-  creditSystemId: string; // ID of the credit system (= feature ID of the pool)
+  creditSystemId: string; // ID of the scoped balance pool
   creditSystemSlug: string; // Slug of the credit system feature
+  trackingFeatureId: string; // ID of the mirrored metered feature
   costPerUnit: number; // How many credits one unit of the child feature costs
   planFeature: any; // The plan_feature row for the credit system
   subscription: any; // The subscription granting access
@@ -1069,11 +1069,12 @@ async function resolveCreditSystem(
   if (planIds.length === 0) return null;
 
   // 1. Find credit systems that contain this feature
-  const mappedSystems = await db
+  const mappedSystemRows = await db
     .select({
       creditSystemId: schema.creditSystemFeatures.creditSystemId,
       cost: schema.creditSystemFeatures.cost,
       creditSystemSlug: schema.creditSystems.slug,
+      organizationId: schema.creditSystems.organizationId,
     })
     .from(schema.creditSystemFeatures)
     .innerJoin(
@@ -1082,11 +1083,30 @@ async function resolveCreditSystem(
     )
     .where(eq(schema.creditSystemFeatures.featureId, featureId));
 
-  if (mappedSystems.length === 0) return null;
+  if (mappedSystemRows.length === 0) return null;
 
-  const creditSystemIds = [
+  const mappedSystems = await Promise.all(
+    mappedSystemRows.map(async (mappedSystem: any) => {
+      const mirroredFeature = await db.query.features.findFirst({
+        where: and(
+          eq(schema.features.organizationId, mappedSystem.organizationId),
+          eq(schema.features.slug, mappedSystem.creditSystemSlug),
+        ),
+      });
+      return {
+        ...mappedSystem,
+        // Older manually-created systems may predate the mirrored feature.
+        // Preserve their legacy identifier until the next catalog sync repairs it.
+        trackingFeatureId: mirroredFeature?.id ?? mappedSystem.creditSystemId,
+      };
+    }),
+  );
+
+  const trackingFeatureIds = [
     ...new Set(
-      mappedSystems.map((ms: { creditSystemId: string }) => ms.creditSystemId),
+      mappedSystems.map(
+        (ms: { trackingFeatureId: string }) => ms.trackingFeatureId,
+      ),
     ),
   ];
   const subscriptionByPlanId = new Map(
@@ -1098,7 +1118,7 @@ async function resolveCreditSystem(
     where: and(
       eq(schema.entitlements.customerId, customerId),
       eq(schema.entitlements.source, "manual"),
-      inArray(schema.entitlements.featureId, creditSystemIds),
+      inArray(schema.entitlements.featureId, trackingFeatureIds),
       or(
         sql`${schema.entitlements.expiresAt} IS NULL`,
         sql`${schema.entitlements.expiresAt} > ${now}`,
@@ -1116,7 +1136,7 @@ async function resolveCreditSystem(
   const csPlanFeatures = await db.query.planFeatures.findMany({
     where: and(
       inArray(schema.planFeatures.planId, planIds),
-      inArray(schema.planFeatures.featureId, creditSystemIds),
+      inArray(schema.planFeatures.featureId, trackingFeatureIds),
     ),
   });
   const planFeaturesByCreditSystemId = new Map<string, any[]>();
@@ -1131,7 +1151,7 @@ async function resolveCreditSystem(
 
   // 4. Preserve deterministic order from mapped systems
   for (const ms of mappedSystems) {
-    const csFeatureId = ms.creditSystemId; // credit system ID = feature ID (same row)
+    const csFeatureId = ms.trackingFeatureId;
 
     // Check for manual override on the credit system feature FIRST
     const manualEntitlement = manualByCreditSystemId.get(csFeatureId);
@@ -1146,7 +1166,8 @@ async function resolveCreditSystem(
         plan: { name: "Manual Override" },
       };
       return {
-        creditSystemId: csFeatureId,
+        creditSystemId: ms.creditSystemId,
+        trackingFeatureId: csFeatureId,
         creditSystemSlug: ms.creditSystemSlug,
         costPerUnit: ms.cost,
         planFeature: {
@@ -1166,7 +1187,8 @@ async function resolveCreditSystem(
       const sub = subscriptionByPlanId.get(pf.planId);
       if (sub) {
         return {
-          creditSystemId: csFeatureId,
+          creditSystemId: ms.creditSystemId,
+          trackingFeatureId: csFeatureId,
           creditSystemSlug: ms.creditSystemSlug,
           costPerUnit: ms.cost,
           planFeature: pf,
@@ -1267,9 +1289,30 @@ app.openapi(
     // Set once the access-granting subscription is known; surfaces dunning
     // (past_due within grace) on granted responses.
     let grantedDunning: DunningState | null = null;
+    let consumptionClaimId: string | null = null;
+    let consumptionDb: any = null;
+    let consumptionContext: any = null;
     const respond = createEntitlementResponder(c, {
       grantedDetails: () =>
         grantedDunning ? dunningDetails(grantedDunning) : null,
+      onResponse: (body, status) => {
+        if (!consumptionClaimId || !consumptionDb) return;
+        const claimId = consumptionClaimId;
+        const persist =
+          status >= 500
+            ? consumptionDb
+                .delete(schema.entitlementConsumptions)
+                .where(eq(schema.entitlementConsumptions.id, claimId))
+            : consumptionDb
+                .update(schema.entitlementConsumptions)
+                .set({
+                  responseBody: body,
+                  responseStatus: status,
+                  updatedAt: Date.now(),
+                })
+                .where(eq(schema.entitlementConsumptions.id, claimId));
+        consumptionContext?.waitUntil(Promise.resolve(persist));
+      },
     });
     const deps = getEntitlementsDependencies(c);
     const {
@@ -1279,6 +1322,7 @@ app.openapi(
       customerData,
       sendEvent,
       entity,
+      idempotencyKey,
     } = c.req.valid("json");
     const db = c.get("db");
     const organizationId = c.get("organizationId");
@@ -1288,6 +1332,61 @@ app.openapi(
         { success: false, error: "Organization Context Missing" },
         500,
       );
+    }
+
+    if (sendEvent && idempotencyKey) {
+      const fingerprint = JSON.stringify({
+        customer: customerId,
+        feature: featureId,
+        value,
+        entity: entity ?? null,
+      });
+      const claimId = crypto.randomUUID();
+      const claimed = await db
+        .insert(schema.entitlementConsumptions)
+        .values({
+          id: claimId,
+          organizationId,
+          idempotencyKey,
+          fingerprint,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: schema.entitlementConsumptions.id });
+
+      if (claimed.length === 0) {
+        const existing = await db.query.entitlementConsumptions.findFirst({
+          where: and(
+            eq(schema.entitlementConsumptions.organizationId, organizationId),
+            eq(schema.entitlementConsumptions.idempotencyKey, idempotencyKey),
+          ),
+        });
+        if (!existing || existing.fingerprint !== fingerprint) {
+          return respond(
+            {
+              success: false,
+              error:
+                "Idempotency key was already used for a different consumption",
+            },
+            409,
+          );
+        }
+        if (existing.responseBody && existing.responseStatus) {
+          return c.json(existing.responseBody, existing.responseStatus as any);
+        }
+        return respond(
+          {
+            success: false,
+            error: "Consumption with this idempotency key is still processing",
+          },
+          409,
+        );
+      }
+
+      consumptionClaimId = claimId;
+      consumptionDb = db;
+      consumptionContext = c.executionCtx;
     }
     const cache = await getCatalogScopedCache(c.env.CACHE, organizationId);
 
@@ -1579,7 +1678,22 @@ app.openapi(
       }
     }
 
-    if ((!subscriptions || subscriptions.length === 0) && !manualEntitlement) {
+    const prepaidCreditAccess: PrepaidCreditAccess | null =
+      (!subscriptions || subscriptions.length === 0) && !manualEntitlement
+        ? await resolvePrepaidCreditAccess({
+            db,
+            organizationId,
+            customerId: customer.id,
+            feature,
+            requestedUnits: value,
+          })
+        : null;
+
+    if (
+      (!subscriptions || subscriptions.length === 0) &&
+      !manualEntitlement &&
+      !prepaidCreditAccess
+    ) {
       return respond(
         {
           allowed: false,
@@ -1626,8 +1740,7 @@ app.openapi(
     }
 
     // Find the first subscription that has a matching planFeature
-    let accessGrantingSubscription: (typeof subscriptions)[number] | null =
-      null;
+    let accessGrantingSubscription: any = null;
     let accessGrantingPlanFeature: any = null;
     let creditMapping: CreditSystemMapping | null = null;
 
@@ -1645,6 +1758,18 @@ app.openapi(
         ...manualEntitlement,
         planId: (accessGrantingSubscription as any).planId || "manual",
         usageModel: "included",
+      };
+    } else if (prepaidCreditAccess) {
+      const prepaidGrant = buildPrepaidCreditGrant(prepaidCreditAccess, now);
+      accessGrantingSubscription = prepaidGrant.subscription;
+      accessGrantingPlanFeature = prepaidGrant.planFeature;
+      creditMapping = {
+        creditSystemId: prepaidCreditAccess.creditSystemId,
+        creditSystemSlug: prepaidCreditAccess.creditSystemSlug,
+        trackingFeatureId: prepaidCreditAccess.trackingFeatureId,
+        costPerUnit: prepaidCreditAccess.costPerUnit,
+        planFeature: prepaidGrant.planFeature,
+        subscription: prepaidGrant.subscription,
       };
     } else {
       // No manual override, check plan features
@@ -1684,7 +1809,7 @@ app.openapi(
           creditSystemId: creditMapping.creditSystemId,
           creditSystemSlug: creditMapping.creditSystemSlug,
           costPerUnit: creditMapping.costPerUnit,
-          trackingFeatureId: creditMapping.creditSystemId,
+          trackingFeatureId: creditMapping.trackingFeatureId,
           trackingFeatureSlug: creditMapping.creditSystemSlug,
         }
       : directCreditContext;
@@ -3244,7 +3369,22 @@ app.openapi(
       }
     }
 
-    if (subscriptions.length === 0 && !trackManualEntitlement) {
+    const prepaidCreditAccess: PrepaidCreditAccess | null =
+      subscriptions.length === 0 && !trackManualEntitlement
+        ? await resolvePrepaidCreditAccess({
+            db,
+            organizationId,
+            customerId: customer.id,
+            feature,
+            requestedUnits: value,
+          })
+        : null;
+
+    if (
+      subscriptions.length === 0 &&
+      !trackManualEntitlement &&
+      !prepaidCreditAccess
+    ) {
       return respond(
         {
           success: false,
@@ -3291,9 +3431,8 @@ app.openapi(
       }
     }
 
-    let accessGrantingSubscription: (typeof subscriptions)[number] | null =
-      null;
-    let accessGrantingPlanFeature: (typeof planFeatures)[number] | null = null;
+    let accessGrantingSubscription: any = null;
+    let accessGrantingPlanFeature: any = null;
     let trackCreditMapping: CreditSystemMapping | null = null;
 
     if (trackManualEntitlement) {
@@ -3308,7 +3447,19 @@ app.openapi(
         ...trackManualEntitlement,
         planId: (accessGrantingSubscription as any).planId || "manual",
         usageModel: "included",
-      } as (typeof planFeatures)[number];
+      };
+    } else if (prepaidCreditAccess) {
+      const prepaidGrant = buildPrepaidCreditGrant(prepaidCreditAccess, now);
+      accessGrantingSubscription = prepaidGrant.subscription;
+      accessGrantingPlanFeature = prepaidGrant.planFeature;
+      trackCreditMapping = {
+        creditSystemId: prepaidCreditAccess.creditSystemId,
+        creditSystemSlug: prepaidCreditAccess.creditSystemSlug,
+        trackingFeatureId: prepaidCreditAccess.trackingFeatureId,
+        costPerUnit: prepaidCreditAccess.costPerUnit,
+        planFeature: prepaidGrant.planFeature,
+        subscription: prepaidGrant.subscription,
+      };
     } else {
       const accessGrant = selectAccessGrantingPlanFeature(
         subscriptions,
@@ -3348,7 +3499,7 @@ app.openapi(
           creditSystemId: trackCreditMapping.creditSystemId,
           creditSystemSlug: trackCreditMapping.creditSystemSlug,
           costPerUnit: trackCreditMapping.costPerUnit,
-          trackingFeatureId: trackCreditMapping.creditSystemId,
+          trackingFeatureId: trackCreditMapping.trackingFeatureId,
           trackingFeatureSlug: trackCreditMapping.creditSystemSlug,
         }
       : directTrackCreditContext;
@@ -3507,6 +3658,93 @@ app.openapi(
         manualBonusBalance ?? 0,
         addonBalance ?? 0,
       );
+
+    // Pack-only customers have no plan meter to reject usage before the add-on
+    // fallback runs. Reserve their scoped balance directly and persist the
+    // event as add-on coverage.
+    if (prepaidCreditAccess && trackCreditContext) {
+      const deductResult = await tryDeductAddonCredits(
+        db,
+        customer.id,
+        trackEffectiveValue,
+        trackCreditContext.creditSystemId,
+        deps,
+      );
+      if (!deductResult.deducted) {
+        return respond(
+          {
+            success: false,
+            allowed: false,
+            code: "insufficient_credits",
+            usage: 0,
+            limit: 0,
+            balance: currentTrackAddonBalance ?? 0,
+            resetsAt: new Date(periodEnd).toISOString(),
+            resetInterval: planFeature.resetInterval,
+            credits: buildTrackCredits(0, 0),
+            details: buildTrackDetails(
+              `Insufficient credits — required: ${trackEffectiveValue}.`,
+              undefined,
+              0,
+            ),
+          },
+          200,
+        );
+      }
+
+      const remainingAddonBalance = computeRemainingAddonBalance(
+        currentTrackAddonBalance ?? 0,
+        trackEffectiveValue,
+        deductResult.remaining,
+      );
+      scheduleUsagePersistSegments(
+        c,
+        db,
+        organizationId,
+        {
+          customerId: customer.id,
+          featureId: trackEffectiveFeatureId,
+          featureSlug: trackEffectiveSlug,
+          featureName: trackEffectiveSlug,
+          subscriptionId: null,
+          planId: null,
+          entityId: entity || null,
+          periodStart,
+          periodEnd,
+        },
+        buildUsagePersistSegments({
+          planFeature,
+          planAmount: 0,
+          manualBonusAmount: 0,
+          addonAmount: trackEffectiveValue,
+          manualBonusEntitlementId: null,
+        }),
+        "track:prepaid-pack-only",
+      );
+
+      return respond(
+        {
+          success: true,
+          allowed: true,
+          code: "addon_credits_used",
+          usage: 0,
+          limit: 0,
+          balance: remainingAddonBalance,
+          resetsAt: new Date(periodEnd).toISOString(),
+          resetInterval: planFeature.resetInterval,
+          credits: buildTrackCredits(0, 0, remainingAddonBalance),
+          details: buildTrackDetails(
+            `${trackEffectiveValue} prepaid pack credits deducted.`,
+            {
+              addonCreditsUsed: trackEffectiveValue,
+              addonCreditsRemaining: remainingAddonBalance,
+            },
+            0,
+          ),
+        },
+        200,
+      );
+    }
 
     // Prepaid balance model: reserve credits atomically before any usage is
     // recorded. If the usage meter later denies the event the reservation is

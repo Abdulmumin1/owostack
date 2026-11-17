@@ -137,6 +137,7 @@ describe("Sync route runtime integration", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.success).toBe(true);
+    expect(body.mode).toBe("sandbox");
     expect(body.warnings).toEqual([]);
     expect(body.features.created).toEqual(["priority-support"]);
     expect(body.plans.created).toEqual(["pro"]);
@@ -182,6 +183,29 @@ describe("Sync route runtime integration", () => {
         description: null,
       },
     ]);
+  });
+
+  it("rejects unknown provider slugs before changing the catalog", async () => {
+    const response = await app.request(
+      "/",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          defaultProvider: "paystak",
+          features: [],
+          plans: [],
+        }),
+      },
+      RUNTIME_ROUTE_ENV,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await businessDb.db.query.plans.findMany()).toEqual([]);
+    expect(await businessDb.db.query.features.findMany()).toEqual([]);
   });
 
   it("syncs a paid plan using the organization's provider routing rules", async () => {

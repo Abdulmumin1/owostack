@@ -4,6 +4,8 @@ import {
   _featureRegistry,
   bindFeatureHandles,
   buildSyncPayload,
+  collectSyncWarnings,
+  creditPack,
   creditSystem,
   metered,
   plan,
@@ -74,11 +76,11 @@ describe("catalog credit system feature binding", () => {
     const textGeneration = metered("text-generation", {
       name: "Text Generation",
     });
-    const aiCreditsDefinition = creditSystem("ai-credits", {
+    const aiCredits = creditSystem("ai-credits", {
       name: "AI Credits",
       features: [textGeneration(2)],
-    })._buildDefinition();
-    const catalog = [aiCreditsDefinition];
+    });
+    const catalog = [aiCredits];
 
     const payload = buildSyncPayload(catalog);
 
@@ -110,6 +112,57 @@ describe("catalog credit system feature binding", () => {
       feature: "text-generation",
       customer: "cust_456",
     });
+  });
+
+  it("includes standalone credit systems and packs without a plan", () => {
+    const song = metered("song", { name: "Song" });
+    const songs = creditSystem("songs", {
+      name: "Song credits",
+      features: [song(5)],
+    });
+
+    const payload = buildSyncPayload([
+      songs,
+      creditPack("song-pack", {
+        name: "10 songs",
+        credits: 50,
+        price: 1000,
+        currency: "USD",
+        creditSystem: "songs",
+      }),
+    ]);
+
+    expect(payload.features).toEqual([
+      expect.objectContaining({ slug: "song", type: "metered" }),
+    ]);
+    expect(payload.creditSystems).toEqual([
+      expect.objectContaining({
+        slug: "songs",
+        features: [{ feature: "song", creditCost: 5 }],
+      }),
+    ]);
+    expect(payload.creditPacks).toEqual([
+      expect.objectContaining({ slug: "song-pack", creditSystem: "songs" }),
+    ]);
+    expect(collectSyncWarnings(payload)).toEqual([]);
+  });
+
+  it("warns when a pack references a credit system absent from the sync", () => {
+    const payload = buildSyncPayload([
+      creditPack("orphan-pack", {
+        name: "Orphan pack",
+        credits: 10,
+        price: 500,
+        currency: "USD",
+        creditSystem: "missing-system",
+      }),
+    ]);
+
+    expect(collectSyncWarnings(payload)).toEqual([
+      expect.stringContaining(
+        "Credit pack 'orphan-pack' references credit system 'missing-system'",
+      ),
+    ]);
   });
 
   it("fails closed when rebinding a shared feature handle to a different client", () => {

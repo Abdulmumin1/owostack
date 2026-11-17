@@ -66,7 +66,9 @@ export default new Owostack({
 ```ts
 // Create or get the organization customer
 const org = await owo.customer({
+  id: "acme",
   email: "org@acme.com",
+  matchBy: "externalId",
   name: "Acme Corp",
 });
 ```
@@ -191,7 +193,9 @@ const owo = new Owostack({
 
 async function setupOrg() {
   const org = await owo.customer({
+    id: "acme",
     email: "org@acme.com",
+    matchBy: "externalId",
     name: "Acme Corp",
   });
 

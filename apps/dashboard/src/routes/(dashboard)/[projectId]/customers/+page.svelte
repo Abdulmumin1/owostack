@@ -269,6 +269,10 @@
             >
             <th
               class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
+              >Internal ID</th
+            >
+            <th
+              class="px-6 py-4 text-[10px] font-bold text-text-dim uppercase tracking-widest"
               >Provider</th
             >
             <th
@@ -438,6 +442,9 @@
               </td>
               <td class="px-6 py-4 text-xs font-mono text-text-dim">
                 {customer.externalId || "—"}
+              </td>
+              <td class="px-6 py-4 text-xs font-mono text-text-dim">
+                {customer.id}
               </td>
               <td class="px-6 py-4">
                 <ProviderBadge providerId={customer.providerId} />

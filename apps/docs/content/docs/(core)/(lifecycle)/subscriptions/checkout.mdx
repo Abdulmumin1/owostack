@@ -15,7 +15,7 @@ Call `attach()` with a customer identifier and a plan slug. If payment is requir
 ```ts
 import { Owostack } from "owostack";
 
-const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_SECRET_KEY });
 
 const result = await owo.attach({
   customer: "user_123",
@@ -93,7 +93,6 @@ Redirect to the `checkoutUrl` and show a success page when the user returns.
 - The plan is free (price = 0)
 - A lateral switch within the same plan group has no price difference
 
-
 ## Attach metadata
 
 Custom metadata travels through the checkout and arrives in webhook payloads:
@@ -109,6 +108,6 @@ const result = await owo.attach({
 ```
 
 <Callout type="warning">
-  Checkout only activates after the provider confirms payment via webhook.
-  Make sure you have completed [Webhook Setup](/getting-started/webhook-setup).
+  Checkout only activates after the provider confirms payment via webhook. Make
+  sure you have completed [Webhook Setup](/getting-started/webhook-setup).
 </Callout>

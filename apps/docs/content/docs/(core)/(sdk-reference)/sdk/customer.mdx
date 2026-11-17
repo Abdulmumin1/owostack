@@ -7,7 +7,7 @@ icon: User
 
 # customer()
 
-Use `owo.customer()` to create or resolve a customer by email or ID. The response includes the customer's current billing configuration, and the same namespace exposes helpers for customer-specific billing controls.
+Use `owo.customer()` to create or resolve a customer with an explicit external-ID or email match. The response includes the resolved ID, whether the customer was created, and the customer's current billing configuration.
 
 For the dedicated guide covering customer-level billing overrides, precedence, and recommended usage, see [Customer Config](/sdk/customer-config).
 
@@ -19,8 +19,9 @@ Every read on this namespace (`get()`, `usageHistory()`, and the setters) accept
 
 ```ts
 const customer = await owo.customer({
-  id?: string,         // Optional: Your customer ID
+  id?: string,         // Required when matching by externalId
   email: string,       // Required: Customer email
+  matchBy: "externalId" | "email", // Required identity strategy
   name?: string,       // Optional: Display name
   metadata?: Record<string, unknown>, // Optional: Custom data
 });
@@ -64,18 +65,21 @@ await owo.customer.usageHistory({
 
 ### `owo.customer(params)`
 
-| Parameter  | Type     | Required | Description               |
-| ---------- | -------- | -------- | ------------------------- |
-| `id`       | `string` | -        | Your internal customer ID |
-| `email`    | `string` | ✅       | Customer email address    |
-| `name`     | `string` | -        | Customer display name     |
-| `metadata` | `object` | -        | Custom key-value data     |
+| Parameter  | Type                      | Required    | Description                                                   |
+| ---------- | ------------------------- | ----------- | ------------------------------------------------------------- |
+| `id`       | `string`                  | Conditional | Your external customer ID; required for `externalId` matching |
+| `email`    | `string`                  | ✅          | Customer email address                                        |
+| `matchBy`  | `"externalId" \| "email"` | ✅          | The only identity allowed to resolve an existing customer     |
+| `name`     | `string`                  | -           | Customer display name                                         |
+| `metadata` | `object`                  | -           | Custom key-value data                                         |
+
+`matchBy: "externalId"` never falls back to email. If the email already belongs to another external ID, the request returns a conflict instead of exposing that customer's balance. Use `matchBy: "email"` only after your application has authenticated ownership of the email; an email match returns the existing billing identity and can therefore spend its credits.
 
 ### `owo.customer.get(customer)`
 
-| Parameter  | Type     | Required | Description                                                                 |
-| ---------- | -------- | -------- | --------------------------------------------------------------------------- |
-| `customer` | `string` | ✅       | External customer ID (what you pass to `track`), email, or internal ID     |
+| Parameter  | Type     | Required | Description                                                            |
+| ---------- | -------- | -------- | ---------------------------------------------------------------------- |
+| `customer` | `string` | ✅       | External customer ID (what you pass to `track`), email, or internal ID |
 
 Returns the same `CustomerResult` as `owo.customer()`. Throws `OwostackError` with `Customer not found` when nothing matches within your organization.
 
@@ -93,37 +97,37 @@ Results are newest first. `total` is the number of customers matching the filter
 
 ### `owo.customer.setFeatureConfig(params)`
 
-| Parameter         | Type                        | Required | Description                                            |
-| ----------------- | --------------------------- | -------- | ------------------------------------------------------ |
-| `customer`        | `string`                    | ✅       | Customer ID or identifier                              |
-| `feature`         | `string`                    | ✅       | Feature slug or ID                                     |
-| `overage`         | `"block" \| "charge" \| null` | -      | Override overage behavior for this feature             |
-| `maxOverageUnits` | `number \| null`            | -        | Override the hard overage cap for this feature         |
+| Parameter         | Type                          | Required | Description                                    |
+| ----------------- | ----------------------------- | -------- | ---------------------------------------------- |
+| `customer`        | `string`                      | ✅       | Customer ID or identifier                      |
+| `feature`         | `string`                      | ✅       | Feature slug or ID                             |
+| `overage`         | `"block" \| "charge" \| null` | -        | Override overage behavior for this feature     |
+| `maxOverageUnits` | `number \| null`              | -        | Override the hard overage cap for this feature |
 
 Provide at least one of `overage` or `maxOverageUnits`. Pass `null` to clear an existing override.
 
 ### `owo.customer.setOverageLimit(params)`
 
-| Parameter          | Type                    | Required | Description                                             |
-| ------------------ | ----------------------- | -------- | ------------------------------------------------------- |
-| `customer`         | `string`                | ✅       | Customer ID or identifier                               |
-| `maxOverageAmount` | `number \| null`        | ✅       | Customer-wide spend cap in minor units                  |
-| `onLimitReached`   | `"block" \| "notify"`   | -        | Behavior when the spend cap is reached. Defaults to `block` |
+| Parameter          | Type                  | Required | Description                                                 |
+| ------------------ | --------------------- | -------- | ----------------------------------------------------------- |
+| `customer`         | `string`              | ✅       | Customer ID or identifier                                   |
+| `maxOverageAmount` | `number \| null`      | ✅       | Customer-wide spend cap in minor units                      |
+| `onLimitReached`   | `"block" \| "notify"` | -        | Behavior when the spend cap is reached. Defaults to `block` |
 
 Pass `null` for `maxOverageAmount` to remove the spend cap.
 
 ### `owo.customer.usageHistory(params)`
 
-| Parameter     | Type                                          | Required | Description |
-| ------------- | --------------------------------------------- | -------- | ----------- |
-| `customer`    | `string`                                      | ✅       | Customer ID |
-| `range`       | `"7d" \| "30d" \| "90d" \| "custom"`          | -        | Preset range or custom window. Defaults to `30d`. |
-| `granularity` | `"day" \| "week" \| "month"`                  | -        | Bucket size for aggregation. Defaults to `day`. |
-| `feature`     | `string \| null`                              | -        | Optional feature slug or ID to filter to one feature. |
-| `groupBy`     | `"total" \| "feature"`                        | -        | Return only the total series or include per-feature breakdowns. Defaults to `total`. |
-| `timezone`    | `string`                                      | -        | IANA timezone used for bucket boundaries. Defaults to `UTC`. |
-| `from`        | `string`                                      | -        | Inclusive `YYYY-MM-DD` start date when `range` is `custom`. |
-| `to`          | `string`                                      | -        | Inclusive `YYYY-MM-DD` end date when `range` is `custom`. |
+| Parameter     | Type                                 | Required | Description                                                                          |
+| ------------- | ------------------------------------ | -------- | ------------------------------------------------------------------------------------ |
+| `customer`    | `string`                             | ✅       | Customer ID                                                                          |
+| `range`       | `"7d" \| "30d" \| "90d" \| "custom"` | -        | Preset range or custom window. Defaults to `30d`.                                    |
+| `granularity` | `"day" \| "week" \| "month"`         | -        | Bucket size for aggregation. Defaults to `day`.                                      |
+| `feature`     | `string \| null`                     | -        | Optional feature slug or ID to filter to one feature.                                |
+| `groupBy`     | `"total" \| "feature"`               | -        | Return only the total series or include per-feature breakdowns. Defaults to `total`. |
+| `timezone`    | `string`                             | -        | IANA timezone used for bucket boundaries. Defaults to `UTC`.                         |
+| `from`        | `string`                             | -        | Inclusive `YYYY-MM-DD` start date when `range` is `custom`.                          |
+| `to`          | `string`                             | -        | Inclusive `YYYY-MM-DD` end date when `range` is `custom`.                            |
 
 Use `usageHistory()` when you want chart-friendly usage buckets.
 
@@ -135,8 +139,8 @@ Use [`owo.billing.usage()`](/sdk/billing) when you want uninvoiced overage and e
 
 ```ts
 interface CustomerResult {
-  id: string;                 // Internal Owostack ID
-  externalId: string | null;  // Your ID (the `customer` value you track with)
+  id: string; // Internal Owostack ID
+  externalId: string | null; // Your ID (the `customer` value you track with)
   email: string;
   name?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -159,6 +163,9 @@ interface CustomerResult {
       updatedAt: number;
     }>;
   };
+  created?: boolean; // Present for customer()
+  matchedBy?: "externalId" | "email";
+  matchedByEmail?: boolean; // Existing customer resolved by email
   createdAt: number;
   updatedAt: number;
 }
@@ -235,11 +242,13 @@ interface UsageHistoryResult {
 ```ts
 import { Owostack } from "owostack";
 
-const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_SECRET_KEY });
 
 // Create an org customer
 const org = await owo.customer({
+  id: "org_acme",
   email: "billing@acme.com",
+  matchBy: "externalId",
   name: "Acme Corporation",
   metadata: { industry: "SaaS" },
 });
@@ -255,13 +264,19 @@ console.log(org.billing.featureConfigs); // []
 // Resolve existing customer by email
 const existing = await owo.customer({
   email: "billing@acme.com",
+  matchBy: "email", // Only after authenticating this email
 });
 
-// Or by your internal ID
+// Or safely by your external ID without falling back to email
 const byId = await owo.customer({
   id: "org_acme",
   email: "billing@acme.com",
+  matchBy: "externalId",
 });
+
+console.log(existing.id); // Resolved Owostack customer ID
+console.log(existing.created); // false
+console.log(existing.matchedByEmail); // true
 ```
 
 ### Look Up a Customer by Your Own ID
@@ -271,11 +286,27 @@ const byId = await owo.customer({
 await owo.track({ customer: "workspace_alpha", feature: "agent_turns" });
 
 const customer = await owo.customer.get("workspace_alpha");
-console.log(customer.id);         // internal UUID
+console.log(customer.id); // internal UUID
 console.log(customer.externalId); // "workspace_alpha"
+console.log(customer.email);
 
 // Email works as well
 const byEmail = await owo.customer.get("billing@acme.com");
+```
+
+### Alias a Legacy or Guest ID
+
+If a dashboard grant belongs to an older guest identity, attach the app's
+current external ID to that canonical customer. Future check, track, balance,
+and add-on calls resolve to the customer that owns the credits:
+
+```ts
+const customer = await owo.customer.alias({
+  customer: "g_n2ha…", // existing internal/external ID holding the grant
+  alias: "user_123", // ID used by the app
+});
+
+console.log(customer.id, customer.externalId, customer.email, customer.aliases);
 ```
 
 ### List and Search Customers
@@ -293,7 +324,8 @@ const { data } = await owo.customer.list({ externalId: "workspace_alpha" });
 // Walk every page
 for (let offset = 0; ; offset += 100) {
   const { data, total } = await owo.customer.list({ limit: 100, offset });
-  for (const customer of data) console.log(customer.externalId ?? customer.email);
+  for (const customer of data)
+    console.log(customer.externalId ?? customer.email);
   if (offset + data.length >= total) break;
 }
 ```
@@ -387,7 +419,11 @@ const history = await owo.customer.usageHistory({
 The returned customer object has convenience methods:
 
 ```ts
-const org = await owo.customer({ email: "org@acme.com" });
+const org = await owo.customer({
+  id: "org_acme",
+  email: "org@acme.com",
+  matchBy: "externalId",
+});
 
 // Attach subscription
 await org.attach({ product: "team" });
@@ -454,12 +490,13 @@ const { entities: seats } = await org.listEntities({ feature: "seats" });
 ## Best Practices
 
 1. **Create early** - Create the customer before attaching subscriptions or adding entities
-2. **Use consistent IDs** - Either always pass your own `id` or always use email as identifier
+2. **Prefer external IDs** - Use `matchBy: "externalId"` for guests and application accounts so a reused email cannot resolve another customer's credits
 3. **Store metadata** - Use metadata for customer segmentation and analytics
 4. **Use spend caps as safety rails** - `setOverageLimit()` protects the whole customer across billable overage
 5. **Use feature config for exceptions** - `setFeatureConfig()` is best for one risky or contract-specific feature
 6. **Use usageHistory for charts** - `usageHistory()` is for usage dashboards, not invoice estimation
 7. **Update on changes** - Call `customer()` when user data changes to keep billing records in sync
+8. **Authenticate email matches** - Use `matchBy: "email"` only after sign-in, magic-link verification, or another proof of email ownership
 
 ## Related
 

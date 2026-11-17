@@ -417,6 +417,15 @@ const aiCredits = creditSystem("ai-credits", {
 });
 ```
 
+Put the returned handle directly in `catalog`. Standalone credit systems are synced even when no plan references them, which is the recommended setup for prepaid-only customers:
+
+```ts
+const owo = new Owostack({
+  secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  catalog: [aiCredits],
+});
+```
+
 ### Parameters
 
 | Parameter            | Type              | Required | Description                                     |
@@ -479,6 +488,8 @@ export const owo = new Owostack({
 });
 ```
 
+If a pack references a credit-system slug that is absent from the sync payload, `sync()` returns a warning and the pack is skipped. Include the `creditSystem()` handle directly; do not call private methods such as `_buildDefinition()`.
+
 ### Parameters
 
 | Parameter             | Type                      | Required | Description                                        |
@@ -490,7 +501,7 @@ export const owo = new Owostack({
 | `config.price`        | `number`                  | Yes      | Price in minor currency units (e.g. 1000 = $10.00) |
 | `config.currency`     | `Currency`                | Yes      | Currency code (`"NGN"`, `"USD"`, etc.)             |
 | `config.creditSystem` | `string`                  | Yes      | Slug of the credit system this pack is tied to     |
-| `config.provider`     | `string`                  | No       | Override the default payment provider              |
+| `config.provider`     | `ProviderId`              | No       | Override the project default payment provider      |
 | `config.metadata`     | `Record<string, unknown>` | No       | Custom metadata                                    |
 
 ### Methods
@@ -567,8 +578,10 @@ const result = await owo.sync();
 ```ts
 interface SyncResult {
   success: boolean;
+  mode: "sandbox" | "live";
   features: { created: string[]; updated: string[]; unchanged: string[] };
   creditSystems: { created: string[]; updated: string[]; unchanged: string[] };
+  creditPacks: { created: string[]; updated: string[]; unchanged: string[] };
   plans: { created: string[]; updated: string[]; unchanged: string[] };
   warnings: string[];
 }
@@ -611,6 +624,7 @@ const aiCredits = creditSystem("ai-credits", {
 
 export default new Owostack({
   secretKey: process.env.OWOSTACK_SECRET_KEY!,
+  provider: "paystack", // project default; typed ProviderId autocomplete
   catalog: [
     plan("starter", {
       name: "Starter",

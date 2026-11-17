@@ -81,6 +81,7 @@ describe("POST /v1/customers", () => {
         method: "POST",
         body: JSON.stringify({
           email: "new@example.com",
+          matchBy: "email",
           name: "New Customer",
         }),
         headers: {

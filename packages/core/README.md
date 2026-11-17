@@ -76,7 +76,9 @@ Inspect and update customer-specific overage behavior through the same `customer
 
 ```ts
 const customer = await owo.customer({
+  id: "acme",
   email: "billing@acme.com",
+  matchBy: "externalId",
   name: "Acme Corporation",
 });
 

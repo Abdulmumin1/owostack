@@ -66,6 +66,14 @@ const MIGRATION_FILES = [
     "../../../../../packages/db/migrations/0014_subscriptions_live_provider_code_uniq.sql",
     import.meta.url,
   ),
+  new URL(
+    "../../../../../packages/db/migrations/0015_customer_aliases.sql",
+    import.meta.url,
+  ),
+  new URL(
+    "../../../../../packages/db/migrations/0016_entitlement_consumptions.sql",
+    import.meta.url,
+  ),
 ];
 
 type SqliteRunResult = {
