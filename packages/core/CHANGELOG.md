@@ -1,5 +1,16 @@
 # owostack
 
+## 0.8.0
+
+### Minor Changes
+
+- [#274](https://github.com/Abdulmumin1/owostack/pull/274) [`954d351`](https://github.com/Abdulmumin1/owostack/commit/954d351e400379c4a908d826ea69cf54d14ed01a) Thanks [@Abdulmumin1](https://github.com/Abdulmumin1)! - Support standalone and prepaid-only credit systems, customer aliases, typed providers, environment-aware sync results, readable credit-pack prices, and retry-safe atomic `consume()` calls. Add `balance()` and `packs.get()`, require explicit customer identity matching, and standardize the CLI on `OWOSTACK_SECRET_KEY`.
+
+### Patch Changes
+
+- Updated dependencies [[`954d351`](https://github.com/Abdulmumin1/owostack/commit/954d351e400379c4a908d826ea69cf54d14ed01a)]:
+  - @owostack/types@0.8.0
+
 ## 0.7.0
 
 ### Minor Changes
