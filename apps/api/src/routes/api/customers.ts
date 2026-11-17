@@ -4,6 +4,10 @@ import { schema } from "@owostack/db";
 import { verifyApiKey } from "../../lib/api-keys";
 import { resolveOrCreateCustomer } from "../../lib/customers";
 import {
+  createOrMatchCustomer,
+  CustomerIdentityConflictError,
+} from "../../lib/explicit-customer-match";
+import {
   isCustomerResolutionConflictError,
   resolveCustomerByIdentifier,
 } from "../../lib/customer-resolution";
@@ -14,6 +18,7 @@ import {
 } from "../../lib/customer-billing-config";
 import { buildCustomerUsageHistory } from "../../lib/customer-usage-history";
 import { selectAccessGrantingPlanFeature } from "../../lib/customer-access";
+import { EntitlementCache } from "../../lib/cache";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 import {
@@ -35,11 +40,27 @@ const defaultDependencies: ApiCustomersDependencies = {
   verifyApiKey,
 };
 
-const customerSchema = z.object({
-  id: z.string().optional(),
-  email: z.string().email(),
-  name: z.string().optional(),
-  metadata: metadataSchema.optional(),
+const customerSchema = z
+  .object({
+    id: z.string().optional(),
+    email: z.string().email(),
+    matchBy: z.enum(["externalId", "email"]),
+    name: z.string().optional(),
+    metadata: metadataSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.matchBy === "externalId" && !value.id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["id"],
+        message: "id is required when matchBy is 'externalId'",
+      });
+    }
+  });
+
+const addCustomerAliasSchema = z.object({
+  customer: z.string().min(1),
+  alias: z.string().trim().min(1),
 });
 
 const customerFeatureConfigSchema = z.object({
@@ -154,10 +175,14 @@ const customerResponseSchema = z
     success: z.literal(true),
     id: z.string(),
     externalId: z.string().nullable(),
+    aliases: z.array(z.string()),
     email: z.string().email(),
     name: z.string().nullable().optional(),
     metadata: metadataSchema.nullable().optional(),
     billing: customerBillingSchema,
+    created: z.boolean().optional(),
+    matchedBy: z.enum(["externalId", "email"]).optional(),
+    matchedByEmail: z.boolean().optional(),
     createdAt: z.number(),
     updatedAt: z.number(),
   })
@@ -271,7 +296,7 @@ const createCustomerRoute = createRoute({
   tags: ["Customers"],
   summary: "Create or resolve a customer",
   description:
-    "Creates a customer if needed, or resolves and updates an existing customer by ID or email.",
+    "Creates a customer if needed, or resolves one using the explicitly selected external ID or email identity. Email matching should only be used after authenticating email ownership because the resolved customer can spend that identity's credits.",
   security: apiKeySecurity,
   request: {
     body: {
@@ -335,6 +360,34 @@ const getCustomerRoute = createRoute({
       description: "Customer returned successfully",
       ...jsonContent(customerResponseSchema),
     },
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const addCustomerAliasRoute = createRoute({
+  method: "post",
+  path: "/customers/alias",
+  operationId: "addCustomerAlias",
+  tags: ["Customers"],
+  summary: "Add a customer alias",
+  description:
+    "Makes an additional external ID resolve to the canonical customer that owns the billing history and credits. Aliases take precedence over legacy external-ID rows.",
+  security: apiKeySecurity,
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: addCustomerAliasSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Customer alias attached successfully",
+      ...jsonContent(customerResponseSchema),
+    },
+    400: badRequestResponse,
     401: unauthorizedResponse,
     404: notFoundResponse,
     409: conflictResponse,
@@ -649,21 +702,41 @@ async function buildCustomerResponse(
     createdAt: number;
     updatedAt: number;
   },
+  resolution?: {
+    created: boolean;
+    matchedBy: "externalId" | "email";
+  },
 ) {
-  const billing = await getCustomerBillingConfig(
-    db,
-    organizationId,
-    customer.id,
-  );
+  const aliasQuery = db.query.customerAliases;
+  const [billing, aliasRows] = await Promise.all([
+    getCustomerBillingConfig(db, organizationId, customer.id),
+    aliasQuery?.findMany
+      ? aliasQuery.findMany({
+          where: and(
+            eq(schema.customerAliases.organizationId, organizationId),
+            eq(schema.customerAliases.customerId, customer.id),
+          ),
+        })
+      : Promise.resolve([]),
+  ]);
 
   return {
     success: true as const,
     id: customer.id,
     externalId: customer.externalId ?? null,
+    aliases: aliasRows.map((row: { alias: string }) => row.alias),
     email: customer.email,
     name: customer.name ?? null,
     metadata: customer.metadata ?? null,
     billing,
+    ...(resolution
+      ? {
+          created: resolution.created,
+          matchedBy: resolution.matchedBy,
+          matchedByEmail:
+            !resolution.created && resolution.matchedBy === "email",
+        }
+      : {}),
     createdAt: customer.createdAt,
     updatedAt: customer.updatedAt,
   };
@@ -708,42 +781,22 @@ export function createApiCustomersRoute(
         return c.json(zodErrorToResponse(parsed.error), 400);
       }
 
-      const { id, email, name, metadata } = parsed.data;
+      const { id, email, matchBy, name, metadata } = parsed.data;
       const customerEmail = email!;
 
-      // Try to resolve existing customer
-      const customerId: string = id || customerEmail;
-      let customer;
-      try {
-        customer = await resolveOrCreateCustomer({
-          db,
-          organizationId,
-          customerId,
-          customerData: { email: customerEmail, name, metadata },
-          autoApplyPlansOnCreate: true,
-        });
-      } catch (error) {
-        if (isCustomerResolutionConflictError(error)) {
-          return c.json({ success: false, error: error.message }, 409);
-        }
-        throw error;
-      }
+      const resolution = await createOrMatchCustomer({
+        db,
+        organizationId,
+        matchBy,
+        externalId: id,
+        email: customerEmail,
+        name,
+        metadata,
+        autoApplyPlansOnCreate: true,
+      });
+      let customer = resolution.customer;
 
-      if (!customer) {
-        // If we couldn't resolve/create, create with explicit ID
-        const newCustomer = {
-          id: id || crypto.randomUUID(),
-          organizationId,
-          email: customerEmail.toLowerCase(),
-          name: name || customerEmail.split("@")[0],
-          metadata: metadata || null,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-
-        await db.insert(schema.customers).values(newCustomer);
-        customer = newCustomer as typeof schema.customers.$inferSelect;
-      } else {
+      if (!resolution.created) {
         // Customer exists - update metadata if provided
         if (metadata !== undefined) {
           const mergedMetadata = {
@@ -785,10 +838,13 @@ export function createApiCustomersRoute(
       }
 
       return c.json(
-        await buildCustomerResponse(db, organizationId, customer),
+        await buildCustomerResponse(db, organizationId, customer, resolution),
         200,
       );
     } catch (error) {
+      if (error instanceof CustomerIdentityConflictError) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
       if (isCustomerResolutionConflictError(error)) {
         return c.json({ success: false, error: error.message }, 409);
       }
@@ -889,6 +945,70 @@ export function createApiCustomersRoute(
     } catch (error) {
       console.error("[customers] list error:", error);
       return c.json({ success: false, error: "Failed to list customers" }, 500);
+    }
+  });
+
+  app.openapi(addCustomerAliasRoute, async (c) => {
+    const db = c.get("db");
+    const organizationId = c.get("organizationId")!;
+    const body = addCustomerAliasSchema.safeParse(await c.req.json());
+    if (!body.success) {
+      return c.json(zodErrorToResponse(body.error), 400);
+    }
+
+    try {
+      const customer = await resolveCustomer(
+        db,
+        organizationId,
+        body.data.customer,
+      );
+      if (!customer) {
+        return c.json({ success: false, error: "Customer not found" }, 404);
+      }
+
+      const existing = await db.query.customerAliases.findFirst({
+        where: and(
+          eq(schema.customerAliases.organizationId, organizationId),
+          eq(schema.customerAliases.alias, body.data.alias),
+        ),
+      });
+      if (existing && existing.customerId !== customer.id) {
+        return c.json(
+          {
+            success: false,
+            error: `Alias '${body.data.alias}' already belongs to another customer`,
+          },
+          409,
+        );
+      }
+
+      if (!existing) {
+        await db.insert(schema.customerAliases).values({
+          id: crypto.randomUUID(),
+          organizationId,
+          customerId: customer.id,
+          alias: body.data.alias,
+          createdAt: Date.now(),
+        });
+      }
+
+      if (c.env.CACHE) {
+        await new EntitlementCache(c.env.CACHE).invalidateCustomer(
+          organizationId,
+          body.data.alias,
+        );
+      }
+
+      return c.json(
+        await buildCustomerResponse(db, organizationId, customer),
+        200,
+      );
+    } catch (error) {
+      if (isCustomerResolutionConflictError(error)) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
+      console.error("[customers] alias error:", error);
+      return c.json({ success: false, error: "Failed to add alias" }, 500);
     }
   });
 

@@ -102,7 +102,7 @@ interface ListEntitiesResult {
 ```ts
 import { Owostack } from "owostack";
 
-const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_SECRET_KEY });
 
 // Add team members - validates against seat limit
 try {
@@ -218,7 +218,11 @@ console.log(`${status.balance} credits remaining`);
 You can also call entity methods on the customer object:
 
 ```ts
-const org = await owo.customer({ email: "org@acme.com" });
+const org = await owo.customer({
+  id: "acme",
+  email: "org@acme.com",
+  matchBy: "externalId",
+});
 
 // Add entity via customer object
 await org.addEntity({

@@ -14,6 +14,7 @@ import { sanitizeOneTimePlanFlags } from "../../lib/plans";
 import { syncProviderPlan } from "../../lib/plan-provider-sync";
 import { syncCreditPackProduct } from "../../lib/credit-pack-provider-sync";
 import { EntitlementCache } from "../../lib/cache";
+import { resolvePublicEnvironment } from "../../lib/public-environment";
 import type { Env, Variables } from "../../index";
 import { zodErrorToResponse } from "../../lib/validation";
 import {
@@ -95,6 +96,14 @@ const syncPlanFeatureSchema = z.object({
   creditCost: z.number().optional(),
 });
 
+const providerSchema = z.enum([
+  "paystack",
+  "dodopayments",
+  "polar",
+  "stripe",
+  "bachs",
+]);
+
 const syncPlanSchema = z.object({
   slug: z.string().min(1),
   name: z.string().min(1),
@@ -105,7 +114,7 @@ const syncPlanSchema = z.object({
   billingType: z.enum(["recurring", "one_time"]).default("recurring"),
   planGroup: z.string().optional(),
   trialDays: z.number().optional(),
-  provider: z.string().optional(),
+  provider: providerSchema.optional(),
   metadata: metadataSchema.optional(),
   autoEnable: z.boolean().optional(),
   isAddon: z.boolean().optional(),
@@ -132,12 +141,12 @@ const syncCreditPackSchema = z.object({
   price: z.number().int().min(0),
   currency: z.string().min(3),
   creditSystem: z.string().min(1),
-  provider: z.string().optional(),
+  provider: providerSchema.optional(),
   metadata: metadataSchema.optional(),
 });
 
 const syncPayloadSchema = z.object({
-  defaultProvider: z.string().optional(),
+  defaultProvider: providerSchema.optional(),
   features: z.array(syncFeatureSchema),
   creditSystems: z.array(syncCreditSystemSchema).optional(),
   creditPacks: z.array(syncCreditPackSchema).optional(),
@@ -153,6 +162,7 @@ const syncResultGroupSchema = z.object({
 const syncResponseSchema = z
   .object({
     success: z.literal(true),
+    mode: z.enum(["sandbox", "live"]),
     features: syncResultGroupSchema,
     creditSystems: syncResultGroupSchema,
     creditPacks: syncResultGroupSchema,
@@ -262,6 +272,7 @@ app.openapi(syncCatalogRoute, async (c) => {
 
   const result = {
     success: true as const,
+    mode: resolvePublicEnvironment(c.env.ENVIRONMENT),
     features: {
       created: [] as string[],
       updated: [] as string[],

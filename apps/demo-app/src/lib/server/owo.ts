@@ -43,7 +43,7 @@ export const catalog = [
 ];
 
 export const owo = new Owostack({
-  secretKey: env.OWOSTACK_API_KEY || "sk_test_owo",
+  secretKey: env.OWOSTACK_SECRET_KEY || "owo_sk_test_placeholder",
   apiUrl: env.OWOSTACK_API_URL || "http://localhost:8787/api/v1",
   catalog,
 });

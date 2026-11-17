@@ -38,7 +38,9 @@ The customer-wide overage limit is evaluated separately. It acts as a safety rai
 
 ```ts
 const customer = await owo.customer({
+  id: "acme",
   email: "billing@acme.com",
+  matchBy: "externalId",
 });
 
 console.log(customer.billing.overageLimit);

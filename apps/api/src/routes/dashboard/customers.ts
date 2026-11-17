@@ -182,6 +182,13 @@ app.get("/:id", async (c) => {
       return c.json({ success: false, error: "Customer not found" }, 404);
     }
 
+    const customerAliases = await db.query.customerAliases.findMany({
+      where: and(
+        eq(schema.customerAliases.organizationId, customer.organizationId),
+        eq(schema.customerAliases.customerId, customer.id),
+      ),
+    });
+
     const planScope = requestedPlanId
       ? await db.query.plans.findFirst({
           columns: {
@@ -456,8 +463,7 @@ app.get("/:id", async (c) => {
             .map((subscription: any) => subscription.id)
             .filter(
               (subscriptionId: unknown): subscriptionId is string =>
-                typeof subscriptionId === "string" &&
-                subscriptionId.length > 0,
+                typeof subscriptionId === "string" && subscriptionId.length > 0,
             ),
         }
       : undefined;
@@ -819,7 +825,10 @@ app.get("/:id", async (c) => {
     const response = {
       success: true,
       data: {
-        customer,
+        customer: {
+          ...customer,
+          aliases: customerAliases.map((row: { alias: string }) => row.alias),
+        },
         subscriptions: subscriptionsWithHealth,
         recentUsage,
         featureUsageSummary,
@@ -854,6 +863,59 @@ app.get("/:id", async (c) => {
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
   }
+});
+
+app.post("/:id/aliases", async (c) => {
+  const id = c.req.param("id");
+  const organizationId = c.get("organizationId");
+  const parsed = z
+    .object({ alias: z.string().trim().min(1) })
+    .safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json(zodErrorToResponse(parsed.error), 400);
+  }
+
+  const db = c.get("db");
+  const customer = await db.query.customers.findFirst({
+    where: and(
+      eq(schema.customers.id, id),
+      eq(schema.customers.organizationId, organizationId!),
+    ),
+  });
+  if (!customer) {
+    return c.json({ success: false, error: "Customer not found" }, 404);
+  }
+
+  const existing = await db.query.customerAliases.findFirst({
+    where: and(
+      eq(schema.customerAliases.organizationId, organizationId!),
+      eq(schema.customerAliases.alias, parsed.data.alias),
+    ),
+  });
+  if (existing && existing.customerId !== id) {
+    return c.json(
+      { success: false, error: "Alias belongs to another customer" },
+      409,
+    );
+  }
+  if (!existing) {
+    await db.insert(schema.customerAliases).values({
+      id: crypto.randomUUID(),
+      organizationId: organizationId!,
+      customerId: id,
+      alias: parsed.data.alias,
+      createdAt: Date.now(),
+    });
+  }
+
+  if (c.env.CACHE) {
+    const cache = new EntitlementCache(c.env.CACHE);
+    await Promise.all([
+      cache.invalidateDashboardCustomer(id),
+      cache.invalidateCustomer(organizationId!, parsed.data.alias),
+    ]);
+  }
+  return c.json({ success: true, alias: parsed.data.alias });
 });
 
 app.delete("/:id", async (c) => {

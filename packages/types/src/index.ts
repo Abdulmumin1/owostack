@@ -2,6 +2,14 @@
  * Core configuration types
  */
 
+/** Payment providers supported by Owostack's hosted API. */
+export type ProviderId =
+  | "paystack"
+  | "dodopayments"
+  | "polar"
+  | "stripe"
+  | "bachs";
+
 export interface OwostackConfig {
   /**
    * API secret key. Environment-scoped keys (`owo_sk_test_…` for sandbox,
@@ -10,8 +18,8 @@ export interface OwostackConfig {
    */
   secretKey: string;
 
-  /** Optional: Default provider for all plans (e.g., "paystack", "dodo") */
-  provider?: string;
+  /** Project-level default provider for plans and credit packs. */
+  provider?: ProviderId;
 
   /**
    * Environment to talk to. Required unless `apiUrl` is set or the key is
@@ -149,7 +157,19 @@ export interface CheckParams {
 
   /** Optional: Entity ID to scope usage to (e.g. seat, workspace) */
   entity?: string;
+
+  /** Retry-safe key for an atomic consumption. Reusing it returns the first result. */
+  idempotencyKey?: string;
 }
+
+/** Parameters for an atomic entitlement check and usage consumption. */
+export type ConsumeParams = Omit<
+  CheckParams,
+  "sendEvent" | "idempotencyKey"
+> & {
+  /** Stable ID for the user action, required to prevent duplicate consumption. */
+  idempotencyKey: string;
+};
 
 /** Machine-readable codes returned by check() */
 export type CheckCode =
@@ -342,16 +362,28 @@ export interface CreditSystemBalanceDetails {
   /** Purchased add-on balance remaining for this credit system */
   addonBalance: number;
 
+  /** Dashboard-granted bonus balance remaining for this credit system */
+  bonusBalance: number;
+
+  /** Combined spendable balance; null means unlimited. */
+  totalBalance: number | null;
+
   /** Plan-provided balance for the current reset window */
   plan: CreditPlanBalance;
 }
 
 export interface PrepaidBalanceDetails {
   /** Source of the balance details */
-  source: "prepaid";
+  source: "prepaid" | "feature";
 
   /** Purchased add-on balance is not applicable for prepaid features */
   addonBalance: null;
+
+  /** Dashboard-granted bonus balance remaining */
+  bonusBalance: number;
+
+  /** Combined spendable balance; null means unlimited. */
+  totalBalance: number | null;
 
   /** Plan-provided balance for the current reset window */
   plan: CreditPlanBalance;
@@ -967,7 +999,7 @@ export interface PlanDefinition {
   trialDays?: number;
 
   /** Provider for this plan (overrides default) */
-  provider?: string;
+  provider?: ProviderId;
 
   /** Custom metadata */
   metadata?: Record<string, unknown>;
@@ -1033,7 +1065,7 @@ export interface CreditPackDefinition {
   creditSystem: string;
 
   /** Provider for this pack (overrides default) */
-  provider?: string;
+  provider?: ProviderId;
 
   /** Custom metadata */
   metadata?: Record<string, unknown>;
@@ -1099,7 +1131,7 @@ export interface WalletSetupParams {
   callbackUrl?: string;
 
   /** Optional: Override provider */
-  provider?: string;
+  provider?: ProviderId;
 }
 
 export interface WalletSetupResult {
@@ -1234,10 +1266,33 @@ export interface PlansResult {
   plans: PublicPlan[];
 }
 
+/** A credit pack as returned by the public API. */
+export interface PublicCreditPack {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  credits: number;
+  price: number;
+  currency: string;
+  creditSystemId: string | null;
+  creditSystem: string | null;
+  provider: ProviderId | null;
+  metadata: Record<string, unknown> | null;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreditPacksResult {
+  success: true;
+  data: PublicCreditPack[];
+}
+
 /** Serialized catalog sent to POST /api/sync */
 export interface SyncPayload {
   /** Optional: Default provider for all plans */
-  defaultProvider?: string;
+  defaultProvider?: ProviderId;
   features: Array<{
     slug: string;
     type: "metered" | "boolean";
@@ -1261,7 +1316,7 @@ export interface SyncPayload {
     price: number;
     currency: Currency;
     creditSystem: string;
-    provider?: string;
+    provider?: ProviderId;
     metadata?: Record<string, unknown>;
   }>;
   plans: Array<{
@@ -1274,7 +1329,7 @@ export interface SyncPayload {
     billingType?: "recurring" | "one_time";
     planGroup?: string;
     trialDays?: number;
-    provider?: string;
+    provider?: ProviderId;
     metadata?: Record<string, unknown>;
     autoEnable?: boolean;
     isAddon?: boolean;
@@ -1307,6 +1362,8 @@ export interface SyncChanges {
 /** Result returned by owo.sync() */
 export interface SyncResult {
   success: boolean;
+  /** Environment that received the catalog. */
+  mode: OwostackEnvironment | null;
   features: SyncChanges;
   creditSystems: SyncChanges;
   creditPacks: SyncChanges;
@@ -1319,11 +1376,21 @@ export interface SyncResult {
  */
 
 export interface CustomerParams {
-  /** Customer ID (optional - auto-generated if not provided) */
+  /**
+   * Your external customer ID. Required when matchBy is "externalId".
+   * This value is never silently replaced with an email match.
+   */
   id?: string;
 
   /** Customer email (required) */
   email: string;
+
+  /**
+   * Identity used to resolve an existing customer.
+   * Only use "email" after authenticating ownership of the email: a matched
+   * customer can spend the existing identity's credits.
+   */
+  matchBy: "externalId" | "email";
 
   /** Customer display name */
   name?: string;
@@ -1342,6 +1409,9 @@ export interface CustomerResult {
    */
   externalId: string | null;
 
+  /** Additional external IDs that resolve to this customer. */
+  aliases: string[];
+
   /** Customer email */
   email: string;
 
@@ -1353,6 +1423,18 @@ export interface CustomerResult {
 
   /** Customer-specific billing configuration */
   billing: CustomerBillingConfig;
+
+  /** Whether customer() created a new customer. Present on customer() responses. */
+  created?: boolean;
+
+  /** Identity selected by customer(). Present on customer() responses. */
+  matchedBy?: "externalId" | "email";
+
+  /**
+   * True when customer() returned an existing customer through an explicit
+   * email match. Treat this as security-sensitive when credits can be spent.
+   */
+  matchedByEmail?: boolean;
 
   /** Unix timestamp (ms) when created */
   createdAt: number;
@@ -1403,6 +1485,13 @@ export interface CustomerSummary {
 
   /** Unix timestamp (ms) when last updated */
   updatedAt: number;
+}
+
+export interface AddCustomerAliasParams {
+  /** Existing customer identifier that owns the billing history and credits. */
+  customer: string;
+  /** Additional external ID that should resolve to that customer. */
+  alias: string;
 }
 
 export interface CustomerListResult {

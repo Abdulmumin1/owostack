@@ -47,6 +47,9 @@
 
   let isLoading = $state(true);
   let data = $state<any>(null);
+  let newAlias = $state("");
+  let isAddingAlias = $state(false);
+  let aliasError = $state("");
 
   async function loadCustomer(id: string, scopedPlanId: string | null) {
     isLoading = true;
@@ -67,6 +70,29 @@
       console.error("Failed to load customer", error);
     } finally {
       isLoading = false;
+    }
+  }
+
+  async function addAlias() {
+    const alias = newAlias.trim();
+    if (!alias || !customerId) return;
+    isAddingAlias = true;
+    aliasError = "";
+    try {
+      const res = await apiFetch(
+        `/api/dashboard/customers/${customerId}/aliases`,
+        { method: "POST", body: JSON.stringify({ alias }) },
+      );
+      if (!res.data?.success) {
+        aliasError = res.data?.error || "Could not add alias";
+        return;
+      }
+      newAlias = "";
+      await loadCustomer(customerId, planId);
+    } catch (error) {
+      aliasError = error instanceof Error ? error.message : "Could not add alias";
+    } finally {
+      isAddingAlias = false;
     }
   }
 
@@ -402,7 +428,7 @@
             <h1
               class="text-2xl font-display font-semibold text-text-primary truncate max-w-md"
             >
-              {customer.id}
+              {customer.name || customer.email}
             </h1>
             <div class="flex items-center gap-1.5">
               {#if customer.providerId}
@@ -417,6 +443,33 @@
             </div>
           </div>
         </div>
+        <div class="flex flex-wrap gap-2 text-xs">
+          <span class="rounded border border-border bg-bg-secondary px-2 py-1 text-text-secondary">
+            Email: <span class="font-mono text-text-primary">{customer.email}</span>
+          </span>
+          <span class="rounded border border-border bg-bg-secondary px-2 py-1 text-text-secondary">
+            External ID: <span class="font-mono text-text-primary">{customer.externalId || "—"}</span>
+          </span>
+          <span class="rounded border border-border bg-bg-secondary px-2 py-1 text-text-secondary">
+            Internal ID: <span class="font-mono text-text-primary">{customer.id}</span>
+          </span>
+          {#each customer.aliases || [] as alias (alias)}
+            <span class="rounded border border-info/30 bg-info-bg px-2 py-1 text-info">
+              Alias: <span class="font-mono">{alias}</span>
+            </span>
+          {/each}
+        </div>
+        <form class="flex max-w-md gap-2" onsubmit={(event) => { event.preventDefault(); void addAlias(); }}>
+          <input
+            class="input flex-1 font-mono text-sm"
+            placeholder="Add an app or guest ID alias"
+            bind:value={newAlias}
+          />
+          <button class="btn-secondary" type="submit" disabled={isAddingAlias || !newAlias.trim()}>
+            {isAddingAlias ? "Adding…" : "Add alias"}
+          </button>
+        </form>
+        {#if aliasError}<p class="text-xs text-error">{aliasError}</p>{/if}
       </div>
 
       <!-- Plans Section -->
@@ -744,6 +797,22 @@
                   {customer.externalId}
                 </span>
               {/if}
+
+              <span
+                class="flex items-center gap-1.5 text-[10px] text-text-dim font-mono"
+              >
+                <Hash size={10} weight="duotone" />
+                Internal: {customer.id}
+              </span>
+
+              {#each customer.aliases || [] as alias (alias)}
+                <span
+                  class="flex items-center gap-1.5 text-[10px] text-info font-mono"
+                >
+                  <Hash size={10} weight="duotone" />
+                  Alias: {alias}
+                </span>
+              {/each}
 
               <span class="flex items-center gap-1.5 text-[10px] text-text-dim">
                 <Clock size={10} weight="duotone" />

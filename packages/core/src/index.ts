@@ -37,9 +37,18 @@ import type {
   RemoveEntityResult,
   ListEntitiesParams,
   ListEntitiesResult,
+  ConsumeParams,
+  CreditPacksResult,
+  PublicCreditPack,
+  AddCustomerAliasParams,
+  ProviderId,
 } from "@owostack/types";
 
-import { bindFeatureHandles, buildSyncPayload } from "./catalog.js";
+import {
+  bindFeatureHandles,
+  buildSyncPayload,
+  collectSyncWarnings,
+} from "./catalog.js";
 import {
   resolveEnvironment,
   type OwostackMode,
@@ -70,6 +79,9 @@ export class Owostack {
   /** Customer: create/resolve + billing config management */
   readonly customer: CustomerFn;
 
+  /** Credit packs: callable list plus packs.get(slug). */
+  readonly packs: CreditPacksFn;
+
   constructor(config: OwostackConfig) {
     this._config = config;
     this.environment = resolveEnvironment(config);
@@ -77,6 +89,7 @@ export class Owostack {
     this.wallet = buildWalletFn(this);
     this.customer = buildCustomerFn(this);
     this.plans = buildPlansFn(this);
+    this.packs = buildCreditPacksFn(this);
 
     // Bind all registered feature handles to this client
     if (config.catalog && config.catalog.length > 0) {
@@ -142,6 +155,7 @@ export class Owostack {
     if (!this._config.catalog || this._config.catalog.length === 0) {
       return {
         success: true,
+        mode: this.mode,
         features: { created: [], updated: [], unchanged: [] },
         creditSystems: { created: [], updated: [], unchanged: [] },
         creditPacks: { created: [], updated: [], unchanged: [] },
@@ -154,8 +168,14 @@ export class Owostack {
       this._config.catalog,
       this._config.provider,
     );
+    const localWarnings = collectSyncWarnings(payload);
     const response = await this.post("/sync", payload);
-    return response as SyncResult;
+    const result = response as SyncResult;
+    return {
+      ...result,
+      mode: result.mode ?? this.mode,
+      warnings: [...new Set([...localWarnings, ...(result.warnings || [])])],
+    };
   }
 
   /**
@@ -226,6 +246,35 @@ export class Owostack {
   async track(params: TrackParams): Promise<TrackResult> {
     const response = await this.post("/track", params);
     return response as TrackResult;
+  }
+
+  /**
+   * Atomically check access and consume usage in one request.
+   * This is the safe default for actions that spend credits.
+   */
+  async consume(params: ConsumeParams): Promise<CheckResult> {
+    return this.check({ ...params, sendEvent: true });
+  }
+
+  /**
+   * Return one spendable balance number for a customer and credit system.
+   * Unlimited balances are represented by Number.POSITIVE_INFINITY.
+   */
+  async balance(customer: string, creditSystem: string): Promise<number> {
+    const result = await this.check({
+      customer,
+      feature: creditSystem,
+      value: 0,
+    });
+    if (result.credits) {
+      return result.credits.totalBalance === null
+        ? Number.POSITIVE_INFINITY
+        : Math.max(0, result.credits.totalBalance);
+    }
+    if (!result.allowed) return 0;
+    return result.balance === null
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, result.balance);
   }
 
   /**
@@ -493,6 +542,22 @@ function buildPlansFn(client: Owostack): PlansFn {
   return fn;
 }
 
+type CreditPacksFn = {
+  (): Promise<CreditPacksResult>;
+  get(slug: string): Promise<PublicCreditPack>;
+};
+
+function buildCreditPacksFn(client: Owostack): CreditPacksFn {
+  const fn = (() => client.get("/credit-packs")) as CreditPacksFn;
+  fn.get = async (slug: string) => {
+    const response = await client.get(
+      `/credit-packs/${encodeURIComponent(slug)}`,
+    );
+    return (response as { data: PublicCreditPack }).data;
+  };
+  return fn;
+}
+
 type CustomerFn = {
   (params: CustomerParams): Promise<CustomerResult>;
   /**
@@ -502,6 +567,8 @@ type CustomerFn = {
   get(customer: string): Promise<CustomerResult>;
   /** List or search customers in your organization. */
   list(params?: CustomerListParams): Promise<CustomerListResult>;
+  /** Attach another external ID to the canonical customer. */
+  alias(params: AddCustomerAliasParams): Promise<CustomerResult>;
   setFeatureConfig(
     params: SetCustomerFeatureConfigParams,
   ): Promise<CustomerResult>;
@@ -529,6 +596,9 @@ function buildCustomerFn(client: Owostack): CustomerFn {
     if (params.externalId) query.externalId = params.externalId;
     return client.get("/customers", query) as Promise<CustomerListResult>;
   };
+
+  fn.alias = (params: AddCustomerAliasParams) =>
+    client.post("/customers/alias", params) as Promise<CustomerResult>;
 
   fn.setFeatureConfig = (params: SetCustomerFeatureConfigParams) =>
     client.post("/customers/feature-config", params) as Promise<CustomerResult>;
@@ -568,7 +638,7 @@ type WalletFn = {
   (customer: string): Promise<WalletResult>;
   setup(
     customer: string,
-    opts?: { callbackUrl?: string; provider?: string },
+    opts?: { callbackUrl?: string; provider?: ProviderId },
   ): Promise<WalletSetupResult>;
   list(customer: string): Promise<WalletResult>;
   remove(customer: string, id: string): Promise<WalletRemoveResult>;
@@ -580,7 +650,7 @@ function buildWalletFn(client: Owostack): WalletFn {
 
   fn.setup = (
     customer: string,
-    opts?: { callbackUrl?: string; provider?: string },
+    opts?: { callbackUrl?: string; provider?: ProviderId },
   ) =>
     client.post("/wallet/setup", {
       customer,
@@ -714,6 +784,7 @@ export {
   creditPack,
   plan,
   buildSyncPayload,
+  collectSyncWarnings,
 } from "./catalog.js";
 export {
   MeteredHandle,
@@ -728,6 +799,7 @@ export type {
   AttachResult,
   CheckParams,
   CheckResult,
+  ConsumeParams,
   CheckCode,
   TrackParams,
   TrackResult,
@@ -746,6 +818,8 @@ export type {
   PayInvoiceParams,
   PayInvoiceResult,
   OwostackConfig,
+  PublicCreditPack,
+  CreditPacksResult,
   CustomerData,
   ResponseDetails,
   OverageDetails,
@@ -779,6 +853,7 @@ export type {
   CustomerResult,
   CustomerListParams,
   CustomerListResult,
+  AddCustomerAliasParams,
   CustomerSummary,
   CustomerBillingConfig,
   CustomerFeatureConfigResult,
@@ -794,3 +869,5 @@ export type {
   ListEntitiesParams,
   ListEntitiesResult,
 } from "@owostack/types";
+
+export type { ProviderId } from "@owostack/types";

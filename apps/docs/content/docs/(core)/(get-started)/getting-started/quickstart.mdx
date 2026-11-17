@@ -30,7 +30,7 @@ You do **not** need a payment provider account. The sandbox runs on payment prov
 3. Save it in a `.env` file:
 
 ```sh
-OWOSTACK_API_KEY=owo_sk_test_xxxxxxxxxxxxxxxx
+OWOSTACK_SECRET_KEY=owo_sk_test_xxxxxxxxxxxxxxxx
 ```
 
 ## 2. That's it for setup
@@ -52,7 +52,7 @@ export const analytics = boolean("analytics", { name: "Analytics Dashboard" });
 
 // 2. Define the client and catalog
 export const owo = new Owostack({
-  secretKey: process.env.OWOSTACK_API_KEY,
+  secretKey: process.env.OWOSTACK_SECRET_KEY,
   catalog: [
     plan("starter", {
       name: "Starter",
@@ -73,6 +73,11 @@ OWOSTACK_SECRET_KEY=owo_sk_test_… npx owosk sync --config ./owo.config.mjs
 ```
 
 The CLI reads the environment from the key prefix (`owo_sk_test_` → sandbox) and shows it in the first line of output. You should then see the diff and a confirmation that your features and plans were created. In CI, add `--yes --json` for non-interactive, machine-readable output.
+
+`OWOSTACK_SECRET_KEY` is the canonical key variable. Use `owosk sync --dry-run`
+to preview the catalog and price diff before applying it; run the command once
+with a test-scoped key and once with a live-scoped key when you intentionally
+maintain both environments.
 
 ## 4. Write your first script
 

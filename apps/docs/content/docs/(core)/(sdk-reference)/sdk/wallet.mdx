@@ -93,7 +93,7 @@ if (setup.url) {
 | ------------------ | -------- | -------- | ------------------------------------------------- |
 | `customer`         | `string` | Yes      | Your internal user ID                             |
 | `opts.callbackUrl` | `string` | No       | URL to redirect customer to after authorization   |
-| `opts.provider`    | `string` | No       | Provider ID (e.g. `"paystack"`, `"dodopayments"`) |
+| `opts.provider`    | `ProviderId` | No    | Provider ID with autocomplete (`paystack`, `bachs`, `stripe`, `dodopayments`, or `polar`) |
 
 ### Returns `Promise<WalletSetupResult>`
 

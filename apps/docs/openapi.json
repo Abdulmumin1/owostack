@@ -954,6 +954,11 @@
                   },
                   "entity": {
                     "type": "string"
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
                   }
                 },
                 "required": [
@@ -5262,7 +5267,14 @@
                 "type": "object",
                 "properties": {
                   "defaultProvider": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "paystack",
+                      "dodopayments",
+                      "polar",
+                      "stripe",
+                      "bachs"
+                    ]
                   },
                   "features": {
                     "type": "array",
@@ -5376,7 +5388,14 @@
                           "minLength": 1
                         },
                         "provider": {
-                          "type": "string"
+                          "type": "string",
+                          "enum": [
+                            "paystack",
+                            "dodopayments",
+                            "polar",
+                            "stripe",
+                            "bachs"
+                          ]
                         },
                         "metadata": {
                           "type": "object",
@@ -5433,7 +5452,14 @@
                           "type": "number"
                         },
                         "provider": {
-                          "type": "string"
+                          "type": "string",
+                          "enum": [
+                            "paystack",
+                            "dodopayments",
+                            "polar",
+                            "stripe",
+                            "bachs"
+                          ]
                         },
                         "metadata": {
                           "type": "object",
@@ -5574,6 +5600,13 @@
                         true
                       ]
                     },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "sandbox",
+                        "live"
+                      ]
+                    },
                     "features": {
                       "type": "object",
                       "properties": {
@@ -5695,6 +5728,7 @@
                   },
                   "required": [
                     "success",
+                    "mode",
                     "features",
                     "creditSystems",
                     "creditPacks",
@@ -7198,7 +7232,7 @@
           "Customers"
         ],
         "summary": "Create or resolve a customer",
-        "description": "Creates a customer if needed, or resolves and updates an existing customer by ID or email.",
+        "description": "Creates a customer if needed, or resolves one using the explicitly selected external ID or email identity. Email matching should only be used after authenticating email ownership because the resolved customer can spend that identity's credits.",
         "security": [
           {
             "bearerAuth": []
@@ -7218,6 +7252,13 @@
                     "type": "string",
                     "format": "email"
                   },
+                  "matchBy": {
+                    "type": "string",
+                    "enum": [
+                      "externalId",
+                      "email"
+                    ]
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -7227,7 +7268,8 @@
                   }
                 },
                 "required": [
-                  "email"
+                  "email",
+                  "matchBy"
                 ]
               }
             }
@@ -7255,6 +7297,12 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "aliases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
                     "email": {
                       "type": "string",
@@ -7375,6 +7423,19 @@
                         "featureConfigs"
                       ]
                     },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "matchedBy": {
+                      "type": "string",
+                      "enum": [
+                        "externalId",
+                        "email"
+                      ]
+                    },
+                    "matchedByEmail": {
+                      "type": "boolean"
+                    },
                     "createdAt": {
                       "type": "number"
                     },
@@ -7386,6 +7447,7 @@
                     "success",
                     "id",
                     "externalId",
+                    "aliases",
                     "email",
                     "billing",
                     "createdAt",
@@ -7870,35 +7932,46 @@
         }
       }
     },
-    "/v1/customers/{id}": {
-      "get": {
-        "operationId": "getCustomer",
+    "/v1/customers/alias": {
+      "post": {
+        "operationId": "addCustomerAlias",
         "tags": [
           "Customers"
         ],
-        "summary": "Get a customer",
-        "description": "Retrieves a customer for the authenticated organization. Accepts the same identifiers as track/check: the internal ID, your external customer ID, or the customer's email.",
+        "summary": "Add a customer alias",
+        "description": "Makes an additional external ID resolve to the canonical customer that owns the billing history and credits. Aliases take precedence over legacy external-ID rows.",
         "security": [
           {
             "bearerAuth": []
           }
         ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "description": "Internal customer ID, your external customer ID (the `customer` value you pass to track/check), or the customer's email.",
-              "example": "user_123"
-            },
-            "required": true,
-            "description": "Internal customer ID, your external customer ID (the `customer` value you pass to track/check), or the customer's email.",
-            "name": "id",
-            "in": "path"
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "customer": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "alias": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "customer",
+                  "alias"
+                ]
+              }
+            }
           }
-        ],
+        },
         "responses": {
           "200": {
-            "description": "Customer returned successfully",
+            "description": "Customer alias attached successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -7918,6 +7991,12 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "aliases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
                     "email": {
                       "type": "string",
@@ -8038,6 +8117,19 @@
                         "featureConfigs"
                       ]
                     },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "matchedBy": {
+                      "type": "string",
+                      "enum": [
+                        "externalId",
+                        "email"
+                      ]
+                    },
+                    "matchedByEmail": {
+                      "type": "boolean"
+                    },
                     "createdAt": {
                       "type": "number"
                     },
@@ -8049,6 +8141,444 @@
                     "success",
                     "id",
                     "externalId",
+                    "aliases",
+                    "email",
+                    "billing",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with existing data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/customers/{id}": {
+      "get": {
+        "operationId": "getCustomer",
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Get a customer",
+        "description": "Retrieves a customer for the authenticated organization. Accepts the same identifiers as track/check: the internal ID, your external customer ID, or the customer's email.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal customer ID, your external customer ID (the `customer` value you pass to track/check), or the customer's email.",
+              "example": "user_123"
+            },
+            "required": true,
+            "description": "Internal customer ID, your external customer ID (the `customer` value you pass to track/check), or the customer's email.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Customer returned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "externalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "aliases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email"
+                    },
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "metadata": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "billing": {
+                      "type": "object",
+                      "properties": {
+                        "overageLimit": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "maxOverageAmount": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "onLimitReached": {
+                              "type": "string",
+                              "enum": [
+                                "block",
+                                "notify"
+                              ]
+                            },
+                            "createdAt": {
+                              "type": "number"
+                            },
+                            "updatedAt": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "maxOverageAmount",
+                            "onLimitReached",
+                            "createdAt",
+                            "updatedAt"
+                          ]
+                        },
+                        "featureConfigs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "feature": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "slug": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "slug",
+                                  "name"
+                                ]
+                              },
+                              "overage": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "enum": [
+                                  "block",
+                                  "charge",
+                                  null
+                                ]
+                              },
+                              "maxOverageUnits": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "createdAt": {
+                                "type": "number"
+                              },
+                              "updatedAt": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "feature",
+                              "overage",
+                              "maxOverageUnits",
+                              "createdAt",
+                              "updatedAt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "overageLimit",
+                        "featureConfigs"
+                      ]
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "matchedBy": {
+                      "type": "string",
+                      "enum": [
+                        "externalId",
+                        "email"
+                      ]
+                    },
+                    "matchedByEmail": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "id",
+                    "externalId",
+                    "aliases",
                     "email",
                     "billing",
                     "createdAt",
@@ -8839,6 +9369,12 @@
                         "null"
                       ]
                     },
+                    "aliases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "email": {
                       "type": "string",
                       "format": "email"
@@ -8958,6 +9494,19 @@
                         "featureConfigs"
                       ]
                     },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "matchedBy": {
+                      "type": "string",
+                      "enum": [
+                        "externalId",
+                        "email"
+                      ]
+                    },
+                    "matchedByEmail": {
+                      "type": "boolean"
+                    },
                     "createdAt": {
                       "type": "number"
                     },
@@ -8969,6 +9518,7 @@
                     "success",
                     "id",
                     "externalId",
+                    "aliases",
                     "email",
                     "billing",
                     "createdAt",
@@ -9277,6 +9827,12 @@
                         "null"
                       ]
                     },
+                    "aliases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "email": {
                       "type": "string",
                       "format": "email"
@@ -9396,6 +9952,19 @@
                         "featureConfigs"
                       ]
                     },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "matchedBy": {
+                      "type": "string",
+                      "enum": [
+                        "externalId",
+                        "email"
+                      ]
+                    },
+                    "matchedByEmail": {
+                      "type": "boolean"
+                    },
                     "createdAt": {
                       "type": "number"
                     },
@@ -9407,6 +9976,7 @@
                     "success",
                     "id",
                     "externalId",
+                    "aliases",
                     "email",
                     "billing",
                     "createdAt",
@@ -10896,6 +11466,267 @@
           },
           "401": {
             "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/credit-packs/{slug}": {
+      "get": {
+        "operationId": "getCreditPack",
+        "tags": [
+          "Credit Systems"
+        ],
+        "summary": "Get a credit pack",
+        "description": "Returns the current server-side price and provider for an active credit pack.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Credit pack returned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "credits": {
+                          "type": "number"
+                        },
+                        "price": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "creditSystemId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "creditSystem": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "provider": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "metadata": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "additionalProperties": {}
+                        },
+                        "isActive": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "slug",
+                        "name",
+                        "description",
+                        "credits",
+                        "price",
+                        "currency",
+                        "isActive",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
             "content": {
               "application/json": {
                 "schema": {

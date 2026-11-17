@@ -56,6 +56,60 @@ export const customers = sqliteTable(
   ],
 );
 
+/** Additional external IDs that resolve to a canonical customer. */
+export const customerAliases = sqliteTable(
+  "customer_aliases",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    alias: text("alias").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("customer_aliases_customer_idx").on(table.customerId),
+    uniqueIndex("customer_aliases_org_alias_uniq").on(
+      table.organizationId,
+      table.alias,
+    ),
+  ],
+);
+
+/** Durable retry protection for atomic check-and-consume requests. */
+export const entitlementConsumptions = sqliteTable(
+  "entitlement_consumptions",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    responseBody: text("response_body", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
+    responseStatus: integer("response_status"),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("entitlement_consumptions_org_key_uniq").on(
+      table.organizationId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
 export const plans = sqliteTable(
   "plans",
   {

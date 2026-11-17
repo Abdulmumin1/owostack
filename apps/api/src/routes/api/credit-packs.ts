@@ -8,6 +8,7 @@ import {
   internalServerErrorResponse,
   jsonContent,
   metadataSchema,
+  notFoundResponse,
   unauthorizedResponse,
 } from "../../openapi/common";
 
@@ -52,6 +53,31 @@ const listCreditPacksRoute = createRoute({
       ),
     },
     401: unauthorizedResponse,
+    500: internalServerErrorResponse,
+  },
+});
+
+const getCreditPackRoute = createRoute({
+  method: "get",
+  path: "/{slug}",
+  operationId: "getCreditPack",
+  tags: ["Credit Systems"],
+  summary: "Get a credit pack",
+  description:
+    "Returns the current server-side price and provider for an active credit pack.",
+  security: apiKeySecurity,
+  request: {
+    params: z.object({ slug: z.string().min(1) }),
+  },
+  responses: {
+    200: {
+      description: "Credit pack returned successfully",
+      ...jsonContent(
+        z.object({ success: z.literal(true), data: creditPackSchema }),
+      ),
+    },
+    401: unauthorizedResponse,
+    404: notFoundResponse,
     500: internalServerErrorResponse,
   },
 });
@@ -128,6 +154,44 @@ app.openapi(listCreditPacksRoute, async (c) => {
       500,
     );
   }
+});
+
+app.openapi(getCreditPackRoute, async (c) => {
+  const organizationId = c.get("organizationId")!;
+  const slug = c.req.valid("param").slug;
+  const db = c.get("db");
+  const pack = await db.query.creditPacks.findFirst({
+    where: and(
+      eq(schema.creditPacks.organizationId, organizationId),
+      eq(schema.creditPacks.slug, slug),
+      eq(schema.creditPacks.isActive, true),
+    ),
+    with: { creditSystem: true },
+  });
+
+  if (!pack) {
+    return c.json({ success: false, error: "Credit pack not found" }, 404);
+  }
+
+  return c.json({
+    success: true as const,
+    data: {
+      id: pack.id,
+      slug: pack.slug,
+      name: pack.name,
+      description: pack.description,
+      credits: pack.credits,
+      price: pack.price,
+      currency: pack.currency,
+      creditSystemId: pack.creditSystem?.slug || pack.creditSystemId,
+      creditSystem: pack.creditSystem?.slug ?? null,
+      provider: pack.providerId,
+      metadata: pack.metadata,
+      isActive: pack.isActive,
+      createdAt: pack.createdAt,
+      updatedAt: pack.updatedAt,
+    },
+  });
 });
 
 export default app;

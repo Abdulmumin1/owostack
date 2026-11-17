@@ -115,6 +115,7 @@ describe("Customer billing config runtime integration", () => {
         },
         body: JSON.stringify({
           email: "ops@acme.com",
+          matchBy: "email",
           name: "Acme Ops",
         }),
       },

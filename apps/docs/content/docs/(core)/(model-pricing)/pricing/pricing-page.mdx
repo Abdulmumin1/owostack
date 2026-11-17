@@ -13,7 +13,7 @@ This guide shows how to use `owo.plans()` to fetch your plans from Owostack and 
 ```ts
 import { Owostack } from "owostack";
 
-const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_SECRET_KEY });
 
 const { plans } = await owo.plans();
 ```
@@ -25,8 +25,8 @@ This returns all active plans with their features, pricing, and metadata.
 Plans have an `isAddon` flag. Filter them before rendering:
 
 ```ts
-const basePlans = plans.filter(p => !p.isAddon);
-const addons = plans.filter(p => p.isAddon);
+const basePlans = plans.filter((p) => !p.isAddon);
+const addons = plans.filter((p) => p.isAddon);
 ```
 
 ## Group by billing interval
@@ -34,8 +34,8 @@ const addons = plans.filter(p => p.isAddon);
 If you offer both monthly and yearly pricing with a toggle:
 
 ```ts
-const monthly = basePlans.filter(p => p.interval === "monthly");
-const yearly = basePlans.filter(p => p.interval === "yearly");
+const monthly = basePlans.filter((p) => p.interval === "monthly");
+const yearly = basePlans.filter((p) => p.interval === "yearly");
 ```
 
 Or use the server-side filter to only fetch what you need:
@@ -111,5 +111,6 @@ for (const plan of plans) {
 ```
 
 <Callout type="info">
-  Plans are cached by the API — feel free to call `owo.plans()` on every page load without worrying about performance.
+  Plans are cached by the API — feel free to call `owo.plans()` on every page
+  load without worrying about performance.
 </Callout>

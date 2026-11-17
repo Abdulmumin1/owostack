@@ -521,10 +521,11 @@ export function entity(slug: string, opts?: { name?: string }): EntityHandle {
  * CreditSystemHandle — returned by creditSystem().
  */
 export class CreditSystemHandle {
+  readonly _type = "credit_system" as const;
   readonly slug: string;
-  readonly name: string | undefined;
+  readonly name: string;
   readonly description: string | undefined;
-  private featureCosts: Map<string, number>;
+  readonly features: CreditSystemDefinition["features"];
 
   constructor(
     slug: string,
@@ -532,9 +533,11 @@ export class CreditSystemHandle {
     opts?: { name?: string; description?: string },
   ) {
     this.slug = slug;
-    this.featureCosts = featureCosts;
-    this.name = opts?.name;
+    this.name = opts?.name || slug;
     this.description = opts?.description;
+    this.features = Array.from(featureCosts.entries()).map(
+      ([feature, creditCost]) => ({ feature, creditCost }),
+    );
   }
 
   credits(
@@ -559,14 +562,9 @@ export class CreditSystemHandle {
     return {
       _type: "credit_system",
       slug: this.slug,
-      name: this.name || this.slug,
+      name: this.name,
       description: this.description,
-      features: Array.from(this.featureCosts.entries()).map(
-        ([feature, creditCost]) => ({
-          feature,
-          creditCost,
-        }),
-      ),
+      features: this.features.map((feature) => ({ ...feature })),
     };
   }
 }
@@ -613,7 +611,7 @@ export function plan(
     features: PlanFeatureEntry[];
     planGroup?: string;
     trialDays?: number;
-    provider?: string;
+    provider?: import("@owostack/types").ProviderId;
     metadata?: Record<string, unknown>;
     autoEnable?: boolean;
     isAddon?: boolean;
@@ -640,7 +638,7 @@ export function creditPack(
     price: number;
     currency: Currency;
     creditSystem: string;
-    provider?: string;
+    provider?: import("@owostack/types").ProviderId;
     metadata?: Record<string, unknown>;
   },
 ): CreditPackDefinition {
@@ -683,6 +681,24 @@ function collectReferencedCreditSystems(
   return creditSystems;
 }
 
+/**
+ * Return catalog warnings that can be determined before contacting the API.
+ * Keeping these in the sync result prevents a skipped pack from looking like
+ * a successful no-op when its credit system is missing from this catalog.
+ */
+export function collectSyncWarnings(payload: SyncPayload): string[] {
+  const syncedCreditSystems = new Set(
+    payload.creditSystems.map((creditSystem) => creditSystem.slug),
+  );
+
+  return payload.creditPacks
+    .filter((creditPack) => !syncedCreditSystems.has(creditPack.creditSystem))
+    .map(
+      (creditPack) =>
+        `Credit pack '${creditPack.slug}' references credit system '${creditPack.creditSystem}', but that system is not present in this sync payload. The pack will be skipped unless the system already exists remotely.`,
+    );
+}
+
 function collectCatalogFeatureSlugs(catalog: CatalogEntry[]): Set<string> {
   const featureSlugs = new Set<string>();
 
@@ -720,7 +736,7 @@ function bindHandleToClient(handle: any, client: any) {
  */
 export function buildSyncPayload(
   catalog: CatalogEntry[],
-  defaultProvider?: string,
+  defaultProvider?: import("@owostack/types").ProviderId,
 ): SyncPayload {
   const featureMap = new Map<
     string,
@@ -750,14 +766,13 @@ export function buildSyncPayload(
     }
   }
 
-  const creditSystems: SyncPayload["creditSystems"] = collectReferencedCreditSystems(
-    catalog,
-  ).map((cs) => ({
-    slug: cs.slug,
-    name: cs.name,
-    description: cs.description,
-    features: cs.features,
-  }));
+  const creditSystems: SyncPayload["creditSystems"] =
+    collectReferencedCreditSystems(catalog).map((cs) => ({
+      slug: cs.slug,
+      name: cs.name,
+      description: cs.description,
+      features: cs.features,
+    }));
 
   // Also collect features referenced by credit systems (they may not be
   // directly attached to any plan but still need to exist in the DB)

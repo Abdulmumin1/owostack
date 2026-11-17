@@ -27,14 +27,14 @@ await owo.track({
 
 ## Parameters
 
-| Parameter      | Type     | Required | Description                                                                                                         |
-| -------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| Parameter      | Type     | Required | Description                                                                                                          |
+| -------------- | -------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
 | `customer`     | `string` | ✅       | Your identifier for the customer (e.g. your user or workspace ID). Also accepts the customer's email or internal ID. |
-| `feature`      | `string` | ✅       | Feature slug (or ID) to record usage against                                                                        |
-| `value`        | `number` | -        | Amount to add. Default `1`. Must be `>= 0`.                                                                         |
+| `feature`      | `string` | ✅       | Feature slug (or ID) to record usage against                                                                         |
+| `value`        | `number` | -        | Amount to add. Default `1`. Must be `>= 0`.                                                                          |
 | `entity`       | `string` | -        | Scope usage to an entity (seat, workspace…). The entity must already exist.                                          |
-| `customerData` | `object` | -        | Creates the customer on first use if it doesn't exist. See below.                                                   |
-| `metadata`     | `object` | -        | Free-form event metadata stored with the usage record (auditing, debugging)                                         |
+| `customerData` | `object` | -        | Creates the customer on first use if it doesn't exist. See below.                                                    |
+| `metadata`     | `object` | -        | Free-form event metadata stored with the usage record (auditing, debugging)                                          |
 
 ### `customerData` — create on first use
 
@@ -42,21 +42,21 @@ Customers don't need to be created up front. Pass `customerData` and Owostack wi
 
 ```ts
 await owo.track({
-  customer: "workspace_alpha",          // becomes the customer's externalId
+  customer: "workspace_alpha", // becomes the customer's externalId
   feature: "agent_turns",
   customerData: {
-    email: "owner@acme.com",            // required — used for receipts/checkout
-    name: "Acme (Alpha workspace)",     // optional
-    metadata: { plan_hint: "team" },    // optional, free-form
+    email: "owner@acme.com", // required — used for receipts/checkout
+    name: "Acme (Alpha workspace)", // optional
+    metadata: { plan_hint: "team" }, // optional, free-form
   },
 });
 ```
 
-| Field      | Type     | Required | Notes                                                                       |
-| ---------- | -------- | -------- | --------------------------------------------------------------------------- |
+| Field      | Type     | Required | Notes                                                                                                               |
+| ---------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `email`    | `string` | ✅       | Currently required for every customer; if your billing entity is a workspace, pass the owner's or a billing address |
-| `name`     | `string` | -        | Display name                                                                |
-| `metadata` | `object` | -        | Stored on the customer                                                      |
+| `name`     | `string` | -        | Display name                                                                                                        |
+| `metadata` | `object` | -        | Stored on the customer                                                                                              |
 
 Without `customerData`, tracking an unknown `customer` returns `code: "customer_not_found"` (HTTP 404) and records nothing — unless the `customer` value itself is an email address, in which case the customer is created from it. If a newly created customer matches a plan with `autoEnable: true`, that plan is attached immediately so the very first `track` can succeed.
 
@@ -64,8 +64,8 @@ The same `customer` id then works for reads: [`owo.customer.get("workspace_alpha
 
 <Callout type="warning">
   When using `entity`, the entity must be created with
-  [`addEntity()`](/sdk/entities) first. Tracking a non-existent entity
-  returns an `entity_not_found` error.
+  [`addEntity()`](/sdk/entities) first. Tracking a non-existent entity returns
+  an `entity_not_found` error.
 </Callout>
 
 ## Response
@@ -128,25 +128,29 @@ interface TrackResult {
   "resetsAt": "2026-10-01T00:00:00.000Z",
   "resetInterval": "monthly",
   "credits": null,
-  "details": { "message": "Tracked 3 agent_turns on Pro.", "plan": "pro", "planName": "Pro" }
+  "details": {
+    "message": "Tracked 3 agent_turns on Pro.",
+    "plan": "pro",
+    "planName": "Pro"
+  }
 }
 ```
 
 ### Result codes
 
-| `code`                   | `allowed` | Meaning                                                                        |
-| ------------------------ | --------- | ------------------------------------------------------------------------------ |
-| `tracked`                | `true`    | Recorded within the plan limit                                                 |
-| `tracked_overage`        | `true`    | Recorded beyond the limit; billed as overage                                   |
-| `addon_credits_used`     | `true`    | Plan credits exhausted; add-on credits covered it                              |
-| `bonus_credits_used`     | `true`    | Covered by a manual bonus balance                                              |
-| `limit_exceeded`         | `false`   | Limit reached and overage is blocked — nothing recorded                        |
-| `insufficient_credits`   | `false`   | Not enough credits — nothing recorded                                          |
-| `customer_not_found`     | `false`   | Unknown `customer` and no `customerData` (HTTP 404)                            |
-| `feature_not_found`      | `false`   | Unknown feature slug                                                           |
-| `no_active_subscription` | `false`   | Customer has no active plan                                                    |
-| `feature_not_in_plan`    | `false`   | The active plan doesn't include this feature                                   |
-| `entity_not_found`       | `false`   | `entity` given but not created via `addEntity()`                               |
+| `code`                   | `allowed` | Meaning                                                                            |
+| ------------------------ | --------- | ---------------------------------------------------------------------------------- |
+| `tracked`                | `true`    | Recorded within the plan limit                                                     |
+| `tracked_overage`        | `true`    | Recorded beyond the limit; billed as overage                                       |
+| `addon_credits_used`     | `true`    | Plan credits exhausted; add-on credits covered it                                  |
+| `bonus_credits_used`     | `true`    | Covered by a manual bonus balance                                                  |
+| `limit_exceeded`         | `false`   | Limit reached and overage is blocked — nothing recorded                            |
+| `insufficient_credits`   | `false`   | Not enough credits — nothing recorded                                              |
+| `customer_not_found`     | `false`   | Unknown `customer` and no `customerData` (HTTP 404)                                |
+| `feature_not_found`      | `false`   | Unknown feature slug                                                               |
+| `no_active_subscription` | `false`   | Customer has neither an active plan nor a pack-backed balance for this feature     |
+| `feature_not_in_plan`    | `false`   | The active plan doesn't include this feature and no mapped credit system grants it |
+| `entity_not_found`       | `false`   | `entity` given but not created via `addEntity()`                                   |
 
 Errors that are not entitlement results (invalid body, bad key, wrong environment) come back as `{ success: false, error: { code, message }, environment }` with HTTP 400/401.
 
@@ -157,7 +161,7 @@ Errors that are not entitlement results (invalid body, bad key, wrong environmen
 ```ts
 import { Owostack } from "owostack";
 
-const owo = new Owostack({ secretKey: process.env.OWOSTACK_API_KEY });
+const owo = new Owostack({ secretKey: process.env.OWOSTACK_SECRET_KEY });
 
 // Track a single API call
 await owo.track({

@@ -45,7 +45,7 @@ export function loadGlobalConfig(): GlobalConfig {
 
 /**
  * Pick the API key for a command, in order:
- *   --key  >  OWOSTACK_SECRET_KEY  >  OWOSTACK_API_KEY  >  ~/.owostack/config.json
+ *   --key  >  OWOSTACK_SECRET_KEY  >  ~/.owostack/config.json
  *
  * The stored config may hold one key per mode (from `owosk connect`); when the
  * mode is known the matching one is used, otherwise the legacy single key.
@@ -54,7 +54,6 @@ export function loadGlobalConfig(): GlobalConfig {
 export function getApiKey(cliKey?: string, mode?: OwostackMode): string {
   if (cliKey) return cliKey;
   if (process.env.OWOSTACK_SECRET_KEY) return process.env.OWOSTACK_SECRET_KEY;
-  if (process.env.OWOSTACK_API_KEY) return process.env.OWOSTACK_API_KEY;
 
   const stored = loadGlobalConfig();
   if (mode && stored.keys?.[mode]) return stored.keys[mode]!;
